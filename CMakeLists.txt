@@ -282,10 +282,27 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     target_compile_definitions(mpiwrapper_selftest PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
   endif()
 
+  # Normally the tests run under the implementation's own launcher. Turning that
+  # off runs the binaries directly, as singletons, which is not a stylistic
+  # choice: an implementation whose launcher does not work on the machine at hand
+  # would otherwise contribute no behavioural coverage at all, and singleton
+  # initialization is a supported MPI configuration. Open MPI 5.0.x on macOS 26
+  # is exactly that case -- see test/README.md.
+  option(MPI_ABI_TEST_USE_LAUNCHER "Run the tests under mpiexec" ON)
+  if(MPI_ABI_TEST_USE_LAUNCHER)
+    set(MPIABI_RUN1 ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
+                    ${MPIEXEC_PREFLAGS})
+    set(MPIABI_RUN2 ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+                    ${MPIEXEC_PREFLAGS})
+    set(MPIABI_RUN_POST ${MPIEXEC_POSTFLAGS})
+  else()
+    set(MPIABI_RUN1)
+    set(MPIABI_RUN2)
+    set(MPIABI_RUN_POST)
+  endif()
+
   add_test(NAME mpiwrapper_selftest
-    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1
-            ${MPIEXEC_PREFLAGS} $<TARGET_FILE:mpiwrapper_selftest>
-            ${MPIEXEC_POSTFLAGS})
+    COMMAND ${MPIABI_RUN1} $<TARGET_FILE:mpiwrapper_selftest> ${MPIABI_RUN_POST})
 
   # Black box: an ordinary MPI application against the ABI header, linking
   # libmpi_abi and nothing else.
@@ -295,9 +312,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   target_link_libraries(abi_prototype_test PRIVATE mpi_abi)
 
   add_test(NAME abi_prototype_test
-    COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
-            ${MPIEXEC_PREFLAGS} $<TARGET_FILE:abi_prototype_test>
-            ${MPIEXEC_POSTFLAGS})
+    COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_prototype_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_prototype_test PROPERTIES
     ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
 

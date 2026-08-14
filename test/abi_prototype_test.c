@@ -4,8 +4,9 @@
  * nothing else, and knows nothing about any implementation. Everything it
  * observes has crossed the vtable boundary twice.
  *
- * It exercises each of the 28 prototype entry points at least once, and each of
- * the argument classes NOTES.md #11 chose them for. Run under two ranks.
+ * It exercises each of the 29 prototype entry points at least once, and each of
+ * the argument classes NOTES.md #11 chose them for. Two ranks by preference, one
+ * where the implementation's launcher cannot manage two.
  *
  * Note that it deliberately uses MPI_ names throughout except where it is
  * checking the PMPI_ path: the two reach different slots and different
@@ -20,7 +21,7 @@
 #include <string.h>
 
 static int failures;
-static int rank, size;
+static int rank, size, peer;
 
 #define CHECK(cond, ...)                                                       \
   do {                                                                         \
@@ -39,26 +40,49 @@ static int rank, size;
     CHECK(ierror_ == MPI_SUCCESS, "%s returned %d", #call, ierror_);           \
   } while (0)
 
+/* Two ranks is the interesting configuration and one rank is a supported
+ * fallback, because an implementation whose launcher cannot form a two-rank job
+ * on the machine at hand would otherwise contribute no black-box coverage at
+ * all -- which is exactly the situation Open MPI 5.0.x is in on macOS 26. At one
+ * rank the peer is this process, so the ordered blocking exchange would
+ * deadlock and the nonblocking form is used instead; MPI_Send's own conversion
+ * path stays covered by the MPI_PROC_NULL case below.
+ */
+static void exchange(const void *sendbuf, void *recvbuf, int count,
+                     MPI_Datatype datatype, int tag, MPI_Status *status)
+{
+  if (size == 2) {
+    if (rank == 0) {
+      CHECK_MPI(MPI_Send(sendbuf, count, datatype, peer, tag, MPI_COMM_WORLD));
+      CHECK_MPI(MPI_Recv(recvbuf, count, datatype, peer, tag, MPI_COMM_WORLD,
+                         status));
+    } else {
+      CHECK_MPI(MPI_Recv(recvbuf, count, datatype, peer, tag, MPI_COMM_WORLD,
+                         status));
+      CHECK_MPI(MPI_Send(sendbuf, count, datatype, peer, tag, MPI_COMM_WORLD));
+    }
+    return;
+  }
+
+  MPI_Request request;
+  CHECK_MPI(MPI_Isend(sendbuf, count, datatype, peer, tag, MPI_COMM_WORLD,
+                      &request));
+  CHECK_MPI(MPI_Recv(recvbuf, count, datatype, peer, tag, MPI_COMM_WORLD,
+                     status));
+  CHECK_MPI(MPI_Waitall(1, &request, MPI_STATUSES_IGNORE));
+}
+
 /* ------------------------------------------------ send/recv, ranks and tags */
 
 static void test_sendrecv(void)
 {
-  const int tag  = 7;
-  const int peer = 1 - rank;
+  const int tag = 7;
 
   int sendbuf[4] = {rank, rank + 1, rank + 2, rank + 3};
   int recvbuf[4] = {-1, -1, -1, -1};
 
   MPI_Status status;
-  if (rank == 0) {
-    CHECK_MPI(MPI_Send(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD));
-    CHECK_MPI(MPI_Recv(recvbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD,
-                       &status));
-  } else {
-    CHECK_MPI(MPI_Recv(recvbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD,
-                       &status));
-    CHECK_MPI(MPI_Send(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD));
-  }
+  exchange(sendbuf, recvbuf, 4, MPI_INT, tag, &status);
 
   for (int i = 0; i < 4; ++i)
     CHECK(recvbuf[i] == peer + i, "recvbuf[%d] is %d, expected %d", i,
@@ -82,14 +106,13 @@ static void test_sendrecv(void)
    * swapped, so getting either one wrong is visible rather than benign.
    */
   memset(recvbuf, 0, sizeof recvbuf);
-  if (rank == 0) {
-    CHECK_MPI(MPI_Send(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD));
+  {
+    MPI_Request request;
+    CHECK_MPI(MPI_Isend(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD,
+                        &request));
     CHECK_MPI(MPI_Recv(recvbuf, 4, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG,
                        MPI_COMM_WORLD, &status));
-  } else {
-    CHECK_MPI(MPI_Recv(recvbuf, 4, MPI_INT, MPI_ANY_SOURCE, MPI_ANY_TAG,
-                       MPI_COMM_WORLD, &status));
-    CHECK_MPI(MPI_Send(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Waitall(1, &request, MPI_STATUSES_IGNORE));
   }
   CHECK(status.MPI_SOURCE == peer, "wildcard receive says source %d",
         status.MPI_SOURCE);
@@ -115,14 +138,13 @@ static void test_sendrecv(void)
    * point, so it gets its own exchange rather than an assumption.
    */
   memset(recvbuf, 0, sizeof recvbuf);
-  if (rank == 0) {
-    CHECK_MPI(PMPI_Send(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD));
+  {
+    MPI_Request request;
+    CHECK_MPI(PMPI_Isend(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD,
+                         &request));
     CHECK_MPI(PMPI_Recv(recvbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD,
                         &status));
-  } else {
-    CHECK_MPI(PMPI_Recv(recvbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD,
-                        &status));
-    CHECK_MPI(PMPI_Send(sendbuf, 4, MPI_INT, peer, tag, MPI_COMM_WORLD));
+    CHECK_MPI(PMPI_Waitall(1, &request, MPI_STATUSES_IGNORE));
   }
   for (int i = 0; i < 4; ++i)
     CHECK(recvbuf[i] == peer + i, "PMPI recvbuf[%d] is %d, expected %d", i,
@@ -133,7 +155,6 @@ static void test_sendrecv(void)
 
 static void test_waitall(void)
 {
-  const int   peer = 1 - rank;
   int         out[2] = {rank * 10, rank * 10 + 1};
   int         in[2]  = {-1, -1};
   MPI_Request requests[4];
@@ -206,21 +227,45 @@ static void test_allreduce(void)
   double values[3] = {rank == 0 ? -3.0 : 1.0, rank == 0 ? 2.0 : -5.0, 0.5};
   double result[3] = {0, 0, 0};
 
+  /* At two ranks the op has to run and the answer is the elementwise
+   * max-of-absolute-values. At one rank there is nothing to combine, and MPI
+   * does not require the op to be invoked at all -- Open MPI does not invoke it
+   * -- so the only defensible expectation is "either reduced or untouched".
+   * Saying so explicitly beats asserting whichever one this implementation
+   * happens to do.
+   */
+  double expect[3] = {3.0, 5.0, 0.5};
+
   CHECK_MPI(MPI_Allreduce(values, result, 3, MPI_DOUBLE, op, MPI_COMM_WORLD));
-  CHECK(result[0] == 3.0 && result[1] == 5.0 && result[2] == 0.5,
-        "user op gave {%g, %g, %g}, expected {3, 5, 0.5}", result[0], result[1],
-        result[2]);
-  CHECK(!saw_datatype_mismatch,
-        "the user op was handed a datatype that is not MPI_DOUBLE -- the "
-        "implementation -> ABI datatype map is wrong");
+  if (size == 2) {
+    CHECK(result[0] == expect[0] && result[1] == expect[1] &&
+              result[2] == expect[2],
+          "user op gave {%g, %g, %g}, expected {%g, %g, %g}", result[0],
+          result[1], result[2], expect[0], expect[1], expect[2]);
+    CHECK(!saw_datatype_mismatch,
+          "the user op was handed a datatype that is not MPI_DOUBLE -- the "
+          "implementation -> ABI datatype map is wrong");
+  } else {
+    CHECK((result[0] == 3.0 || result[0] == values[0]) &&
+              result[2] == values[2],
+          "one-rank user op gave {%g, %g, %g} from {%g, %g, %g}", result[0],
+          result[1], result[2], values[0], values[1], values[2]);
+    CHECK(!saw_datatype_mismatch,
+          "the user op was handed a datatype that is not MPI_DOUBLE");
+  }
 
   /* MPI_IN_PLACE is (void *)1 in the ABI and (void *)-1 in MPICH. */
   double inplace[3] = {rank == 0 ? -3.0 : 1.0, rank == 0 ? 2.0 : -5.0, 0.5};
   CHECK_MPI(MPI_Allreduce(MPI_IN_PLACE, inplace, 3, MPI_DOUBLE, op,
                           MPI_COMM_WORLD));
-  CHECK(inplace[0] == 3.0 && inplace[1] == 5.0 && inplace[2] == 0.5,
-        "MPI_IN_PLACE user op gave {%g, %g, %g}", inplace[0], inplace[1],
-        inplace[2]);
+  if (size == 2)
+    CHECK(inplace[0] == expect[0] && inplace[1] == expect[1] &&
+              inplace[2] == expect[2],
+          "MPI_IN_PLACE user op gave {%g, %g, %g}", inplace[0], inplace[1],
+          inplace[2]);
+  else
+    CHECK(inplace[2] == 0.5, "MPI_IN_PLACE at one rank corrupted the buffer: "
+                             "{%g, %g, %g}", inplace[0], inplace[1], inplace[2]);
 
   /* A predefined op, so that the ABI -> implementation switch is exercised on
    * the same path.
@@ -289,16 +334,7 @@ static void test_type_create_struct(void)
    * rather than merely being created.
    */
   MPI_Status status;
-  const int  peer = 1 - rank;
-  if (rank == 0) {
-    CHECK_MPI(MPI_Send(&sendval.i, 1, newtype, peer, 21, MPI_COMM_WORLD));
-    CHECK_MPI(MPI_Recv(&recvval.i, 1, newtype, peer, 21, MPI_COMM_WORLD,
-                       &status));
-  } else {
-    CHECK_MPI(MPI_Recv(&recvval.i, 1, newtype, peer, 21, MPI_COMM_WORLD,
-                       &status));
-    CHECK_MPI(MPI_Send(&sendval.i, 1, newtype, peer, 21, MPI_COMM_WORLD));
-  }
+  exchange(&sendval.i, &recvval.i, 1, newtype, 21, &status);
   CHECK(recvval.i == peer, "derived type transferred %d, expected %d",
         recvval.i, peer);
 
@@ -509,10 +545,22 @@ static void test_file_open(void)
 
 static void test_wtime(void)
 {
+  /* MPI_Wtime is "time elapsed since some point in the past", and Open MPI's
+   * point in the past is startup -- so it answers 0.000000 immediately after
+   * MPI_Init, natively as well as through the wrapper. Non-negative and
+   * non-decreasing is all the standard promises and all this may assert.
+   */
   const double t0 = MPI_Wtime();
-  CHECK(t0 > 0.0, "MPI_Wtime returned %g", t0);
+  CHECK(t0 >= 0.0, "MPI_Wtime returned %g", t0);
   const double t1 = PMPI_Wtime();
-  CHECK(t1 >= t0, "PMPI_Wtime went backwards");
+  CHECK(t1 >= t0, "PMPI_Wtime went backwards: %g then %g", t0, t1);
+
+  int version = 0, subversion = -1;
+  CHECK_MPI(MPI_Get_version(&version, &subversion));
+  CHECK(version >= 3 && subversion >= 0, "MPI_Get_version says %d.%d", version,
+        subversion);
+  if (rank == 0) printf("  the implementation reports MPI %d.%d\n", version,
+                        subversion);
 }
 
 int main(int argc, char **argv)
@@ -521,14 +569,16 @@ int main(int argc, char **argv)
   CHECK_MPI(MPI_Comm_size(MPI_COMM_WORLD, &size));
   CHECK_MPI(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
 
-  if (size != 2) {
+  if (size < 1 || size > 2) {
     if (rank == 0)
-      printf("abi_prototype_test needs exactly 2 ranks, got %d\n", size);
+      printf("abi_prototype_test runs at 1 or 2 ranks, got %d\n", size);
     MPI_Finalize();
     return 1;
   }
+  peer = (size == 2) ? 1 - rank : rank;
 
-  if (rank == 0) printf("abi_prototype_test: %d ranks\n", size);
+  if (rank == 0)
+    printf("abi_prototype_test: %d rank%s\n", size, size == 1 ? "" : "s");
 
   test_sendrecv();
   test_waitall();

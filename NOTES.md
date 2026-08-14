@@ -1616,6 +1616,16 @@ would write them — one `const` local per parameter, in parameter order, named 
 the parameter with `abi_` dropped, and one body macro instantiated twice. Those
 nineteen are what S2 must reproduce.
 
+**What it was tested against.** MPICH 4.3.1 at two ranks, and Open MPI 5.0.6
+(built from source) as a singleton — no Open MPI 5.0.x launcher works on macOS 26,
+with or without any of this code, so the Open MPI column is one-rank coverage
+until a working 5.x launcher or a native 6.x build is available. That is enough to
+exercise every conversion in both directions, since a singleton call still crosses
+the boundary twice; it is not enough for the two-rank message-passing paths, and
+`test/README.md` says so rather than leaving it to be inferred from a green run.
+The two implementations disagree about 13 predefined handles (98 mapped against
+85), which is the kind of difference the maps exist for.
+
 Three files are S1 stand-ins for generated output and disappear in S2:
 `src/include/mpiwrapper_vtable.h`, `src/mpi_abi/entrypoints.c` and
 `src/mpiwrapper/{wrappers,constants}.c`. `constants.c` was produced mechanically
