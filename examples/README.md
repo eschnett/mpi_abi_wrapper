@@ -5,6 +5,15 @@ runtime they call into. Illustrative, not part of the build — but they *do* co
 and `check.sh` compiles them, because an example that has never been through a
 compiler is a guess.
 
+**Since S1 these are narrated excerpts, not the reference.** The reference is
+`src/`, which compiles against two implementations and passes tests; a shape that
+exists in both places is a second source of truth, and the tested one wins. Three
+things here were wrong until S1 ran the real version — the reverse-map tables were
+`static`, which does not compile against an implementation whose handles are
+addresses; the bitmask mapper needed splitting by role; and the `dlopen` narration
+predated the `RTLD_LOCAL`-plus-isolation correction — and all three are corrected
+below.
+
 | file | corresponds to | written by |
 |---|---|---|
 | `mpiabi.h` | `gen/include/mpiabi.h` | generator |
@@ -35,10 +44,14 @@ compiling the wrapper side against the ABI header is the self-wrapping mistake t
 ## What each example is for
 
 **`mpi_abi_side.c`** — that the ABI side contains no conversion at all. Every entry
-point is one line, arguments pass through without a cast, and `MPI_*`/`PMPI_*` are
-two definitions reaching one slot. The interesting code is the bootstrap: the
-environment variable, `RTLD_NOW | RTLD_GLOBAL` and why, the version/hash/size
-handshake, and why there is both a constructor *and* a lazy guard.
+point is one line, arguments pass through without a cast, and `MPI_X`/`PMPI_X` are
+two definitions reaching two *different* slots. The interesting code is the
+bootstrap: the environment variable, why the load must be `RTLD_LOCAL` **plus**
+active isolation (`RTLD_DEEPBIND` or `dlmopen` on Linux, the two-level namespace on
+macOS) and never `RTLD_GLOBAL`, why the binding mode defaults to `RTLD_LAZY`, and
+the version/hash/size handshake. There is no lazy guard: the constructor-ordering
+argument in `src/mpi_abi/bootstrap.c` explains why one is unnecessary and
+`dev/dispatch-bench/` says what it would cost.
 
 **`mpiwrapper_wrappers.c`** — the generated body shapes, in increasing difficulty:
 `MPI_Send` (the base case, and why `dest` and `tag` go through different

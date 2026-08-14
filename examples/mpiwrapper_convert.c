@@ -381,6 +381,12 @@ void mpiwrapper_status_fromabi(const MPIABI_Status *abi, MPI_Status *st)
 /* MPI_MODE_* are OR-combined and the bit assignments are unrelated: the ABI's
  * RDONLY is 16 where both implementations use 2, and NOCHECK is 1024 where Open
  * MPI uses 1. So this is a decomposition, not a switch.
+ *
+ * File modes and window asserts need *separate* mappers, which is why this one is
+ * named for its role. The ABI keeps the two families in one enum with disjoint
+ * bits, so one mapper would do on the way in; Open MPI gives its window asserts
+ * the same bit values it gives CREATE, RDONLY, WRONLY, RDWR and DELETE_ON_CLOSE,
+ * so on the way out an implementation-side 1 is ambiguous. NOTES.md 5.5.
  */
 int mpiwrapper_filemode_fromabi(int abi_amode)
 {
@@ -522,8 +528,15 @@ static int init_reverse_maps(void)
    * value is ever transcribed -- and a macro that does not exist is a compile error
    * rather than a wrong number. The generator emits these, one line per predefined
    * handle, with #ifdef guards on the optional ones.
+   *
+   * Note what these arrays are *not*: `static`. An earlier version of this file had
+   * them static, which compiles against MPICH, whose handles are integer constants,
+   * and does not compile at all against Open MPI, whose handles are the addresses
+   * of objects -- a pointer-to-integer cast is not a constant expression, so it
+   * cannot initialize static storage. They are built at run time instead, which
+   * costs one pass over 103 entries once per process.
    */
-  static const uint64_t dt_impl[] = {
+  const uint64_t dt_impl[] = {
       (uint64_t)(uintptr_t)MPI_DATATYPE_NULL,
       (uint64_t)(uintptr_t)MPI_INT,
       (uint64_t)(uintptr_t)MPI_DOUBLE,
@@ -532,21 +545,21 @@ static int init_reverse_maps(void)
       (uint64_t)(uintptr_t)MPI_INTEGER16,
 #endif
   };
-  static const uint64_t dt_abi[] = {
+  const uint64_t dt_abi[] = {
       0x00000200, 0x00000209, 0x00000214, 0x00000247,
 #ifdef MPI_INTEGER16
       0x0000022f,
 #endif
   };
-  static const uint64_t comm_impl[] = {(uint64_t)(uintptr_t)MPI_COMM_NULL,
+  const uint64_t comm_impl[] = {(uint64_t)(uintptr_t)MPI_COMM_NULL,
                                        (uint64_t)(uintptr_t)MPI_COMM_WORLD,
                                        (uint64_t)(uintptr_t)MPI_COMM_SELF};
-  static const uint64_t comm_abi[]  = {0x00000100, 0x00000101, 0x00000102};
-  static const uint64_t op_impl[]   = {(uint64_t)(uintptr_t)MPI_OP_NULL,
+  const uint64_t comm_abi[]  = {0x00000100, 0x00000101, 0x00000102};
+  const uint64_t op_impl[]   = {(uint64_t)(uintptr_t)MPI_OP_NULL,
                                        (uint64_t)(uintptr_t)MPI_SUM};
-  static const uint64_t op_abi[]    = {0x00000020, 0x00000021};
-  static const uint64_t file_impl[] = {(uint64_t)(uintptr_t)MPI_FILE_NULL};
-  static const uint64_t file_abi[]  = {0x00000118};
+  const uint64_t op_abi[]    = {0x00000020, 0x00000021};
+  const uint64_t file_impl[] = {(uint64_t)(uintptr_t)MPI_FILE_NULL};
+  const uint64_t file_abi[]  = {0x00000118};
 
 #define N(a) (sizeof(a) / sizeof(*(a)))
   return rmap_build(&rmap_datatype, dt_impl, dt_abi, N(dt_impl)) &&

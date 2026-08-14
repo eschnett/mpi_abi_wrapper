@@ -149,6 +149,18 @@ _SKIP_BANNERS = {
 }
 
 
+# Names that must be spelled *identically* in both views, because they
+# coordinate the two rather than naming anything in the API. There is exactly
+# one: the include guard around `struct MPI_ABI_Status`. Both headers define
+# that struct -- it is the only ABI type whose members either side needs, since
+# the handle tags stay incomplete -- and in a translation unit that includes
+# both (src/mpi_abi/, and test/compile_both_headers.c on purpose) the second
+# definition has to be skipped. Renaming the guard would give the two headers
+# different guards, and then both would define the struct and neither would
+# compile alongside the other.
+KEEP_UNRENAMED = {"MPI_ABI_STATUS_DEFINED"}
+
+
 def rename(name: str) -> str:
     """MPI_X -> MPIABI_X (so MPI_ABI_VERSION -> MPIABI_ABI_VERSION, unchanged
     but for the prefix -- no collision with plain MPI_VERSION ->
@@ -200,7 +212,7 @@ def collect_rename_map(lines):
         if m:
             names.add(m.group(1))
             continue
-    return {name: rename(name) for name in names}
+    return {name: rename(name) for name in names - KEEP_UNRENAMED}
 
 
 def substitute(text: str, rename_map: dict) -> str:

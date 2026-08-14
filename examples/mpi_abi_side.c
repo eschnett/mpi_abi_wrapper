@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* ------------------------------------------------------------------ bootstrap */
 
@@ -166,7 +167,7 @@ static const struct mpiwrapper_vtable *vt_load(void)
 
   const char *diagnostic = "no diagnostic";
   const struct mpiwrapper_vtable *vt =
-      get(MPIABI_VERSION, MPIABI_SUBVERSION, MPIWRAPPER_LAYOUT_HASH,
+      get(MPI_ABI_VERSION, MPI_ABI_SUBVERSION, MPIWRAPPER_LAYOUT_HASH,
           sizeof(struct mpiwrapper_vtable), abi_probe, &diagnostic);
   if (!vt) vt_fail("wrapper rejected this libmpi_abi", diagnostic);
 

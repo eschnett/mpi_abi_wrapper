@@ -1,0 +1,383 @@
+/* mpiwrapper_selftest -- in-process, single rank, no launcher needed.
+ *
+ * The white-box half of S1's testing: it compiles the conversion runtime's own
+ * sources into the test binary and calls them directly, so it can walk the maps
+ * in both directions rather than inferring them from MPI results. libmpiwrapper
+ * itself still exports exactly one symbol; nothing here changes that.
+ *
+ * What it checks (NOTES.md #10, "Behavioural tests"):
+ *
+ *  - every predefined handle of every class, ABI -> implementation -> ABI, and
+ *    the implementation -> ABI direction separately, since that one goes
+ *    through the perfect hash rather than the switch;
+ *  - the rank, tag, error-code and mode maps, round trip;
+ *  - the status blob, round trip, including that the implementation's private
+ *    bytes survive;
+ *  - staging, at and above the stack threshold;
+ *  - the **dynamic-handle collision probe**: create many objects of each class
+ *    and assert that none of them bit-casts into the ABI's predefined range.
+ *    That probe is specifically the runtime replacement for the configure-time
+ *    test cross-compiling forbids (NOTES.md #5.1).
+ */
+
+#include "internal.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static int failures;
+
+#define CHECK(cond, ...)                                                       \
+  do {                                                                         \
+    if (!(cond)) {                                                             \
+      ++failures;                                                              \
+      printf("FAIL %s:%d: ", __FILE__, __LINE__);                              \
+      printf(__VA_ARGS__);                                                     \
+      printf("\n");                                                            \
+    }                                                                          \
+  } while (0)
+
+/* ------------------------------------------------------ predefined handles */
+
+static void test_predefined(void)
+{
+  struct mpiwrapper_predef predef[128];
+  uint64_t                 lo = UINT64_MAX, hi = 0;
+  size_t                   total = 0, aliased = 0;
+
+  for (const struct mpiwrapper_predef_class *c = mpiwrapper_predef_classes;
+       c->name; ++c) {
+    const size_t n = c->fill(predef, sizeof predef / sizeof *predef);
+    CHECK(n <= sizeof predef / sizeof *predef, "%s: %zu entries overflow the "
+          "test's buffer", c->name, n);
+    total += n;
+
+    for (size_t i = 0; i < n; ++i) {
+      if (predef[i].abi < lo) lo = predef[i].abi;
+      if (predef[i].abi > hi) hi = predef[i].abi;
+
+      /* ABI -> implementation is the generated switch. */
+      const uint64_t impl = c->fromabi_bits(predef[i].abi);
+      CHECK(impl == predef[i].impl,
+            "%s: %s converts to 0x%llx, table says 0x%llx", c->name,
+            predef[i].name, (unsigned long long)impl,
+            (unsigned long long)predef[i].impl);
+
+      /* implementation -> ABI is the perfect hash. An implementation may give
+       * two ABI-distinct predefined handles the same value -- an unsupported
+       * optional datatype answering MPI_DATATYPE_NULL is the usual way -- and
+       * then only the first can come back. That is not a failure; it is
+       * counted and reported.
+       */
+      const uint64_t abi = c->toabi_bits(predef[i].impl);
+      if (abi != predef[i].abi) {
+        int alias = 0;
+        for (size_t j = 0; j < i; ++j)
+          if (predef[j].impl == predef[i].impl) alias = 1;
+        if (alias) {
+          ++aliased;
+        } else {
+          ++failures;
+          printf("FAIL %s: %s (impl 0x%llx) reverses to 0x%llx, not 0x%llx\n",
+                 c->name, predef[i].name, (unsigned long long)predef[i].impl,
+                 (unsigned long long)abi, (unsigned long long)predef[i].abi);
+        }
+      }
+    }
+  }
+
+  /* The compile-time range that both directions rely on has to cover what the
+   * generated tables actually contain, or the checks that use it are narrower
+   * than they look.
+   */
+  CHECK(lo >= MPIWRAPPER_PREDEF_FIRST && hi <= MPIWRAPPER_PREDEF_LAST,
+        "predefined handles span 0x%llx..0x%llx, outside the assumed "
+        "0x%x..0x%x", (unsigned long long)lo, (unsigned long long)hi,
+        MPIWRAPPER_PREDEF_FIRST, MPIWRAPPER_PREDEF_LAST);
+
+  printf("  predefined handles: %zu mapped, %zu aliased by this "
+         "implementation\n", total, aliased);
+}
+
+/* ------------------------------------------------------- integer constants */
+
+static void test_integers(void)
+{
+  const int ranks[] = {MPIABI_ANY_SOURCE, MPIABI_PROC_NULL, MPIABI_ROOT,
+                       MPIABI_UNDEFINED,   0,               1,
+                       4095};
+  for (size_t i = 0; i < sizeof ranks / sizeof *ranks; ++i)
+    CHECK(mpiwrapper_rank_toabi(mpiwrapper_rank_fromabi(ranks[i])) == ranks[i],
+          "rank %d does not round trip", ranks[i]);
+
+  const int tags[] = {MPIABI_ANY_TAG, MPIABI_UNDEFINED, 0, 1, 32767};
+  for (size_t i = 0; i < sizeof tags / sizeof *tags; ++i)
+    CHECK(mpiwrapper_tag_toabi(mpiwrapper_tag_fromabi(tags[i])) == tags[i],
+          "tag %d does not round trip", tags[i]);
+
+  /* The two classes really are distinct: MPICH gives MPI_PROC_NULL and
+   * MPI_ANY_TAG the same implementation value, so a single mapper could not
+   * have produced both of these.
+   */
+  CHECK(mpiwrapper_rank_fromabi(MPIABI_PROC_NULL) == MPI_PROC_NULL,
+        "MPI_PROC_NULL");
+  CHECK(mpiwrapper_tag_fromabi(MPIABI_ANY_TAG) == MPI_ANY_TAG, "MPI_ANY_TAG");
+
+  const int codes[] = {MPIABI_SUCCESS,  MPIABI_ERR_BUFFER, MPIABI_ERR_COUNT,
+                       MPIABI_ERR_TYPE, MPIABI_ERR_TRUNCATE,
+                       MPIABI_ERR_INTERN, MPIABI_ERR_IN_STATUS,
+                       MPIABI_ERR_OTHER};
+  for (size_t i = 0; i < sizeof codes / sizeof *codes; ++i)
+    CHECK(mpiwrapper_errorcode_toabi(mpiwrapper_errorcode_fromabi(codes[i])) ==
+              codes[i],
+          "error class %d does not round trip", codes[i]);
+
+  /* The bitmasks are decompositions, so the interesting case is a combination
+   * rather than any single bit.
+   */
+  const int amode = MPIABI_MODE_CREATE | MPIABI_MODE_RDWR |
+                    MPIABI_MODE_DELETE_ON_CLOSE;
+  CHECK(mpiwrapper_filemode_toabi(mpiwrapper_filemode_fromabi(amode)) == amode,
+        "file amode 0x%x does not round trip", amode);
+  CHECK(mpiwrapper_filemode_fromabi(MPIABI_MODE_RDONLY) == MPI_MODE_RDONLY,
+        "MPI_MODE_RDONLY");
+
+  const int assertion = MPIABI_MODE_NOCHECK | MPIABI_MODE_NOSTORE;
+  CHECK(mpiwrapper_winassert_toabi(mpiwrapper_winassert_fromabi(assertion)) ==
+            assertion,
+        "window assert 0x%x does not round trip", assertion);
+
+  /* And the two families are genuinely separate classes, not a stylistic
+   * split: on Open MPI they share bit values, so a single mapper would answer
+   * MPI_MODE_CREATE for a window assert of MPI_MODE_NOCHECK. Asserting that the
+   * bits collide would be asserting a property of Open MPI; what has to hold
+   * here is that each family round-trips *through its own mapper* while the
+   * wrong mapper does not reproduce it.
+   */
+  const int nocheck_as_file =
+      mpiwrapper_filemode_toabi(mpiwrapper_winassert_fromabi(MPIABI_MODE_NOCHECK));
+  CHECK(nocheck_as_file == 0 || nocheck_as_file != MPIABI_MODE_NOCHECK,
+        "the file-mode mapper reproduced a window assert, which means the two "
+        "families were not separated after all");
+}
+
+/* ------------------------------------------------------------------ status */
+
+static void test_status(void)
+{
+  MPI_Status    st;
+  MPIABI_Status abi;
+
+  memset(&st, 0xa5, sizeof st);
+  st.MPI_SOURCE = MPI_ANY_SOURCE;
+  st.MPI_TAG    = MPI_ANY_TAG;
+  st.MPI_ERROR  = MPI_ERR_TRUNCATE;
+
+  mpiwrapper_status_toabi(&st, &abi);
+  CHECK(abi.MPI_SOURCE == MPIABI_ANY_SOURCE, "status MPI_SOURCE");
+  CHECK(abi.MPI_TAG == MPIABI_ANY_TAG, "status MPI_TAG");
+  CHECK(abi.MPI_ERROR == MPIABI_ERR_TRUNCATE, "status MPI_ERROR");
+
+  MPI_Status back;
+  mpiwrapper_status_fromabi(&abi, &back);
+  CHECK(back.MPI_SOURCE == st.MPI_SOURCE && back.MPI_TAG == st.MPI_TAG &&
+            back.MPI_ERROR == st.MPI_ERROR,
+        "status named fields do not round trip");
+  CHECK(memcmp(&back, &st, sizeof st) == 0,
+        "status private bytes do not round trip");
+
+  /* A real status, so the blob carries what the implementation itself put
+   * there rather than a pattern we invented, and MPI_Get_count can be asked to
+   * read it back out of the ABI status -- which is the whole point of the blob
+   * having no validity marker and no synthesis path.
+   */
+  MPI_Status real;
+  memset(&real, 0, sizeof real);
+  char inbuf[8];
+  CHECK(PMPI_Sendrecv("hello", 5, MPI_CHAR, 0, 7, inbuf, (int)sizeof inbuf,
+                      MPI_CHAR, 0, 7, MPI_COMM_SELF, &real) == MPI_SUCCESS,
+        "self send/recv failed");
+
+  MPIABI_Status abi_real;
+  mpiwrapper_status_toabi(&real, &abi_real);
+
+  MPI_Status restored;
+  mpiwrapper_status_fromabi(&abi_real, &restored);
+
+  int count = -1;
+  CHECK(PMPI_Get_count(&restored, MPI_CHAR, &count) == MPI_SUCCESS,
+        "MPI_Get_count on a status restored from its ABI blob");
+  CHECK(count == 5, "restored status reports %d elements, not 5", count);
+}
+
+/* ----------------------------------------------------------------- staging */
+
+static void test_staging(void)
+{
+  int  stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];
+  void *p;
+
+  p = mpiwrapper_stage(stack, sizeof stack, 0, sizeof(int));
+  CHECK(p == stack, "a zero-length staging must still return the buffer");
+
+  p = mpiwrapper_stage(stack, sizeof stack, 4, sizeof(int));
+  CHECK(p == stack, "a small staging must use the stack buffer");
+  mpiwrapper_unstage(p, stack);
+
+  const size_t big = sizeof stack / sizeof(int) + 1;
+  p                = mpiwrapper_stage(stack, sizeof stack, big, sizeof(int));
+  CHECK(p != NULL && p != stack, "a large staging must go to the heap");
+  if (p) {
+    memset(p, 0, big * sizeof(int)); /* writable, and the right size */
+    mpiwrapper_unstage(p, stack);
+  }
+
+  p = mpiwrapper_stage(stack, sizeof stack, SIZE_MAX / 2, sizeof(int) * 4);
+  CHECK(p == NULL, "an overflowing staging must fail rather than wrap");
+}
+
+/* ------------------------------------------- the dynamic-handle collision probe */
+
+/* Bit-casting a dynamically created implementation handle into an ABI handle is
+ * only correct if it cannot land in 0x20..0x2eb. Neither implementation does
+ * today, but cross-compiling forbids proving it at configure time, so it is
+ * proved here at run time instead -- by making a few hundred of each kind of
+ * object and looking at where they land.
+ */
+static void probe_one(const char *what, uint64_t bits)
+{
+  CHECK(!mpiwrapper_in_predef_range(bits),
+        "%s: a dynamically created handle landed at 0x%llx, inside the ABI's "
+        "predefined range -- the bit-cast in the toabi direction is unsound on "
+        "this implementation", what, (unsigned long long)bits);
+}
+
+#define PROBE_COUNT 256
+
+static void test_dynamic_handles(void)
+{
+  MPI_Comm     comms[PROBE_COUNT];
+  MPI_Datatype types[PROBE_COUNT];
+  MPI_Group    groups[PROBE_COUNT];
+  MPI_Info     infos[PROBE_COUNT];
+  MPI_Request  requests[PROBE_COUNT];
+
+  for (int i = 0; i < PROBE_COUNT; ++i) {
+    CHECK(PMPI_Comm_dup(MPI_COMM_SELF, &comms[i]) == MPI_SUCCESS, "Comm_dup");
+    probe_one("MPI_Comm", MPIWRAPPER_BITS(comms[i]));
+
+    CHECK(PMPI_Type_contiguous(i + 1, MPI_INT, &types[i]) == MPI_SUCCESS,
+          "Type_contiguous");
+    probe_one("MPI_Datatype", MPIWRAPPER_BITS(types[i]));
+
+    CHECK(PMPI_Comm_group(MPI_COMM_SELF, &groups[i]) == MPI_SUCCESS,
+          "Comm_group");
+    probe_one("MPI_Group", MPIWRAPPER_BITS(groups[i]));
+
+    CHECK(PMPI_Info_create(&infos[i]) == MPI_SUCCESS, "Info_create");
+    probe_one("MPI_Info", MPIWRAPPER_BITS(infos[i]));
+
+    CHECK(PMPI_Isend(NULL, 0, MPI_INT, MPI_PROC_NULL, 0, MPI_COMM_SELF,
+                     &requests[i]) == MPI_SUCCESS,
+          "Isend to MPI_PROC_NULL");
+    probe_one("MPI_Request", MPIWRAPPER_BITS(requests[i]));
+  }
+
+  for (int i = 0; i < PROBE_COUNT; ++i) {
+    PMPI_Wait(&requests[i], MPI_STATUS_IGNORE);
+    PMPI_Info_free(&infos[i]);
+    PMPI_Group_free(&groups[i]);
+    PMPI_Type_free(&types[i]);
+    PMPI_Comm_free(&comms[i]);
+  }
+}
+
+/* ------------------------------------------------- staged-request bookkeeping */
+
+static void test_staged_requests(void)
+{
+  enum { N = 8 };
+  MPI_Request requests[N];
+  int         buf[N];
+
+  CHECK(!mpiwrapper_staged_any(), "the staged-request table starts empty");
+
+  /* Real point-to-point requests on MPI_COMM_SELF, deliberately: MPICH answers
+   * every operation on MPI_PROC_NULL with one shared built-in request handle
+   * (0x6c000001 here, for all of them), so a table keyed on the implementation
+   * handle would see one key and eight attaches. Refusing the duplicate is the
+   * right behaviour and is checked below -- but it is not the case this test is
+   * about, and using it here would have tested the refusal by accident.
+   */
+  for (int i = 0; i < N; ++i) {
+    buf[i] = i;
+    CHECK(PMPI_Send_init(&buf[i], 1, MPI_INT, 0, i, MPI_COMM_SELF,
+                         &requests[i]) == MPI_SUCCESS,
+          "Send_init");
+    CHECK(mpiwrapper_staged_attach(requests[i], malloc(16)),
+          "attaching a block to request %d (0x%llx)", i,
+          (unsigned long long)MPIWRAPPER_BITS(requests[i]));
+  }
+  CHECK(mpiwrapper_staged_any(), "the table reports itself non-empty");
+
+  /* A second block for a request that already has one is refused rather than
+   * silently replacing it: replacing would leak the first block, and freeing it
+   * would be a use-after-free if the implementation is still reading it.
+   */
+  void *duplicate = malloc(16);
+  CHECK(!mpiwrapper_staged_attach(requests[0], duplicate),
+        "a second block for the same request must be refused");
+  free(duplicate);
+
+  for (int i = 0; i < N; ++i) {
+    mpiwrapper_staged_release(requests[i]);
+    /* Releasing twice must be harmless: a completion function cannot always
+     * tell whether it is the one that completed the request.
+     */
+    mpiwrapper_staged_release(requests[i]);
+    PMPI_Request_free(&requests[i]);
+  }
+  CHECK(!mpiwrapper_staged_any(), "the table is empty again");
+
+  /* And the table must survive being cycled far past its capacity, since
+   * released entries leave tombstones rather than holes.
+   */
+  for (int round = 0; round < MPIWRAPPER_STAGED_REQUEST_SLOTS / N + 4;
+       ++round) {
+    for (int i = 0; i < N; ++i) {
+      PMPI_Send_init(&buf[i], 1, MPI_INT, 0, i, MPI_COMM_SELF, &requests[i]);
+      CHECK(mpiwrapper_staged_attach(requests[i], malloc(16)),
+            "attach in round %d", round);
+    }
+    for (int i = 0; i < N; ++i) {
+      mpiwrapper_staged_release(requests[i]);
+      PMPI_Request_free(&requests[i]);
+    }
+  }
+  CHECK(!mpiwrapper_staged_any(), "the table is empty after cycling");
+}
+
+int main(int argc, char **argv)
+{
+  const char *diagnostic = "none";
+
+  PMPI_Init(&argc, &argv);
+
+  if (!mpiwrapper_init_reverse_maps(&diagnostic)) {
+    printf("FAIL could not build the reverse handle maps: %s\n", diagnostic);
+    ++failures;
+  } else {
+    test_predefined();
+    test_integers();
+    test_status();
+    test_staging();
+    test_dynamic_handles();
+    test_staged_requests();
+  }
+
+  PMPI_Finalize();
+
+  printf("mpiwrapper_selftest: %d failure(s)\n", failures);
+  return failures != 0;
+}

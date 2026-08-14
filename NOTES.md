@@ -84,6 +84,18 @@ mpif covers Fortran. §10 treats them as distinct oracles rather than as a list.
   5.0 additions are handled by the runtime-reporting stubs above, and so in
   principle is anything else absent.
 
+  **And it is not met by any released Open MPI**, which S1 found the hard way:
+  Open MPI 5.0.10 defines `MPI_VERSION 3` / `MPI_SUBVERSION 1` and has **no `_c`
+  entry point at all** — `MPI_Send_c`, `MPI_Type_create_struct_c` and the rest of
+  the family are simply absent from its header. §9's "Open MPI >= 5.0" is
+  therefore about what is *wrappable*, not about the MPI-4.0 expectation, and the
+  MPI-4.0 configure check has to be a warning rather than the hard error §9
+  originally listed. What that costs is exactly the large-count half of the
+  surface: those slots become the `MPI_ERR_UNSUPPORTED_OPERATION` stubs of
+  decision 6, which is the mechanism working as designed rather than a gap. It is
+  worth knowing that the mechanism is load-bearing on day one and not a
+  contingency for exotic implementations.
+
 ---
 
 ## 2. Architecture
@@ -188,6 +200,24 @@ MPICH does not build separately.
 A useful corollary: because the two names share an address, the `MPI` and `PMPI`
 bodies behave identically when no tool is present and differ exactly when one is,
 which is the intent.
+
+**The weak-alias shape is a Linux/ELF observation and does not generalize**, which
+S1 measured on macOS:
+
+```
+MPICH 4.3.1 (conda-forge)  libmpi.dylib   T MPI_Send,  no PMPI_ symbols at all
+                           libpmpi.dylib  T PMPI_Send
+Open MPI 5.0.10            libmpi.dylib   T MPI_Send  @0xae214
+                                          T PMPI_Send @0x6fa1c   (two definitions)
+```
+
+So on macOS MPICH does ship a separate profiling library, and Open MPI compiles two
+distinct functions rather than aliasing. Neither disturbs the design — both names
+still resolve, and the conclusion "no probe and no fallback" stands — but it does
+mean the wrapper must link **what `mpicc` links** rather than a library it names
+itself, since `-lmpi` alone would leave every `PMPI_*` undefined on that MPICH. An
+implementation that really lacked the shifted names now fails to link with an
+undefined symbol naming one, which is the outcome §5.9 asks for.
 
 **The wrapper's own internal MPI calls use `PMPI_*` unconditionally** — in the
 hand-written ~50, where `MPI_Init` needs a rank or the error-code registry needs a
@@ -417,6 +447,54 @@ three rules alone:
   these three directly (`typedef intptr_t MPIABI_Aint;`, etc.), using the header's
   own default, no-override branch, rather than reproducing the scaffolding.
 
+**Two more, found in S1**, both about what "the same type on both sides" actually
+requires:
+
+- **`MPI_Status` needed a struct tag, and `doc/mpi.h.patch` now adds one.** Rule 2
+  keeps tags unrenamed so that `MPIABI_Comm` and `MPI_Comm` are the same type; the
+  stub header gives every handle a tag (`MPI_ABI_Comm`) but declared the status as
+  a typedef of an *anonymous* struct. Two anonymous structs are two incompatible
+  types however identical their layout, so the ABI side could not pass an
+  `MPI_Status *` into a vtable slot typed `MPIABI_Status *` — 90-odd forwarders
+  would each have needed a cast, and a cast in a forwarder silently absorbs the
+  genuine type errors these forwarders exist to catch. The patch names the tag
+  `MPI_ABI_Status`, matching the handle convention.
+
+  A tag alone is not enough, because unlike the handle tags this struct is
+  *defined* in both views: whichever header comes second would redefine it. So the
+  definition is guarded and the typedef is not —
+
+  ```c
+  #if !defined(MPI_ABI_STATUS_DEFINED)
+  #define MPI_ABI_STATUS_DEFINED
+  struct MPI_ABI_Status { ... };
+  #endif
+  typedef struct MPI_ABI_Status MPI_Status;   /* MPIABI_Status in the other view */
+  ```
+
+  — which works in either include order. The guard macro is the one name
+  `dev/generate_headers.py` deliberately leaves **unrenamed** (its `KEEP_UNRENAMED`
+  set): it coordinates the two views rather than naming anything in the API, and
+  renaming it would give the two headers different guards, at which point both
+  define the struct and neither compiles beside the other. This is worth
+  proposing upstream to mpi-abi-stubs; it costs nothing and nothing about the ABI
+  changes.
+
+- **`gen/include` holds `mpi.h` beside `mpiabi.h`, and that is a trap for the
+  wrapper's build.** `libmpiwrapper` includes `<mpi.h>` meaning the
+  *implementation's*, and `"mpiabi.h"` from our own directory. Put our directory on
+  its include path and `<mpi.h>` finds the ABI header instead — which **compiles
+  and links**, because the ABI header is a complete valid `mpi.h` and the
+  implementation exports the names, and then fails at run time with the
+  implementation rejecting `comm=0x101`, i.e. `MPIABI_COMM_WORLD` arriving
+  unconverted. It cannot be fixed by ordering the flags: CMake passes an imported
+  target's includes as `-isystem`, and every `-I` is searched before every
+  `-isystem`. So `mpiabi.h` is staged into a directory containing nothing else,
+  and `src/mpiwrapper/internal.h` carries an `#error` on the same condition
+  (`MPI_ABI_STATUS_DEFINED` visible before `mpiabi.h` is included) for anyone
+  building outside CMake. That `#error` has an escape hatch,
+  `MPIWRAPPER_WRAP_ABI_IMPL`, which is exactly oracle 5's configuration.
+
 ---
 
 ## 3. The generator
@@ -538,8 +616,16 @@ This is not cosmetic. It makes the load-bearing generator assertion a grep:
 implementation call** — only locally declared converted values may. If the
 generator emits `MPI_Send(abi_buf, ...)`, that is a hard stop.
 
-`examples/` carries a compiling worked version of each shape, and
-`examples/check.sh` compiles them — the generator is required to reproduce them.
+**Since S1 the worked version of each shape is `src/`, not `examples/`**, and the
+generator is required to reproduce *that*. The examples were written before any of
+this ran, and three of their details turned out to be wrong once it did: the
+reverse-map tables are `static const uint64_t` arrays initialized from handle
+macros, which is not a constant expression on an implementation whose handles are
+addresses and so does not compile against Open MPI at all; there is one bitmask
+mapper where two are needed (§5.5); and the `dlopen` narration predates the
+`RTLD_LOCAL`-plus-isolation correction. They are kept as narrated excerpts, with
+those three corrected, but a shape that exists in both places is a second source of
+truth, and the tested one wins.
 
 ### One portability trap in generated switches
 
@@ -731,6 +817,24 @@ targets have no spare high bits for a tagging scheme. So: **check in the `toabi`
 direction only** — that is object creation, not every `MPI_Send` — and fail with
 `MPI_ERR_INTERN`. A test also probes it at run time (§10).
 
+**Two things S1 added to both directions:**
+
+- **The `fromabi` default arm needs the range test too.** A value inside
+  `0x20`..`0x2eb` that reached the default arm is an ABI predefined handle *this
+  implementation does not provide* — the sized Fortran types are the realistic
+  case — and bit-casting it hands the implementation a fabricated handle, which on
+  MPICH is an `int` whose kind bits it will read. Returning the class's null handle
+  instead makes the implementation reject the call with its own error code. The
+  test is free: a dense switch has to bounds-check anyway.
+- **Aliasing in the reverse map is normal and is not a collision.** An
+  implementation may give two ABI-distinct predefined handles the same value —
+  MPICH answers `MPI_DATATYPE_NULL` for five of the optional sized types, so 103
+  ABI handles map onto 98 distinct MPICH values. The perfect-hash construction
+  therefore distinguishes *same key inserted twice* (an alias: keep the first,
+  which makes the ABI's own order canonical) from *different keys in one slot* (a
+  real collision: retry with another multiplier). Conflating them would make map
+  construction fail on MPICH and take the wrapper down at load.
+
 ### 5.2 Status
 
 Copy the three named fields; `memcpy` the implementation's private bytes into all
@@ -803,9 +907,27 @@ or `MPI_ANY_SOURCE`, and `MPI_Group_translate_ranks` can return `MPI_UNDEFINED`.
 `MPI_MODE_*` are OR-combined and the bit assignments differ completely (ABI
 `RDONLY` = 16 against 2 in both implementations; `NOCHECK` 1024 against Open MPI's
 1). These need OR-decomposition, not a `switch`. Sites: `MPI_File_open`'s `amode`,
-and the `assert` argument of `MPI_Win_post`/`_start`/`_fence`/`_lock`. The ABI puts
-file modes (1..512) and window asserts (1024..16384) in one enum with disjoint
-bits, so a single bitmask mapper serves both roles.
+and the `assert` argument of `MPI_Win_post`/`_start`/`_fence`/`_lock`.
+
+The ABI puts file modes (1..256) and window asserts (1024..16384) in one enum with
+disjoint bits, and an earlier draft concluded from that that a single bitmask
+mapper serves both roles. **It does not, in the out direction, and S1 measured
+why:** Open MPI numbers its window asserts
+
+```
+MPI_MODE_NOCHECK 1  NOPRECEDE 2  NOPUT 4  NOSTORE 8  NOSUCCEED 16
+```
+
+which are *the same bits* it gives `MPI_MODE_CREATE`, `RDONLY`, `WRONLY`, `RDWR`
+and `DELETE_ON_CLOSE`. An implementation-side `1` is `CREATE` or `NOCHECK`
+depending only on which parameter it came from. So the role belongs in the
+function name, exactly as for ranks and tags (§5.4): `filemode_fromabi`/`_toabi`
+and `winassert_fromabi`/`_toabi`, chosen per parameter from `apis.json`.
+
+MPICH keeps the two families disjoint (asserts at 1024+), which is what made the
+single mapper round-trip there — one more case where the same code passes every
+test on one implementation and is wrong on the other. The out direction is not
+hypothetical: `MPI_File_get_amode` returns one.
 
 ### 5.6 Keyvals and dynamic error codes
 
@@ -870,6 +992,18 @@ Four independent reasons, each sufficient:
   the request-map entry needs a flag.
 - **`MPI_STATUSES_IGNORE`** (NULL in the ABI) must short-circuit before any
   temporary is allocated.
+- **Stage any array whose element type is not *identical* on both sides, even when
+  no value mapping is needed.** S1's addition, and it is not a subtlety the list
+  above anticipated: `const MPI_Aint array_of_displacements[]` looks like a
+  passthrough, but the ABI's `MPI_Aint` is `intptr_t` while MPICH's is `long`.
+  Those are the same size — `internal.h` static-asserts it — and still distinct
+  types, so passing the caller's array straight through is a constraint violation
+  wherever the spellings differ (`long` against `long long` on LLP64 is the case
+  that will actually bite). The same applies to `MPI_Count` arrays in the `_c`
+  forms. Element-wise staging costs nothing on the datatype-construction paths
+  where these appear, and keeps the rule statable: *the implementation call sees
+  only locals of the implementation's own types*, which is the same invariant the
+  no-ABI-typed-parameter assertion enforces for scalars.
 
 The set needing staging is small: datatype arrays, request arrays, status arrays,
 and the out-direction errcode/rank arrays — roughly 35-40 of the 688.
@@ -1065,6 +1199,33 @@ the persistent `_init` forms) live in the request-keyed hash, guarded by a globa
 atomic count so that completion calls pay one relaxed load and a compare against
 zero when the application never uses those routines.
 
+**That hash is keyed on the implementation's request handle, and such a handle does
+not uniquely identify an operation.** The key assumption is what makes this worth
+recording: `attach(request, block)` and the `release(request)` that every
+completion call performs both find the entry by handle value, so two live requests
+sharing a value would have the second attach land on the first's entry. S1 found
+that they can: MPICH answers *every* operation on `MPI_PROC_NULL` with one shared
+built-in request (`0x6c000001` here), so eight outstanding `MPI_Isend`s to
+`MPI_PROC_NULL` produce eight copies of one handle value.
+
+It cannot bite where it would matter, because the operations that need staging
+allocate a real request — nothing sends a whole `MPI_Ialltoallw` to
+`MPI_PROC_NULL`. But "cannot bite today, on these two implementations" is not
+something to rest a `free()` on, so the table **refuses a second block for a key it
+already holds** rather than overwriting: overwriting leaks the first block, and
+freeing it would be a use-after-free if the implementation is still reading it.
+Refusing returns `MPI_ERR_INTERN`, which is the honest answer to "the
+implementation reused a request value we still hold state for", i.e. to a
+completion we failed to observe. (This is unrelated to the callback pools, which
+are keyed on a slot index we hand out ourselves.)
+
+Two details of the same table are worth recording because they are easy to get
+subtly wrong: released entries leave a **tombstone** rather than an empty slot, or
+they would truncate the probe chain of some other key; and a release **claims the
+entry before clearing it** (key -> LOCKED, clear block, then publish TOMBSTONE), or
+a concurrent attach could take the entry between the releaser reading the key and
+clearing the block, and the releaser would free the new owner's block.
+
 ---
 
 ## 7. Decisions
@@ -1193,7 +1354,13 @@ time rather than by convention.
 **Four configure-time checks for the wrapper, all compile-only** so
 cross-compiling works:
 
-1. `MPI_VERSION >= 4`.
+1. `MPI_VERSION >= 3`, **hard**, and `>= 4` as a **warning**. An earlier draft made
+   MPI-4.0 the hard floor; S1 found that no released Open MPI clears it (5.0.10
+   reports MPI-3.1 and ships no `_c` entry points, §1), so a hard error would
+   refuse the second of the two implementations this project exists to support.
+   The warning names the consequence — the `_c` slots become
+   `MPI_ERR_UNSUPPORTED_OPERATION` stubs — and the floor sits at MPI-3.0, below
+   which the ABI's own surface stops being expressible.
 2. **No self-wrapping.** Hard error if the found MPI prefix is *our own*
    installation, detected by the presence of `mpiwrapper_vtable.h` — a file only we
    install. Neither `MPI_ABI_VERSION` nor the library name discriminates: §20.2.1
@@ -1369,6 +1536,26 @@ this goes wrong.
 | `MPI_Comm_create_errhandler` + `MPI_Comm_set_errhandler` | trampoline pool *without* extra state, variadic trampoline |
 | `MPI_Ialltoallw` | staged temporaries outliving the call |
 | `MPI_File_open` | bitmask arguments, second handle class |
+
+**What S1 actually built**, since S2 is measured against it. Twenty-eight entry
+points, not fifteen: the table above needs a few more to be *testable* at all —
+`MPI_Isend`/`MPI_Irecv` to have requests for `MPI_Waitall`, `MPI_Comm_rank`,
+`MPI_Type_commit`/`_free`, `MPI_Comm_free`, `MPI_Op_free`, `MPI_File_close`,
+`MPI_Comm_f2c`, `MPI_Wtime`, and `MPI_Type_create_struct_c` for the `_c` pairing.
+Fifty-six slots. Nine of the twenty-eight are hand-written
+(`src/mpiwrapper/handwritten.c`, and its header is the S1 `HAND_WRITTEN` ledger);
+the other nineteen are in `src/mpiwrapper/wrappers.c`, written the way a generator
+would write them — one `const` local per parameter, in parameter order, named after
+the parameter with `abi_` dropped, and one body macro instantiated twice. Those
+nineteen are what S2 must reproduce.
+
+Three files are S1 stand-ins for generated output and disappear in S2:
+`src/include/mpiwrapper_vtable.h`, `src/mpi_abi/entrypoints.c` and
+`src/mpiwrapper/{wrappers,constants}.c`. `constants.c` was produced mechanically
+from `gen/include/mpiabi.h` rather than typed, because 103 predefined handles and
+81 error classes is exactly where a typo survives review; the throwaway script that
+emitted it is not committed, since S2's generator supersedes it. Everything else in
+`src/` is permanent.
 
 ---
 

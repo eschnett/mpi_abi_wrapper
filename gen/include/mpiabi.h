@@ -42,12 +42,21 @@ typedef int64_t MPIABI_Offset;
  * Platforms where MPIABI_Aint is larger than MPIABI_Offset are extremely rare. */
 typedef MPIABI_Offset MPIABI_Count;
 
-typedef struct {
+/* The struct definition is guarded and the typedef is not, so that a second
+ * header may introduce another typedef name for this same struct without
+ * redefining it. The tag matters as much as the guard: without one, two such
+ * headers describe two incompatible types with identical layout, and every
+ * function that passes a status between them needs a cast. */
+#if !defined(MPI_ABI_STATUS_DEFINED)
+#define MPI_ABI_STATUS_DEFINED
+struct MPI_ABI_Status {
     int MPI_SOURCE;
     int MPI_TAG;
     int MPI_ERROR;
     int MPI_internal[5];
-} MPIABI_Status;
+};
+#endif
+typedef struct MPI_ABI_Status MPIABI_Status;
 
 typedef struct MPI_ABI_Op* MPIABI_Op;
 #define MPIABI_OP_NULL                    ((MPIABI_Op)0x00000020)

@@ -45,12 +45,21 @@ typedef MPI_ABI_Offset MPI_Offset;
 typedef MPI_ABI_Count MPI_Count;
 #undef  MPI_ABI_Count
 
-typedef struct {
+/* The struct definition is guarded and the typedef is not, so that a second
+ * header may introduce another typedef name for this same struct without
+ * redefining it. The tag matters as much as the guard: without one, two such
+ * headers describe two incompatible types with identical layout, and every
+ * function that passes a status between them needs a cast. */
+#if !defined(MPI_ABI_STATUS_DEFINED)
+#define MPI_ABI_STATUS_DEFINED
+struct MPI_ABI_Status {
     int MPI_SOURCE;
     int MPI_TAG;
     int MPI_ERROR;
     int MPI_internal[5];
-} MPI_Status;
+};
+#endif
+typedef struct MPI_ABI_Status MPI_Status;
 
 typedef struct MPI_ABI_Op* MPI_Op;
 #define MPI_OP_NULL                    ((MPI_Op)0x00000020)
