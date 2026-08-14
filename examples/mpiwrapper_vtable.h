@@ -50,14 +50,22 @@ struct mpiwrapper_vtable {
  * Returns NULL and sets *diagnostic on any mismatch. A getter rather than an
  * exported struct, because reading a version field out of a struct means trusting
  * the layout you are trying to validate -- and because this is the natural place
- * for the wrapper to build its reverse handle map before anyone can call a slot.
+ * for the wrapper to build its reverse handle map, and to check its own symbol
+ * resolution, before anyone can call a slot.
  *
  * `size` is sizeof(struct mpiwrapper_vtable) as the *caller* understands it. A
  * wrapper may accept a smaller size than its own and serve the common prefix; it
  * must refuse a larger one, since the caller would read past the end.
+ *
+ * `abi_probe` is the address of any function in libmpi_abi. The wrapper dladdr()s
+ * it together with the MPI_Send it actually resolved and refuses if the two share
+ * a base object, which would mean the loader bound the wrapper's calls back into
+ * libmpi_abi instead of out to the implementation -- infinite recursion, and on
+ * ELF the default outcome unless the wrapper is loaded into its own namespace or
+ * with RTLD_DEEPBIND. See the long comment in mpi_abi_side.c.
  */
 const struct mpiwrapper_vtable *
 mpiwrapper_get_vtable(uint32_t abi_version, uint32_t layout_hash, size_t size,
-                      const char **diagnostic);
+                      const void *abi_probe, const char **diagnostic);
 
 #endif /* MPIWRAPPER_VTABLE_H */

@@ -54,32 +54,102 @@ static void vt_fail(const char *what, const char *detail)
   abort();
 }
 
+/* Loading the wrapper is the one genuinely delicate thing this library does, and
+ * the reason is symbol resolution, not the load itself.
+ *
+ * On ELF a dlopen'ed object resolves its *undefined* references against the global
+ * scope FIRST and its own dependency subtree second. That asymmetry is why
+ * RTLD_DEEPBIND exists. The application links libmpi_abi, so libmpi_abi is in the
+ * global scope, so libmpiwrapper's reference to MPI_Send binds to *our* MPI_Send
+ * rather than libmpi's:
+ *
+ *     libmpi_abi::MPI_Send -> vtable -> w_MPI_Send -> libmpi_abi::MPI_Send -> ...
+ *
+ * Note that RTLD_LOCAL does not fix this: LOCAL/GLOBAL controls what the loaded
+ * object *exports*, not how its own references resolve. Isolation is mandatory,
+ * not an optimization.
+ *
+ * RTLD_GLOBAL would be actively harmful, for three separate reasons:
+ *
+ *  - it puts libmpi's MPI_Send into the global scope, so a plugin dlopen'ed
+ *    *later* binds to the native MPI (global is searched before the plugin's own
+ *    local scope, where libmpi_abi lives) and is handed ABI-typed arguments;
+ *  - the implementation's own internals are written against MPI in places (Open
+ *    MPI's ROMIO and io components), and capturing those is not merely wrong but
+ *    memory-unsafe: a component calling MPI_Recv passes a 24-byte
+ *    ompi_status_public_t and our ABI MPI_Recv writes 32 bytes into it;
+ *  - handles would survive such a capture *by accident* -- dynamic ones bit-cast
+ *    to themselves, and predefined implementation values sit outside the ABI's
+ *    0x20..0x2eb range -- which makes the failure intermittent rather than
+ *    immediate.
+ *
+ * Calling PMPI_* internally does not save the implementation either: we export
+ * those too, so both names are captured.
+ *
+ * Hence, per platform:
+ *   macOS    RTLD_LOCAL is enough -- the two-level namespace binds libmpiwrapper's
+ *            MPI_Send to libmpi at link time, so there is nothing to capture.
+ *   Linux    dlmopen into a fresh namespace (correct by construction: no shared
+ *            global scope at all), or dlopen with RTLD_LOCAL | RTLD_DEEPBIND.
+ *   FreeBSD  RTLD_LOCAL | RTLD_DEEPBIND; dlmopen does not exist.
+ *
+ * Binding mode defaults to RTLD_LAZY rather than RTLD_NOW: RTLD_NOW forces every
+ * undefined symbol in libmpi and its dependency closure to resolve, and real MPI
+ * installations have symbols that are never called. Overridable.
+ */
+static void *vt_dlopen(const char *path)
+{
+  const int binding = getenv("MPI_ABI_WRAPPER_BIND_NOW") ? RTLD_NOW : RTLD_LAZY;
+
+#if defined(__APPLE__)
+  return dlopen(path, binding | RTLD_LOCAL);
+#elif defined(__linux__)
+  /* One namespace for every wrapper-side load, and glibc caps namespaces at
+   * DL_NNS (16), so the id is remembered and reused rather than requesting
+   * LM_ID_NEWLM again.
+   */
+  static Lmid_t lmid;
+  static int    have_lmid;
+  const char   *mode = getenv("MPI_ABI_WRAPPER_DLOPEN_MODE");
+  if (!mode || strcmp(mode, "dlmopen") == 0) {
+    void *h = dlmopen(have_lmid ? lmid : LM_ID_NEWLM, path, binding);
+    if (h && !have_lmid && dlinfo(h, RTLD_DI_LMID, &lmid) == 0) have_lmid = 1;
+    return h;
+  }
+  return dlopen(path, binding | RTLD_LOCAL | RTLD_DEEPBIND);
+#else
+  return dlopen(path, binding | RTLD_LOCAL | RTLD_DEEPBIND);
+#endif
+}
+
 static const struct mpiwrapper_vtable *vt_load(void)
 {
   const char *path = getenv(MPI_ABI_WRAPPER_LIB_ENV);
   if (!path || !*path) path = MPI_ABI_WRAPPER_LIB_DEFAULT;
 
-  /* RTLD_NOW: we are about to trust every slot, so a missing symbol should be
-   *   reported here rather than at the first call that needs it.
-   * RTLD_GLOBAL: Open MPI's components dlopen themselves and resolve libmpi's
-   *   symbols out of the global namespace; RTLD_LOCAL breaks them. This is safe
-   *   because the application's own MPI_* references are already bound to this
-   *   library, which precedes dlopen'ed objects in the global search order.
-   */
-  void *handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+  void *handle = vt_dlopen(path);
   if (!handle) vt_fail("dlopen failed", dlerror());
 
   const struct mpiwrapper_vtable *(*get)(uint32_t, uint32_t, size_t,
-                                         const char **) =
+                                         const void *, const char **) =
       (const struct mpiwrapper_vtable *(*)(uint32_t, uint32_t, size_t,
-                                           const char **))
+                                           const void *, const char **))
       dlsym(handle, "mpiwrapper_get_vtable");
   if (!get) vt_fail("not an mpiwrapper library", path);
+
+  /* The address of one of our own functions. The wrapper dladdr()s this and the
+   * MPI_Send it actually resolved, and refuses if they share a base object -- a
+   * positive check that the isolation above worked, whatever the loader did. It
+   * catches the recursion at load rather than as a stack overflow on the first
+   * message, and it does so on every platform, which dlinfo(RTLD_DI_LMID) cannot:
+   * that confirms the mechanism, this confirms the outcome.
+   */
+  const void *abi_probe = (const void *)(uintptr_t)&MPI_Send;
 
   const char *diagnostic = "no diagnostic";
   const struct mpiwrapper_vtable *vt =
       get(MPIABI_VERSION, MPIWRAPPER_LAYOUT_HASH,
-          sizeof(struct mpiwrapper_vtable), &diagnostic);
+          sizeof(struct mpiwrapper_vtable), abi_probe, &diagnostic);
   if (!vt) vt_fail("wrapper rejected this libmpi_abi", diagnostic);
 
   return vt;

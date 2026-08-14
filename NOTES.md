@@ -133,15 +133,74 @@ because `MPI_Initialized`, `MPI_Get_version`, `MPI_Wtime` and the `MPI_T_*` call
 are all legal before `MPI_Init`, so the load cannot hang off `MPI_Init`. One
 predictable branch per call.
 
-`dlopen` flags are `RTLD_NOW | RTLD_GLOBAL`. `NOW` because we are about to trust
-every slot and want missing symbols reported at load time. `GLOBAL` because Open
-MPI's components `dlopen` themselves and expect `libmpi`'s symbols in the global
-namespace; `LOCAL` breaks it. This is safe: on Linux the application's `MPI_*`
-references are already bound to `libmpi_abi`, which precedes `dlopen`ed objects in
-the global search order, and on macOS's two-level namespace the question does not
-arise. The residual hazard — an application `dlopen`ing a plugin that was itself
-linked directly against `libmpi` — is inherent to this model and belongs in
-documentation.
+### Symbol resolution when loading the wrapper
+
+This is the most delicate thing in the design, and an earlier draft of these notes
+got it backwards by recommending `RTLD_GLOBAL`. The correct answer is
+`RTLD_LOCAL` plus active isolation, matching what MPItrampoline already does
+(`MPItrampoline/src/mpi.c:477`).
+
+**The problem is not what the wrapper exports; it is how the wrapper's own
+references resolve.** On ELF a `dlopen`ed object resolves its *undefined* symbols
+against the global scope **first** and its own dependency subtree second — the
+asymmetry `RTLD_DEEPBIND` exists to invert. The application links `libmpi_abi`, so
+`libmpi_abi` is in the global scope, so `libmpiwrapper`'s reference to `MPI_Send`
+binds to *our* `MPI_Send`:
+
+```
+libmpi_abi::MPI_Send -> vtable -> w_MPI_Send -> libmpi_abi::MPI_Send -> ...
+```
+
+Infinite recursion, in the default configuration. `RTLD_LOCAL` does not fix it:
+`LOCAL`/`GLOBAL` controls what the loaded object *exports*, not how its references
+resolve. **Isolation is mandatory, not an optimization.**
+
+**Why `RTLD_GLOBAL` is actively harmful**, three independent reasons:
+
+- It puts `libmpi`'s `MPI_Send` into the global scope, so a plugin `dlopen`ed
+  *later* binds to the native MPI — global is searched before the plugin's own
+  local scope, where `libmpi_abi` lives — and is then handed ABI-typed handles and
+  a 32-byte status. Silent corruption, and only in the second plugin. This is a
+  normal configuration, not an exotic one: mpi4py plus a second MPI-using extension
+  module in one Python process.
+- The implementation's own internals are written against MPI in places (Open MPI's
+  ROMIO and io components). Capturing those is not merely wrong but
+  **memory-unsafe**: a component calling `MPI_Recv` passes a 24-byte
+  `ompi_status_public_t`, and our ABI `MPI_Recv` writes 32 bytes into it.
+- Handles would survive such a capture *by accident* — dynamic ones bit-cast to
+  themselves, and predefined implementation values sit outside the ABI's
+  `0x20`..`0x2eb` range so they bit-cast through too — which makes the failure
+  intermittent and data-dependent rather than immediate.
+
+Calling `PMPI_*` internally does not save the implementation: we export those too,
+so both names are captured.
+
+**Per platform:**
+
+| | how | why |
+|---|---|---|
+| macOS | `RTLD_LOCAL` | the two-level namespace binds `libmpiwrapper`'s `MPI_Send` to `libmpi` at link time, so there is nothing to capture |
+| Linux | `dlmopen(LM_ID_NEWLM, ...)`, or `dlopen` with `RTLD_LOCAL \| RTLD_DEEPBIND` | a separate namespace shares no global scope at all, so it is correct by construction |
+| FreeBSD | `RTLD_LOCAL \| RTLD_DEEPBIND` | `dlmopen` does not exist |
+
+Both Linux modes selectable at run time, as MPItrampoline does, because each has
+known costs: `dlmopen` is semi-abandoned, caps namespaces at glibc's `DL_NNS` (16),
+and breaks some libraries; `RTLD_DEEPBIND` breaks `malloc` interposition and
+sanitizers. Remember the namespace id from the first load and reuse it for every
+subsequent one, so the wrapper and its dependencies stay in one namespace.
+
+**Binding mode defaults to `RTLD_LAZY`, not `RTLD_NOW`** — also a correction.
+`RTLD_NOW` forces every undefined symbol in `libmpi` and its dependency closure to
+resolve, and real MPI installations have symbols that are never called. Overridable.
+
+**Check the outcome, not the mechanism.** `dlinfo(handle, RTLD_DI_LMID)` confirms
+which namespace you got but not that every reference resolved the way the namespace
+was meant to make it resolve. So `libmpi_abi` passes the address of one of its own
+functions to `mpiwrapper_get_vtable`, and the wrapper `dladdr`s that together with
+the `MPI_Send` it actually resolved, refusing if the two share a base object. That
+catches the capture at load, positively, on every platform, whatever the loader did
+— and it does not depend on knowing whether `RTLD_DEEPBIND` propagates to
+dependencies. `examples/mpiwrapper_convert.c` implements it.
 
 `size` is `sizeof(struct mpiwrapper_vtable)` as the *caller* understands it. A
 wrapper may accept a smaller size than its own and serve the common prefix; it must
@@ -785,8 +844,11 @@ zero when the application never uses those routines.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them.
 7. **PMPI needs no vtable slots**; two definitions rather than a weak alias. §2.
-8. **Bootstrap by constructor plus an idempotent acquire-load guard**;
-   `RTLD_NOW | RTLD_GLOBAL`. §2.
+8. **Bootstrap by constructor plus an idempotent acquire-load guard.** The wrapper
+   is loaded `RTLD_LOCAL` and *isolated* — `dlmopen` or `RTLD_DEEPBIND` on Linux,
+   the two-level namespace on macOS — never `RTLD_GLOBAL`, and `RTLD_LAZY` by
+   default. The wrapper then proves at load that its `MPI_*` calls resolved outward.
+   §2.
 9. **Naming: `MPIABI_` uniformly** for the renamed view. §2.
 10. **Staged temporaries outliving a call** go in a request-keyed hash behind a
     global atomic count. §6.3.
@@ -1028,6 +1090,16 @@ this goes wrong.
   a branch on every request-completion call. The EuroMPI'23 ABI paper notes these
   as the only two places translation is not trivial, and both are addressed in
   §6.3.
+- **Whether `RTLD_DEEPBIND` applies transitively** to the dependencies loaded by
+  the same `dlopen` — i.e. whether it also redirects the *implementation's own*
+  internal `MPI_*` references, or only `libmpiwrapper`'s. `dlmopen` is correct
+  either way; `RTLD_DEEPBIND` may only be half a fix, which decides which of the two
+  is the default on Linux. Not answerable on macOS, and worth settling before
+  anything else on Linux. The experiment is small: `libabi.so` and `libimpl.so` each
+  exporting `foo()`, `libwrap.so` linked against `libimpl` and calling `foo()`, an
+  executable linked against `libabi` that `dlopen`s `libwrap` — then repeat with
+  `libimpl` itself calling `foo()`, which is the case that matters. `LD_DEBUG=bindings`
+  reports the answer directly.
 - Whether the MPICH C suite compiles at all against the ABI header, and how many
   exclusions that costs.
 - ASan/valgrind noise from the implementations, which determines how useful those

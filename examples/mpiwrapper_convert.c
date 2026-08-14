@@ -9,6 +9,7 @@
 #include "mpiabi.h"
 #include "mpiwrapper_vtable.h"
 
+#include <dlfcn.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -515,9 +516,45 @@ static void init_reverse_maps(void)
   rmap_insert(&rmap_file, (uintptr_t)MPI_FILE_NULL, 0x00000118);
 }
 
+/* Did the loader bind our MPI_* calls outward to the implementation, or back into
+ * libmpi_abi? On ELF the second is the default outcome, because a dlopen'ed object
+ * searches the global scope -- where libmpi_abi lives -- before its own
+ * dependencies. libmpi_abi is loaded with dlmopen or RTLD_DEEPBIND to prevent
+ * that; this asserts that the prevention worked.
+ *
+ * Checking the outcome rather than the mechanism matters: dlinfo(RTLD_DI_LMID)
+ * confirms which namespace we got, but not that every reference resolved the way
+ * the namespace was supposed to make it resolve. In particular, whether
+ * RTLD_DEEPBIND applies transitively to the dependencies loaded by the same call
+ * -- and so whether it also redirects the *implementation's own* internal MPI_*
+ * references -- is not something to take on faith. This check does not care.
+ */
+static int resolution_is_outward(const void *abi_probe, const char **diagnostic)
+{
+  Dl_info abi_info, impl_info;
+
+  if (!abi_probe) return 1; /* caller opted out */
+
+  if (!dladdr(abi_probe, &abi_info) ||
+      !dladdr((const void *)(uintptr_t)&MPI_Send, &impl_info)) {
+    /* dladdr is best-effort; a static implementation can defeat it. Not fatal. */
+    return 1;
+  }
+
+  if (abi_info.dli_fbase == impl_info.dli_fbase) {
+    *diagnostic =
+        "symbol resolution captured: this libmpiwrapper's MPI_* calls resolve "
+        "back into libmpi_abi instead of the MPI implementation, which would "
+        "recurse until the stack is exhausted. Load the wrapper with dlmopen or "
+        "RTLD_DEEPBIND (set MPI_ABI_WRAPPER_DLOPEN_MODE=dlmopen).";
+    return 0;
+  }
+  return 1;
+}
+
 const struct mpiwrapper_vtable *
 mpiwrapper_get_vtable(uint32_t abi_version, uint32_t layout_hash, size_t size,
-                      const char **diagnostic)
+                      const void *abi_probe, const char **diagnostic)
 {
   static atomic_int initialized;
 
@@ -539,6 +576,8 @@ mpiwrapper_get_vtable(uint32_t abi_version, uint32_t layout_hash, size_t size,
                   "provides";
     return NULL;
   }
+
+  if (!resolution_is_outward(abi_probe, diagnostic)) return NULL;
 
   int expected = 0;
   if (atomic_compare_exchange_strong_explicit(&initialized, &expected, 1,
