@@ -139,12 +139,27 @@ invariant.
 
 Cost: +5.5 KB of vtable, and the generated bodies double — emitted from one template
 per function differing only in the call target, so nothing doubles in what is
-maintained by hand. The one real wrinkle is that **the shifted names are not
-reliably in `libmpi`**: MPICH can place them in a separate `libpmpich`
-(`PMPILIBNAME`) and Open MPI can compile the profiling layer separately. So each is
-a configure-time probe, and where the symbol is absent the `PMPI` slot takes the
-unshifted body for that one function — a degradation to the cheaper behaviour, not a
-failure.
+maintained by hand.
+
+**No configure probe is needed**, contrary to an earlier draft of these notes. In
+both implementations the `PMPI_*` names are the *strong* definitions and the `MPI_*`
+names are weak aliases at the same address:
+
+```
+MPICH   libmpich.so   0x159d40 W MPI_Send   0x159d40 T PMPI_Send
+OpenMPI libmpi.so     0x08d690 W MPI_Send   0x08d690 T PMPI_Send
+```
+
+That is how the profiling interface works at all — a tool's strong `MPI_Send`
+overrides the weak alias while `PMPI_Send` stays reachable — so both names are
+unconditionally present in whatever library is already linked. MPICH ships no
+`libpmpich`: 619 `T PMPI_*` symbols and zero `T MPI_*` in `libmpich.so`, with the
+same weak-alias pair in the static archive. `PMPILIBNAME` renames a library modern
+MPICH does not build separately.
+
+A useful corollary: because the two names share an address, the `MPI` and `PMPI`
+bodies behave identically when no tool is present and differ exactly when one is,
+which is the intent.
 
 **The wrapper's own internal MPI calls use `PMPI_*` unconditionally** — in the
 hand-written ~50, where `MPI_Init` needs a rank or the error-code registry needs a
@@ -827,9 +842,19 @@ is 36 against the ABI's 256), a long key is rejected by the implementation with
 **Static-assert where a runtime check would cost something on a hot path; handle at
 run time where the check is free.**
 
+But "handle it rather than fail the build" is not universal, and the discriminator is
+**whether the degraded behaviour announces itself.** A truncated error string is
+visibly truncated, so handling `MPI_MAX_*` at run time is right. By contrast, an
+earlier draft proposed a configure probe that would silently fall back from `PMPI_X`
+to `MPI_X` where the shifted name was missing (§2); *that* degradation is invisible,
+and would have quietly reintroduced the defect the separate slot exists to prevent.
+There a link error naming the missing symbol is the better outcome — and it costs
+nothing, since both names always exist. So: handle it at run time when the fallback
+is observable, fail the build when it is not.
+
 | | why |
 |---|---|
-| `MPI_MAX_*` | cold paths only -> run time |
+| `MPI_MAX_*` | cold paths only, and truncation is visible -> run time |
 | `sizeof(MPI_Count)`/`MPI_Aint`/`MPI_Offset` | a narrowing check would land on `MPI_Send_c` and every large-count call -> `_Static_assert` |
 | status layout | **no runtime recourse exists** — nowhere to put a private part exceeding 20 bytes, and side storage keyed on a status address is unsound because statuses are freely copied -> build failure |
 | dynamic handle collision | one compare, and only on object creation -> run time |
@@ -948,9 +973,10 @@ zero when the application never uses those routines.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them.
 7. **PMPI gets its own vtable slots** (1376, not 688), calling the
-   implementation's shifted names, with a configure probe and a per-function
-   fallback where those are absent. The wrapper's internal MPI calls use `PMPI_*`
-   unconditionally. §2.
+   implementation's shifted names directly — no probe and no fallback, since
+   `PMPI_*` are the strong definitions and `MPI_*` weak aliases in both
+   implementations. The wrapper's internal MPI calls use `PMPI_*` unconditionally.
+   §2.
 8. **Bootstrap by constructor into a plain pointer** — no atomic, no lazy-init
    branch, no NULL check outside debug builds. The wrapper is loaded `RTLD_LOCAL`
    and *isolated* — `RTLD_DEEPBIND` or `dlmopen` on Linux, the two-level namespace
