@@ -44,12 +44,30 @@ Only for the request-keyed table of temporaries that outlive their call
 we hand out) nor the predefined-handle maps (built once from known values) are
 affected.
 
-Mechanism 1 bounds what the table may assume: two live entries can share a key,
-so an attach must refuse a duplicate rather than overwrite it. It is not a
-memory-safety problem -- a shared built-in request is by construction already
-complete, so nothing is reading the block when it is freed -- but it does mean a
-legal program can be told `MPI_ERR_INTERN` where an implementation shortcuts a
-staged-array collective. §6.3 records the fix S3 should carry.
+**What actually attaches is a short list**, and it is worth being exact about it
+before drawing conclusions from the table above. In S1 there is one attach site,
+`MPI_Ialltoallw`; in S3 it becomes the `MPI_Ialltoallw` family and the persistent
+`_init` forms. `MPI_Isend` and friends attach nothing -- their arguments are all
+scalars -- so the `MPI_PROC_NULL` rows are not an attach collision. They are in
+the probe because they are the cheapest way to *see* the shared-built-in
+behaviour; the row that bears on the design is `MPI_Ibarrier`, which shows a
+nonblocking collective taking the same shortcut.
+
+Requests that never attach still reach the table, through the other door: every
+completion call releases by handle value, so a wait on a `MPI_PROC_NULL` `Isend`
+does look its key up. Normally it is absent and the probe stops at the first
+empty slot. Where it is *not* absent -- Open MPI shares one object across kinds,
+so a zero-work staged collective and a `MPI_PROC_NULL` send would present the
+same key -- the block gets freed by the completion of an unrelated operation.
+
+That is safe, and the reason is semantic rather than empirical: MPI requires
+every request to be independently testable and completable, so two *live*
+operations cannot share a handle. Sharing implies the handle carries no
+per-operation state, which implies both are already complete. So a block freed
+early is a block nobody is reading. What remains is not memory-unsafety but a
+legal program being told `MPI_ERR_INTERN` where an implementation shortcuts a
+staged-array collective and the program posts two of them before waiting.
+NOTES.md #6.3 records the fix S3 should carry.
 
 Mechanism 2 is why *every* completion entry point has to release, not just the
 ones an author happens to think of: a completion we fail to observe leaves a

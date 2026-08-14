@@ -1272,9 +1272,24 @@ before waiting would then hand us the same key twice.
 immediately. So a completion we fail to observe does not merely leak: it leaves a
 stale entry whose key a later operation will be given.
 
+Only a short list of entry points ever attaches — `MPI_Ialltoallw` in S1, its
+family and the persistent `_init` forms in S3 — so the `MPI_PROC_NULL` rows above
+are not attach collisions; `MPI_Isend` stages nothing. They reach the table
+through the other door: every completion call releases *by handle value*, so a
+wait on a `MPI_PROC_NULL` `MPI_Isend` does look its key up, and where an
+implementation shares one object across kinds it can free a block belonging to a
+different operation.
+
+That is safe for a reason worth stating, because it is what bounds the whole
+scheme: MPI requires every request to be independently testable and completable,
+so two *live* operations cannot share a handle. Sharing implies the handle carries
+no per-operation state, which implies both operations are already complete — and a
+block freed then is a block nobody is reading.
+
 Hence the two rules the table follows. It **refuses a second block for a key it
 already holds** rather than overwriting — overwriting leaks the first block, and
-freeing it would be a use-after-free if the implementation were still reading it —
+freeing it would be indefensible even though the argument above says nothing is
+reading it —
 and *every* completion entry point must release, not just the ones an author
 happens to think of (`MPI_Wait`, `Waitall`, `Waitany`, `Waitsome`, `Test`,
 `Testall`, `Testany`, `Testsome`, `Request_free`, and the persistent forms, which
