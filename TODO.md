@@ -14,4 +14,6 @@
   behave unexpectedly for such casts.
 
 - discuss weak definitions and dlopen on macos, i need to understand
-  the current state
+  the current state. what is working, what isn't?
+
+- add a licence (same as mpif)

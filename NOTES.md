@@ -1247,24 +1247,53 @@ atomic count so that completion calls pay one relaxed load and a compare against
 zero when the application never uses those routines.
 
 **That hash is keyed on the implementation's request handle, and such a handle does
-not uniquely identify an operation.** The key assumption is what makes this worth
-recording: `attach(request, block)` and the `release(request)` that every
-completion call performs both find the entry by handle value, so two live requests
-sharing a value would have the second attach land on the first's entry. S1 found
-that they can: MPICH answers *every* operation on `MPI_PROC_NULL` with one shared
-built-in request (`0x6c000001` here), so eight outstanding `MPI_Isend`s to
-`MPI_PROC_NULL` produce eight copies of one handle value.
+not uniquely identify an operation.** That is the assumption the whole table rests
+on — `attach(request, block)` and the `release(request)` that every completion call
+performs both find the entry by handle value — and `dev/request-identity/` measures
+it false on both implementations, in two independent ways:
 
-It cannot bite where it would matter, because the operations that need staging
-allocate a real request — nothing sends a whole `MPI_Ialltoallw` to
-`MPI_PROC_NULL`. But "cannot bite today, on these two implementations" is not
-something to rest a `free()` on, so the table **refuses a second block for a key it
-already holds** rather than overwriting: overwriting leaks the first block, and
-freeing it would be a use-after-free if the implementation is still reading it.
-Refusing returns `MPI_ERR_INTERN`, which is the honest answer to "the
-implementation reused a request value we still hold state for", i.e. to a
-completion we failed to observe. (This is unrelated to the callback pools, which
-are keyed on a slot index we hand out ourselves.)
+| | MPICH 4.3.1 | Open MPI 5.0.6 |
+|---|---|---|
+| `MPI_Isend` to `MPI_PROC_NULL` x4 | `0x6c000001` x4 | `0x1013f7920` x4 |
+| `MPI_Ibarrier` on `MPI_COMM_SELF` x4 | `0x6c00000b` x4 | `0x1013f7920` x4 |
+| `MPI_Ialltoallw` on `MPI_COMM_SELF` x4 | distinct | distinct |
+| a completed handle, then a new operation | value reused | value reused |
+
+**Shared built-in requests.** An operation that is already complete on return does
+not need a per-operation object, and neither implementation allocates one: MPICH
+has one built-in per operation kind, Open MPI a single `ompi_request_empty` shared
+across all of them. The important part is that `MPI_Ibarrier` is in that list — the
+shortcut is not confined to point-to-point, and nothing in the standard stops an
+implementation from applying it to a zero-work `MPI_Ialltoallw`, which is precisely
+the family that stages temporaries. A legal program that posts two such calls
+before waiting would then hand us the same key twice.
+
+**Recycling.** Once an operation completes, its handle value is handed out again
+immediately. So a completion we fail to observe does not merely leak: it leaves a
+stale entry whose key a later operation will be given.
+
+Hence the two rules the table follows. It **refuses a second block for a key it
+already holds** rather than overwriting — overwriting leaks the first block, and
+freeing it would be a use-after-free if the implementation were still reading it —
+and *every* completion entry point must release, not just the ones an author
+happens to think of (`MPI_Wait`, `Waitall`, `Waitany`, `Waitsome`, `Test`,
+`Testall`, `Testany`, `Testsome`, `Request_free`, and the persistent forms, which
+release at `MPI_Request_free` rather than at completion). S1 implements
+`MPI_Waitall` only; S3 owes the rest, and that list is a ledger item rather than a
+matter of memory.
+
+Refusing is safe but not free: it answers `MPI_ERR_INTERN` to a legal call. It is
+not a memory-safety problem — a shared built-in request is by construction already
+complete, so nothing is reading the block when it is freed — which points at the
+fix for S3: probe the built-in request values once at initialization (a
+`MPI_PROC_NULL` `MPI_Isend` and an `MPI_Ibarrier` on `MPI_COMM_SELF` reveal them,
+and a runtime probe is available to us where a configure-time one is not), and when
+a staged operation returns one, free the block immediately instead of attaching it.
+The operation it belonged to has already finished.
+
+None of this touches the callback pools, which are keyed on a slot index we hand
+out ourselves, or the predefined-handle maps, which are built once from values that
+do not change.
 
 Two details of the same table are worth recording because they are easy to get
 subtly wrong: released entries leave a **tombstone** rather than an empty slot, or
