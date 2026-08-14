@@ -375,13 +375,18 @@ legal but confusing. Three rules, each of which earns its keep:
 **Four sharp edges found while implementing this in S0**, none visible from the
 three rules alone:
 
-- **`MPI_VERSION`/`MPI_SUBVERSION`** (the MPI *standard* level the stub implements,
-  5/0) rename to the same spelling as **`MPI_ABI_VERSION`/`MPI_ABI_SUBVERSION`**
-  (the ABI *protocol* handshake version, 1/0) under rule 1, and the two numbers
-  differ — a real collision, not a cosmetic one. `mpiabi.h` keeps the ABI protocol
-  version (needed for the vtable handshake) and drops the standard-level macros
-  (metadata about `gen/include/mpi.h` itself, never referenced on the wrapper
-  side).
+- **`MPI_ABI_VERSION`/`MPI_ABI_SUBVERSION`** (the ABI *protocol* handshake version,
+  1/0) rename to `MPIABI_ABI_VERSION`/`MPIABI_ABI_SUBVERSION` under the plain rule
+  — prefix `MPI_` stripped, `MPIABI_` prepended, same as any other macro. The
+  double "ABI" looks odd next to `MPI_VERSION`/`MPI_SUBVERSION` (the MPI *standard*
+  level the stub implements, 5/0), which rename to the unadorned
+  `MPIABI_VERSION`/`MPIABI_SUBVERSION` — but the two source names differ
+  (`MPI_ABI_VERSION` vs `MPI_VERSION`), so the renamed spellings differ too and
+  nothing collides. An earlier draft of this generator special-cased `MPI_ABI_`
+  to collapse onto `MPIABI_` (dropping the inner "ABI"), which read better but
+  created exactly the collision this paragraph used to describe; the plain,
+  uniform rule turned out to be both simpler and correct, so the special case was
+  removed rather than kept.
 - **`MPIX_TYPECLASS_LOGICAL`** is the one enumerator in the stub not spelled
   `MPI_*` — a legacy alias sitting in the same anonymous enum as the
   `MPI_TYPECLASS_*` family. Left unrenamed it collides with `mpi.h`'s own

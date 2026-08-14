@@ -139,17 +139,6 @@ _TYPEDEF_PLAIN_RE = re.compile(r"^typedef\s+[\w \*]+?\b(MPI_[A-Za-z0-9_]+)\s*;\s
 # definition of the same enumerator when both are included together.
 _ENUM_MEMBER_RE = re.compile(r"^\s*(MPI_[A-Za-z0-9_]+|MPIX_[A-Za-z0-9_]+)\s*(=|,|$)")
 
-# MPI_VERSION/MPI_SUBVERSION (the MPI *standard* level this stub implements,
-# 5/0) would rename to the same MPIABI_VERSION/MPIABI_SUBVERSION spelling as
-# MPI_ABI_VERSION/MPI_ABI_SUBVERSION (the ABI *protocol* handshake version,
-# 1/0, NOTES.md #2) -- a real collision, not a cosmetic one, since the two
-# numbers differ. mpiabi.h keeps the ABI protocol version, matching
-# examples/mpiabi.h; the standard-level macros are metadata about
-# gen/include/mpi.h itself and aren't referenced anywhere on the wrapper
-# side, so they are dropped from the renamed view rather than given a
-# different spelling.
-_SKIP_MACROS = {"MPI_VERSION", "MPI_SUBVERSION"}
-
 # Section-banner comments that introduce nothing but prototype blocks; with
 # every prototype dropped they would be left as orphaned headings.
 _SKIP_BANNERS = {
@@ -161,9 +150,10 @@ _SKIP_BANNERS = {
 
 
 def rename(name: str) -> str:
-    """MPI_X -> MPIABI_X; MPI_ABI_X -> MPIABI_X; MPIX_X -> MPIABIX_X (NOTES.md #2)."""
-    if name.startswith("MPI_ABI_"):
-        return "MPIABI_" + name[len("MPI_ABI_"):]
+    """MPI_X -> MPIABI_X (so MPI_ABI_VERSION -> MPIABI_ABI_VERSION, unchanged
+    but for the prefix -- no collision with plain MPI_VERSION ->
+    MPIABI_VERSION, since the two source names differ); MPIX_X -> MPIABIX_X
+    (NOTES.md #2)."""
     if name.startswith("MPIX_"):
         return "MPIABIX_" + name[len("MPIX_"):]
     assert name.startswith("MPI_")
@@ -265,8 +255,6 @@ def build_mpiabi_h(mpi_h_text: str) -> str:
         ) or stripped.startswith("#endif /* MPI_H_ABI */"):
             continue
         if stripped == "#include <stdint.h>":
-            continue
-        if any(stripped.startswith(f"#define {m}") for m in _SKIP_MACROS):
             continue
         if stripped in _SKIP_BANNERS:
             continue

@@ -24,8 +24,11 @@
 extern "C" {
 #endif
 
-#define MPIABI_VERSION    1
+#define MPIABI_VERSION    5
 #define MPIABI_SUBVERSION 0
+
+#define MPIABI_ABI_VERSION    1
+#define MPIABI_ABI_SUBVERSION 0
 
 /* MPIABI_Aint is defined to be intptr_t (or equivalent to it, if compiler support is absent).
  * The only acceptable alternative to intptr_t is the C89 type equivalent to it. */

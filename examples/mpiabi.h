@@ -33,8 +33,18 @@
 
 #include <stdint.h>
 
-#define MPIABI_VERSION    1
-#define MPIABI_SUBVERSION 0
+/* MPI_VERSION/MPI_SUBVERSION -- the MPI *standard* level the stub implements. */
+#define MPIABI_VERSION        5
+#define MPIABI_SUBVERSION     0
+
+/* MPI_ABI_VERSION/MPI_ABI_SUBVERSION -- the ABI *protocol* handshake version
+ * checked by mpiwrapper_get_vtable (mpiwrapper_vtable.h). Prefix-strip
+ * renames MPI_ABI_VERSION to MPIABI_ABI_VERSION, not MPIABI_VERSION: the two
+ * source names differ, so the renamed ones must too, or this would collide
+ * with MPI_VERSION's own renaming above. The double "ABI" looks odd but is
+ * correct -- see NOTES.md #2. */
+#define MPIABI_ABI_VERSION    1
+#define MPIABI_ABI_SUBVERSION 0
 
 /* Handles: pointer-typed, so pointer-sized -- 32 bits on ILP32, which is why no
  * scheme here may rely on spare high bits.
