@@ -1,9 +1,1 @@
 # Erik's open review questions
-
-- define a set of independent (but sequential) stages that implement
-  this project.
-
-  each stage should roughly correspond to a single AI session. suggest
-  which model to use.
-
-  the first stage should be the prototype.

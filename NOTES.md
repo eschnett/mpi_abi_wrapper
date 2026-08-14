@@ -372,6 +372,46 @@ legal but confusing. Three rules, each of which earns its keep:
    cannot collide, and keeping them identical means the status conversion reads the
    way the standard describes it.
 
+**Four sharp edges found while implementing this in S0**, none visible from the
+three rules alone:
+
+- **`MPI_VERSION`/`MPI_SUBVERSION`** (the MPI *standard* level the stub implements,
+  5/0) rename to the same spelling as **`MPI_ABI_VERSION`/`MPI_ABI_SUBVERSION`**
+  (the ABI *protocol* handshake version, 1/0) under rule 1, and the two numbers
+  differ — a real collision, not a cosmetic one. `mpiabi.h` keeps the ABI protocol
+  version (needed for the vtable handshake) and drops the standard-level macros
+  (metadata about `gen/include/mpi.h` itself, never referenced on the wrapper
+  side).
+- **`MPIX_TYPECLASS_LOGICAL`** is the one enumerator in the stub not spelled
+  `MPI_*` — a legacy alias sitting in the same anonymous enum as the
+  `MPI_TYPECLASS_*` family. Left unrenamed it collides with `mpi.h`'s own
+  definition of the same enumerator the moment both headers are included
+  together. Renamed to `MPIABIX_TYPECLASS_LOGICAL` (same scheme, `X` kept).
+- **`MPI_T_cb_safety`/`MPI_T_source_order`** are declared `typedef enum
+  MPI_T_cb_safety { ... } MPI_T_cb_safety;` — tag and typedef name spelled
+  identically, unlike every handle type (whose tag is `MPI_ABI_Foo`, deliberately
+  different from its typedef name `MPI_Foo`). Rule 2 protects tags because
+  handle-pointer tags are meant to be *shared* with `mpi.h` for type identity; here
+  the opposite is true — a real implementation's own `<mpi.h>` also declares a tag
+  named `MPI_T_cb_safety` with different enumerator values, so leaving *this* tag
+  unrenamed redeclares it incompatibly the moment `mpiabi.h` and an implementation
+  header meet in one translation unit (exactly what `libmpiwrapper` does). Both
+  occurrences are renamed to `MPIABI_T_cb_safety`, deliberately breaking the tag
+  identity with `mpi.h`'s own tag of that name — the two headers were never meant
+  to interoperate at this type the way they do for handles.
+- **`MPI_Aint`/`MPI_Offset`/`MPI_Count`** are defined through a
+  `#if !defined(MPI_ABI_X) / #define MPI_ABI_X <rhs> / #endif / typedef MPI_ABI_X
+  MPI_X; / #undef MPI_ABI_X` idiom, and for these three (unlike the handle types)
+  `MPI_ABI_X` and `MPI_X` rename to the *same* spelling (`MPIABI_Aint`, etc., since
+  stripping `MPI_ABI_` and stripping `MPI_` land on the same tail). A naive
+  line-by-line rename turns the typedef line into `typedef MPIABI_Aint
+  MPIABI_Aint;`, and the preprocessor macro-expands *both* occurrences — it has no
+  notion that one was meant to survive as the newly-introduced name — so the type
+  is never actually introduced, and `MPI_Count`'s definition (which references
+  `MPI_Offset`) fails one link down the chain. `dev/generate_headers.py` resolves
+  these three directly (`typedef intptr_t MPIABI_Aint;`, etc.), using the header's
+  own default, no-override branch, rather than reproducing the scaffolding.
+
 ---
 
 ## 3. The generator
