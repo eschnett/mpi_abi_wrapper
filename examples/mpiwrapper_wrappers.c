@@ -101,20 +101,30 @@ static int w_MPI_Send(const void *abi_buf, int abi_count,
  * bypasses a tool interposed between this library and the implementation. Routing
  * both ABI names to one slot would bypass only the ABI-level profiling layer.
  *
- * MPIWRAPPER_HAVE_PMPI_SEND is a configure-time probe, because the shifted names are
- * not reliably in libmpi: MPICH can place them in a separate libpmpich (PMPILIBNAME)
- * and Open MPI can compile the profiling layer separately. Where the symbol is
- * absent this falls back to the unshifted body for that one function, which is
- * exactly the cheaper behaviour -- so the fallback is a degradation, not a failure.
+ * No configure probe guards this, and deliberately so. In both MPICH and Open MPI
+ * the PMPI_* names are the *strong* definitions and the MPI_* names are weak
+ * aliases at the same address:
+ *
+ *   MPICH   libmpich.so   0x159d40 W MPI_Send   0x159d40 T PMPI_Send
+ *   OpenMPI libmpi.so     0x08d690 W MPI_Send   0x08d690 T PMPI_Send
+ *
+ * That is how the profiling interface works at all -- a tool's strong MPI_Send
+ * overrides the weak alias while PMPI_Send stays reachable -- so both names are
+ * unconditionally present in whatever library is already linked, with no separate
+ * profiling library involved. MPICH ships none.
+ *
+ * An earlier draft guarded this with a probe that fell back to the unshifted body.
+ * That would have been worse than nothing: it would silently reintroduce the very
+ * defect the separate slot exists to fix, on some platform, undetectably. Without
+ * it, an implementation that really lacks PMPI_Send fails to link here with an
+ * undefined-symbol error naming the symbol. A build error beats a silent semantic
+ * downgrade -- the test is not "build time or run time" but whether the degraded
+ * behaviour announces itself.
  */
-#if MPIWRAPPER_HAVE_PMPI_SEND
 static int w_PMPI_Send(const void *abi_buf, int abi_count,
                        MPIABI_Datatype abi_datatype, int abi_dest, int abi_tag,
                        MPIABI_Comm abi_comm)
     BODY_MPI_Send(PMPI_Send)
-#else
-#  define w_PMPI_Send w_MPI_Send
-#endif
 
 /* ---------------------------------------------------------------- MPI_Waitall */
 

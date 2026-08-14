@@ -41,10 +41,10 @@
  * 1:1 rather than 2:1, so "each entry point has exactly one slot and one body" is a
  * uniform invariant with no special case.
  *
- * Where the implementation does not export a shifted name -- MPICH can place them
- * in a separate libpmpich, Open MPI has OMPI_PROFILING_COMPILE_SEPARATELY -- the
- * PMPI slot is filled with the MPI body, degrading to the cheaper behaviour for
- * that function alone.
+ * Both names are always available to link against: in MPICH and Open MPI alike the
+ * PMPI_* names are the strong definitions and the MPI_* names are weak aliases at
+ * the same address, which is how the profiling interface works in the first place.
+ * No separate profiling library exists and no configure probe is needed.
  */
 struct mpiwrapper_vtable {
   int    (*MPI_Send)(const void *, int, MPIABI_Datatype, int, int, MPIABI_Comm);

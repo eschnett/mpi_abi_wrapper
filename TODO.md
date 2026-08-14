@@ -1,9 +1,5 @@
 # Erik's open review questions
 
-- should both `MPI_*` and `PMPI_*` functions call the wrapped `MPI_*`
-  functions? this sounds weird. the cost of wrapping the `PMPI_*`
-  functions is small, why not do that as well?
-
 - the handle maps use hash tables. would sorted arrays be faster? they
   would allow a binary search, or possible arithmetic search (O(log
   log n)).
