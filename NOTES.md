@@ -133,6 +133,42 @@ because `MPI_Initialized`, `MPI_Get_version`, `MPI_Wtime` and the `MPI_T_*` call
 are all legal before `MPI_Init`, so the load cannot hang off `MPI_Init`. One
 predictable branch per call.
 
+### Dispatch cost on the ABI side
+
+`dev/dispatch-bench/` measures the candidate shapes, calling across a DSO boundary
+with the vtable made opaque, on Linux/gcc and macOS/clang (aarch64).
+
+| shape | trivial callee | ~320 ns callee | instructions (gcc) | `.text` x1376 |
+|---|---|---|---|---|
+| static function pointers | 1.085 ns | −1.32% | 4 | 22,252 B |
+| vtable copied into our storage | **1.075 ns** | −0.82% | 4 | 22,252 B |
+| vtable via pointer | 1.084 ns | −0.86% | 5 | 22,252 B |
+| pointer + atomic acquire + lazy branch | **1.630 ns** | −0.15% | **23** | **95,436 B** |
+
+Two conclusions, and they point different ways:
+
+- **Drop the atomic and the lazy-init branch.** It is the only shape that measures
+  worse, and the reason is that a possible cold call to the initializer forces a
+  stack frame into every entry point: 23 instructions instead of 4, and **95 KB of
+  text instead of 22 KB** across 1376 entry points. On a call that does real work
+  the time is invisible (−0.15%), so this is a code-size decision.
+  It is safe to drop because anything that can call `MPI_Send` must link
+  `libmpi_abi`, hence depends on it, hence its constructors run after ours — so the
+  window in which the pointer is NULL contains no code that can reach an entry
+  point. Keep an `assert` in debug builds only.
+- **Do not bother copying the vtable.** 1.075 against 1.084 ns is noise and the
+  `.text` is byte-identical: the extra load is off the dependency chain, so an
+  out-of-order core issues it in parallel. Keeping the single pointer also leaves 8
+  bytes of writable function pointer in our data instead of 5.5 KB of it.
+
+Both benchmark bugs found on the way there are recorded in that directory's README,
+because both produced confident wrong numbers: measuring each shape to completion
+let thermal drift land on one shape (reporting +213% for one extra load), and
+building the vtable from a `static` in the same TU let the compiler devirtualize two
+shapes into direct calls. Only the disassembly caught the second. **Any benchmark of
+this layer has to be checked against its own disassembly**, since what is being
+measured is exactly what an optimizer most wants to remove.
+
 ### Symbol resolution when loading the wrapper
 
 This is the most delicate thing in the design, and an earlier draft of these notes
@@ -881,11 +917,11 @@ zero when the application never uses those routines.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them.
 7. **PMPI needs no vtable slots**; two definitions rather than a weak alias. §2.
-8. **Bootstrap by constructor plus an idempotent acquire-load guard.** The wrapper
-   is loaded `RTLD_LOCAL` and *isolated* — `dlmopen` or `RTLD_DEEPBIND` on Linux,
-   the two-level namespace on macOS — never `RTLD_GLOBAL`, and `RTLD_LAZY` by
-   default. The wrapper then proves at load that its `MPI_*` calls resolved outward.
-   §2.
+8. **Bootstrap by constructor into a plain pointer** — no atomic, no lazy-init
+   branch, no NULL check outside debug builds. The wrapper is loaded `RTLD_LOCAL`
+   and *isolated* — `RTLD_DEEPBIND` or `dlmopen` on Linux, the two-level namespace
+   on macOS — never `RTLD_GLOBAL`, and `RTLD_LAZY` by default. The wrapper then
+   proves at load that its `MPI_*` calls resolved outward. §2, §2a.
 9. **Naming: `MPIABI_` uniformly** for the renamed view. §2.
 10. **Staged temporaries outliving a call** go in a request-keyed hash behind a
     global atomic count. §6.3.

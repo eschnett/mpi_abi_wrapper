@@ -1,9 +1,5 @@
 # Erik's open review questions
 
-- test the dlopen/dlmopen mechanism in a mock-up, both on linux
-  (docker) and macos. (on macos a two-level namespace is probably
-  necessary.)
-
 - the calls to `vt()` in the wrappers are expensive. would it be
   cheaper to initialize a global pointer to `NULL` and crash if MPI
   functions are called before initialization? initialization happens
@@ -51,6 +47,15 @@
   complexity and probably won't find many errors. all wrappers should
   be installed into separate prefixes, possibly next to the MPI
   library they are wrapping.
+
+- "Naming convention in generated code": the example both defines
+  `MPI_Send` and calls it. correct this.
+
+- "Status layouts": i think some the sizes differ on 32 and 64-bit
+  systems. that's just a minor correction, there are no consequences.
+  what matters is that all sizes are always <= 32 bytes.
+
+- ship mpicc, cmake config, pkgconfig
 
 - define a set of independent (but sequential) stages that implement
   this project.

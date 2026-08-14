@@ -20,17 +20,35 @@
 #include "mpiwrapper_vtable.h"
 
 #include <dlfcn.h>
-#include <stdatomic.h>
+#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 /* ------------------------------------------------------------------ bootstrap */
 
-static _Atomic(const struct mpiwrapper_vtable *) vt_cache;
-
-/* 0 = untried, 1 = in progress, 2 = ready, 3 = failed */
-static atomic_int vt_state;
+/* A plain pointer, set by the constructor below, read with no atomic and no NULL
+ * check. Both omissions are deliberate.
+ *
+ * Safety: anything that can call MPI_Send must reference it, therefore must link
+ * libmpi_abi directly or transitively, therefore *depends* on this library -- and
+ * ELF and Mach-O both run constructors in dependency order, so its constructors run
+ * after ours. A plugin dlopen'ed later is no exception: loading it loads
+ * libmpi_abi first if it is not already present. So the window in which vt is NULL
+ * contains no code that can reach these entry points.
+ *
+ * Cost: dev/dispatch-bench measures the alternative -- an atomic acquire load plus
+ * a lazy-init branch -- at +0.55 ns per trivial call under gcc, and at 23
+ * instructions per entry point instead of 4, because the possible cold call to the
+ * initializer forces a stack frame. Across 1376 entry points that is 95 KB of text
+ * instead of 22 KB. On a call that does real work the time difference is invisible,
+ * so this is a code-size decision rather than a latency one.
+ *
+ * The same measurement says copying the whole vtable into our own storage to save
+ * the pointer chase buys nothing: the extra load is off the dependency chain, so an
+ * out-of-order core issues it in parallel. One pointer it is.
+ */
+static const struct mpiwrapper_vtable *vt;
 
 #define MPI_ABI_WRAPPER_LIB_ENV "MPI_ABI_WRAPPER_LIB"
 
@@ -155,48 +173,28 @@ static const struct mpiwrapper_vtable *vt_load(void)
   return vt;
 }
 
-static const struct mpiwrapper_vtable *vt_init(void)
-{
-  int expected = 0;
-  if (atomic_compare_exchange_strong_explicit(&vt_state, &expected, 1,
-                                              memory_order_acq_rel,
-                                              memory_order_acquire)) {
-    const struct mpiwrapper_vtable *vt = vt_load(); /* aborts on failure */
-    atomic_store_explicit(&vt_cache, vt, memory_order_release);
-    atomic_store_explicit(&vt_state, 2, memory_order_release);
-    return vt;
-  }
-
-  /* Another thread got there first. In practice this never spins: the
-   * constructor below runs before the application creates any thread. It exists
-   * for the case where the first MPI call comes from a library that was itself
-   * dlopen'ed, so that our constructor may not have run yet.
-   */
-  while (atomic_load_explicit(&vt_state, memory_order_acquire) == 1)
-    ; /* spin */
-  return atomic_load_explicit(&vt_cache, memory_order_acquire);
-}
-
-/* One predictable branch per MPI call. */
-static inline const struct mpiwrapper_vtable *vt(void)
-{
-  const struct mpiwrapper_vtable *p =
-      atomic_load_explicit(&vt_cache, memory_order_acquire);
-  if (__builtin_expect(p == NULL, 0)) p = vt_init();
-  return p;
-}
-
-/* Runs before main, so the branch above is never taken in the common case. It is
- * not sufficient on its own -- see vt_init -- which is why both exist.
+/* Runs before main, and before the constructors of anything that depends on this
+ * library -- which is everything that can call an MPI function. See the comment on
+ * `vt` above for why that is sufficient and why there is no lazy fallback.
  */
-__attribute__((constructor)) static void mpi_abi_ctor(void) { (void)vt(); }
+__attribute__((constructor)) static void mpi_abi_ctor(void) { vt = vt_load(); }
+
+/* Cheap insurance in development builds only: in a release build this compiles to
+ * nothing and a stuck NULL would be a segfault at a small address, which is what
+ * the constructor ordering argument says cannot happen.
+ */
+#ifndef NDEBUG
+#  define VT() (assert(vt != NULL), vt)
+#else
+#  define VT() vt
+#endif
 
 /* --------------------------------------------------------------- entry points */
 
 /* Generated. Note what is *not* here: no conversion, no temporary, no knowledge
- * of any implementation type. The arguments are passed through untouched, and
- * they need no cast because the ABI header's MPI_Comm and mpiabi.h's MPIABI_Comm
- * are the same type (see the comment in mpiwrapper_vtable.h).
+ * of any implementation type, and no initialization check. The arguments pass
+ * through untouched, and need no cast because the ABI header's MPI_Comm and
+ * mpiabi.h's MPIABI_Comm are the same type (see mpiwrapper_vtable.h).
  *
  * MPI_* and PMPI_* are two definitions rather than an alias: macOS aliases need
  * -Wl,-alias or __asm__ labels, and at one line per body an alias saves nothing.
@@ -207,17 +205,17 @@ __attribute__((constructor)) static void mpi_abi_ctor(void) { (void)vt(); }
 int MPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest, int tag,
              MPI_Comm comm)
 {
-  return vt()->MPI_Send(buf, count, datatype, dest, tag, comm);
+  return VT()->MPI_Send(buf, count, datatype, dest, tag, comm);
 }
 
 int PMPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest,
               int tag, MPI_Comm comm)
 {
-  return vt()->MPI_Send(buf, count, datatype, dest, tag, comm);
+  return VT()->MPI_Send(buf, count, datatype, dest, tag, comm);
 }
 
 /* Returns double, so there is no error code to map -- one of the handful of
  * entry points whose generated shape differs at all.
  */
-double MPI_Wtime(void) { return vt()->MPI_Wtime(); }
-double PMPI_Wtime(void) { return vt()->MPI_Wtime(); }
+double MPI_Wtime(void) { return VT()->MPI_Wtime(); }
+double PMPI_Wtime(void) { return VT()->MPI_Wtime(); }
