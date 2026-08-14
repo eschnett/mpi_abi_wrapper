@@ -1010,6 +1010,31 @@ So an application may legally read its own datatype array while a nonblocking
 collective is in flight, and in-place conversion would show it implementation
 handles.
 
+**And note where each sentence puts the obligation, because the natural reading is
+the wrong way round.** Both put it on the *user*, not on the implementation. There
+is no rule that an implementation must copy the counts, displacements and datatype
+arrays out at initiation — it is explicitly permitted to keep reading them until
+the operation completes, and §6.12's own advice to implementors (nonblocking
+collectives "implemented with local execution schedules ... using nonblocking
+point-to-point communication") describes exactly the kind of design that would. A
+search of MPI-5.0 for any statement that the arrays are copied finds none.
+
+That is what forces the request-keyed table, and it is the whole reason it exists:
+the arrays the implementation reads are *ours*, not the caller's, so they must
+survive as long as the implementation may read them — until completion for the
+nonblocking forms, until `MPI_REQUEST_FREE` for the persistent ones. If the
+standard did require the implementation to copy, every one of these temporaries
+could be scoped to the call and §6.3's table, its tombstones and its lock word
+would all be deletable.
+
+A side effect worth knowing, since it is a behavioural difference from a native
+MPI rather than a conformance question: because *we* copy at initiation, an
+application that violates the rule and modifies its ABI-side arrays after posting
+still gets the right answer through the wrapper, where it might not natively. We
+are more permissive than the standard requires, in the direction that hides a user
+bug. Nothing to fix; worth knowing when a program works over the ABI and fails
+without it.
+
 Four independent reasons, each sufficient:
 
 1. **`const` may mean physically read-only.** `MPI_Type_create_struct`,
