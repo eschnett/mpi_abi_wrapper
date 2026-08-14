@@ -2,9 +2,6 @@
 
 - test against MVAPICH as well
 
-- "An implementation request handle does not uniquely identify an
-  operation": why would this be relevant? is this for callbacks?
-
 - allow MPI 3.0
 
 - "Stage any array whose element type is not *identical* on both

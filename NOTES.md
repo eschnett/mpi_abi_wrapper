@@ -377,6 +377,48 @@ first load and reuse it, so the wrapper and its dependencies stay in one namespa
 `RTLD_NOW` forces every undefined symbol in `libmpi` and its dependency closure to
 resolve, and real MPI installations have symbols that are never called. Overridable.
 
+### Where the loading actually stands
+
+Kept current, because "isolation works" is a claim with a per-platform truth value
+and the table above says what *should* happen rather than what has been seen. As of
+S1, all of it measured on macOS 26 / arm64 unless stated:
+
+| configuration | mechanism | status |
+|---|---|---|
+| macOS, native MPICH 4.3.1 | `RTLD_LOCAL` + two-level namespace | **works**, 6/6 tests, two ranks |
+| macOS, native Open MPI 5.0.6 | same | **works**, 6/6 tests, one rank (its launcher is broken here, unrelated to loading) |
+| macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
+| macOS, an ABI-implementing MPI (weak `MPI_*`) | none available | **refused at load**; see below |
+| Linux glibc, `RTLD_LOCAL \| RTLD_DEEPBIND` | measured on `dev/dlopen-probe`'s mock-up | **unverified with real libraries** — never built on Linux yet |
+| Linux glibc, `dlmopen(LM_ID_NEWLM)` | same | same, and the code path has never run |
+| Linux musl | neither exists | expected to be refused at load; no Alpine support until something else is found (§12) |
+| FreeBSD | `RTLD_DEEPBIND` | unverified |
+| Windows | — | open (§13) |
+
+What makes the two macOS rows work is that both implementations define their
+`MPI_*` **strongly**, so dyld's weak coalescing never gets a say and the two-level
+namespace does the isolation on its own:
+
+| library | `MPI_*` | `PMPI_*` |
+|---|---|---|
+| MPICH 4.3.1 `libmpi.dylib` / `libpmpi.dylib` | 674 strong, 0 weak | 78 + 672 strong |
+| Open MPI 5.0.6 `libmpi.dylib` | 472 strong, 0 weak | 468 strong |
+| Open MPI 6.1.0a1 built `--enable-standard-abi` | **0 strong, 683 weak** | 683 strong |
+
+Only the third row is dangerous, and it is not an MPI anyone would wrap for its own
+sake — it is oracle 5. If a *native* macOS build ever appeared with weak `MPI_*`,
+the wrapper would refuse it rather than run it wrong, and the fix available then
+would be to route the wrapper's calls through `PMPI_*`, which is strong everywhere;
+the cost is decision 7's implementation-level interposition, so it would have to be
+opt-in and loud rather than a silent fallback.
+
+The reliability property this all adds up to is worth stating plainly, because it
+is weaker than "it always works" and stronger than "it usually works": **either the
+wrapper loads and its calls provably reach the implementation, or it refuses to
+start and says why.** There is no configuration known to us in which it loads and
+silently does the wrong thing — the one that used to exist, weak-symbol capture,
+is what the behavioural probe was added for.
+
 **Check the outcome, not the mechanism.** `dlinfo(handle, RTLD_DI_LMID)` confirms
 which namespace you got but not that every reference resolved the way the namespace
 was meant to make it resolve. So `libmpi_abi` passes the address of one of its own
