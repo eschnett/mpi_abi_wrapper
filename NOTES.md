@@ -143,11 +143,28 @@ arise. The residual hazard — an application `dlopen`ing a plugin that was itse
 linked directly against `libmpi` — is inherent to this model and belongs in
 documentation.
 
-**Naming.** `MPIABI_` uniformly for the renamed view of the ABI that
-`libmpiwrapper` includes (`MPIABI_Comm`, `MPIABI_COMM_WORLD`). Not `MPI_ABI_`,
-because the stub header already uses `MPI_ABI_Comm` as a *struct tag*
-(`typedef struct MPI_ABI_Comm* MPI_Comm`) and reusing it as a typedef name is legal
-but confusing.
+`size` is `sizeof(struct mpiwrapper_vtable)` as the *caller* understands it. A
+wrapper may accept a smaller size than its own and serve the common prefix; it must
+refuse a larger one, since the caller would read past the end.
+
+**Naming, and the renaming rules for `mpiabi.h`.** `MPIABI_` uniformly
+(`MPIABI_Comm`, `MPIABI_COMM_WORLD`). Not `MPI_ABI_`, because the stub header
+already uses `MPI_ABI_Comm` as a *struct tag* and reusing it as a typedef name is
+legal but confusing. Three rules, each of which earns its keep:
+
+1. **Typedef names, macro names and enumerator names are prefixed.** That is what
+   lets both views coexist in one translation unit, so a wrapper body can say
+   `MPI_INT` for the implementation's datatype and `MPIABI_INT` for the ABI's on
+   the same line.
+2. **Struct tags are left alone.** `MPIABI_Comm` stays `struct MPI_ABI_Comm *`,
+   which is *the same type* as the ABI header's own `MPI_Comm`. Renaming the tag
+   would make them incompatible and force a cast in all 1376 forwarders on the ABI
+   side — casts that would then silently absorb a genuine type error. This is why
+   `examples/mpi_abi_side.c` forwards without a single cast.
+3. **Struct member names are left alone.** Members live in a per-struct namespace,
+   so `MPIABI_Status.MPI_SOURCE` and the implementation's `MPI_Status.MPI_SOURCE`
+   cannot collide, and keeping them identical means the status conversion reads the
+   way the standard describes it.
 
 ---
 
@@ -265,6 +282,24 @@ This is not cosmetic. It makes the load-bearing generator assertion a grep:
 **no parameter of an ABI-typed signature may appear in the argument list of the
 implementation call** — only locally declared converted values may. If the
 generator emits `MPI_Send(abi_buf, ...)`, that is a hard stop.
+
+`examples/` carries a compiling worked version of each shape, and
+`examples/check.sh` compiles them — the generator is required to reproduce them.
+
+### One portability trap in generated switches
+
+Case labels must be **numeric, with the symbolic name in a comment**:
+
+```c
+case 0x00000209: return MPI_INT;  /* MPIABI_INT */
+```
+
+not `case (uintptr_t)MPIABI_INT:`. `MPIABI_INT` expands to
+`((MPIABI_Datatype)0x00000209)`, and casting an integer constant to a pointer type
+and back is not an integer constant expression in standard C — gcc and clang accept
+it, but a case label is exactly where that extension is not worth relying on. The
+generator parsed the header, so it has the numeric value and transcribes nothing
+either way.
 
 ### Four disciplines lifted from mpif
 
