@@ -2,8 +2,8 @@
  *
  * S1 STATUS -- this file is HAND-WRITTEN, and it is the one file in this stage
  * that will not survive S2. The real one is gen/include/mpiwrapper_vtable.h,
- * emitted by the generator from the 1376-slot list; this is the 56-slot
- * prototype of it (28 entry points x {MPI_, PMPI_}), written first so that the
+ * emitted by the generator from the 1376-slot list; this is the 58-slot
+ * prototype of it (29 entry points x {MPI_, PMPI_}), written first so that the
  * generator is designed against a known output shape rather than the other way
  * round (NOTES.md #11, decision 17). S2 replaces it; nothing else in
  * src/mpi_abi/ or src/mpiwrapper/ has to change when it does, which is part of
@@ -41,9 +41,9 @@
  * `ctest -R layout-hash` fails until it is updated. S2's generator computes it
  * the same way over its own emitted slot list.
  */
-#define MPIWRAPPER_LAYOUT_HASH 0xe4effdfbu
+#define MPIWRAPPER_LAYOUT_HASH 0x35d8051bu
 
-/* One slot per ABI entry point, so 1376 in the finished library and 56 here:
+/* One slot per ABI entry point, so 1376 in the finished library and 58 here:
  * MPI_X and PMPI_X get their own, and each leads to a wrapper body that calls
  * the implementation's correspondingly-shifted name. Routing both to a single
  * MPI_X slot would be cheaper, but then an application calling PMPI_Send to
@@ -98,6 +98,8 @@ struct mpiwrapper_vtable {
   int (*PMPI_Finalize)(void);
   int (*MPI_Get_count)(const MPIABI_Status *, MPIABI_Datatype, int *);
   int (*PMPI_Get_count)(const MPIABI_Status *, MPIABI_Datatype, int *);
+  int (*MPI_Get_version)(int *, int *);
+  int (*PMPI_Get_version)(int *, int *);
   int (*MPI_Ialltoallw)(const void *, const int[], const int[],
                         const MPIABI_Datatype[], void *, const int[],
                         const int[], const MPIABI_Datatype[], MPIABI_Comm,

@@ -452,6 +452,26 @@ static void test_ialltoallw(void)
     CHECK(recvbuf[i] == i * 100 + rank, "recvbuf[%d] is %d, expected %d", i,
           recvbuf[i], i * 100 + rank);
 
+  /* Whether the temporaries were actually released is not observable from out
+   * here one call at a time -- but it is observable in bulk. The staged-request
+   * table is fixed at 1024 entries by default, so a wrapper that attached
+   * without releasing runs out and starts returning MPI_ERR_INTERN. Running the
+   * cycle well past that capacity turns "the release path works" into something
+   * this test can see.
+   */
+  for (int i = 0; i < n; ++i) types[i] = MPI_INT;
+  for (int round = 0; round < 1200; ++round) {
+    const int ierror =
+        MPI_Ialltoallw(sendbuf, counts, displs, types, recvbuf, counts, displs,
+                       types, MPI_COMM_WORLD, &request);
+    if (ierror != MPI_SUCCESS) {
+      CHECK(0, "MPI_Ialltoallw returned %d in round %d -- staged temporaries "
+               "are not being released at completion", ierror, round);
+      break;
+    }
+    CHECK_MPI(MPI_Waitall(1, &request, MPI_STATUSES_IGNORE));
+  }
+
   free(types);
   free(displs);
   free(counts);

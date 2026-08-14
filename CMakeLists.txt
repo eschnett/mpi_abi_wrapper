@@ -114,6 +114,27 @@ if(MPI_ABI_BUILD_WRAPPER)
       "ourselves would loop at startup. Point CMake at a real MPI.")
   endif()
 
+  # Oracle 5, the identity configuration: wrapping an MPI that already implements
+  # the standard ABI. Every conversion becomes an identity -- predefined handle
+  # values, error codes, sentinels, MPI_MAX_*, ranks and tags all match -- so the
+  # conversion tables are neutralized and any difference from native pass-through
+  # is a bug in the *plumbing*: vtable handshake, bootstrap, staged temporaries,
+  # trampoline pools, lifetime rules. It also lands the status assertion exactly
+  # on its boundary, since an ABI implementation's private part is 20 bytes and
+  # fits with nothing to spare (NOTES.md #10).
+  #
+  # Permitted, warned about, and never the default: the same configuration is
+  # what an accidental self-wrap looks like from the compiler's point of view.
+  option(MPI_ABI_WRAP_ABI_IMPL
+    "Wrap an MPI that already implements the standard ABI (oracle 5)" OFF)
+  if(MPI_ABI_WRAP_ABI_IMPL)
+    message(WARNING
+      "MPI_ABI_WRAP_ABI_IMPL is on: the MPI at ${MPI_C_INCLUDE_DIRS} is being "
+      "treated as an ABI-implementing MPI, so every conversion in the wrapper "
+      "becomes an identity. This is oracle 5 and it tests the plumbing; it does "
+      "*not* test the conversion tables.")
+  endif()
+
   # The implementation is *expected* to provide the MPI-4.0 API, which is what
   # makes the common case a 1:1 mapping with no large-count fallback -- but it
   # is an expectation and not a floor (NOTES.md #1). Open MPI 5.0.10 reports
@@ -183,6 +204,9 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_dependencies(mpiwrapper mpiabi_h_for_wrapper)
   target_compile_options(mpiwrapper PRIVATE ${MPIABI_WARNINGS})
   target_link_libraries(mpiwrapper PRIVATE MPI::MPI_C)
+  if(MPI_ABI_WRAP_ABI_IMPL)
+    target_compile_definitions(mpiwrapper PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
+  endif()
   # Exactly one exported symbol, enforced by -fvisibility=hidden plus the
   # explicit attribute in mpiwrapper_vtable.h, and checked by the nm test below.
   set_target_properties(mpiwrapper PROPERTIES C_VISIBILITY_PRESET hidden)
@@ -211,6 +235,10 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     add_dependencies(mpiwrapper_unisolated mpiabi_h_for_wrapper)
     target_compile_options(mpiwrapper_unisolated PRIVATE ${MPIABI_WARNINGS})
     target_link_libraries(mpiwrapper_unisolated PRIVATE MPI::MPI_C)
+    if(MPI_ABI_WRAP_ABI_IMPL)
+      target_compile_definitions(mpiwrapper_unisolated PRIVATE
+        MPIWRAPPER_WRAP_ABI_IMPL)
+    endif()
     target_link_options(mpiwrapper_unisolated PRIVATE
       -Wl,-flat_namespace -Wl,-undefined,dynamic_lookup)
     set(MPIABI_UNISOLATED_WRAPPER $<TARGET_FILE:mpiwrapper_unisolated>)
@@ -250,6 +278,9 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_dependencies(mpiwrapper_selftest mpiabi_h_for_wrapper)
   target_compile_options(mpiwrapper_selftest PRIVATE ${MPIABI_WARNINGS})
   target_link_libraries(mpiwrapper_selftest PRIVATE MPI::MPI_C)
+  if(MPI_ABI_WRAP_ABI_IMPL)
+    target_compile_definitions(mpiwrapper_selftest PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
+  endif()
 
   add_test(NAME mpiwrapper_selftest
     COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 1

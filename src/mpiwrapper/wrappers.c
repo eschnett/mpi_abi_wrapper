@@ -133,6 +133,26 @@ static int w_PMPI_Recv(void *abi_buf, int abi_count,
                        MPIABI_Comm abi_comm, MPIABI_Status *abi_status)
     BODY_MPI_Recv(PMPI_Recv)
 
+/* ---------------------------------------------------------- MPI_Get_version */
+
+/* Two plain out-ints, so the simplest body there is -- and the one the ABI side
+ * uses to probe its own symbol resolution at load, because it is legal before
+ * MPI_Init in every version of the standard.
+ */
+#define BODY_MPI_Get_version(TARGET)                                           \
+  {                                                                            \
+    int *const version    = abi_version;                                       \
+    int *const subversion = abi_subversion;                                    \
+                                                                               \
+    const int ierror = TARGET(version, subversion);                            \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+
+static int w_MPI_Get_version(int *abi_version, int *abi_subversion)
+    BODY_MPI_Get_version(MPI_Get_version)
+static int w_PMPI_Get_version(int *abi_version, int *abi_subversion)
+    BODY_MPI_Get_version(PMPI_Get_version)
+
 /* ---------------------------------------------------------------- MPI_Isend */
 
 #define BODY_MPI_Isend(TARGET)                                                 \
@@ -695,6 +715,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Finalize               = mpiwrapper_w_PMPI_Finalize,
     .MPI_Get_count               = mpiwrapper_w_MPI_Get_count,
     .PMPI_Get_count              = mpiwrapper_w_PMPI_Get_count,
+    .MPI_Get_version             = w_MPI_Get_version,
+    .PMPI_Get_version            = w_PMPI_Get_version,
     .MPI_Ialltoallw              = mpiwrapper_w_MPI_Ialltoallw,
     .PMPI_Ialltoallw             = mpiwrapper_w_PMPI_Ialltoallw,
     .MPI_Init                    = mpiwrapper_w_MPI_Init,

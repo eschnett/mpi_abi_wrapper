@@ -155,6 +155,69 @@ static void *vt_dlopen(const char *path, const char **how)
 #endif
 }
 
+/* The wrapper's own `dladdr` check answers "which library does the name
+ * MPI_Send resolve to", and S1 found a configuration where that is the *wrong
+ * question*: with an implementation whose MPI_* symbols are weak (Open MPI
+ * built for the standard ABI has all 683 of them weak, and every ELF MPI does
+ * the same so that profiling tools can override them), macOS resolves the
+ * wrapper's *address-of* to the implementation while dyld's weak-definition
+ * coalescing sends the actual *call* to our strong definition instead. The
+ * consequence is silent double execution, not a crash: the operation runs
+ * twice, once through each level, and only a duplicate key in the staged
+ * temporaries table gave it away.
+ *
+ * So this asks the question behaviourally instead: make one MPI call through
+ * the wrapper and see whether it comes back. MPI_Get_version is the probe: it
+ * is legal before MPI_Init in every version of the standard and has no side
+ * effects. MPI_Wtime would read better and is wrong -- MPICH refuses it before
+ * initialization, whatever NOTES.md #2 assumed.
+ *
+ * The trick that keeps it out of the generated code is the decoy. If the call
+ * *is* captured, it re-enters this library's exported MPI_Wtime, which does
+ * nothing but call through mpi_abi_vt -- so pointing mpi_abi_vt at a table
+ * whose MPI_Wtime records the capture and returns both detects the re-entry and
+ * stops the recursion, without any generated forwarder needing to know that a
+ * probe exists. This runs once, in the constructor, before any thread but this
+ * one can be inside an MPI call.
+ */
+static int probe_reentered;
+
+/* Every slot of the decoy points here. Not just the one the probe calls: a
+ * captured call can land on *any* entry point, because the implementation's own
+ * MPI_Get_version may reach for another MPI function internally, and a decoy
+ * with one slot filled turns the capture into a jump through a null pointer
+ * instead of into a diagnostic -- which is how this was first observed.
+ *
+ * Calling it through slots of other signatures is a deliberate,
+ * strictly-bounded liberty: it happens only when the process is already known
+ * to be broken, it reads none of its arguments, and the value it returns is
+ * discarded by a caller that is about to abort.
+ */
+static int probe_decoy_any(void)
+{
+  probe_reentered = 1;
+  return 0;
+}
+
+static int resolution_probe_passed(const struct mpiwrapper_vtable *vt)
+{
+  static struct mpiwrapper_vtable decoy;
+  void (**slots)(void)   = (void (**)(void))&decoy;
+  const size_t nslots    = sizeof decoy / sizeof *slots;
+  int          version   = 0;
+  int          subversion = 0;
+
+  for (size_t i = 0; i < nslots; ++i)
+    slots[i] = (void (*)(void))probe_decoy_any;
+
+  probe_reentered = 0;
+  mpi_abi_vt      = &decoy;
+  (void)vt->MPI_Get_version(&version, &subversion);
+  mpi_abi_vt = NULL;
+
+  return !probe_reentered;
+}
+
 static const struct mpiwrapper_vtable *vt_load(void)
 {
   const char *path = getenv(MPI_ABI_WRAPPER_LIB_ENV);
@@ -188,6 +251,16 @@ static const struct mpiwrapper_vtable *vt_load(void)
     fprintf(stderr, "libmpi_abi: loaded %s with %s\n", path, how);
     vt_fail("wrapper rejected this libmpi_abi", diagnostic);
   }
+
+  if (!resolution_probe_passed(vt))
+    vt_fail("the wrapper's MPI calls come back into libmpi_abi",
+            "one MPI call made by libmpiwrapper re-entered this library "
+            "instead of reaching the MPI implementation. Every call would "
+            "recurse. On macOS this happens when the implementation's MPI_* "
+            "symbols are weak and ours are strong, because dyld coalesces weak "
+            "definitions across libraries even under a two-level namespace; on "
+            "ELF it means the wrapper was loaded without RTLD_DEEPBIND or "
+            "dlmopen");
 
   return vt;
 }

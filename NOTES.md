@@ -233,9 +233,16 @@ its MPI (`libmpiwrapper-mpich-4.3.so`) so several coexist in one prefix.
 **Bootstrap.** A library constructor in `libmpi_abi`, plus an idempotent
 acquire-load guard on the vtable pointer so that a plugin `dlopen`ed before the
 constructor runs still works. The guard is needed regardless of the constructor
-because `MPI_Initialized`, `MPI_Get_version`, `MPI_Wtime` and the `MPI_T_*` calls
-are all legal before `MPI_Init`, so the load cannot hang off `MPI_Init`. One
-predictable branch per call.
+because `MPI_Initialized`, `MPI_Get_version` and the `MPI_T_*` calls are legal
+before `MPI_Init`, so the load cannot hang off `MPI_Init`. One predictable branch
+per call.
+
+(`MPI_Wtime` was on that list in an earlier draft and does not belong there:
+MPICH 4.3.1 answers a pre-`MPI_Init` `MPI_Wtime` with "Attempting to use an MPI
+routine before initializing", and the standard's own list of what may be called
+before initialization does not include it. It matters because `MPI_Wtime` is the
+obvious choice for the load-time probe above, and would have made that probe fail
+on MPICH and only on MPICH.)
 
 ### Dispatch cost on the ABI side
 
@@ -377,7 +384,47 @@ functions to `mpiwrapper_get_vtable`, and the wrapper `dladdr`s that together wi
 the `MPI_Send` it actually resolved, refusing if the two share a base object. That
 catches the capture at load, positively, on every platform, whatever the loader did
 — and it does not depend on knowing whether `RTLD_DEEPBIND` propagates to
-dependencies. `examples/mpiwrapper_convert.c` implements it.
+dependencies. `src/mpiwrapper/getvtable.c` implements it.
+
+**But `dladdr` answers a subtly different question than the one that matters, and
+S1 found a case where the two answers differ.** With an implementation whose
+`MPI_*` symbols are **weak** — which is every ELF MPI, since that is how the
+profiling interface works, and in particular an Open MPI built for the standard
+ABI, where all 683 are weak while the `PMPI_*` are strong — macOS gives:
+
+```
+dladdr(&MPI_Send) inside the wrapper   ->  the implementation   (correct)
+the wrapper's actual call to MPI_Send  ->  libmpi_abi           (captured)
+```
+
+dyld coalesces weak definitions across images, so our *strong* `MPI_Send` wins
+over the implementation's weak one even under a two-level namespace, while taking
+the symbol's address still resolves through the namespace record. The symptom is
+not recursion but **silent double execution**: the operation runs once at each
+level and returns the right answer. It surfaced only because the second pass tried
+to attach a staged temporary to a request already in the table (§6.3).
+
+So the ABI side adds a **behavioural probe**, which asks the question no address
+comparison can: it makes one call through the vtable and sees whether the call
+comes back. `MPI_Get_version` is the probe — legal before `MPI_Init` in every
+version of the standard, no side effects. (`MPI_Wtime` reads better and is wrong:
+MPICH refuses it before initialization, contrary to what an earlier draft of these
+notes assumed.)
+
+The mechanism keeps the generated code out of it entirely. A captured call
+re-enters `libmpi_abi`'s own exported entry point, which does nothing but call
+through `mpi_abi_vt` — so pointing `mpi_abi_vt` at a **decoy table** during the
+probe both detects the re-entry and stops the recursion, with no forwarder needing
+to know a probe exists. *Every* slot of the decoy points at the same recorder, not
+just the one being called: the captured call can land on any entry point, since
+the implementation's `MPI_Get_version` may reach for another MPI function
+internally, and a decoy with one slot filled turns the capture into a jump through
+a null pointer instead of a diagnostic — which is how the first version of this
+was discovered to be inadequate.
+
+The consequence for the *design* is that a wrapper cannot be layered over an
+ABI-implementing MPI on macOS at all: refusing at load is the best available
+outcome, and the wrapper says so. See oracle 5 in §10.
 
 `size` is `sizeof(struct mpiwrapper_vtable)` as the *caller* understands it. A
 wrapper may accept a smaller size than its own and serve the common prefix; it must
@@ -1459,6 +1506,18 @@ One constraint on version choice: **Open MPI 4.1 fails the MPI-4.0 minimum** (no
    `build/mpi/*` already holds ABI-capable MPICH and Open MPI prefixes. It does
    *not* test the conversion tables, where most of the risk lives.
 
+   **It is a Linux-only oracle, which S1 established by trying it.** An
+   ABI-implementing MPI declares its `MPI_*` weak (Open MPI's does, all 683 of
+   them) and `libmpi_abi` declares them strong, so on macOS dyld's
+   weak-definition coalescing binds the wrapper's outward calls back to us and the
+   configuration is not merely neutralized but unsound — see §2. The wrapper now
+   detects this at load and refuses with a diagnostic naming the cause, which is
+   the correct outcome and not a fixable one: nothing in the two-level namespace
+   overrides coalescing. On ELF `RTLD_DEEPBIND` and `dlmopen` both resolve it,
+   because scope order there beats weak-vs-strong. So this oracle runs on the
+   Linux rows of the matrix, and the macOS rows get its refusal as a test instead.
+   The build option is `-DMPI_ABI_WRAP_ABI_IMPL=ON`, warned about by default.
+
 ### Behavioural tests, in increasing cost
 
 - **`mpiwrapper_selftest`** — in-process, single rank, no launcher: every constant
@@ -1493,6 +1552,14 @@ via a VM on a Linux runner (mpif's precedent), Windows/mingw later.
 **32-bit is load-bearing, not routine coverage.** ABI handles are pointer-sized, so
 i386/arm32v7 is the only place the "no spare high bits for tagging" constraint of
 §4.1 is visible. mpif already has Docker images for both.
+
+**MVAPICH is worth a row, and a cheap one.** It is MPICH-derived, so its handle
+values, error classes and status layout are MPICH's and the conversion tables are
+already exercised; what it adds is a third *installation* shape — its own library
+naming, its own `mpicc`, its own launcher — which is where §9's "all three
+consumption routes must build and run a program" gets tested against something
+nobody tuned it for. Same argument extends to the other MPICH derivatives (Intel
+MPI, Cray MPICH) wherever one is available to CI.
 
 ### Gating
 

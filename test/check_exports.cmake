@@ -52,11 +52,19 @@ endif()
 
 # --- libmpi_abi: MPI_*/PMPI_* only -----------------------------------------
 exported_symbols(abi_syms ${ABI_LIB})
+# Symbols the ELF linker itself defines in every shared object. They are not
+# ours and cannot be suppressed without a version script, which is S6's job;
+# until then they are named rather than pattern-matched away, so that a real
+# leak cannot hide behind a loose pattern.
+set(LINKER_PROVIDED _init _fini _edata _end __bss_start)
+
 set(bad)
 set(nmpi 0)
 foreach(sym ${abi_syms})
   if(sym MATCHES "^P?MPI_")
     math(EXPR nmpi "${nmpi} + 1")
+  elseif(sym IN_LIST LINKER_PROVIDED)
+    # not ours
   else()
     list(APPEND bad ${sym})
   endif()
@@ -65,10 +73,10 @@ if(bad)
   message(SEND_ERROR "libmpi_abi exports non-MPI symbols: ${bad}")
   math(EXPR errors "${errors} + 1")
 endif()
-if(NOT nmpi EQUAL 56)
+if(NOT nmpi EQUAL 58)
   message(SEND_ERROR
-    "libmpi_abi exports ${nmpi} MPI entry points; the S1 prototype has 56 "
-    "(28 entry points, MPI_ and PMPI_ each)")
+    "libmpi_abi exports ${nmpi} MPI entry points; the S1 prototype has 58 "
+    "(29 entry points, MPI_ and PMPI_ each)")
   math(EXPR errors "${errors} + 1")
 endif()
 

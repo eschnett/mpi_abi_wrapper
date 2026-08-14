@@ -1,7 +1,7 @@
 /* libmpi_abi -- the exported entry points.
  *
  * S1 STATUS: hand-written stand-in for gen/mpi_abi/entrypoints.c, covering the
- * 28 entry points of the prototype (STAGES.md S1, NOTES.md #11). S2's generator
+ * 29 entry points of the prototype (STAGES.md S1, NOTES.md #11). S2's generator
  * emits this file for all 688, and is required to reproduce these bodies.
  *
  * Note what is *not* here: no conversion, no temporary, no knowledge of any
@@ -147,6 +147,20 @@ int MPI_Get_count(const MPI_Status *status, MPI_Datatype datatype, int *count)
 int PMPI_Get_count(const MPI_Status *status, MPI_Datatype datatype, int *count)
 {
   return VT()->PMPI_Get_count(status, datatype, count);
+}
+
+/* Legal before MPI_Init in every MPI version, which is what makes it the
+ * bootstrap's resolution probe (see bootstrap.c). MPI_Wtime would have been the
+ * obvious choice and is not: MPICH refuses it before initialization.
+ */
+int MPI_Get_version(int *version, int *subversion)
+{
+  return VT()->MPI_Get_version(version, subversion);
+}
+
+int PMPI_Get_version(int *version, int *subversion)
+{
+  return VT()->PMPI_Get_version(version, subversion);
 }
 
 int MPI_Ialltoallw(const void *sendbuf, const int sendcounts[],
