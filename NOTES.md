@@ -1,7 +1,8 @@
 # MPI ABI wrapper — design
 
 The authoritative design document for this project. Self-contained: it does not
-depend on any other document in this repository.
+depend on any other document in this repository. `STAGES.md` sequences the work into
+sessions and is the only other document that should exist.
 
 Every numeric claim about the ABI or about MPICH and Open MPI was read out of the
 actual headers; see "Sources" at the end for the paths, so any of it can be
