@@ -190,6 +190,20 @@ MPICH   libmpich.so   0x159d40 W MPI_Send   0x159d40 T PMPI_Send
 OpenMPI libmpi.so     0x08d690 W MPI_Send   0x08d690 T PMPI_Send
 ```
 
+That was read off one pair of builds, and the *binding* half of it does not
+generalize even on Linux. Ubuntu 24.04/aarch64, measured in S1:
+
+```
+MPICH 4.1     libmpich.so  0x10fe20 T MPI_Send  0x10fe20 T PMPI_Send   668 T, 0 W
+Open MPI 4.1  libmpi.so    0x084630 T MPI_Send  0x084630 T PMPI_Send   432 T, 0 W
+```
+
+Same address, both *strong*. What holds everywhere, and is all this argument needs,
+is that **both names exist and resolve to the same code when no tool is
+interposed**. Whether the alias is weak or strong is an ELF interposition detail
+that matters to profiling tools, not to us — on ELF, scope order decides
+interposition, not binding strength.
+
 That is how the profiling interface works at all — a tool's strong `MPI_Send`
 overrides the weak alias while `PMPI_Send` stays reachable — so both names are
 unconditionally present in whatever library is already linked. MPICH ships no
@@ -373,6 +387,34 @@ has known costs: `dlmopen` is semi-abandoned, caps namespaces at glibc's `DL_NNS
 concrete reason `dlmopen` has to stay available. Remember the namespace id from the
 first load and reuse it, so the wrapper and its dependencies stay in one namespace.
 
+**`dlmopen` does not survive contact with a real MPI, and that is worth knowing
+before S9 depends on it.** Both MPICH 4.1 and Open MPI 4.1 segfault in `MPI_Init`
+when the wrapper is loaded that way, in *glibc's own loader* rather than in
+anything of ours:
+
+```
+add_to_global_resize (elf/dl-open.c:126)
+_dl_open (".../pmix/pmix_mca_pcompress_zlib.so", mode=RTLD_LAZY|RTLD_GLOBAL, nsid=-2)
+PMIx_Init  <-  PMPI_Init  <-  mpiwrapper_w_MPI_Init  <-  libmpi_abi MPI_Init
+```
+
+Every modern MPI loads its components with `dlopen`, and PMIx asks for
+`RTLD_GLOBAL`; glibc cannot add to the global scope of a namespace created by
+`dlmopen`, because that namespace has no main map. So the failure is structural
+rather than incidental: it is not one implementation's quirk but what happens when
+anything inside a fresh namespace loads a plugin globally, which is what MPI
+runtimes do at startup.
+
+The consequence lands on S9. `dlmopen` was the designated fallback for the case
+where `RTLD_DEEPBIND` breaks the sanitizers, and that fallback does not exist. The
+options S9 actually has are: run the sanitizers with `RTLD_DEEPBIND` and find out
+whether it really breaks them (measure before assuming), build the MPI under test
+with its components static so nothing is `dlopen`ed at run time, or accept that the
+sanitizer jobs cover `libmpi_abi` and the conversion layer rather than the loaded
+configuration. The mode stays selectable — it costs one environment variable, and a
+future glibc or a component-free MPI may make it work — but nothing may be
+*planned* on it.
+
 **Binding mode defaults to `RTLD_LAZY`, not `RTLD_NOW`** — also a correction.
 `RTLD_NOW` forces every undefined symbol in `libmpi` and its dependency closure to
 resolve, and real MPI installations have symbols that are never called. Overridable.
@@ -389,8 +431,10 @@ S1, all of it measured on macOS 26 / arm64 unless stated:
 | macOS, native Open MPI 5.0.6 | same | **works**, 6/6 tests, one rank (its launcher is broken here, unrelated to loading) |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
 | macOS, an ABI-implementing MPI (weak `MPI_*`) | none available | **refused at load**; see below |
-| Linux glibc, `RTLD_LOCAL \| RTLD_DEEPBIND` | measured on `dev/dlopen-probe`'s mock-up | **unverified with real libraries** — never built on Linux yet |
-| Linux glibc, `dlmopen(LM_ID_NEWLM)` | same | same, and the code path has never run |
+| Linux glibc, native MPICH 4.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6 tests, two ranks (Ubuntu 24.04, aarch64, in Docker) |
+| Linux glibc, native Open MPI 4.1 | same | **works**, 6/6 tests, two ranks |
+| Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
+| Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI**; see below |
 | Linux musl | neither exists | expected to be refused at load; no Alpine support until something else is found (§12) |
 | FreeBSD | `RTLD_DEEPBIND` | unverified |
 | Windows | — | open (§13) |

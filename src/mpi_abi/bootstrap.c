@@ -1,3 +1,13 @@
+/* glibc hides dladdr, dlinfo, dlmopen, RTLD_DEEPBIND and Dl_info behind
+ * _GNU_SOURCE, and it has to be defined before any header is included -- which
+ * is why this sits above the file's own comment block rather than beside the
+ * <dlfcn.h> that needs it. macOS declares all of them unconditionally, so this
+ * was invisible until the first Linux build.
+ */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#  define _GNU_SOURCE
+#endif
+
 /* libmpi_abi -- bootstrap: find libmpiwrapper, load it in isolation, and take
  * its vtable.
  *
@@ -227,11 +237,15 @@ static const struct mpiwrapper_vtable *vt_load(void)
   void       *handle = vt_dlopen(path, &how);
   if (!handle) vt_fail("dlopen failed", dlerror());
 
+  /* POSIX's own workaround for a wart POSIX created: dlsym returns void *, ISO
+   * C forbids converting an object pointer to a function pointer, and gcc
+   * -Wpedantic reports the direct cast as an error. Copying the bits through a
+   * void * lvalue is what the dlsym rationale prescribes. Apple's clang accepts
+   * the direct cast, so this too was invisible until the first Linux build.
+   */
   const struct mpiwrapper_vtable *(*get)(uint32_t, uint32_t, uint32_t, size_t,
-                                         const void *, const char **) =
-      (const struct mpiwrapper_vtable *(*)(uint32_t, uint32_t, uint32_t, size_t,
-                                           const void *, const char **))
-          dlsym(handle, "mpiwrapper_get_vtable");
+                                         const void *, const char **);
+  *(void **)&get = dlsym(handle, "mpiwrapper_get_vtable");
   if (!get) vt_fail("not an mpiwrapper library", path);
 
   /* The address of one of our own functions. The wrapper dladdr()s this and the

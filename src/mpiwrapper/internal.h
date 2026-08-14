@@ -138,7 +138,15 @@ MPI_Info       mpiwrapper_info_fromabi(MPIABI_Info abi);
 MPI_Message    mpiwrapper_message_fromabi(MPIABI_Message abi);
 MPI_Op         mpiwrapper_op_fromabi(MPIABI_Op abi);
 MPI_Request    mpiwrapper_request_fromabi(MPIABI_Request abi);
+/* MPI_Session is MPI-4.0, and an implementation may simply not have it: Ubuntu's
+ * Open MPI 4.1 does not. An #ifdef cannot test for a *type*, so the test is the
+ * class's null handle, which is a macro in every implementation we know and whose
+ * absence is the same evidence. Testing MPI_VERSION >= 4 instead would be wrong --
+ * Open MPI 5.0 reports MPI-3.1 and does have sessions.
+ */
+#ifdef MPI_SESSION_NULL
 MPI_Session    mpiwrapper_session_fromabi(MPIABI_Session abi);
+#endif
 MPI_Win        mpiwrapper_win_fromabi(MPIABI_Win abi);
 
 /* ------------------------------------------------- handles: impl -> ABI ---- */
@@ -162,7 +170,9 @@ MPIABI_Info       mpiwrapper_info_toabi(MPI_Info h);
 MPIABI_Message    mpiwrapper_message_toabi(MPI_Message h);
 MPIABI_Op         mpiwrapper_op_toabi(MPI_Op h);
 MPIABI_Request    mpiwrapper_request_toabi(MPI_Request h);
+#ifdef MPI_SESSION_NULL
 MPIABI_Session    mpiwrapper_session_toabi(MPI_Session h);
+#endif
 MPIABI_Win        mpiwrapper_win_toabi(MPI_Win h);
 
 /* Returns and clears the "a handle could not be represented" flag set by the
@@ -255,7 +265,9 @@ extern struct mpiwrapper_rmap mpiwrapper_rmap_info;
 extern struct mpiwrapper_rmap mpiwrapper_rmap_message;
 extern struct mpiwrapper_rmap mpiwrapper_rmap_op;
 extern struct mpiwrapper_rmap mpiwrapper_rmap_request;
+#ifdef MPI_SESSION_NULL
 extern struct mpiwrapper_rmap mpiwrapper_rmap_session;
+#endif
 extern struct mpiwrapper_rmap mpiwrapper_rmap_win;
 
 /* NULL-terminated; walked by the selftest. */

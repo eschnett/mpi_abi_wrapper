@@ -169,7 +169,9 @@ MPI_Errhandler mpiwrapper_errhandler_fromabi(MPIABI_Errhandler abi)
   switch ((uint64_t)(uintptr_t)abi) {
   case 0x00000140: return MPI_ERRHANDLER_NULL; /* MPIABI_ERRHANDLER_NULL */
   case 0x00000141: return MPI_ERRORS_ARE_FATAL; /* MPIABI_ERRORS_ARE_FATAL */
+#ifdef MPI_ERRORS_ABORT
   case 0x00000142: return MPI_ERRORS_ABORT; /* MPIABI_ERRORS_ABORT */
+#endif
   case 0x00000143: return MPI_ERRORS_RETURN; /* MPIABI_ERRORS_RETURN */
   default: break;
   }
@@ -254,6 +256,7 @@ MPI_Request mpiwrapper_request_fromabi(MPIABI_Request abi)
   return MPIWRAPPER_HANDLE(MPI_Request, abi);
 }
 
+#ifdef MPI_SESSION_NULL
 MPI_Session mpiwrapper_session_fromabi(MPIABI_Session abi)
 {
   switch ((uint64_t)(uintptr_t)abi) {
@@ -263,6 +266,7 @@ MPI_Session mpiwrapper_session_fromabi(MPIABI_Session abi)
   if (mpiwrapper_in_predef_range(MPIWRAPPER_BITS(abi))) return MPI_SESSION_NULL;
   return MPIWRAPPER_HANDLE(MPI_Session, abi);
 }
+#endif
 
 MPI_Win mpiwrapper_win_fromabi(MPIABI_Win abi)
 {
@@ -417,7 +421,9 @@ static size_t predef_errhandler(struct mpiwrapper_predef *out, size_t max)
   size_t n = 0;
   PREDEF(MPIABI_ERRHANDLER_NULL, 0x00000140, MPI_ERRHANDLER_NULL);
   PREDEF(MPIABI_ERRORS_ARE_FATAL, 0x00000141, MPI_ERRORS_ARE_FATAL);
+#ifdef MPI_ERRORS_ABORT
   PREDEF(MPIABI_ERRORS_ABORT, 0x00000142, MPI_ERRORS_ABORT);
+#endif
   PREDEF(MPIABI_ERRORS_RETURN, 0x00000143, MPI_ERRORS_RETURN);
   return n;
 }
@@ -481,12 +487,14 @@ static size_t predef_request(struct mpiwrapper_predef *out, size_t max)
   return n;
 }
 
+#ifdef MPI_SESSION_NULL
 static size_t predef_session(struct mpiwrapper_predef *out, size_t max)
 {
   size_t n = 0;
   PREDEF(MPIABI_SESSION_NULL, 0x00000120, MPI_SESSION_NULL);
   return n;
 }
+#endif
 
 static size_t predef_win(struct mpiwrapper_predef *out, size_t max)
 {
@@ -589,6 +597,7 @@ static uint64_t fromabi_bits_request(uint64_t abi_bits)
   return MPIWRAPPER_BITS(mpiwrapper_request_fromabi(MPIWRAPPER_HANDLE(MPIABI_Request, abi_bits)));
 }
 
+#ifdef MPI_SESSION_NULL
 static uint64_t toabi_bits_session(uint64_t impl_bits)
 {
   return MPIWRAPPER_BITS(mpiwrapper_session_toabi(MPIWRAPPER_HANDLE(MPI_Session, impl_bits)));
@@ -598,6 +607,7 @@ static uint64_t fromabi_bits_session(uint64_t abi_bits)
 {
   return MPIWRAPPER_BITS(mpiwrapper_session_fromabi(MPIWRAPPER_HANDLE(MPIABI_Session, abi_bits)));
 }
+#endif
 
 static uint64_t toabi_bits_win(uint64_t impl_bits)
 {
@@ -623,7 +633,9 @@ static struct mpiwrapper_rmap_entry rmap_slots_info[16];
 static struct mpiwrapper_rmap_entry rmap_slots_message[16];
 static struct mpiwrapper_rmap_entry rmap_slots_op[128];
 static struct mpiwrapper_rmap_entry rmap_slots_request[8];
+#ifdef MPI_SESSION_NULL
 static struct mpiwrapper_rmap_entry rmap_slots_session[8];
+#endif
 static struct mpiwrapper_rmap_entry rmap_slots_win[8];
 
 struct mpiwrapper_rmap mpiwrapper_rmap_comm = {rmap_slots_comm, 32, 0, 0, 0};
@@ -635,7 +647,9 @@ struct mpiwrapper_rmap mpiwrapper_rmap_info = {rmap_slots_info, 16, 0, 0, 0};
 struct mpiwrapper_rmap mpiwrapper_rmap_message = {rmap_slots_message, 16, 0, 0, 0};
 struct mpiwrapper_rmap mpiwrapper_rmap_op = {rmap_slots_op, 128, 0, 0, 0};
 struct mpiwrapper_rmap mpiwrapper_rmap_request = {rmap_slots_request, 8, 0, 0, 0};
+#ifdef MPI_SESSION_NULL
 struct mpiwrapper_rmap mpiwrapper_rmap_session = {rmap_slots_session, 8, 0, 0, 0};
+#endif
 struct mpiwrapper_rmap mpiwrapper_rmap_win = {rmap_slots_win, 8, 0, 0, 0};
 
 const struct mpiwrapper_predef_class mpiwrapper_predef_classes[] = {
@@ -657,8 +671,10 @@ const struct mpiwrapper_predef_class mpiwrapper_predef_classes[] = {
      &mpiwrapper_rmap_op},
     {"request", predef_request, toabi_bits_request, fromabi_bits_request,
      &mpiwrapper_rmap_request},
+#ifdef MPI_SESSION_NULL
     {"session", predef_session, toabi_bits_session, fromabi_bits_session,
      &mpiwrapper_rmap_session},
+#endif
     {"win", predef_win, toabi_bits_win, fromabi_bits_win,
      &mpiwrapper_rmap_win},
     {NULL, NULL, NULL, NULL, NULL}};

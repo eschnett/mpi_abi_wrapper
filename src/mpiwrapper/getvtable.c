@@ -1,3 +1,13 @@
+/* glibc hides dladdr, dlinfo, dlmopen, RTLD_DEEPBIND and Dl_info behind
+ * _GNU_SOURCE, and it has to be defined before any header is included -- which
+ * is why this sits above the file's own comment block rather than beside the
+ * <dlfcn.h> that needs it. macOS declares all of them unconditionally, so this
+ * was invisible until the first Linux build.
+ */
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#  define _GNU_SOURCE
+#endif
+
 /* libmpiwrapper -- the one exported symbol.
  *
  * Hand-written and permanent. A getter rather than an exported struct, for two

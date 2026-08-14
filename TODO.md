@@ -2,6 +2,10 @@
 
 - test against MVAPICH as well
 
+- test with Intel and Nvidia compilers
+
+- test FreeBSD
+
 - allow MPI 3.0
 
 - "Stage any array whose element type is not *identical* on both
@@ -14,3 +18,5 @@
   the current state. what is working, what isn't?
 
 - add a licence (same as mpif)
+
+- re-think the overall approach and the stages. clean up the notes.

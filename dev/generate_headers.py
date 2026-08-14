@@ -16,6 +16,7 @@ difference -- the "empty diff on regeneration" discipline of NOTES.md #3.
 
 import re
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -67,17 +68,29 @@ _ENTRYPOINT_RE = re.compile(
 
 
 def apply_patch() -> str:
-    proc = subprocess.run(
-        ["patch", "--quiet", "-p1", "-o", "-", str(VENDORED_STUB)],
-        input=PATCH.read_bytes(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=ROOT,
-    )
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stderr.decode())
-        raise SystemExit(f"patch failed with exit code {proc.returncode}")
-    return proc.stdout.decode()
+    """Vendored stub + doc/mpi.h.patch, without touching the source tree.
+
+    The obvious spelling, `patch -o - file`, is not portable: GNU patch creates
+    a temporary file named `./-.XXXXXX` *in the current directory* on the way to
+    writing "stdout", so it fails outright on a read-only checkout and litters a
+    writable one. BSD patch does not, which is why this only showed up on the
+    first Linux run. Patching into a temporary directory, and running there,
+    behaves the same on both.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "mpi.h"
+        proc = subprocess.run(
+            ["patch", "--quiet", "-p1", "-o", str(out), str(VENDORED_STUB)],
+            input=PATCH.read_bytes(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=tmp,
+        )
+        if proc.returncode != 0:
+            sys.stderr.write(proc.stdout.decode())
+            sys.stderr.write(proc.stderr.decode())
+            raise SystemExit(f"patch failed with exit code {proc.returncode}")
+        return out.read_text()
 
 
 def is_prototype_line(line: str) -> bool:
