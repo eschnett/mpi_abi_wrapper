@@ -148,9 +148,9 @@ static const struct mpiwrapper_vtable *vt_load(void)
   void *handle = vt_dlopen(path);
   if (!handle) vt_fail("dlopen failed", dlerror());
 
-  const struct mpiwrapper_vtable *(*get)(uint32_t, uint32_t, size_t,
+  const struct mpiwrapper_vtable *(*get)(uint32_t, uint32_t, uint32_t, size_t,
                                          const void *, const char **) =
-      (const struct mpiwrapper_vtable *(*)(uint32_t, uint32_t, size_t,
+      (const struct mpiwrapper_vtable *(*)(uint32_t, uint32_t, uint32_t, size_t,
                                            const void *, const char **))
       dlsym(handle, "mpiwrapper_get_vtable");
   if (!get) vt_fail("not an mpiwrapper library", path);
@@ -166,7 +166,7 @@ static const struct mpiwrapper_vtable *vt_load(void)
 
   const char *diagnostic = "no diagnostic";
   const struct mpiwrapper_vtable *vt =
-      get(MPIABI_VERSION, MPIWRAPPER_LAYOUT_HASH,
+      get(MPIABI_VERSION, MPIABI_SUBVERSION, MPIWRAPPER_LAYOUT_HASH,
           sizeof(struct mpiwrapper_vtable), abi_probe, &diagnostic);
   if (!vt) vt_fail("wrapper rejected this libmpi_abi", diagnostic);
 

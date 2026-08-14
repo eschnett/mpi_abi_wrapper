@@ -147,21 +147,24 @@ static int w_MPI_Waitall(int abi_count, MPIABI_Request *abi_requests,
 
   MPI_Request  reqstack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Request)];
   MPI_Status   ststack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Status)];
-  MPI_Request *requests = NULL;
-  MPI_Status  *statuses = NULL;
+  MPI_Request *requests   = NULL;
+  MPI_Status  *statuses   = NULL;
+  int          abi_ierror = MPIABI_ERR_INTERN; /* if we leave before the call */
   int          ierror;
 
+  /* One cleanup path, reached by goto. Two staged arrays and a write-back that has
+   * to happen on the error path as well make the early-return version noticeably
+   * harder to check by eye, and every generated array-bearing wrapper has this
+   * shape.
+   */
   requests = mpiwrapper_stage(reqstack, sizeof reqstack, (size_t)count,
                               sizeof *requests);
-  if (!requests) return MPIABI_ERR_INTERN;
+  if (!requests) goto done;
 
   if (!ignore_statuses) {
     statuses = mpiwrapper_stage(ststack, sizeof ststack, (size_t)count,
                                 sizeof *statuses);
-    if (!statuses) {
-      mpiwrapper_unstage(requests, reqstack);
-      return MPIABI_ERR_INTERN;
-    }
+    if (!statuses) goto done;
   }
 
   for (int i = 0; i < count; ++i)
@@ -181,9 +184,15 @@ static int w_MPI_Waitall(int abi_count, MPIABI_Request *abi_requests,
     for (int i = 0; i < count; ++i)
       mpiwrapper_status_toabi(&statuses[i], &abi_statuses[i]);
 
+  abi_ierror = mpiwrapper_errorcode_toabi(ierror);
+
+done:
+  /* Safe on the early paths: mpiwrapper_unstage ignores NULL, and frees only when
+   * the pointer is not the stack buffer.
+   */
   mpiwrapper_unstage(statuses, ststack);
   mpiwrapper_unstage(requests, reqstack);
-  return mpiwrapper_errorcode_toabi(ierror);
+  return abi_ierror;
 }
 
 /* -------------------------------------------------------------- MPI_File_open */

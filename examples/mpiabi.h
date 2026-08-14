@@ -33,7 +33,8 @@
 
 #include <stdint.h>
 
-#define MPIABI_VERSION 1
+#define MPIABI_VERSION    1
+#define MPIABI_SUBVERSION 0
 
 /* Handles: pointer-typed, so pointer-sized -- 32 bits on ILP32, which is why no
  * scheme here may rely on spare high bits.

@@ -89,63 +89,79 @@ MPI_Request mpiwrapper_request_fromabi(MPIABI_Request abi)
  * classes cannot alias.
  */
 
+/* A *perfect* hash, not open addressing. The whole key set is known at
+ * initialization, so a multiplier can be searched for until no two keys collide,
+ * which removes the probe loop -- and the probe loop is the only data-dependent part.
+ * dev/handle-map-bench measures the difference: 1.09 ns flat, against 1.36-1.53 ns
+ * for open addressing when the datatype varies from call to call.
+ *
+ * That benchmark also answers the obvious alternatives. A sorted array with binary
+ * search costs 3.4x as much: seven dependent, unpredictable comparisons.
+ * Interpolation search is a trap -- O(log log n) assumes uniformly distributed keys,
+ * and MPICH's are one value at 0x0c000000, a dense cluster at 0x4c00xxxx, and one at
+ * 0x8c000004, on which it degenerates toward a linear scan with a floating-point
+ * divide per step and measures *eighty times* slower.
+ */
+
+#define RMAP_EMPTY UINT64_MAX /* no real handle: not a valid address, not a valid
+                               * MPICH handle. Lets the lookup be a single compare
+                               * with no separate "used" test. */
+
 struct rmap_entry {
-  uintptr_t key;
-  uint64_t  abi;
-  int       used;
+  uint64_t key;
+  uint64_t abi;
 };
 
 struct rmap {
   struct rmap_entry *slots;
-  size_t             mask; /* capacity - 1, capacity a power of two */
+  size_t             nslots; /* power of two */
+  uint64_t           mul;
+  unsigned           shift;
 };
 
-static struct rmap_entry rmap_datatype_slots[256];
-static struct rmap_entry rmap_comm_slots[32];
-static struct rmap_entry rmap_op_slots[32];
-static struct rmap_entry rmap_file_slots[8];
+static struct rmap_entry rmap_datatype_slots[1024];
+static struct rmap_entry rmap_comm_slots[64];
+static struct rmap_entry rmap_op_slots[64];
+static struct rmap_entry rmap_file_slots[16];
 
-static struct rmap rmap_datatype = {rmap_datatype_slots, 255};
-static struct rmap rmap_comm     = {rmap_comm_slots, 31};
-static struct rmap rmap_op       = {rmap_op_slots, 31};
-static struct rmap rmap_file     = {rmap_file_slots, 7};
+static struct rmap rmap_datatype = {rmap_datatype_slots, 1024, 0, 0};
+static struct rmap rmap_comm     = {rmap_comm_slots, 64, 0, 0};
+static struct rmap rmap_op       = {rmap_op_slots, 64, 0, 0};
+static struct rmap rmap_file     = {rmap_file_slots, 16, 0, 0};
 
-static size_t rmap_hash(uintptr_t k)
+/* Search multipliers until the key set is collision-free. Bounded, and reports
+ * failure so that mpiwrapper_get_vtable can refuse with a diagnostic: degrading to a
+ * probe loop at run time would put back the branch this exists to remove, so the
+ * failure has to be loud and at initialization.
+ */
+static int rmap_build(struct rmap *m, const uint64_t *keys, const uint64_t *abis,
+                      size_t n)
 {
-  /* Fibonacci hashing: implementation handles are dense in their low bits
-   * (MPICH) or 8/16-byte-aligned addresses (Open MPI), and both would collide
-   * badly under a plain mask.
-   */
-  uint64_t x = (uint64_t)k;
-  x *= 0x9e3779b97f4a7c15u;
-  return (size_t)(x >> 32);
-}
+  unsigned shift = 64;
+  for (size_t t = m->nslots; t > 1; t >>= 1) --shift;
 
-/* Insert-only, called from initialization while single-threaded. */
-static void rmap_insert(struct rmap *m, uintptr_t key, uint64_t abi)
-{
-  size_t i = rmap_hash(key) & m->mask;
-  while (m->slots[i].used) {
-    if (m->slots[i].key == key) return; /* aliased predefined handles: first wins */
-    i = (i + 1) & m->mask;
-  }
-  m->slots[i].key  = key;
-  m->slots[i].abi  = abi;
-  m->slots[i].used = 1;
-}
-
-/* Read-only afterwards, so no synchronization is needed on lookup. */
-static int rmap_lookup(const struct rmap *m, uintptr_t key, uint64_t *abi)
-{
-  size_t i = rmap_hash(key) & m->mask;
-  while (m->slots[i].used) {
-    if (m->slots[i].key == key) {
-      *abi = m->slots[i].abi;
-      return 1;
+  uint64_t mul = 0x9e3779b97f4a7c15u;
+  for (int attempt = 0; attempt < 4096; ++attempt, mul += 0x2545f4914f6cdd1du) {
+    for (size_t i = 0; i < m->nslots; ++i) m->slots[i].key = RMAP_EMPTY;
+    int ok = 1;
+    for (size_t i = 0; i < n && ok; ++i) {
+      const size_t slot = (size_t)((keys[i] * mul) >> shift);
+      if (m->slots[slot].key != RMAP_EMPTY) ok = 0;
+      else { m->slots[slot].key = keys[i]; m->slots[slot].abi = abis[i]; }
     }
-    i = (i + 1) & m->mask;
+    if (ok) { m->mul = mul; m->shift = shift; return 1; }
   }
   return 0;
+}
+
+/* One multiply, one shift, one load, one compare. No loop. */
+static inline int rmap_lookup(const struct rmap *m, uintptr_t key, uint64_t *abi)
+{
+  const struct rmap_entry *e =
+      &m->slots[(size_t)(((uint64_t)key * m->mul) >> m->shift)];
+  if (e->key != (uint64_t)key) return 0;
+  *abi = e->abi;
+  return 1;
 }
 
 /* A dynamically created implementation handle becomes an ABI handle by preserving
@@ -209,28 +225,37 @@ int mpiwrapper_rank_fromabi(int abi_rank)
 
 int mpiwrapper_rank_toabi(int rank)
 {
-  if (rank == MPI_ANY_SOURCE) return MPIABI_ANY_SOURCE;
-  if (rank == MPI_PROC_NULL)  return MPIABI_PROC_NULL;
-  if (rank == MPI_ROOT)       return MPIABI_ROOT;
-  if (rank == MPI_UNDEFINED)  return MPIABI_UNDEFINED;
-  return rank;
-  /* Not a switch: MPICH gives MPI_PROC_NULL and MPI_ANY_TAG the same value, so
-   * the case labels of a combined switch would not be unique. The order of the
-   * tests is what disambiguates, and it is only correct because this function
-   * knows it is looking at a rank.
+  /* A switch is fine here, and in every one of these four functions. Within a
+   * single role the implementation's magic values are distinct -- for ranks MPICH
+   * uses -1, -2, -3, -32766 and Open MPI -2, -1, -4, -32766 -- so the case labels
+   * are unique. It is only a *combined* rank-and-tag conversion that could not be
+   * written as a switch, because MPICH gives MPI_PROC_NULL and MPI_ANY_TAG the same
+   * value (-1). That is the reason the roles are separate functions, and it is not a
+   * reason to avoid a switch inside them.
    */
+  switch (rank) {
+  case MPI_ANY_SOURCE: return MPIABI_ANY_SOURCE;
+  case MPI_PROC_NULL:  return MPIABI_PROC_NULL;
+  case MPI_ROOT:       return MPIABI_ROOT;
+  case MPI_UNDEFINED:  return MPIABI_UNDEFINED;
+  default:             return rank;
+  }
 }
 
 int mpiwrapper_tag_fromabi(int abi_tag)
 {
-  if (abi_tag == MPIABI_ANY_TAG) return MPI_ANY_TAG;
-  return abi_tag;
+  switch (abi_tag) {
+  case MPIABI_ANY_TAG: return MPI_ANY_TAG;
+  default:             return abi_tag;
+  }
 }
 
 int mpiwrapper_tag_toabi(int tag)
 {
-  if (tag == MPI_ANY_TAG) return MPIABI_ANY_TAG;
-  return tag;
+  switch (tag) {
+  case MPI_ANY_TAG: return MPIABI_ANY_TAG;
+  default:          return tag;
+  }
 }
 
 /* Error codes: the common case is MPI_SUCCESS, which is 0 everywhere, so it costs
@@ -491,43 +516,57 @@ int mpiwrapper_op_create(MPIABI_User_function *abi_user_fn, int abi_commute,
 
 extern const struct mpiwrapper_vtable mpiwrapper_vtable_instance;
 
-static void init_reverse_maps(void)
+static int init_reverse_maps(void)
 {
   /* Every entry names the implementation's own macro, so no implementation-side
-   * value is ever transcribed -- and a macro that does not exist is a compile
-   * error rather than a wrong number.
+   * value is ever transcribed -- and a macro that does not exist is a compile error
+   * rather than a wrong number. The generator emits these, one line per predefined
+   * handle, with #ifdef guards on the optional ones.
    */
-  rmap_insert(&rmap_datatype, (uintptr_t)MPI_DATATYPE_NULL, 0x00000200);
-  rmap_insert(&rmap_datatype, (uintptr_t)MPI_INT, 0x00000209);
-  rmap_insert(&rmap_datatype, (uintptr_t)MPI_DOUBLE, 0x00000214);
-  rmap_insert(&rmap_datatype, (uintptr_t)MPI_BYTE, 0x00000247);
+  static const uint64_t dt_impl[] = {
+      (uint64_t)(uintptr_t)MPI_DATATYPE_NULL,
+      (uint64_t)(uintptr_t)MPI_INT,
+      (uint64_t)(uintptr_t)MPI_DOUBLE,
+      (uint64_t)(uintptr_t)MPI_BYTE,
 #ifdef MPI_INTEGER16
-  rmap_insert(&rmap_datatype, (uintptr_t)MPI_INTEGER16, 0x0000022f);
+      (uint64_t)(uintptr_t)MPI_INTEGER16,
 #endif
-  /* ... all 104 predefined handles, one line each, generated ... */
+  };
+  static const uint64_t dt_abi[] = {
+      0x00000200, 0x00000209, 0x00000214, 0x00000247,
+#ifdef MPI_INTEGER16
+      0x0000022f,
+#endif
+  };
+  static const uint64_t comm_impl[] = {(uint64_t)(uintptr_t)MPI_COMM_NULL,
+                                       (uint64_t)(uintptr_t)MPI_COMM_WORLD,
+                                       (uint64_t)(uintptr_t)MPI_COMM_SELF};
+  static const uint64_t comm_abi[]  = {0x00000100, 0x00000101, 0x00000102};
+  static const uint64_t op_impl[]   = {(uint64_t)(uintptr_t)MPI_OP_NULL,
+                                       (uint64_t)(uintptr_t)MPI_SUM};
+  static const uint64_t op_abi[]    = {0x00000020, 0x00000021};
+  static const uint64_t file_impl[] = {(uint64_t)(uintptr_t)MPI_FILE_NULL};
+  static const uint64_t file_abi[]  = {0x00000118};
 
-  rmap_insert(&rmap_comm, (uintptr_t)MPI_COMM_NULL, 0x00000100);
-  rmap_insert(&rmap_comm, (uintptr_t)MPI_COMM_WORLD, 0x00000101);
-  rmap_insert(&rmap_comm, (uintptr_t)MPI_COMM_SELF, 0x00000102);
-
-  rmap_insert(&rmap_op, (uintptr_t)MPI_OP_NULL, 0x00000020);
-  rmap_insert(&rmap_op, (uintptr_t)MPI_SUM, 0x00000021);
-
-  rmap_insert(&rmap_file, (uintptr_t)MPI_FILE_NULL, 0x00000118);
+#define N(a) (sizeof(a) / sizeof(*(a)))
+  return rmap_build(&rmap_datatype, dt_impl, dt_abi, N(dt_impl)) &&
+         rmap_build(&rmap_comm, comm_impl, comm_abi, N(comm_impl)) &&
+         rmap_build(&rmap_op, op_impl, op_abi, N(op_impl)) &&
+         rmap_build(&rmap_file, file_impl, file_abi, N(file_impl));
+#undef N
 }
 
 /* Did the loader bind our MPI_* calls outward to the implementation, or back into
  * libmpi_abi? On ELF the second is the default outcome, because a dlopen'ed object
  * searches the global scope -- where libmpi_abi lives -- before its own
- * dependencies. libmpi_abi is loaded with dlmopen or RTLD_DEEPBIND to prevent
- * that; this asserts that the prevention worked.
+ * dependencies. dev/dlopen-probe measures this: plain RTLD_LOCAL captures both the
+ * wrapper's calls and the implementation's own internal ones, and RTLD_DEEPBIND or
+ * dlmopen fixes both.
  *
  * Checking the outcome rather than the mechanism matters: dlinfo(RTLD_DI_LMID)
- * confirms which namespace we got, but not that every reference resolved the way
- * the namespace was supposed to make it resolve. In particular, whether
- * RTLD_DEEPBIND applies transitively to the dependencies loaded by the same call
- * -- and so whether it also redirects the *implementation's own* internal MPI_*
- * references -- is not something to take on faith. This check does not care.
+ * confirms which namespace we got, but not that every reference resolved the way the
+ * namespace was supposed to make it resolve. This check does not care which
+ * mechanism was used, or whether it propagated to dependencies.
  */
 static int resolution_is_outward(const void *abi_probe, const char **diagnostic)
 {
@@ -546,20 +585,33 @@ static int resolution_is_outward(const void *abi_probe, const char **diagnostic)
         "symbol resolution captured: this libmpiwrapper's MPI_* calls resolve "
         "back into libmpi_abi instead of the MPI implementation, which would "
         "recurse until the stack is exhausted. Load the wrapper with dlmopen or "
-        "RTLD_DEEPBIND (set MPI_ABI_WRAPPER_DLOPEN_MODE=dlmopen).";
+        "RTLD_DEEPBIND.";
     return 0;
   }
   return 1;
 }
 
 const struct mpiwrapper_vtable *
-mpiwrapper_get_vtable(uint32_t abi_version, uint32_t layout_hash, size_t size,
-                      const void *abi_probe, const char **diagnostic)
+mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
+                      uint32_t layout_hash, size_t size, const void *abi_probe,
+                      const char **diagnostic)
 {
   static atomic_int initialized;
 
+  /* The ABI header carries both MPI_ABI_VERSION and MPI_ABI_SUBVERSION, so check
+   * both. A differing major version is incompatible outright. A differing
+   * subversion is not necessarily fatal -- subversions are meant to be additive --
+   * but the two halves must agree on which one they were generated from, and the
+   * layout hash below would not catch a subversion that added no slot.
+   */
   if (abi_version != MPIABI_VERSION) {
-    *diagnostic = "MPI ABI version mismatch between libmpi_abi and libmpiwrapper";
+    *diagnostic = "MPI ABI major version mismatch between libmpi_abi and "
+                  "libmpiwrapper";
+    return NULL;
+  }
+  if (abi_subversion != MPIABI_SUBVERSION) {
+    *diagnostic = "MPI ABI subversion mismatch between libmpi_abi and "
+                  "libmpiwrapper";
     return NULL;
   }
   if (layout_hash != MPIWRAPPER_LAYOUT_HASH) {
@@ -582,8 +634,15 @@ mpiwrapper_get_vtable(uint32_t abi_version, uint32_t layout_hash, size_t size,
   int expected = 0;
   if (atomic_compare_exchange_strong_explicit(&initialized, &expected, 1,
                                               memory_order_acq_rel,
-                                              memory_order_acquire))
-    init_reverse_maps();
+                                              memory_order_acquire)) {
+    if (!init_reverse_maps()) {
+      /* Loud, and at initialization: falling back to a probe loop at run time would
+       * reintroduce the branch the perfect hash exists to remove.
+       */
+      *diagnostic = "could not construct a collision-free predefined-handle map";
+      return NULL;
+    }
+  }
 
   /* The maps are complete before any slot can be reached, which is the reason this
    * is a getter rather than an exported struct.

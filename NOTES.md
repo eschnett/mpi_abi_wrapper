@@ -40,11 +40,25 @@ variant instead of `MPI_Count count`.
 - So: **1376 vtable slots** (§2 explains why `PMPI` is not folded onto the `MPI`
   slots) and **1376 exported symbols** in `libmpi_abi`.
 
-**Consumer.** [mpif](https://github.com/eschnett/mpif) provides MPI Fortran
-bindings over the ABI and is a downstream consumer of this project; requesting
-changes there is acceptable. The two projects also share problem shapes (both
-generate code for the whole MPI standard), and several conventions here are lifted
-from it deliberately.
+**Consumers.** The point of the ABI is that large MPI-dependent projects can be
+built once and run against any implementation, so the consumers that matter are the
+widely-used libraries and applications:
+
+- **HDF5**, whose parallel driver is the heaviest real user of `MPI_File_*` and
+  therefore of the `MPI_File` handle class, the bitmask `amode`, and
+  `MPI_File_get_view`'s `datarep`.
+- **PETSc**, which exercises collectives, derived datatypes, user-defined operations
+  and attributes about as broadly as anything does.
+- **mpi4py**, which is the case that motivates the plugin scenarios: a host
+  executable that knows nothing about MPI, loading extension modules that do.
+- **[mpif](https://github.com/eschnett/mpif)**, MPI Fortran bindings over the ABI,
+  and the only consumer that reaches the 26 Fortran converters and the status
+  `f2c`/`c2f` paths. Requesting changes there is acceptable; it also shares problem
+  shapes with this project, and several conventions here are lifted from it.
+
+These are not interchangeable as tests: HDF5 covers file I/O that nothing else
+touches, PETSc covers datatype and op breadth, mpi4py covers the loader scenarios,
+mpif covers Fortran. §10 treats them as distinct oracles rather than as a list.
 
 **Constraints**
 
@@ -57,9 +71,17 @@ from it deliberately.
   compile-time assertion or a runtime check inside the library.
 - On macOS it is acceptable to assume the MPI library uses a two-level namespace;
   if anything comes to rely on that, verify it at configure time.
-- **Minimum implementation is MPI-4.0.** Every ABI function then maps 1:1 to one
-  implementation call and no large-count narrowing fallback is needed. This
-  excludes Open MPI 4.x. MPI-4.1-only features still need `#ifdef` handling.
+- **The ABI surface is complete and is MPI-5.0** (plus the Fortran extension of
+  `doc/mpi.h.patch`). All 688 entry points are always exported. A function the
+  implementation lacks is **reported at run time**, never omitted from the ABI: the
+  slot returns `MPI_ERR_UNSUPPORTED_OPERATION` and the generator lists it in
+  `gen/report.txt`. An application must be able to link and start against any
+  wrapper and discover at run time what is missing.
+- **The implementation is expected to provide the MPI-4.0 API.** That is what makes
+  the common case a 1:1 mapping with no large-count narrowing fallback, since the
+  `_c` variants exist there. It is an expectation, not a hard floor — MPI-4.1 and
+  5.0 additions are handled by the runtime-reporting stubs above, and so in
+  principle is anything else absent.
 
 ---
 
@@ -104,13 +126,18 @@ per MPI call; the number of indirect calls is unchanged at one.
 
 ```c
 const struct mpiwrapper_vtable *
-mpiwrapper_get_vtable(uint32_t abi_version, uint32_t layout_hash, size_t size);
+mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
+                      uint32_t layout_hash, size_t size,
+                      const void *abi_probe, const char **diagnostic);
 ```
 
-returning NULL with a diagnostic on mismatch. `abi_version` is the header's
-`MPI_ABI_VERSION` (currently 1); `layout_hash` is generated from the slot list, so
-a regeneration that reorders or inserts a slot is caught rather than silently
-calling through a shifted one. A getter rather than an exported struct, because you
+returning NULL with a diagnostic on mismatch. The header carries **both** `MPI_ABI_VERSION` (currently 1) and
+`MPI_ABI_SUBVERSION` (currently 0), and both are reported and checked. The layout
+hash does not cover the subversion: one that added no slot would leave the hash
+unchanged while still meaning the halves were generated from different
+specifications. `layout_hash` itself is generated from the slot list, so a
+regeneration that reorders or inserts a slot is caught rather than silently calling
+through a shifted one. A getter rather than an exported struct, because you
 would otherwise have to trust the layout in order to read the version out of it —
 and because the getter is a natural place to build the reverse handle map before
 returning.
@@ -439,20 +466,24 @@ that is why its special-casing stays auditable.
 
 ### Naming convention in generated code
 
-ABI-side names carry an `abi_` prefix; implementation-side names are bare:
+ABI-side names carry an `abi_` prefix; implementation-side names are bare. This is a
+wrapper body in `libmpiwrapper`, so it *calls* `MPI_Send` and does not define it —
+the exported `MPI_Send` lives in `libmpi_abi` and is a one-line forwarder (§2):
 
 ```c
-int MPI_Send(const void *abi_buf, int abi_count, MPIABI_Datatype abi_datatype,
-             int abi_dest, int abi_tag, MPIABI_Comm abi_comm)
+static int w_MPI_Send(const void *abi_buf, int abi_count,
+                      MPIABI_Datatype abi_datatype, int abi_dest, int abi_tag,
+                      MPIABI_Comm abi_comm)
 {
-  const void *buf              = buffer_fromabi(abi_buf);
-  const int count              = count_fromabi(abi_count);
-  const MPI_Datatype datatype  = datatype_fromabi(abi_datatype);
-  const int dest               = rank_fromabi(abi_dest);
-  const int tag                = tag_fromabi(abi_tag);
-  const MPI_Comm comm          = comm_fromabi(abi_comm);
+  const void *const  buf      = abi_buf;
+  const int          count    = abi_count;
+  const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);
+  const int          dest     = mpiwrapper_rank_fromabi(abi_dest);
+  const int          tag      = mpiwrapper_tag_fromabi(abi_tag);
+  const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);
+
   const int ierror = MPI_Send(buf, count, datatype, dest, tag, comm);
-  return errorcode_toabi(ierror);
+  return mpiwrapper_errorcode_toabi(ierror);
 }
 ```
 
@@ -542,15 +573,18 @@ Predefined handle constants occupy `0x00000020`..`0x000002eb` — 104 values, al
 
 ### 4.2 Status layouts
 
-| | layout | sizeof | private bytes |
-|---|---|---|---|
-| ABI | `int MPI_SOURCE, MPI_TAG, MPI_ERROR; int MPI_internal[5]` | 32 | **20** |
-| MPICH | `int count_lo, count_hi_and_cancelled, MPI_SOURCE, MPI_TAG, MPI_ERROR` | 20 | 8, at the front |
-| Open MPI | `int MPI_SOURCE, MPI_TAG, MPI_ERROR, _cancelled; size_t _ucount` | 24 | 12, at the back |
+| | layout | sizeof (64-bit) | sizeof (32-bit) | private bytes |
+|---|---|---|---|---|
+| ABI | `int MPI_SOURCE, MPI_TAG, MPI_ERROR; int MPI_internal[5]` | 32 | 32 | **20** |
+| MPICH | `int count_lo, count_hi_and_cancelled, MPI_SOURCE, MPI_TAG, MPI_ERROR` | 20 | 20 | 8, at the front |
+| Open MPI | `int MPI_SOURCE, MPI_TAG, MPI_ERROR, _cancelled; size_t _ucount` | 24 | **20** | 12 / 8, at the back |
 
-Both fit the ABI's 20 scratch bytes with room to spare. (Open MPI's 24 is its
-*total* size; only 12 of it is private. A design that assumed otherwise would have
-rejected the simple scheme for no reason.)
+Open MPI's shrinks on 32-bit because `_ucount` is a `size_t` (measured, not inferred
+— `arm32v7` says 20). MPICH's is 20 either way. Nothing depends on the exact number;
+what matters is the invariant **`sizeof(impl status) <= 32`**, and more precisely
+that the private part fits the ABI's 20 scratch bytes. Both do, with room to spare —
+Open MPI's 24 is its *total* size and only 12 of it is private, so a design that
+read 24 as "does not fit" would reject the simple scheme for no reason.
 
 ### 4.3 Integer constants differ, and differ inconsistently
 
@@ -613,9 +647,35 @@ turns into a jump table), else a bit-cast.
 
 Implementation -> ABI needs the reverse: predefined implementation handle values are
 *not* compile-time constants in general (Open MPI's are addresses), so the map is
-built at initialization inside `mpiwrapper_get_vtable` — a small open-addressing
-hash keyed on `uintptr_t`, ~256 slots, one probe typical. A linear scan over 104
-predefined handles is too slow for the datatype case, which is the hot one.
+built at initialization inside `mpiwrapper_get_vtable`. It is a **perfect hash** —
+the whole key set is known by then, so a multiplier is searched for until no two keys
+collide, making a lookup one multiply, one shift, one load and one compare with no
+probe loop.
+
+`dev/handle-map-bench/` measured the alternatives against the *real* 77 predefined
+MPICH datatype values and against Open MPI-shaped addresses (ns per lookup):
+
+| | mpich hot | mpich sweep | ompi hot | ompi sweep |
+|---|---|---|---|---|
+| perfect hash | **1.104** | **1.093** | **1.103** | **1.085** |
+| open-addressing hash | 1.094 | 1.355 | 1.099 | 1.532 |
+| sorted + binary search | 3.879 | 3.724 | 3.893 | 3.717 |
+| sorted + interpolation search | **88.067** | 82.523 | 1.367 | 1.633 |
+
+**Sorted arrays are not faster.** Binary search costs 3.4x — seven dependent,
+unpredictable comparisons. Interpolation search, the O(log log n) idea, is a *trap*
+on the distribution that actually occurs: it assumes uniform keys, and MPICH's are one
+value at `0x0c000000`, a dense cluster at `0x4c00xxxx`, and one at `0x8c000004`, where
+it degenerates toward a linear scan with a floating-point divide per step and runs
+eighty times slower. On Open MPI's uniform addresses it is fine, and still no better
+than a hash.
+
+The perfect hash also beats the open-addressing hash originally designed here —
+1.36-1.53 -> 1.09 ns whenever the datatype varies between calls — because removing the
+probe loop removes the only data-dependent branch. Construction must be bounded and
+must fail **loudly at initialization** rather than degrading to probing at run time,
+which would put that branch back: widen and retry, then refuse in
+`mpiwrapper_get_vtable` with a diagnostic.
 
 **Collision.** A bit-cast dynamic implementation handle is wrong if it lands in
 `0x20`..`0x2eb`. It never does today: MPICH's handles carry a kind field in the
@@ -965,11 +1025,15 @@ zero when the application never uses those routines.
 
 1. **Conversions live in `mpiwrapper`, behind an ABI-typed vtable.** §2.
 2. **Status: blob only** — no validity marker, no synthesis fallback. §5.2.
-3. **Minimum implementation is MPI-4.0.** §1.
+3. **The ABI surface is complete MPI-5.0**; functions the implementation lacks are
+   reported at run time, never omitted. The implementation is *expected* to provide
+   the MPI-4.0 API, which is what makes the mapping 1:1. §1.
 4. **`mpiwrapper` exports exactly one symbol**, a getter carrying
    `MPI_ABI_VERSION` and a generated layout hash. §2.
 5. **`mpi_abi` finds the wrapper from an environment variable**, falling back to a
-   build-time path. §2.
+   build-time path. §2. **Both libraries are built together into one prefix per MPI
+   installation**, and the split is not user-visible; wrapper libraries are *not*
+   name-tagged by MPI. §9.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them.
 7. **PMPI gets its own vtable slots** (1376, not 688), calling the
@@ -989,6 +1053,12 @@ zero when the application never uses those routines.
     process-lifetime; only generalized-request and `MPI_T`-event state is
     reclaimed. §6.2, §6.3.
 12. **One generated file per artifact**, seven in all. §3.
+18. **The predefined-handle reverse map is a perfect hash**, built at
+    initialization, failing loudly there rather than degrading to a probe loop.
+    Sorted arrays are slower, and interpolation search is far slower on the real key
+    distribution. §5.1.
+19. **Ship `mpicc`, CMake package files (including a `FindMPI` shim) and
+    pkg-config**, each exercised by CI rather than merely parsed. §9.
 13. **No in-place argument conversion**, except same-size OUT arrays needing only
     value mapping. §5.7.
 14. **`MPI_MAX_*` mismatches are handled at run time, not asserted.** §5.8.
@@ -1052,10 +1122,27 @@ a matched directory expands to all of its descendants.
 
 ### CMake
 
-**One project, two independently configurable targets.** `libmpi_abi` needs no MPI;
-`libmpiwrapper` needs `find_package(MPI)`. A standalone wrapper build against a new
-MPI consumes the installed `mpiwrapper_vtable.h` via `find_package(mpi_abi)`, so
-the layout hash necessarily matches the `libmpi_abi` that will load it.
+**`cmake && make install` builds both libraries against the MPI it finds, into one
+prefix.** The two-library split is an *internal* matter and must not be user-visible:
+a user configures against an MPI and gets a working `mpi.h`, `libmpi_abi`,
+`libmpiwrapper`, compiler wrapper and package files. Nobody should have to know that
+`libmpi_abi` does not itself need MPI.
+
+That property is still real and still valuable internally — it is what makes the
+cross test possible (§10) and what lets one `libmpi_abi` be pointed at another
+wrapper — but it is exposed only as a developer option
+(`-DMPI_ABI_BUILD_WRAPPER=OFF`), not as part of the normal flow.
+
+**One prefix per MPI installation.** Install each build into its own prefix, ideally
+beside the MPI it wraps, so the paths baked into it and the module environment that
+produced it stay together. An earlier draft proposed encoding the MPI in the
+library's *name* (`libmpiwrapper-mpich-4.3.so`) so several could share a prefix; that
+is dropped. On real HPC systems the things that make two wrappers incompatible are
+mostly not in the name — loaded modules, compiler and its runtime, fabric libraries,
+MPI build options — so the name would give a false sense of safety while adding
+complexity, and would catch few real errors. The version-and-layout handshake in
+`mpiwrapper_get_vtable` is what actually catches mismatches, and it does so at load
+time rather than by convention.
 
 **Four configure-time checks for the wrapper, all compile-only** so
 cross-compiling works:
@@ -1078,6 +1165,25 @@ cross-compiling works:
 **Generated code stays committed**, with a `regenerate` target outside `all` and a
 CI job asserting it produces an empty diff. Python is a dev dependency, never a
 build dependency.
+
+**Ship the three consumption routes**, since a library nobody can consume portably
+has not been delivered:
+
+- **`mpicc`** and friends (`mpicxx`; `mpifort` deferring to mpif) — a compiler
+  wrapper naming this prefix's `mpi.h` and `libmpi_abi`, with the rpath set so the
+  produced executable starts without help. It must *not* name `libmpiwrapper`:
+  MPI-5.0 §20.2.1 requires `mpi_abi` to be the sole direct MPI dependency of the
+  application binary, and the wrapper is reached by `dlopen`.
+- **CMake package files** — `mpi_abiConfig.cmake` exporting an imported target so
+  `find_package(mpi_abi)` works, plus enough of a `FindMPI` shim that a consumer
+  written against `find_package(MPI)` — HDF5, PETSc, nearly everyone — works
+  unmodified.
+- **pkg-config** — `mpi_abi.pc`, the route nothing else covers.
+
+All three generated from one source of truth for flags, and CI must *use* each of them
+to build and run a program rather than merely check that they parse. mpif's
+`check-pkg-config.sh` is the precedent, and the reason is that `--libs` is worthless
+if the executable it produces cannot start.
 
 **Symbol visibility:** `-fvisibility=hidden` plus an explicit export macro, a
 version script on ELF and `-exported_symbols_list` on macOS. `libmpi_abi` exports
@@ -1179,6 +1285,14 @@ i386/arm32v7 is the only place the "no spare high bits for tagging" constraint o
 
 Our own tests, the MPICH C suite, the cross test, and the sanitizer/valgrind runs.
 
+**Consumer integration** is the oracle that matters most and the one no in-house test
+replaces. Each of the four covers something the others do not: **HDF5**'s parallel
+driver for `MPI_File_*`, the bitmask `amode` and `datarep`; **PETSc** for datatype, op
+and attribute breadth; **mpi4py** for the loader scenarios `dev/dlopen-probe` models
+in miniature; **mpif** for the Fortran converters and status `f2c`/`c2f`. Building and
+running each project's own suite against a wrapper is where omissions that all five
+oracles pass will actually surface.
+
 **mpif's own `test/` is deliberately not gating**, so the two projects' CI do not
 become coupled. It is still the end-to-end composition proof and the only thing
 that exercises the Fortran converters and the status `f2c`/`c2f` paths, so it
@@ -1246,7 +1360,6 @@ this goes wrong.
 - Attribute copy/delete callback lifetimes in detail: the implementation invokes
   them during `MPI_Comm_dup`, `MPI_Comm_free` and `MPI_Finalize`, so the
   `{user_fn, user_extra}` pairs must outlive everything the user holds.
-- Whether to ship an `mpicc`-style compiler wrapper and/or pkg-config files.
 - Capacity defaults for the fixed-size tables, and whether they should be configure
   options.
 

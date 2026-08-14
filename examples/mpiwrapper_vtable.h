@@ -73,6 +73,10 @@ struct mpiwrapper_vtable {
  * wrapper may accept a smaller size than its own and serve the common prefix; it
  * must refuse a larger one, since the caller would read past the end.
  *
+ * Both `abi_version` and `abi_subversion` are checked, against the header's
+ * MPI_ABI_VERSION and MPI_ABI_SUBVERSION. The layout hash alone is not enough: a
+ * subversion that added no slot would leave it unchanged.
+ *
  * `abi_probe` is the address of any function in libmpi_abi. The wrapper dladdr()s
  * it together with the MPI_Send it actually resolved and refuses if the two share
  * a base object, which would mean the loader bound the wrapper's calls back into
@@ -81,7 +85,8 @@ struct mpiwrapper_vtable {
  * with RTLD_DEEPBIND. See the long comment in mpi_abi_side.c.
  */
 const struct mpiwrapper_vtable *
-mpiwrapper_get_vtable(uint32_t abi_version, uint32_t layout_hash, size_t size,
-                      const void *abi_probe, const char **diagnostic);
+mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
+                      uint32_t layout_hash, size_t size, const void *abi_probe,
+                      const char **diagnostic);
 
 #endif /* MPIWRAPPER_VTABLE_H */
