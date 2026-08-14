@@ -175,19 +175,56 @@ resolve. **Isolation is mandatory, not an optimization.**
 Calling `PMPI_*` internally does not save the implementation: we export those too,
 so both names are captured.
 
-**Per platform:**
+**Measured, not reasoned.** `dev/dlopen-probe/` is a mock-up of the three-library
+structure with no MPI in it, run on Linux (glibc 2.36, aarch64 and arm32v7) and
+macOS (arm64). Three tests: the wrapper's own `MPI_Send` call (T1), the
+*implementation's internal* `MPI_Send` call (T2, modelling ROMIO), and a
+second later-`dlopen`ed plugin (T3, modelling mpi4py plus a second extension).
+
+| mode | T1 | T2 | T3 |
+|---|---|---|---|
+| Linux `RTLD_LOCAL` | **CAPTURED** | **CAPTURED** | OK |
+| Linux `RTLD_GLOBAL` | **CAPTURED** | **CAPTURED** | **BYPASSED** |
+| Linux `RTLD_LOCAL \| RTLD_DEEPBIND` | OK | OK | OK |
+| Linux `dlmopen(LM_ID_NEWLM)` | OK | OK | OK |
+| macOS `RTLD_LOCAL` | OK | OK | OK |
+| macOS `RTLD_LOCAL`, wrapper `-flat_namespace` | **CAPTURED** | OK | — |
+
+`CAPTURED` = our `MPI_Send` re-entered, i.e. infinite recursion. `BYPASSED` = the
+caller reached the native MPI without passing through the ABI layer and would be
+handed ABI-typed arguments. 32-bit matched 64-bit exactly. Full traces, the
+`LD_DEBUG=scopes` output showing scope 0 is the global scope, and the
+`LD_DEBUG=bindings` line proving the T3 bypass are in that directory's README.
+
+Four things the probe settled that reasoning had left open:
+
+1. **`RTLD_DEEPBIND` applies transitively.** T2 passes, so it redirects the
+   *implementation's own* internal `MPI_*` references and not merely the wrapper's,
+   even though `libmpi` is a dependency loaded by the same call rather than the
+   object named in it. This was the question that decided the Linux default.
+2. **`RTLD_GLOBAL` really does promote dependencies** into the global scope, and T3
+   demonstrates the consequence rather than predicting it.
+3. **macOS is safe *because of* the two-level namespace**, confirmed by forcing
+   `-flat_namespace` and watching T1 capture. So the assumption is load-bearing:
+   a macOS build must never acquire `-flat_namespace` by accident.
+4. **The load-time isolation check works** — it reported failure on the
+   flat-namespace build before any call was made, and `dladdr` still resolves across
+   a `dlmopen` namespace boundary on this glibc, so the check survives that mode too.
+
+**Per platform, as measured:**
 
 | | how | why |
 |---|---|---|
 | macOS | `RTLD_LOCAL` | the two-level namespace binds `libmpiwrapper`'s `MPI_Send` to `libmpi` at link time, so there is nothing to capture |
-| Linux | `dlmopen(LM_ID_NEWLM, ...)`, or `dlopen` with `RTLD_LOCAL \| RTLD_DEEPBIND` | a separate namespace shares no global scope at all, so it is correct by construction |
+| Linux | `RTLD_LOCAL \| RTLD_DEEPBIND` by default, `dlmopen(LM_ID_NEWLM)` selectable | both measured sufficient; `DEEPBIND` is simpler and has no namespace limit |
 | FreeBSD | `RTLD_LOCAL \| RTLD_DEEPBIND` | `dlmopen` does not exist |
 
-Both Linux modes selectable at run time, as MPItrampoline does, because each has
-known costs: `dlmopen` is semi-abandoned, caps namespaces at glibc's `DL_NNS` (16),
-and breaks some libraries; `RTLD_DEEPBIND` breaks `malloc` interposition and
-sanitizers. Remember the namespace id from the first load and reuse it for every
-subsequent one, so the wrapper and its dependencies stay in one namespace.
+Keep both Linux modes selectable at run time, as MPItrampoline does, because each
+has known costs: `dlmopen` is semi-abandoned, caps namespaces at glibc's `DL_NNS`
+(16), and gives the wrapper a separate libc; `RTLD_DEEPBIND` interferes with
+`malloc` interposition and with sanitizers — which makes the sanitizer CI jobs the
+concrete reason `dlmopen` has to stay available. Remember the namespace id from the
+first load and reuse it, so the wrapper and its dependencies stay in one namespace.
 
 **Binding mode defaults to `RTLD_LAZY`, not `RTLD_NOW`** — also a correction.
 `RTLD_NOW` forces every undefined symbol in `libmpi` and its dependency closure to
@@ -1090,16 +1127,12 @@ this goes wrong.
   a branch on every request-completion call. The EuroMPI'23 ABI paper notes these
   as the only two places translation is not trivial, and both are addressed in
   §6.3.
-- **Whether `RTLD_DEEPBIND` applies transitively** to the dependencies loaded by
-  the same `dlopen` — i.e. whether it also redirects the *implementation's own*
-  internal `MPI_*` references, or only `libmpiwrapper`'s. `dlmopen` is correct
-  either way; `RTLD_DEEPBIND` may only be half a fix, which decides which of the two
-  is the default on Linux. Not answerable on macOS, and worth settling before
-  anything else on Linux. The experiment is small: `libabi.so` and `libimpl.so` each
-  exporting `foo()`, `libwrap.so` linked against `libimpl` and calling `foo()`, an
-  executable linked against `libabi` that `dlopen`s `libwrap` — then repeat with
-  `libimpl` itself calling `foo()`, which is the case that matters. `LD_DEBUG=bindings`
-  reports the answer directly.
+- ~~Whether `RTLD_DEEPBIND` applies transitively.~~ **Settled** by
+  `dev/dlopen-probe/`: it does. See §2.
+- Whether `RTLD_DEEPBIND` survives ASan, which is the case it is most likely to
+  disturb, and therefore whether the sanitizer CI jobs have to select `dlmopen`.
+- musl: no `dlmopen`, and `RTLD_DEEPBIND` is accepted but ignored. Neither mechanism
+  is available, so the probe needs a musl row before claiming Alpine support.
 - Whether the MPICH C suite compiles at all against the ABI header, and how many
   exclusions that costs.
 - ASan/valgrind noise from the implementations, which determines how useful those
