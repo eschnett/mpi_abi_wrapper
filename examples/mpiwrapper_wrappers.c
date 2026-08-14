@@ -21,6 +21,12 @@
  *
  * The bodies are `static`: only mpiwrapper_get_vtable is exported, and `static`
  * enforces that in the language rather than relying on the linker script.
+ *
+ * Note that the wrapper's own *internal* MPI calls -- in the hand-written ~50, where
+ * MPI_Init needs a rank or the error-code registry needs a class -- must use the
+ * implementation's PMPI_* names. An internal call is not application traffic and
+ * must not be counted as such by an interposed tool. This is the same discipline
+ * implementations follow inside themselves.
  */
 
 #include <mpi.h> /* the implementation's */
@@ -64,27 +70,51 @@ extern void  mpiwrapper_unstage(void *p, void *stackbuf);
 
 /* The shape every simple entry point takes: convert each argument into a local,
  * call, map the error code. Nothing is modified in place and nothing is aliased.
+ *
+ * The body is a template instantiated twice, once per name, differing only in which
+ * implementation entry point it calls. The generator holds it once; the doubling is
+ * in the emitted text, not in anything maintained by hand.
+ *
+ * `dest` and `tag` are both plain ints and go through *different* conversions. That
+ * is not redundancy: in the ABI, MPI_ANY_TAG is -2 and MPI_PROC_NULL is -3, while
+ * MPICH gives both the value -1, so a single int_fromabi would be unimplementable.
  */
+#define BODY_MPI_Send(TARGET)                                                     \
+  {                                                                               \
+    const void *const  buf      = abi_buf; /* sentinel-translated for MPI_BOTTOM */\
+    const int          count    = abi_count;                                      \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);       \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);              \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);                 \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);              \
+                                                                                  \
+    const int ierror = TARGET(buf, count, datatype, dest, tag, comm);             \
+    return mpiwrapper_errorcode_toabi(ierror);                                     \
+  }
+
 static int w_MPI_Send(const void *abi_buf, int abi_count,
                       MPIABI_Datatype abi_datatype, int abi_dest, int abi_tag,
                       MPIABI_Comm abi_comm)
-{
-  const void *const     buf      = abi_buf; /* sentinel-translated for MPI_BOTTOM */
-  const int             count    = abi_count;
-  const MPI_Datatype    datatype = mpiwrapper_datatype_fromabi(abi_datatype);
-  const int             dest     = mpiwrapper_rank_fromabi(abi_dest);
-  const int             tag      = mpiwrapper_tag_fromabi(abi_tag);
-  const MPI_Comm        comm     = mpiwrapper_comm_fromabi(abi_comm);
+    BODY_MPI_Send(MPI_Send)
 
-  /* dest and tag are both plain ints and are converted by *different* functions.
-   * That is not redundancy: in the ABI, MPI_ANY_TAG is -2 and MPI_PROC_NULL is
-   * -3, while MPICH gives both the value -1. A single int_fromabi would be
-   * unimplementable.
-   */
-  const int ierror = MPI_Send(buf, count, datatype, dest, tag, comm);
-
-  return mpiwrapper_errorcode_toabi(ierror);
-}
+/* The name-shifted twin, so that an application calling PMPI_Send genuinely
+ * bypasses a tool interposed between this library and the implementation. Routing
+ * both ABI names to one slot would bypass only the ABI-level profiling layer.
+ *
+ * MPIWRAPPER_HAVE_PMPI_SEND is a configure-time probe, because the shifted names are
+ * not reliably in libmpi: MPICH can place them in a separate libpmpich (PMPILIBNAME)
+ * and Open MPI can compile the profiling layer separately. Where the symbol is
+ * absent this falls back to the unshifted body for that one function, which is
+ * exactly the cheaper behaviour -- so the fallback is a degradation, not a failure.
+ */
+#if MPIWRAPPER_HAVE_PMPI_SEND
+static int w_PMPI_Send(const void *abi_buf, int abi_count,
+                       MPIABI_Datatype abi_datatype, int abi_dest, int abi_tag,
+                       MPIABI_Comm abi_comm)
+    BODY_MPI_Send(PMPI_Send)
+#else
+#  define w_PMPI_Send w_MPI_Send
+#endif
 
 /* ---------------------------------------------------------------- MPI_Waitall */
 
@@ -220,10 +250,11 @@ static double w_MPI_Wtime(void) { return MPI_Wtime(); }
  */
 const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .MPI_Send         = w_MPI_Send,
+    .PMPI_Send        = w_PMPI_Send,
     .MPI_Waitall      = w_MPI_Waitall,
     .MPI_Op_create    = mpiwrapper_op_create, /* hand-written: trampoline pool */
     .MPI_File_open    = w_MPI_File_open,
     .MPI_Error_string = w_MPI_Error_string,
     .MPI_Wtime        = w_MPI_Wtime,
-    /* .MPI_Recv = w_MPI_Recv, ... 682 more ... */
+    /* .MPI_Recv = w_MPI_Recv, .PMPI_Recv = w_PMPI_Recv, ... 1368 more ... */
 };

@@ -7,7 +7,7 @@
  *
  * Two parts:
  *   - the bootstrap, hand-written, in src/mpi_abi/
- *   - 1376 forwarders, generated, in gen/mpi_abi/entrypoints.c
+ *   - 1376 forwarders, generated, in gen/mpi_abi/entrypoints.c, one per slot
  *
  * MPI_Send and PMPI_Send are shown; the other 686 pairs are identical in shape.
  */
@@ -198,8 +198,7 @@ __attribute__((constructor)) static void mpi_abi_ctor(void) { vt = vt_load(); }
  *
  * MPI_* and PMPI_* are two definitions rather than an alias: macOS aliases need
  * -Wl,-alias or __asm__ labels, and at one line per body an alias saves nothing.
- * Both reach the same slot, so a tool that interposes MPI_Send and calls
- * PMPI_Send behaves correctly.
+ * They reach *different* slots -- see mpiwrapper_vtable.h for why.
  */
 
 int MPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest, int tag,
@@ -208,14 +207,17 @@ int MPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest, int ta
   return VT()->MPI_Send(buf, count, datatype, dest, tag, comm);
 }
 
+/* Its own slot, not MPI_Send's, so that bypassing the profiling layer bypasses it
+ * at the implementation level too and not merely at the ABI level.
+ */
 int PMPI_Send(const void *buf, int count, MPI_Datatype datatype, int dest,
               int tag, MPI_Comm comm)
 {
-  return VT()->MPI_Send(buf, count, datatype, dest, tag, comm);
+  return VT()->PMPI_Send(buf, count, datatype, dest, tag, comm);
 }
 
 /* Returns double, so there is no error code to map -- one of the handful of
  * entry points whose generated shape differs at all.
  */
 double MPI_Wtime(void) { return VT()->MPI_Wtime(); }
-double PMPI_Wtime(void) { return VT()->MPI_Wtime(); }
+double PMPI_Wtime(void) { return VT()->PMPI_Wtime(); }

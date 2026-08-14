@@ -6,7 +6,7 @@
  * by *version*, and MPIWRAPPER_LAYOUT_HASH is what turns that into a clean
  * failure instead of a call through a shifted slot.
  *
- * The real file has 688 slots. Six are shown.
+ * The real file has 1376 slots. Seven are shown.
  */
 
 #ifndef MPIWRAPPER_VTABLE_H
@@ -32,8 +32,23 @@
  */
 #define MPIWRAPPER_LAYOUT_HASH 0x9f2c41beu
 
+/* One slot per ABI entry point, so 1376: MPI_X and PMPI_X get their own, and each
+ * leads to a wrapper body that calls the implementation's correspondingly-shifted
+ * name. Routing both to a single MPI_X slot would be cheaper, but then an
+ * application calling PMPI_Send to bypass profiling would still be seen by a tool
+ * interposed between the wrapper and the implementation -- it would have bypassed
+ * the ABI-level profiling layer only. Keeping them distinct also makes the ledger
+ * 1:1 rather than 2:1, so "each entry point has exactly one slot and one body" is a
+ * uniform invariant with no special case.
+ *
+ * Where the implementation does not export a shifted name -- MPICH can place them
+ * in a separate libpmpich, Open MPI has OMPI_PROFILING_COMPILE_SEPARATELY -- the
+ * PMPI slot is filled with the MPI body, degrading to the cheaper behaviour for
+ * that function alone.
+ */
 struct mpiwrapper_vtable {
   int    (*MPI_Send)(const void *, int, MPIABI_Datatype, int, int, MPIABI_Comm);
+  int    (*PMPI_Send)(const void *, int, MPIABI_Datatype, int, int, MPIABI_Comm);
   int    (*MPI_Recv)(void *, int, MPIABI_Datatype, int, int, MPIABI_Comm,
                      MPIABI_Status *);
   int    (*MPI_Waitall)(int, MPIABI_Request *, MPIABI_Status *);
@@ -42,7 +57,8 @@ struct mpiwrapper_vtable {
                           MPIABI_File *);
   int    (*MPI_Error_string)(int, char *, int *);
   double (*MPI_Wtime)(void);
-  /* ... 681 more ... */
+  double (*PMPI_Wtime)(void);
+  /* ... 1374 more ... */
 };
 
 /* The only symbol libmpiwrapper exports.

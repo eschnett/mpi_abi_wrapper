@@ -37,7 +37,8 @@ variant instead of `MPI_Count count`.
 - Of those: **611 core**, **51 `MPI_T_*`**, **26 Fortran converters** (22 handle
   converters for 11 handle types, plus 4 status converters).
 - 31 are marked deprecated in the header. Deprecated still means provided.
-- So: **688 vtable slots**, **1376 exported symbols** in `libmpi_abi`.
+- So: **1376 vtable slots** (§2 explains why `PMPI` is not folded onto the `MPI`
+  slots) and **1376 exported symbols** in `libmpi_abi`.
 
 **Consumer.** [mpif](https://github.com/eschnett/mpif) provides MPI Fortran
 bindings over the ABI and is a downstream consumer of this project; requesting
@@ -70,7 +71,7 @@ application
     v
 libmpi_abi.so          exports MPI_* and PMPI_* (1376 one-line functions)
     |                  includes the ABI mpi.h and nothing else
-    |  vt->MPI_Send(...)                    ABI types only, 688 slots
+    |  vt->MPI_Send(...)                    ABI types only, 1376 slots
     v
 libmpiwrapper.so       exports mpiwrapper_get_vtable and nothing else
     |                  includes the implementation's mpi.h + generated mpiabi.h
@@ -114,12 +115,42 @@ would otherwise have to trust the layout in order to read the version out of it 
 and because the getter is a natural place to build the reverse handle map before
 returning.
 
-**PMPI costs no slots.** `MPI_Send` and `PMPI_Send` are two separate one-line
-definitions in `libmpi_abi` calling the same slot. Two definitions rather than a
-weak alias: macOS aliases need `-Wl,-alias` or `__asm__` labels, and a one-line
-body makes an alias pointless. Interposition still works correctly — a tool
-interposes the application's `MPI_Send`, calls `PMPI_Send`, and lands in
-`libmpi_abi`.
+**PMPI gets its own slots**, so 1376 rather than 688. `MPI_Send` and `PMPI_Send` are
+two definitions in `libmpi_abi` (not a weak alias — macOS aliases need `-Wl,-alias`
+or `__asm__` labels, and a one-line body makes an alias pointless) reaching *two*
+slots, whose wrapper bodies call the implementation's `MPI_Send` and `PMPI_Send`
+respectively.
+
+Routing both names to a single `MPI_X` slot is cheaper and was the earlier plan; it
+is wrong at the second of the two levels where interposition can occur:
+
+- *ABI level*, a tool between the application and `libmpi_abi`: works either way.
+- *Implementation level*, a tool between `libmpiwrapper` and `libmpi` (Score-P, TAU,
+  mpiP — reachable only if deliberately linked into the wrapper's dependency chain,
+  since `RTLD_DEEPBIND`/`dlmopen` defeats `LD_PRELOAD`). With one slot, an
+  application calling `PMPI_Send` to bypass profiling still passes through that tool:
+  it bypassed the ABI-level layer only. `PMPI_X` means "the implementation with no
+  profiling wrapper", and a layered shim must not silently reintroduce one.
+
+A second reason, nearly as good: it makes the ledger **1:1**. With one slot the
+generator emits 1376 entry points but 688 bodies, a 2:1 mapping with a special case;
+with two, "each of the 1376 has exactly one slot and one body" is a uniform
+invariant.
+
+Cost: +5.5 KB of vtable, and the generated bodies double — emitted from one template
+per function differing only in the call target, so nothing doubles in what is
+maintained by hand. The one real wrinkle is that **the shifted names are not
+reliably in `libmpi`**: MPICH can place them in a separate `libpmpich`
+(`PMPILIBNAME`) and Open MPI can compile the profiling layer separately. So each is
+a configure-time probe, and where the symbol is absent the `PMPI` slot takes the
+unshifted body for that one function — a degradation to the cheaper behaviour, not a
+failure.
+
+**The wrapper's own internal MPI calls use `PMPI_*` unconditionally** — in the
+hand-written ~50, where `MPI_Init` needs a rank or the error-code registry needs a
+class. An internal call is not application traffic and must not be counted as such
+by an interposed tool. Same discipline implementations follow inside themselves, and
+independent of the slot question.
 
 **Locating the wrapper.** An environment variable, falling back to a path baked in
 at build time. One `libmpi_abi` binary can therefore be pointed at any wrapper,
@@ -916,7 +947,10 @@ zero when the application never uses those routines.
    build-time path. §2.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them.
-7. **PMPI needs no vtable slots**; two definitions rather than a weak alias. §2.
+7. **PMPI gets its own vtable slots** (1376, not 688), calling the
+   implementation's shifted names, with a configure probe and a per-function
+   fallback where those are absent. The wrapper's internal MPI calls use `PMPI_*`
+   unconditionally. §2.
 8. **Bootstrap by constructor into a plain pointer** — no atomic, no lazy-init
    branch, no NULL check outside debug builds. The wrapper is loaded `RTLD_LOCAL`
    and *isolated* — `RTLD_DEEPBIND` or `dlmopen` on Linux, the two-level namespace

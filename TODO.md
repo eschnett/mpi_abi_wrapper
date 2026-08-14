@@ -1,15 +1,5 @@
 # Erik's open review questions
 
-- the calls to `vt()` in the wrappers are expensive. would it be
-  cheaper to initialize a global pointer to `NULL` and crash if MPI
-  functions are called before initialization? initialization happens
-  when the shared library is loaded, i.e. this would never happen.
-  
-  also, would it be cheaper to copy the vtable to save one pointer
-  dereference? i want to reduce the per-call overhead -- maybe this is
-  over-optimizing things since C++ makes sure that such vtable
-  accesses are efficient on modern hardware anyway?
-
 - should both `MPI_*` and `PMPI_*` functions call the wrapped `MPI_*`
   functions? this sounds weird. the cost of wrapping the `PMPI_*`
   functions is small, why not do that as well?
