@@ -727,9 +727,10 @@ int mpiwrapper_init_reverse_maps(const char **diagnostic)
 /* Error codes. The common case is MPI_SUCCESS, which is 0 everywhere, so it
  * costs one compare. Codes handed out at run time by MPI_Add_error_class/
  * _code need renumbering rather than passing through (the ABI caps
- * MPI_ERR_LASTCODE at 16383 against MPICH's 0x3fffffff); that registry is
- * S4's, and until it exists an unrecognized code maps to MPIABI_ERR_OTHER,
- * which is a legal answer for a class this ABI cannot name.
+ * MPI_ERR_LASTCODE at 16383 against MPICH's 0x3fffffff), so the default arm
+ * hands off to the registry in src/mpiwrapper/errorcodes.c, whose only writers
+ * are those two entry points. A code that registry never issued still answers
+ * *_ERR_OTHER, which is a legal class for an error this ABI cannot name.
  */
 int mpiwrapper_errorcode_toabi(int ierror)
 {
@@ -861,7 +862,7 @@ int mpiwrapper_errorcode_toabi(int ierror)
 #ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_ATOMIC
   case MPI_T_ERR_PVAR_NO_ATOMIC: return MPIABI_T_ERR_PVAR_NO_ATOMIC;
 #endif
-  default: return MPIABI_ERR_OTHER;
+  default: return mpiwrapper_errorcode_dynamic_toabi(ierror);
   }
 }
 
@@ -995,7 +996,7 @@ int mpiwrapper_errorcode_fromabi(int abi_ierror)
 #ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_ATOMIC
   case MPIABI_T_ERR_PVAR_NO_ATOMIC: return MPI_T_ERR_PVAR_NO_ATOMIC;
 #endif
-  default: return MPI_ERR_OTHER;
+  default: return mpiwrapper_errorcode_dynamic_fromabi(abi_ierror);
   }
 }
 

@@ -10,8 +10,14 @@
  * MPI_Comm_create_errhandler. The error-handler case is the non-obvious one --
  * MPI_Comm_errhandler_function and its three siblings have no extra-state
  * argument either, so MPI_Op_create is not the only exception (NOTES.md #6.1).
- * The remaining families (keyvals, generalized requests, datareps, MPI_T
- * events) arrive with S3/S4.
+ * S4b adds the other four pools of that row -- MPI_Op_create_c and the file,
+ * window and session error handlers -- and nothing else belongs here: the
+ * families that *do* have an extra-state argument (keyvals, generalized
+ * requests, datareps) need no pool and live in extrastate.c, and MPI_T's
+ * events need a map rather than either and live in toolevents.c.
+ *
+ * Six pools, then, and their sizes are the two tunables of #6.2: 1024 op slots
+ * per variant and 256 error-handler slots per class.
  *
  * Nothing here is ever reclaimed, and that is a decision rather than an
  * oversight. MPI-5.0 2.5.2: a deallocate call "marks the object for
@@ -187,3 +193,165 @@ void mpiwrapper_comm_errh_slot_release(int slot)
 {
   atomic_store_explicit(&comm_errh_fn[slot], NULL, memory_order_release);
 }
+
+/* ------------------------------------------------ large-count user ops ---- */
+
+/* MPI_Op_create_c's callback differs from MPI_Op_create's in one parameter --
+ * `MPI_Count *len` where the other has `int *` -- and that is enough to make
+ * it a second pool rather than a second entry in the first: the trampoline's
+ * *type* is what the implementation stores, so one pool cannot serve both.
+ *
+ * Guarded on the registrar, because MPI_User_function_c is a typedef an
+ * MPI-3.1 implementation does not declare and a pool of a type that does not
+ * exist is a compile error rather than decision 6's run-time report.
+ */
+#ifdef MPIWRAPPER_HAVE_MPI_Op_create_c
+
+static _Atomic(MPIABI_User_function_c *) op_c_fn[MPIWRAPPER_OP_SLOTS];
+
+static void op_c_dispatch(int slot, void *invec, void *inoutvec,
+                          MPI_Count *len, MPI_Datatype *datatype)
+{
+  MPIABI_User_function_c *fn =
+      atomic_load_explicit(&op_c_fn[slot], memory_order_acquire);
+
+  MPIABI_Datatype abi_datatype = mpiwrapper_datatype_toabi(*datatype);
+  MPIABI_Count    abi_len      = (MPIABI_Count)*len;
+
+  fn(invec, inoutvec, &abi_len, &abi_datatype);
+}
+
+#  define MPIWRAPPER_DEFINE_OP_C_TRAMP(SUF)                                    \
+    static void op_c_tramp_##SUF(void *a, void *b, MPI_Count *n,               \
+                                 MPI_Datatype *d)                              \
+    {                                                                          \
+      op_c_dispatch(0x##SUF, a, b, n, d);                                      \
+    }
+#  define MPIWRAPPER_REF_OP_C_TRAMP(SUF) op_c_tramp_##SUF,
+
+MPIWRAPPER_OP_POOL(MPIWRAPPER_DEFINE_OP_C_TRAMP)
+
+static MPI_User_function_c *const op_c_tramps[] = {
+    MPIWRAPPER_OP_POOL(MPIWRAPPER_REF_OP_C_TRAMP)};
+
+_Static_assert(sizeof op_c_tramps / sizeof *op_c_tramps == MPIWRAPPER_OP_SLOTS,
+               "large-count op trampoline pool size does not match "
+               "MPIWRAPPER_OP_SLOTS");
+
+int mpiwrapper_op_c_slot_alloc(MPIABI_User_function_c *fn)
+{
+  for (int i = 0; i < MPIWRAPPER_OP_SLOTS; ++i) {
+    MPIABI_User_function_c *expected = NULL;
+    if (atomic_compare_exchange_strong_explicit(&op_c_fn[i], &expected, fn,
+                                                memory_order_acq_rel,
+                                                memory_order_acquire))
+      return i;
+  }
+  return -1;
+}
+
+MPI_User_function_c *mpiwrapper_op_c_tramp(int slot) { return op_c_tramps[slot]; }
+
+void mpiwrapper_op_c_slot_release(int slot)
+{
+  atomic_store_explicit(&op_c_fn[slot], NULL, memory_order_release);
+}
+
+#endif /* MPIWRAPPER_HAVE_MPI_Op_create_c */
+
+/* ------------------------------------ file, window and session handlers ---- */
+
+/* The remaining three error-handler classes. Each is the communicator pool
+ * above with one type changed, so they are one macro rather than three
+ * transcriptions -- and the macro takes the *implementation's* typedef names,
+ * which is what keeps the variadic declaration of #6.1 right on every
+ * platform without anyone having to remember it three more times.
+ *
+ * The handle conversion inside the dispatch is the reason these are
+ * trampolines at all: the implementation invokes the handler with its own
+ * MPI_File, and the application's function is written against the ABI's.
+ */
+#define MPIWRAPPER_DEFINE_ERRH_POOL(TAG, ABI_FN_T, IMPL_FN_T, ABI_HANDLE_T,    \
+                                    IMPL_HANDLE_T, TOABI)                      \
+  static _Atomic(ABI_FN_T *) TAG##_errh_fn[MPIWRAPPER_ERRHANDLER_SLOTS];       \
+                                                                               \
+  static void TAG##_errh_dispatch(int slot, IMPL_HANDLE_T *handle,             \
+                                  int *error_code)                             \
+  {                                                                            \
+    ABI_FN_T *fn =                                                             \
+        atomic_load_explicit(&TAG##_errh_fn[slot], memory_order_acquire);      \
+                                                                               \
+    ABI_HANDLE_T abi_handle     = TOABI(*handle);                              \
+    int          abi_error_code = mpiwrapper_errorcode_toabi(*error_code);     \
+                                                                               \
+    fn(&abi_handle, &abi_error_code);                                          \
+  }                                                                            \
+                                                                               \
+  MPIWRAPPER_ERRHANDLER_POOL(MPIWRAPPER_DEFINE_ERRH_TRAMP_##TAG)               \
+                                                                               \
+  static IMPL_FN_T *const TAG##_errh_tramps[] = {                              \
+      MPIWRAPPER_ERRHANDLER_POOL(MPIWRAPPER_REF_ERRH_TRAMP_##TAG)};            \
+                                                                               \
+  _Static_assert(sizeof TAG##_errh_tramps / sizeof *TAG##_errh_tramps          \
+                     == MPIWRAPPER_ERRHANDLER_SLOTS,                           \
+                 #TAG " errhandler pool size does not match "                  \
+                      "MPIWRAPPER_ERRHANDLER_SLOTS");                          \
+                                                                               \
+  int mpiwrapper_##TAG##_errh_slot_alloc(ABI_FN_T *fn)                         \
+  {                                                                            \
+    for (int i = 0; i < MPIWRAPPER_ERRHANDLER_SLOTS; ++i) {                    \
+      ABI_FN_T *expected = NULL;                                               \
+      if (atomic_compare_exchange_strong_explicit(&TAG##_errh_fn[i],           \
+                                                  &expected, fn,               \
+                                                  memory_order_acq_rel,        \
+                                                  memory_order_acquire))       \
+        return i;                                                              \
+    }                                                                          \
+    return -1;                                                                 \
+  }                                                                            \
+                                                                               \
+  IMPL_FN_T *mpiwrapper_##TAG##_errh_tramp(int slot)                           \
+  {                                                                            \
+    return TAG##_errh_tramps[slot];                                            \
+  }                                                                            \
+                                                                               \
+  void mpiwrapper_##TAG##_errh_slot_release(int slot)                          \
+  {                                                                            \
+    atomic_store_explicit(&TAG##_errh_fn[slot], NULL, memory_order_release);   \
+  }
+
+#ifdef MPIWRAPPER_HAVE_MPI_File_create_errhandler
+#  define MPIWRAPPER_DEFINE_ERRH_TRAMP_file(SUF)                               \
+    static void file_errh_tramp_##SUF(MPI_File *h, int *e, ...)                \
+    {                                                                          \
+      file_errh_dispatch(0x##SUF, h, e);                                       \
+    }
+#  define MPIWRAPPER_REF_ERRH_TRAMP_file(SUF) file_errh_tramp_##SUF,
+MPIWRAPPER_DEFINE_ERRH_POOL(file, MPIABI_File_errhandler_function,
+                            MPI_File_errhandler_function, MPIABI_File, MPI_File,
+                            mpiwrapper_file_toabi)
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_Win_create_errhandler
+#  define MPIWRAPPER_DEFINE_ERRH_TRAMP_win(SUF)                                \
+    static void win_errh_tramp_##SUF(MPI_Win *h, int *e, ...)                  \
+    {                                                                          \
+      win_errh_dispatch(0x##SUF, h, e);                                        \
+    }
+#  define MPIWRAPPER_REF_ERRH_TRAMP_win(SUF) win_errh_tramp_##SUF,
+MPIWRAPPER_DEFINE_ERRH_POOL(win, MPIABI_Win_errhandler_function,
+                            MPI_Win_errhandler_function, MPIABI_Win, MPI_Win,
+                            mpiwrapper_win_toabi)
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_Session_create_errhandler
+#  define MPIWRAPPER_DEFINE_ERRH_TRAMP_session(SUF)                            \
+    static void session_errh_tramp_##SUF(MPI_Session *h, int *e, ...)          \
+    {                                                                          \
+      session_errh_dispatch(0x##SUF, h, e);                                    \
+    }
+#  define MPIWRAPPER_REF_ERRH_TRAMP_session(SUF) session_errh_tramp_##SUF,
+MPIWRAPPER_DEFINE_ERRH_POOL(session, MPIABI_Session_errhandler_function,
+                            MPI_Session_errhandler_function, MPIABI_Session,
+                            MPI_Session, mpiwrapper_session_toabi)
+#endif

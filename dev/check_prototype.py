@@ -99,6 +99,18 @@ REWRITES = [
      "both, so S2 moved every such guard onto dev/probe_impl.py's "
      "MPIWRAPPER_HAVE_<name>. Which cases are guarded, and what each maps to, "
      "is still compared exactly."),
+    (re.compile(r"default: return MPIABI_ERR_OTHER;"),
+     "default: return mpiwrapper_errorcode_dynamic_toabi(ierror);",
+     "S1's error-code switch answered MPIABI_ERR_OTHER for anything it did "
+     "not recognize, and said in a comment beside it that the registry for "
+     "codes handed out at run time was S4's. S4b built it "
+     "(src/mpiwrapper/errorcodes.c), so the default arm asks it instead -- "
+     "and still answers MPIABI_ERR_OTHER for a code it never issued, which "
+     "is the case S1 was covering. Every predefined case is compared "
+     "exactly, as before."),
+    (re.compile(r"default: return MPI_ERR_OTHER;"),
+     "default: return mpiwrapper_errorcode_dynamic_fromabi(abi_ierror);",
+     "The same change in the other direction."),
 ]
 
 
@@ -174,11 +186,14 @@ def items(kind, text):
 
 def main():
     failures, checked, exempt_fired = [], 0, set()
+    rewrite_fired = set()
 
     for kind, ref_path, gen_path in PAIRS:
         reference = ref_path.read_text()
-        for pattern, replacement, _ in REWRITES:
-            reference = pattern.sub(replacement, reference)
+        for i, (pattern, replacement, _) in enumerate(REWRITES):
+            reference, n = pattern.subn(replacement, reference)
+            if n:
+                rewrite_fired.add(i)
         ref = items(kind, reference)
         gen = items(kind, gen_path.read_text())
         if not ref:
@@ -203,6 +218,14 @@ def main():
     for kind, name in sorted(stale):
         failures.append(f"{kind} {name}: exempted, but the S1 reference has no "
                         "such item. Delete the entry from EXEMPT.")
+
+    # A rewrite that matches nothing is the same failure as an exemption that
+    # stops firing: it claims a change of mechanism the reference no longer
+    # shows, and it would go on silently not applying to whatever replaced it.
+    for i, (pattern, _, _) in enumerate(REWRITES):
+        if i not in rewrite_fired:
+            failures.append(f"rewrite /{pattern.pattern}/ matched nothing in "
+                            "the S1 reference. Delete it from REWRITES.")
 
     if failures:
         print("\n".join("  " + f for f in failures), file=sys.stderr)

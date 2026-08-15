@@ -444,8 +444,34 @@ static void test_errhandler(void)
         errhandler_calls);
   CHECK(errhandler_code != MPI_SUCCESS,
         "the error handler was given MPI_SUCCESS");
-  CHECK(errhandler_code > 0 && errhandler_code <= MPI_ERR_LASTCODE,
-        "the error handler was given %d, which is not an ABI error code",
+
+  /* S1 asserted `errhandler_code <= MPI_ERR_LASTCODE` here, on the reasoning
+   * that an ABI error code must be one the ABI header can name. That premise
+   * is false and S4b measured why: MPICH answers essentially every error with
+   * an instance-specific code rather than with a class, and the wrapper now
+   * interns those rather than flattening them to MPI_ERR_OTHER
+   * (src/mpiwrapper/errorcodes.c) -- so what arrives here is above
+   * MPI_ERR_LASTCODE exactly as a code from MPI_Add_error_code would be.
+   *
+   * What must hold is the property the standard actually states: the *class*
+   * of the code is one of the predefined ones, and MPI_Error_string can say
+   * something about the code. Both reach the implementation through the
+   * registry, so this is also the round trip that a lossy mapping fails.
+   */
+  int errhandler_class = MPI_SUCCESS;
+  CHECK_MPI(MPI_Error_class(errhandler_code, &errhandler_class));
+  CHECK(errhandler_class > 0 && errhandler_class <= MPI_ERR_LASTCODE,
+        "the error handler's code %d has class %d, which is not an ABI error "
+        "class",
+        errhandler_code, errhandler_class);
+
+  char errhandler_string[MPI_MAX_ERROR_STRING];
+  int  errhandler_len = 0;
+  errhandler_string[0] = '\0';
+  CHECK_MPI(MPI_Error_string(errhandler_code, errhandler_string,
+                             &errhandler_len));
+  CHECK(errhandler_len > 0 && errhandler_string[0] != '\0',
+        "MPI_Error_string said nothing about the error handler's code %d",
         errhandler_code);
 
   CHECK_MPI(MPI_Comm_set_errhandler(comm, MPI_ERRORS_ARE_FATAL));

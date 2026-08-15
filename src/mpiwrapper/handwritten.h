@@ -9,12 +9,20 @@
  * which ledger entries are still stubs, so a declaration added here without a
  * definition is a link error rather than a silent claim.
  *
- * S1 covered eight entry points. S4a adds 70 more -- the converter face: the
+ * S1 covered eight entry points. S4a added 70 more -- the converter face: the
  * 44 handle converters and 4 status converters (hw_converters.c), the ten
  * status-consuming functions (hw_status.c), the ten output-string buffers with
  * no length argument (hw_strings.c) and the six MPI_Abi_* calls (hw_abi.c).
- * S4b finishes the ledger with the 40 that need state the wrapper does not yet
- * own (NOTES.md #8).
+ * S4b finished the ledger with the 40 that need state the wrapper owns: the
+ * lifecycle (hw_lifecycle.c), the fifteen callback registrars
+ * (hw_callbacks.c), the twelve buffer forms (hw_buffers.c), the six dynamic
+ * error-code forms (hw_errors.c), the two spawn forms (hw_spawn.c) and
+ * MPI_Pcontrol (hw_pcontrol.c). All 118 ledger entries have a body, which
+ * dev/generate.py freezes as a tally of its own (NOTES.md #8).
+ *
+ * S1's handwritten.c is gone: each of its eight bodies belongs to a family
+ * that now has a file, and a file named after the stage that wrote it was
+ * never going to survive the stage after that.
  */
 
 #ifndef MPIWRAPPER_HANDWRITTEN_H
@@ -22,20 +30,49 @@
 
 #include "internal.h"
 
-/* ------------------------------------------------ lifecycle (S1, S4b) ---- */
+/* ------------------------------------------- lifecycle (hw_lifecycle.c) --- */
 
 int mpiwrapper_w_MPI_Init(int *abi_argc, char ***abi_argv);
 int mpiwrapper_w_PMPI_Init(int *abi_argc, char ***abi_argv);
 
+int mpiwrapper_w_MPI_Init_thread(int *abi_argc, char ***abi_argv,
+                                 int abi_required, int *abi_provided);
+int mpiwrapper_w_PMPI_Init_thread(int *abi_argc, char ***abi_argv,
+                                  int abi_required, int *abi_provided);
+
 int mpiwrapper_w_MPI_Finalize(void);
 int mpiwrapper_w_PMPI_Finalize(void);
 
-/* --------------------------------------- callback registration (S1, S4b) -- */
+int mpiwrapper_w_MPI_Initialized(int *abi_flag);
+int mpiwrapper_w_PMPI_Initialized(int *abi_flag);
+
+int mpiwrapper_w_MPI_Finalized(int *abi_flag);
+int mpiwrapper_w_PMPI_Finalized(int *abi_flag);
+
+int mpiwrapper_w_MPI_Abort(MPIABI_Comm abi_comm, int abi_errorcode);
+int mpiwrapper_w_PMPI_Abort(MPIABI_Comm abi_comm, int abi_errorcode);
+
+int mpiwrapper_w_MPI_Session_init(MPIABI_Info       abi_info,
+                                  MPIABI_Errhandler abi_errhandler,
+                                  MPIABI_Session   *abi_session);
+int mpiwrapper_w_PMPI_Session_init(MPIABI_Info       abi_info,
+                                   MPIABI_Errhandler abi_errhandler,
+                                   MPIABI_Session   *abi_session);
+
+int mpiwrapper_w_MPI_Session_finalize(MPIABI_Session *abi_session);
+int mpiwrapper_w_PMPI_Session_finalize(MPIABI_Session *abi_session);
+
+/* ----------------------------- callback registration (hw_callbacks.c) ----- */
 
 int mpiwrapper_w_MPI_Op_create(MPIABI_User_function *abi_user_fn,
                                int abi_commute, MPIABI_Op *abi_op);
 int mpiwrapper_w_PMPI_Op_create(MPIABI_User_function *abi_user_fn,
                                 int abi_commute, MPIABI_Op *abi_op);
+
+int mpiwrapper_w_MPI_Op_create_c(MPIABI_User_function_c *abi_user_fn,
+                                 int abi_commute, MPIABI_Op *abi_op);
+int mpiwrapper_w_PMPI_Op_create_c(MPIABI_User_function_c *abi_user_fn,
+                                  int abi_commute, MPIABI_Op *abi_op);
 
 int mpiwrapper_w_MPI_Comm_create_errhandler(
     MPIABI_Comm_errhandler_function *abi_comm_errhandler_fn,
@@ -43,6 +80,230 @@ int mpiwrapper_w_MPI_Comm_create_errhandler(
 int mpiwrapper_w_PMPI_Comm_create_errhandler(
     MPIABI_Comm_errhandler_function *abi_comm_errhandler_fn,
     MPIABI_Errhandler               *abi_errhandler);
+
+int mpiwrapper_w_MPI_File_create_errhandler(
+    MPIABI_File_errhandler_function *abi_file_errhandler_fn,
+    MPIABI_Errhandler               *abi_errhandler);
+int mpiwrapper_w_PMPI_File_create_errhandler(
+    MPIABI_File_errhandler_function *abi_file_errhandler_fn,
+    MPIABI_Errhandler               *abi_errhandler);
+
+int mpiwrapper_w_MPI_Win_create_errhandler(
+    MPIABI_Win_errhandler_function *abi_win_errhandler_fn,
+    MPIABI_Errhandler              *abi_errhandler);
+int mpiwrapper_w_PMPI_Win_create_errhandler(
+    MPIABI_Win_errhandler_function *abi_win_errhandler_fn,
+    MPIABI_Errhandler              *abi_errhandler);
+
+int mpiwrapper_w_MPI_Session_create_errhandler(
+    MPIABI_Session_errhandler_function *abi_session_errhandler_fn,
+    MPIABI_Errhandler                  *abi_errhandler);
+int mpiwrapper_w_PMPI_Session_create_errhandler(
+    MPIABI_Session_errhandler_function *abi_session_errhandler_fn,
+    MPIABI_Errhandler                  *abi_errhandler);
+
+int mpiwrapper_w_MPI_Comm_create_keyval(
+    MPIABI_Comm_copy_attr_function   *abi_comm_copy_attr_fn,
+    MPIABI_Comm_delete_attr_function *abi_comm_delete_attr_fn,
+    int *abi_comm_keyval, void *abi_extra_state);
+int mpiwrapper_w_PMPI_Comm_create_keyval(
+    MPIABI_Comm_copy_attr_function   *abi_comm_copy_attr_fn,
+    MPIABI_Comm_delete_attr_function *abi_comm_delete_attr_fn,
+    int *abi_comm_keyval, void *abi_extra_state);
+
+int mpiwrapper_w_MPI_Type_create_keyval(
+    MPIABI_Type_copy_attr_function   *abi_type_copy_attr_fn,
+    MPIABI_Type_delete_attr_function *abi_type_delete_attr_fn,
+    int *abi_type_keyval, void *abi_extra_state);
+int mpiwrapper_w_PMPI_Type_create_keyval(
+    MPIABI_Type_copy_attr_function   *abi_type_copy_attr_fn,
+    MPIABI_Type_delete_attr_function *abi_type_delete_attr_fn,
+    int *abi_type_keyval, void *abi_extra_state);
+
+int mpiwrapper_w_MPI_Win_create_keyval(
+    MPIABI_Win_copy_attr_function   *abi_win_copy_attr_fn,
+    MPIABI_Win_delete_attr_function *abi_win_delete_attr_fn,
+    int *abi_win_keyval, void *abi_extra_state);
+int mpiwrapper_w_PMPI_Win_create_keyval(
+    MPIABI_Win_copy_attr_function   *abi_win_copy_attr_fn,
+    MPIABI_Win_delete_attr_function *abi_win_delete_attr_fn,
+    int *abi_win_keyval, void *abi_extra_state);
+
+int mpiwrapper_w_MPI_Grequest_start(
+    MPIABI_Grequest_query_function  *abi_query_fn,
+    MPIABI_Grequest_free_function   *abi_free_fn,
+    MPIABI_Grequest_cancel_function *abi_cancel_fn, void *abi_extra_state,
+    MPIABI_Request                  *abi_request);
+int mpiwrapper_w_PMPI_Grequest_start(
+    MPIABI_Grequest_query_function  *abi_query_fn,
+    MPIABI_Grequest_free_function   *abi_free_fn,
+    MPIABI_Grequest_cancel_function *abi_cancel_fn, void *abi_extra_state,
+    MPIABI_Request                  *abi_request);
+
+int mpiwrapper_w_MPI_Register_datarep(
+    const char                         *abi_datarep,
+    MPIABI_Datarep_conversion_function *abi_read_conversion_fn,
+    MPIABI_Datarep_conversion_function *abi_write_conversion_fn,
+    MPIABI_Datarep_extent_function     *abi_dtype_file_extent_fn,
+    void                               *abi_extra_state);
+int mpiwrapper_w_PMPI_Register_datarep(
+    const char                         *abi_datarep,
+    MPIABI_Datarep_conversion_function *abi_read_conversion_fn,
+    MPIABI_Datarep_conversion_function *abi_write_conversion_fn,
+    MPIABI_Datarep_extent_function     *abi_dtype_file_extent_fn,
+    void                               *abi_extra_state);
+
+int mpiwrapper_w_MPI_Register_datarep_c(
+    const char                           *abi_datarep,
+    MPIABI_Datarep_conversion_function_c *abi_read_conversion_fn,
+    MPIABI_Datarep_conversion_function_c *abi_write_conversion_fn,
+    MPIABI_Datarep_extent_function       *abi_dtype_file_extent_fn,
+    void                                 *abi_extra_state);
+int mpiwrapper_w_PMPI_Register_datarep_c(
+    const char                           *abi_datarep,
+    MPIABI_Datarep_conversion_function_c *abi_read_conversion_fn,
+    MPIABI_Datarep_conversion_function_c *abi_write_conversion_fn,
+    MPIABI_Datarep_extent_function       *abi_dtype_file_extent_fn,
+    void                                 *abi_extra_state);
+
+int mpiwrapper_w_MPI_T_event_register_callback(
+    MPIABI_T_event_registration abi_event_registration,
+    MPIABI_T_cb_safety abi_cb_safety, MPIABI_Info abi_info,
+    void *abi_user_data, MPIABI_T_event_cb_function *abi_event_cb_function);
+int mpiwrapper_w_PMPI_T_event_register_callback(
+    MPIABI_T_event_registration abi_event_registration,
+    MPIABI_T_cb_safety abi_cb_safety, MPIABI_Info abi_info,
+    void *abi_user_data, MPIABI_T_event_cb_function *abi_event_cb_function);
+
+int mpiwrapper_w_MPI_T_event_set_dropped_handler(
+    MPIABI_T_event_registration         abi_event_registration,
+    MPIABI_T_event_dropped_cb_function *abi_dropped_cb_function);
+int mpiwrapper_w_PMPI_T_event_set_dropped_handler(
+    MPIABI_T_event_registration         abi_event_registration,
+    MPIABI_T_event_dropped_cb_function *abi_dropped_cb_function);
+
+int mpiwrapper_w_MPI_T_event_handle_free(
+    MPIABI_T_event_registration      abi_event_registration,
+    void *abi_user_data, MPIABI_T_event_free_cb_function *abi_free_cb_function);
+int mpiwrapper_w_PMPI_T_event_handle_free(
+    MPIABI_T_event_registration      abi_event_registration,
+    void *abi_user_data, MPIABI_T_event_free_cb_function *abi_free_cb_function);
+
+/* ------------------------------ buffer attach and detach (hw_buffers.c) --- */
+
+int mpiwrapper_w_MPI_Buffer_attach(void *abi_buffer, int abi_size);
+int mpiwrapper_w_PMPI_Buffer_attach(void *abi_buffer, int abi_size);
+
+int mpiwrapper_w_MPI_Buffer_attach_c(void *abi_buffer, MPIABI_Count abi_size);
+int mpiwrapper_w_PMPI_Buffer_attach_c(void *abi_buffer, MPIABI_Count abi_size);
+
+int mpiwrapper_w_MPI_Buffer_detach(void *abi_buffer_addr, int *abi_size);
+int mpiwrapper_w_PMPI_Buffer_detach(void *abi_buffer_addr, int *abi_size);
+
+int mpiwrapper_w_MPI_Buffer_detach_c(void         *abi_buffer_addr,
+                                     MPIABI_Count *abi_size);
+int mpiwrapper_w_PMPI_Buffer_detach_c(void         *abi_buffer_addr,
+                                      MPIABI_Count *abi_size);
+
+int mpiwrapper_w_MPI_Comm_attach_buffer(MPIABI_Comm abi_comm, void *abi_buffer,
+                                        int abi_size);
+int mpiwrapper_w_PMPI_Comm_attach_buffer(MPIABI_Comm abi_comm, void *abi_buffer,
+                                         int abi_size);
+
+int mpiwrapper_w_MPI_Comm_attach_buffer_c(MPIABI_Comm abi_comm,
+                                          void        *abi_buffer,
+                                          MPIABI_Count abi_size);
+int mpiwrapper_w_PMPI_Comm_attach_buffer_c(MPIABI_Comm abi_comm,
+                                           void        *abi_buffer,
+                                           MPIABI_Count abi_size);
+
+int mpiwrapper_w_MPI_Comm_detach_buffer(MPIABI_Comm abi_comm,
+                                        void *abi_buffer_addr, int *abi_size);
+int mpiwrapper_w_PMPI_Comm_detach_buffer(MPIABI_Comm abi_comm,
+                                         void *abi_buffer_addr, int *abi_size);
+
+int mpiwrapper_w_MPI_Comm_detach_buffer_c(MPIABI_Comm   abi_comm,
+                                          void         *abi_buffer_addr,
+                                          MPIABI_Count *abi_size);
+int mpiwrapper_w_PMPI_Comm_detach_buffer_c(MPIABI_Comm   abi_comm,
+                                           void         *abi_buffer_addr,
+                                           MPIABI_Count *abi_size);
+
+int mpiwrapper_w_MPI_Session_attach_buffer(MPIABI_Session abi_session,
+                                           void *abi_buffer, int abi_size);
+int mpiwrapper_w_PMPI_Session_attach_buffer(MPIABI_Session abi_session,
+                                            void *abi_buffer, int abi_size);
+
+int mpiwrapper_w_MPI_Session_attach_buffer_c(MPIABI_Session abi_session,
+                                             void        *abi_buffer,
+                                             MPIABI_Count abi_size);
+int mpiwrapper_w_PMPI_Session_attach_buffer_c(MPIABI_Session abi_session,
+                                              void        *abi_buffer,
+                                              MPIABI_Count abi_size);
+
+int mpiwrapper_w_MPI_Session_detach_buffer(MPIABI_Session abi_session,
+                                           void *abi_buffer_addr,
+                                           int  *abi_size);
+int mpiwrapper_w_PMPI_Session_detach_buffer(MPIABI_Session abi_session,
+                                            void *abi_buffer_addr,
+                                            int  *abi_size);
+
+int mpiwrapper_w_MPI_Session_detach_buffer_c(MPIABI_Session abi_session,
+                                             void         *abi_buffer_addr,
+                                             MPIABI_Count *abi_size);
+int mpiwrapper_w_PMPI_Session_detach_buffer_c(MPIABI_Session abi_session,
+                                              void         *abi_buffer_addr,
+                                              MPIABI_Count *abi_size);
+
+/* -------------------------------- dynamic error codes (hw_errors.c) ------- */
+
+int mpiwrapper_w_MPI_Add_error_class(int *abi_errorclass);
+int mpiwrapper_w_PMPI_Add_error_class(int *abi_errorclass);
+
+int mpiwrapper_w_MPI_Add_error_code(int abi_errorclass, int *abi_errorcode);
+int mpiwrapper_w_PMPI_Add_error_code(int abi_errorclass, int *abi_errorcode);
+
+int mpiwrapper_w_MPI_Add_error_string(int abi_errorcode, const char *abi_string);
+int mpiwrapper_w_PMPI_Add_error_string(int         abi_errorcode,
+                                       const char *abi_string);
+
+int mpiwrapper_w_MPI_Remove_error_class(int abi_errorclass);
+int mpiwrapper_w_PMPI_Remove_error_class(int abi_errorclass);
+
+int mpiwrapper_w_MPI_Remove_error_code(int abi_errorcode);
+int mpiwrapper_w_PMPI_Remove_error_code(int abi_errorcode);
+
+int mpiwrapper_w_MPI_Remove_error_string(int abi_errorcode);
+int mpiwrapper_w_PMPI_Remove_error_string(int abi_errorcode);
+
+/* --------------------------------------------------- spawn (hw_spawn.c) --- */
+
+int mpiwrapper_w_MPI_Comm_spawn(const char *abi_command, char *abi_argv[],
+                                int abi_maxprocs, MPIABI_Info abi_info,
+                                int abi_root, MPIABI_Comm abi_comm,
+                                MPIABI_Comm *abi_intercomm,
+                                int          abi_array_of_errcodes[]);
+int mpiwrapper_w_PMPI_Comm_spawn(const char *abi_command, char *abi_argv[],
+                                 int abi_maxprocs, MPIABI_Info abi_info,
+                                 int abi_root, MPIABI_Comm abi_comm,
+                                 MPIABI_Comm *abi_intercomm,
+                                 int          abi_array_of_errcodes[]);
+
+int mpiwrapper_w_MPI_Comm_spawn_multiple(
+    int abi_count, char *abi_array_of_commands[], char **abi_array_of_argv[],
+    const int abi_array_of_maxprocs[], const MPIABI_Info abi_array_of_info[],
+    int abi_root, MPIABI_Comm abi_comm, MPIABI_Comm *abi_intercomm,
+    int abi_array_of_errcodes[]);
+int mpiwrapper_w_PMPI_Comm_spawn_multiple(
+    int abi_count, char *abi_array_of_commands[], char **abi_array_of_argv[],
+    const int abi_array_of_maxprocs[], const MPIABI_Info abi_array_of_info[],
+    int abi_root, MPIABI_Comm abi_comm, MPIABI_Comm *abi_intercomm,
+    int abi_array_of_errcodes[]);
+
+/* ------------------------------------------ MPI_Pcontrol (hw_pcontrol.c) -- */
+
+int mpiwrapper_w_MPI_Pcontrol(const int abi_level, ...);
+int mpiwrapper_w_PMPI_Pcontrol(const int abi_level, ...);
 
 /* ---------------------- the 44 handle converters (hw_converters.c) ------ */
 

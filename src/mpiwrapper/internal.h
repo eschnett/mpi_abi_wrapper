@@ -146,6 +146,15 @@ static inline int mpiwrapper_in_predef_range(uint64_t bits)
 #ifndef MPIWRAPPER_SERIAL_SLOTS
 #  define MPIWRAPPER_SERIAL_SLOTS 4096
 #endif
+/* Larger than the keyval table it is otherwise a copy of, because this one
+ * absorbs the implementation's own error codes as well as the application's:
+ * MPICH answers essentially every error with an instance-specific code, and
+ * interning them is what keeps their class reachable (errorcodes.c). Here
+ * rather than in that file because test/mpiwrapper_selftest.c fills it.
+ */
+#ifndef MPIWRAPPER_ERRORCODE_SLOTS
+#  define MPIWRAPPER_ERRORCODE_SLOTS 4096
+#endif
 /* Staging threshold in *bytes*, not elements, so that a 32-byte-per-element
  * status array cannot blow a budget tuned for 8-byte handles.
  */
@@ -491,8 +500,10 @@ int mpiwrapper_tverbosity_toabi(int tverbosity);
  *
  * So the switch's default arm asks the registry below instead of passing the
  * value through. Every dynamic keyval an application can hold came out of one
- * of the four MPI_*_create_keyval calls, which is where mpiwrapper_keyval_add
- * is called from (S4) -- so a value neither predefined nor registered is one
+ * of the three MPI_*_create_keyval calls, which is where mpiwrapper_keyval_add
+ * is called from (S4b, hw_callbacks.c) -- MPI_Keyval_create is the fourth
+ * spelling and libmpi_abi forwards it to the first. So a value neither
+ * predefined nor registered is one
  * this library never issued, and both directions answer MPI_KEYVAL_INVALID
  * rather than invent a mapping.
  */
@@ -509,6 +520,59 @@ int mpiwrapper_keyval_dynamic_toabi(int keyval);
  * rather than by luck.
  */
 int mpiwrapper_keyval_add(int keyval, int *abi_keyval);
+
+/* ----------------------------------------------- dynamic error codes ---- */
+
+/* The error-code family's dynamic half, and the exact shape of the keyval one
+ * above (S4b, NOTES.md #5.6). MPI_Add_error_class and MPI_Add_error_code hand
+ * out values above the implementation's own MPI_ERR_LASTCODE -- 0x3fffffff on
+ * MPICH -- and the ABI's is 16383, so passing one through would hand the
+ * application a number its header says cannot be an error code.
+ *
+ * So the generated switches' default arms ask here instead of passing the
+ * value on, and the registry answers MPIABI_ERR_OTHER / MPI_ERR_OTHER for a
+ * code it never issued: that is a legal class for an error this ABI cannot
+ * name, and it is what the switch answered before the registry existed.
+ */
+int mpiwrapper_errorcode_add(int ierror, int *abi_ierror);
+int mpiwrapper_errorcode_dynamic_toabi(int ierror);
+int mpiwrapper_errorcode_dynamic_fromabi(int abi_ierror);
+
+/* ------------------------------------------------- the attached buffer ---- */
+
+/* MPI_BUFFER_AUTOMATIC where the implementation does not have it (S4b). MPI
+ * lets an application attach *no* buffer and have the library provide one of
+ * "sufficient size" itself; an implementation predating MPI-4.1 has no such
+ * mode, so the wrapper attaches a buffer of its own and remembers that the
+ * block is ours rather than the caller's -- which is the whole of what the
+ * detach side needs to know, since it must then answer MPI_BUFFER_AUTOMATIC
+ * rather than an address the caller never gave us.
+ *
+ * One record per buffering scope: the process-wide buffer of
+ * MPI_Buffer_attach, or a communicator's or session's. The key is the
+ * implementation handle's bits, and MPIWRAPPER_AUTOBUF_PROCESS is the
+ * process-wide scope, which no handle can collide with.
+ *
+ * The emulation is an approximation and is documented as one: "sufficient
+ * size" becomes MPIWRAPPER_AUTOBUF_BYTES, so a program that would have run
+ * against a real automatic buffer can still exhaust ours and see
+ * MPI_ERR_BUFFER. Nothing better is available without reimplementing buffered
+ * mode.
+ */
+#define MPIWRAPPER_AUTOBUF_PROCESS UINT64_MAX
+
+/* Allocates the block, records it against the scope, and reports its size.
+ * NULL when the table is full or the allocation failed, which the caller
+ * turns into MPIABI_ERR_INTERN.
+ */
+void *mpiwrapper_autobuf_claim(uint64_t scope, size_t *bytes);
+
+/* Frees the block recorded against the scope and clears the record. Returns 1
+ * if there was one -- which is how the detach side learns that the address the
+ * implementation just handed back is ours and not the application's -- and 0
+ * otherwise. Also the undo path when the attach itself fails.
+ */
+int mpiwrapper_autobuf_release(uint64_t scope);
 
 /* ------------------------------------------------- handle serialization ---- */
 
@@ -644,5 +708,154 @@ void               mpiwrapper_op_slot_release(int slot);
 int mpiwrapper_comm_errh_slot_alloc(MPIABI_Comm_errhandler_function *fn);
 MPI_Comm_errhandler_function *mpiwrapper_comm_errh_tramp(int slot);
 void                          mpiwrapper_comm_errh_slot_release(int slot);
+
+/* S4b completes the pool families of #6.1: the large-count user reduction,
+ * which has a `MPI_Count *len` where the other has an `int *`, and the three
+ * error-handler classes beside the communicator's. Each is guarded on the
+ * registrar that fills it, because a pool for a class the implementation does
+ * not have would not compile -- MPI_File_errhandler_function is a typedef, not
+ * a name a stub can invent.
+ */
+#ifdef MPIWRAPPER_HAVE_MPI_Op_create_c
+int                  mpiwrapper_op_c_slot_alloc(MPIABI_User_function_c *fn);
+MPI_User_function_c *mpiwrapper_op_c_tramp(int slot);
+void                 mpiwrapper_op_c_slot_release(int slot);
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_File_create_errhandler
+int mpiwrapper_file_errh_slot_alloc(MPIABI_File_errhandler_function *fn);
+MPI_File_errhandler_function *mpiwrapper_file_errh_tramp(int slot);
+void                          mpiwrapper_file_errh_slot_release(int slot);
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_Win_create_errhandler
+int mpiwrapper_win_errh_slot_alloc(MPIABI_Win_errhandler_function *fn);
+MPI_Win_errhandler_function *mpiwrapper_win_errh_tramp(int slot);
+void                         mpiwrapper_win_errh_slot_release(int slot);
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_Session_create_errhandler
+int mpiwrapper_session_errh_slot_alloc(MPIABI_Session_errhandler_function *fn);
+MPI_Session_errhandler_function *mpiwrapper_session_errh_tramp(int slot);
+void                             mpiwrapper_session_errh_slot_release(int slot);
+#endif
+
+/* ------------------------------------------------ callbacks: extra state */
+
+/* #6.1's other mechanism: a family whose registrar takes an extra-state
+ * argument needs no pool, because the {user_fn, user_extra} pair can travel
+ * through the implementation as that argument (extrastate.c). Each builder
+ * heap-allocates the pair, answers the implementation-side function pointers
+ * to register, and answers the pointer to hand the implementation as its
+ * extra_state. 0 means the allocation failed and nothing was registered.
+ *
+ * `state` is the pair for a family whose functions are all ours, and the
+ * caller's own extra_state where none of them is -- the predefined attribute
+ * functions of #6.1's sentinel row, where the implementation's own
+ * MPI_COMM_DUP_FN does the work and there is nothing of ours to smuggle.
+ */
+int mpiwrapper_comm_attr_fns(MPIABI_Comm_copy_attr_function   *abi_copy_fn,
+                             MPIABI_Comm_delete_attr_function *abi_delete_fn,
+                             void                             *abi_extra_state,
+                             MPI_Comm_copy_attr_function     **copy_fn,
+                             MPI_Comm_delete_attr_function   **delete_fn,
+                             void                            **state);
+int mpiwrapper_type_attr_fns(MPIABI_Type_copy_attr_function   *abi_copy_fn,
+                             MPIABI_Type_delete_attr_function *abi_delete_fn,
+                             void                             *abi_extra_state,
+                             MPI_Type_copy_attr_function     **copy_fn,
+                             MPI_Type_delete_attr_function   **delete_fn,
+                             void                            **state);
+int mpiwrapper_win_attr_fns(MPIABI_Win_copy_attr_function   *abi_copy_fn,
+                            MPIABI_Win_delete_attr_function *abi_delete_fn,
+                            void                            *abi_extra_state,
+                            MPI_Win_copy_attr_function     **copy_fn,
+                            MPI_Win_delete_attr_function   **delete_fn,
+                            void                           **state);
+
+/* Generalized requests are the one family with an observable reclamation
+ * point: MPI deallocates the object after our free trampoline returns, so the
+ * pair is freed there (#6.2). `discard` is the other end -- the path where
+ * MPI_Grequest_start itself failed and no callback will ever run.
+ */
+#ifdef MPIWRAPPER_HAVE_MPI_Grequest_start
+int mpiwrapper_grequest_fns(MPIABI_Grequest_query_function  *abi_query_fn,
+                            MPIABI_Grequest_free_function   *abi_free_fn,
+                            MPIABI_Grequest_cancel_function *abi_cancel_fn,
+                            void                            *abi_extra_state,
+                            MPI_Grequest_query_function     **query_fn,
+                            MPI_Grequest_free_function      **free_fn,
+                            MPI_Grequest_cancel_function    **cancel_fn,
+                            void                            **state);
+void mpiwrapper_grequest_discard(void *state);
+#endif
+
+/* Datareps are the opposite end of the same question: MPI has no
+ * deregistration call at all, so the pair is process-lifetime by construction
+ * (#6.2). `discard` exists only for a failed registration.
+ */
+#ifdef MPIWRAPPER_HAVE_MPI_Register_datarep
+int mpiwrapper_datarep_fns(MPIABI_Datarep_conversion_function *abi_read_fn,
+                           MPIABI_Datarep_conversion_function *abi_write_fn,
+                           MPIABI_Datarep_extent_function     *abi_extent_fn,
+                           void                               *abi_extra_state,
+                           MPI_Datarep_conversion_function   **read_fn,
+                           MPI_Datarep_conversion_function   **write_fn,
+                           MPI_Datarep_extent_function       **extent_fn,
+                           void                              **state);
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_Register_datarep_c
+int mpiwrapper_datarep_c_fns(MPIABI_Datarep_conversion_function_c *abi_read_fn,
+                             MPIABI_Datarep_conversion_function_c *abi_write_fn,
+                             MPIABI_Datarep_extent_function *abi_extent_fn,
+                             void                           *abi_extra_state,
+                             MPI_Datarep_conversion_function_c **read_fn,
+                             MPI_Datarep_conversion_function_c **write_fn,
+                             MPI_Datarep_extent_function      **extent_fn,
+                             void                             **state);
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_Register_datarep) ||                           \
+    defined(MPIWRAPPER_HAVE_MPI_Register_datarep_c)
+void mpiwrapper_datarep_discard(void *state);
+#endif
+
+/* ------------------------------------------------------- MPI_T's events */
+
+/* #6.1's third mechanism, and the reason it is neither of the other two:
+ * MPI_T_event_set_dropped_handler has no user_data parameter of its own, so
+ * nothing can be smuggled through the registration -- but every one of the
+ * three callbacks receives the event-registration handle, so one map keyed on
+ * the implementation's handle serves all three (toolevents.c).
+ *
+ * Each setter answers 0 when the map is full, which the caller turns into
+ * MPIABI_ERR_INTERN. The trampolines are declared through the
+ * implementation's own typedefs, so their signatures are checked against its
+ * header rather than written out twice.
+ */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_registration
+int mpiwrapper_t_event_set_cb(MPI_T_event_registration    reg,
+                              int                         abi_cb_safety,
+                              MPIABI_T_event_cb_function *abi_fn,
+                              void                       *user_data);
+int mpiwrapper_t_event_set_dropped(
+    MPI_T_event_registration reg, MPIABI_T_event_dropped_cb_function *abi_fn);
+int mpiwrapper_t_event_set_free(MPI_T_event_registration            reg,
+                                MPIABI_T_event_free_cb_function    *abi_fn,
+                                void                               *user_data);
+
+/* `MPI_T_event_cb_function f;` declares a function *of that type*, which is
+ * how a trampoline takes its signature from the implementation's own typedef
+ * instead of repeating it.
+ */
+#  ifdef MPIWRAPPER_HAVE_MPI_T_event_register_callback
+MPI_T_event_cb_function mpiwrapper_t_event_cb_tramp;
+#  endif
+#  ifdef MPIWRAPPER_HAVE_MPI_T_event_set_dropped_handler
+MPI_T_event_dropped_cb_function mpiwrapper_t_event_dropped_tramp;
+#  endif
+#  ifdef MPIWRAPPER_HAVE_MPI_T_event_handle_free
+MPI_T_event_free_cb_function mpiwrapper_t_event_free_tramp;
+#  endif
+#endif
 
 #endif /* MPIWRAPPER_INTERNAL_H */

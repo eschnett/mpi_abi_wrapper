@@ -41,23 +41,6 @@
 #include <string.h>
 
 
-/* -------------------------------------------------------------- MPI_Abort */
-
-/* lifecycle: initialization state the wrapper itself has to track; no body
- * yet (S4)
- */
-#define BODY_MPI_Abort(TARGET)                                                 \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_errorcode;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Abort(MPIABI_Comm abi_comm, int abi_errorcode)
-    BODY_MPI_Abort(MPI_Abort)
-static int w_PMPI_Abort(MPIABI_Comm abi_comm, int abi_errorcode)
-    BODY_MPI_Abort(PMPI_Abort)
-
 /* --------------------------------------------------------- MPI_Accumulate */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Accumulate
@@ -170,56 +153,6 @@ static int w_PMPI_Accumulate_c(const void *abi_origin_addr,
                                MPIABI_Datatype abi_target_datatype,
                                MPIABI_Op abi_op, MPIABI_Win abi_win)
     BODY_MPI_Accumulate_c(PMPI_Accumulate_c)
-
-/* ---------------------------------------------------- MPI_Add_error_class */
-
-/* dynamic error codes: renumbered into the ABI's range rather than passed
- * through (NOTES.md #5.6); no body yet (S4)
- */
-#define BODY_MPI_Add_error_class(TARGET)                                       \
-  {                                                                            \
-    (void)abi_errorclass;                                                      \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Add_error_class(int *abi_errorclass)
-    BODY_MPI_Add_error_class(MPI_Add_error_class)
-static int w_PMPI_Add_error_class(int *abi_errorclass)
-    BODY_MPI_Add_error_class(PMPI_Add_error_class)
-
-/* ----------------------------------------------------- MPI_Add_error_code */
-
-/* dynamic error codes: renumbered into the ABI's range rather than passed
- * through (NOTES.md #5.6); no body yet (S4)
- */
-#define BODY_MPI_Add_error_code(TARGET)                                        \
-  {                                                                            \
-    (void)abi_errorclass;                                                      \
-    (void)abi_errorcode;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Add_error_code(int abi_errorclass, int *abi_errorcode)
-    BODY_MPI_Add_error_code(MPI_Add_error_code)
-static int w_PMPI_Add_error_code(int abi_errorclass, int *abi_errorcode)
-    BODY_MPI_Add_error_code(PMPI_Add_error_code)
-
-/* --------------------------------------------------- MPI_Add_error_string */
-
-/* dynamic error codes: renumbered into the ABI's range rather than passed
- * through (NOTES.md #5.6); no body yet (S4)
- */
-#define BODY_MPI_Add_error_string(TARGET)                                      \
-  {                                                                            \
-    (void)abi_errorcode;                                                       \
-    (void)abi_string;                                                          \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Add_error_string(int abi_errorcode, const char *abi_string)
-    BODY_MPI_Add_error_string(MPI_Add_error_string)
-static int w_PMPI_Add_error_string(int abi_errorcode, const char *abi_string)
-    BODY_MPI_Add_error_string(PMPI_Add_error_string)
 
 /* ---------------------------------------------------------- MPI_Allgather */
 
@@ -2121,75 +2054,6 @@ static int w_PMPI_Bsend_init_c(const void *abi_buf, MPIABI_Count abi_count,
                                MPIABI_Request *abi_request)
     BODY_MPI_Bsend_init_c(PMPI_Bsend_init_c)
 
-/* ------------------------------------------------------ MPI_Buffer_attach */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Buffer_attach(TARGET)                                         \
-  {                                                                            \
-    (void)abi_buffer;                                                          \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Buffer_attach(void *abi_buffer, int abi_size)
-    BODY_MPI_Buffer_attach(MPI_Buffer_attach)
-static int w_PMPI_Buffer_attach(void *abi_buffer, int abi_size)
-    BODY_MPI_Buffer_attach(PMPI_Buffer_attach)
-
-/* ---------------------------------------------------- MPI_Buffer_attach_c */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Buffer_attach_c(TARGET)                                       \
-  {                                                                            \
-    (void)abi_buffer;                                                          \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Buffer_attach_c(void *abi_buffer, MPIABI_Count abi_size)
-    BODY_MPI_Buffer_attach_c(MPI_Buffer_attach_c)
-static int w_PMPI_Buffer_attach_c(void *abi_buffer, MPIABI_Count abi_size)
-    BODY_MPI_Buffer_attach_c(PMPI_Buffer_attach_c)
-
-/* ------------------------------------------------------ MPI_Buffer_detach */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Buffer_detach(TARGET)                                         \
-  {                                                                            \
-    (void)abi_buffer_addr;                                                     \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Buffer_detach(void *abi_buffer_addr, int *abi_size)
-    BODY_MPI_Buffer_detach(MPI_Buffer_detach)
-static int w_PMPI_Buffer_detach(void *abi_buffer_addr, int *abi_size)
-    BODY_MPI_Buffer_detach(PMPI_Buffer_detach)
-
-/* ---------------------------------------------------- MPI_Buffer_detach_c */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Buffer_detach_c(TARGET)                                       \
-  {                                                                            \
-    (void)abi_buffer_addr;                                                     \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Buffer_detach_c(void *abi_buffer_addr, MPIABI_Count *abi_size)
-    BODY_MPI_Buffer_detach_c(MPI_Buffer_detach_c)
-static int w_PMPI_Buffer_detach_c(void *abi_buffer_addr,
-                                  MPIABI_Count *abi_size)
-    BODY_MPI_Buffer_detach_c(PMPI_Buffer_detach_c)
-
 /* ------------------------------------------------------- MPI_Buffer_flush */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Buffer_flush
@@ -2593,46 +2457,6 @@ static int w_PMPI_Comm_accept(const char *abi_port_name, MPIABI_Info abi_info,
                               MPIABI_Comm *abi_newcomm)
     BODY_MPI_Comm_accept(PMPI_Comm_accept)
 
-/* ------------------------------------------------- MPI_Comm_attach_buffer */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Comm_attach_buffer(TARGET)                                    \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_buffer;                                                          \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_attach_buffer(MPIABI_Comm abi_comm, void *abi_buffer,
-                                    int abi_size)
-    BODY_MPI_Comm_attach_buffer(MPI_Comm_attach_buffer)
-static int w_PMPI_Comm_attach_buffer(MPIABI_Comm abi_comm, void *abi_buffer,
-                                     int abi_size)
-    BODY_MPI_Comm_attach_buffer(PMPI_Comm_attach_buffer)
-
-/* ----------------------------------------------- MPI_Comm_attach_buffer_c */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Comm_attach_buffer_c(TARGET)                                  \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_buffer;                                                          \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_attach_buffer_c(MPIABI_Comm abi_comm, void *abi_buffer,
-                                      MPIABI_Count abi_size)
-    BODY_MPI_Comm_attach_buffer_c(MPI_Comm_attach_buffer_c)
-static int w_PMPI_Comm_attach_buffer_c(MPIABI_Comm abi_comm, void *abi_buffer,
-                                       MPIABI_Count abi_size)
-    BODY_MPI_Comm_attach_buffer_c(PMPI_Comm_attach_buffer_c)
-
 /* ----------------------------------------------- MPI_Comm_call_errhandler */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Comm_call_errhandler
@@ -2850,31 +2674,6 @@ static int w_PMPI_Comm_create_group(MPIABI_Comm abi_comm,
                                     MPIABI_Comm *abi_newcomm)
     BODY_MPI_Comm_create_group(PMPI_Comm_create_group)
 
-/* ------------------------------------------------- MPI_Comm_create_keyval */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Comm_create_keyval(TARGET)                                    \
-  {                                                                            \
-    (void)abi_comm_copy_attr_fn;                                               \
-    (void)abi_comm_delete_attr_fn;                                             \
-    (void)abi_comm_keyval;                                                     \
-    (void)abi_extra_state;                                                     \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_create_keyval(
-    MPIABI_Comm_copy_attr_function *abi_comm_copy_attr_fn,
-    MPIABI_Comm_delete_attr_function *abi_comm_delete_attr_fn,
-    int *abi_comm_keyval, void *abi_extra_state)
-    BODY_MPI_Comm_create_keyval(MPI_Comm_create_keyval)
-static int w_PMPI_Comm_create_keyval(
-    MPIABI_Comm_copy_attr_function *abi_comm_copy_attr_fn,
-    MPIABI_Comm_delete_attr_function *abi_comm_delete_attr_fn,
-    int *abi_comm_keyval, void *abi_extra_state)
-    BODY_MPI_Comm_create_keyval(PMPI_Comm_create_keyval)
-
 /* --------------------------------------------------- MPI_Comm_delete_attr */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Comm_delete_attr
@@ -2899,48 +2698,6 @@ static int w_MPI_Comm_delete_attr(MPIABI_Comm abi_comm, int abi_comm_keyval)
     BODY_MPI_Comm_delete_attr(MPI_Comm_delete_attr)
 static int w_PMPI_Comm_delete_attr(MPIABI_Comm abi_comm, int abi_comm_keyval)
     BODY_MPI_Comm_delete_attr(PMPI_Comm_delete_attr)
-
-/* ------------------------------------------------- MPI_Comm_detach_buffer */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Comm_detach_buffer(TARGET)                                    \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_buffer_addr;                                                     \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_detach_buffer(MPIABI_Comm abi_comm,
-                                    void *abi_buffer_addr, int *abi_size)
-    BODY_MPI_Comm_detach_buffer(MPI_Comm_detach_buffer)
-static int w_PMPI_Comm_detach_buffer(MPIABI_Comm abi_comm,
-                                     void *abi_buffer_addr, int *abi_size)
-    BODY_MPI_Comm_detach_buffer(PMPI_Comm_detach_buffer)
-
-/* ----------------------------------------------- MPI_Comm_detach_buffer_c */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Comm_detach_buffer_c(TARGET)                                  \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_buffer_addr;                                                     \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_detach_buffer_c(MPIABI_Comm abi_comm,
-                                      void *abi_buffer_addr,
-                                      MPIABI_Count *abi_size)
-    BODY_MPI_Comm_detach_buffer_c(MPI_Comm_detach_buffer_c)
-static int w_PMPI_Comm_detach_buffer_c(MPIABI_Comm abi_comm,
-                                       void *abi_buffer_addr,
-                                       MPIABI_Count *abi_size)
-    BODY_MPI_Comm_detach_buffer_c(PMPI_Comm_detach_buffer_c)
 
 /* ---------------------------------------------------- MPI_Comm_disconnect */
 
@@ -3627,75 +3384,6 @@ static int w_MPI_Comm_size(MPIABI_Comm abi_comm, int *abi_size)
     BODY_MPI_Comm_size(MPI_Comm_size)
 static int w_PMPI_Comm_size(MPIABI_Comm abi_comm, int *abi_size)
     BODY_MPI_Comm_size(PMPI_Comm_size)
-
-/* --------------------------------------------------------- MPI_Comm_spawn */
-
-/* spawn: argv, array_of_argv and array_of_errcodes together; no body yet
- * (S4)
- */
-#define BODY_MPI_Comm_spawn(TARGET)                                            \
-  {                                                                            \
-    (void)abi_command;                                                         \
-    (void)abi_argv;                                                            \
-    (void)abi_maxprocs;                                                        \
-    (void)abi_info;                                                            \
-    (void)abi_root;                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_intercomm;                                                       \
-    (void)abi_array_of_errcodes;                                               \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_spawn(const char *abi_command, char *abi_argv[],
-                            int abi_maxprocs, MPIABI_Info abi_info,
-                            int abi_root, MPIABI_Comm abi_comm,
-                            MPIABI_Comm *abi_intercomm,
-                            int abi_array_of_errcodes[])
-    BODY_MPI_Comm_spawn(MPI_Comm_spawn)
-static int w_PMPI_Comm_spawn(const char *abi_command, char *abi_argv[],
-                             int abi_maxprocs, MPIABI_Info abi_info,
-                             int abi_root, MPIABI_Comm abi_comm,
-                             MPIABI_Comm *abi_intercomm,
-                             int abi_array_of_errcodes[])
-    BODY_MPI_Comm_spawn(PMPI_Comm_spawn)
-
-/* ------------------------------------------------ MPI_Comm_spawn_multiple */
-
-/* spawn: argv, array_of_argv and array_of_errcodes together; no body yet
- * (S4)
- */
-#define BODY_MPI_Comm_spawn_multiple(TARGET)                                   \
-  {                                                                            \
-    (void)abi_count;                                                           \
-    (void)abi_array_of_commands;                                               \
-    (void)abi_array_of_argv;                                                   \
-    (void)abi_array_of_maxprocs;                                               \
-    (void)abi_array_of_info;                                                   \
-    (void)abi_root;                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_intercomm;                                                       \
-    (void)abi_array_of_errcodes;                                               \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_spawn_multiple(int abi_count,
-                                     char *abi_array_of_commands[],
-                                     char **abi_array_of_argv[],
-                                     const int abi_array_of_maxprocs[],
-                                     const MPIABI_Info abi_array_of_info[],
-                                     int abi_root, MPIABI_Comm abi_comm,
-                                     MPIABI_Comm *abi_intercomm,
-                                     int abi_array_of_errcodes[])
-    BODY_MPI_Comm_spawn_multiple(MPI_Comm_spawn_multiple)
-static int w_PMPI_Comm_spawn_multiple(int abi_count,
-                                      char *abi_array_of_commands[],
-                                      char **abi_array_of_argv[],
-                                      const int abi_array_of_maxprocs[],
-                                      const MPIABI_Info abi_array_of_info[],
-                                      int abi_root, MPIABI_Comm abi_comm,
-                                      MPIABI_Comm *abi_intercomm,
-                                      int abi_array_of_errcodes[])
-    BODY_MPI_Comm_spawn_multiple(PMPI_Comm_spawn_multiple)
 
 /* --------------------------------------------------------- MPI_Comm_split */
 
@@ -4503,27 +4191,6 @@ static int w_MPI_File_close(MPIABI_File *abi_fh)
     BODY_MPI_File_close(MPI_File_close)
 static int w_PMPI_File_close(MPIABI_File *abi_fh)
     BODY_MPI_File_close(PMPI_File_close)
-
-/* --------------------------------------------- MPI_File_create_errhandler */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_File_create_errhandler(TARGET)                                \
-  {                                                                            \
-    (void)abi_file_errhandler_fn;                                              \
-    (void)abi_errhandler;                                                      \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_File_create_errhandler(
-    MPIABI_File_errhandler_function *abi_file_errhandler_fn,
-    MPIABI_Errhandler *abi_errhandler)
-    BODY_MPI_File_create_errhandler(MPI_File_create_errhandler)
-static int w_PMPI_File_create_errhandler(
-    MPIABI_File_errhandler_function *abi_file_errhandler_fn,
-    MPIABI_Errhandler *abi_errhandler)
-    BODY_MPI_File_create_errhandler(PMPI_File_create_errhandler)
 
 /* -------------------------------------------------------- MPI_File_delete */
 
@@ -7682,20 +7349,6 @@ static int w_PMPI_File_write_shared_c(MPIABI_File abi_fh, const void *abi_buf,
                                       MPIABI_Status *abi_status)
     BODY_MPI_File_write_shared_c(PMPI_File_write_shared_c)
 
-/* ---------------------------------------------------------- MPI_Finalized */
-
-/* lifecycle: initialization state the wrapper itself has to track; no body
- * yet (S4)
- */
-#define BODY_MPI_Finalized(TARGET)                                             \
-  {                                                                            \
-    (void)abi_flag;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Finalized(int *abi_flag) BODY_MPI_Finalized(MPI_Finalized)
-static int w_PMPI_Finalized(int *abi_flag) BODY_MPI_Finalized(PMPI_Finalized)
-
 /* ----------------------------------------------------------- MPI_Free_mem */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Free_mem
@@ -8787,30 +8440,6 @@ static int w_MPI_Grequest_complete(MPIABI_Request abi_request)
     BODY_MPI_Grequest_complete(MPI_Grequest_complete)
 static int w_PMPI_Grequest_complete(MPIABI_Request abi_request)
     BODY_MPI_Grequest_complete(PMPI_Grequest_complete)
-
-/* ----------------------------------------------------- MPI_Grequest_start */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Grequest_start(TARGET)                                        \
-  {                                                                            \
-    (void)abi_query_fn;                                                        \
-    (void)abi_free_fn;                                                         \
-    (void)abi_cancel_fn;                                                       \
-    (void)abi_extra_state;                                                     \
-    (void)abi_request;                                                         \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Grequest_start(MPIABI_Grequest_query_function *abi_query_fn,
-    MPIABI_Grequest_free_function *abi_free_fn,
-    MPIABI_Grequest_cancel_function *abi_cancel_fn, void *abi_extra_state,
-    MPIABI_Request *abi_request) BODY_MPI_Grequest_start(MPI_Grequest_start)
-static int w_PMPI_Grequest_start(MPIABI_Grequest_query_function *abi_query_fn,
-    MPIABI_Grequest_free_function *abi_free_fn,
-    MPIABI_Grequest_cancel_function *abi_cancel_fn, void *abi_extra_state,
-    MPIABI_Request *abi_request) BODY_MPI_Grequest_start(PMPI_Grequest_start)
 
 /* ------------------------------------------------------ MPI_Group_compare */
 
@@ -11767,43 +11396,6 @@ static int w_PMPI_Info_set(MPIABI_Info abi_info, const char *abi_key,
                            const char *abi_value)
     BODY_MPI_Info_set(PMPI_Info_set)
 
-/* -------------------------------------------------------- MPI_Init_thread */
-
-/* lifecycle: initialization state the wrapper itself has to track; no body
- * yet (S4)
- */
-#define BODY_MPI_Init_thread(TARGET)                                           \
-  {                                                                            \
-    (void)abi_argc;                                                            \
-    (void)abi_argv;                                                            \
-    (void)abi_required;                                                        \
-    (void)abi_provided;                                                        \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Init_thread(int *abi_argc, char ***abi_argv, int abi_required,
-                             int *abi_provided)
-    BODY_MPI_Init_thread(MPI_Init_thread)
-static int w_PMPI_Init_thread(int *abi_argc, char ***abi_argv,
-                              int abi_required, int *abi_provided)
-    BODY_MPI_Init_thread(PMPI_Init_thread)
-
-/* -------------------------------------------------------- MPI_Initialized */
-
-/* lifecycle: initialization state the wrapper itself has to track; no body
- * yet (S4)
- */
-#define BODY_MPI_Initialized(TARGET)                                           \
-  {                                                                            \
-    (void)abi_flag;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Initialized(int *abi_flag)
-    BODY_MPI_Initialized(MPI_Initialized)
-static int w_PMPI_Initialized(int *abi_flag)
-    BODY_MPI_Initialized(PMPI_Initialized)
-
 /* --------------------------------------------------- MPI_Intercomm_create */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Intercomm_create
@@ -14727,26 +14319,6 @@ static int w_MPI_Op_commutative(MPIABI_Op abi_op, int *abi_commute)
 static int w_PMPI_Op_commutative(MPIABI_Op abi_op, int *abi_commute)
     BODY_MPI_Op_commutative(PMPI_Op_commutative)
 
-/* -------------------------------------------------------- MPI_Op_create_c */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Op_create_c(TARGET)                                           \
-  {                                                                            \
-    (void)abi_user_fn;                                                         \
-    (void)abi_commute;                                                         \
-    (void)abi_op;                                                              \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Op_create_c(MPIABI_User_function_c *abi_user_fn,
-                             int abi_commute, MPIABI_Op *abi_op)
-    BODY_MPI_Op_create_c(MPI_Op_create_c)
-static int w_PMPI_Op_create_c(MPIABI_User_function_c *abi_user_fn,
-                              int abi_commute, MPIABI_Op *abi_op)
-    BODY_MPI_Op_create_c(PMPI_Op_create_c)
-
 /* ------------------------------------------------------------ MPI_Op_free */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Op_free
@@ -15096,20 +14668,6 @@ static int w_MPI_Parrived(MPIABI_Request abi_request, int abi_partition,
                           int *abi_flag) BODY_MPI_Parrived(MPI_Parrived)
 static int w_PMPI_Parrived(MPIABI_Request abi_request, int abi_partition,
                            int *abi_flag) BODY_MPI_Parrived(PMPI_Parrived)
-
-/* ----------------------------------------------------------- MPI_Pcontrol */
-
-/* genuinely variadic; no body yet (S4) */
-#define BODY_MPI_Pcontrol(TARGET)                                              \
-  {                                                                            \
-    (void)abi_level;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Pcontrol(const int abi_level, ...)
-    BODY_MPI_Pcontrol(MPI_Pcontrol)
-static int w_PMPI_Pcontrol(const int abi_level, ...)
-    BODY_MPI_Pcontrol(PMPI_Pcontrol)
 
 /* ------------------------------------------------------------- MPI_Pready */
 
@@ -16489,106 +16047,6 @@ static int w_PMPI_Reduce_scatter_init_c(const void *abi_sendbuf,
                                         MPIABI_Info abi_info,
                                         MPIABI_Request *abi_request)
     BODY_MPI_Reduce_scatter_init_c(PMPI_Reduce_scatter_init_c)
-
-/* --------------------------------------------------- MPI_Register_datarep */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Register_datarep(TARGET)                                      \
-  {                                                                            \
-    (void)abi_datarep;                                                         \
-    (void)abi_read_conversion_fn;                                              \
-    (void)abi_write_conversion_fn;                                             \
-    (void)abi_dtype_file_extent_fn;                                            \
-    (void)abi_extra_state;                                                     \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Register_datarep(const char *abi_datarep,
-    MPIABI_Datarep_conversion_function *abi_read_conversion_fn,
-    MPIABI_Datarep_conversion_function *abi_write_conversion_fn,
-    MPIABI_Datarep_extent_function *abi_dtype_file_extent_fn,
-    void *abi_extra_state) BODY_MPI_Register_datarep(MPI_Register_datarep)
-static int w_PMPI_Register_datarep(const char *abi_datarep,
-    MPIABI_Datarep_conversion_function *abi_read_conversion_fn,
-    MPIABI_Datarep_conversion_function *abi_write_conversion_fn,
-    MPIABI_Datarep_extent_function *abi_dtype_file_extent_fn,
-    void *abi_extra_state) BODY_MPI_Register_datarep(PMPI_Register_datarep)
-
-/* ------------------------------------------------- MPI_Register_datarep_c */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Register_datarep_c(TARGET)                                    \
-  {                                                                            \
-    (void)abi_datarep;                                                         \
-    (void)abi_read_conversion_fn;                                              \
-    (void)abi_write_conversion_fn;                                             \
-    (void)abi_dtype_file_extent_fn;                                            \
-    (void)abi_extra_state;                                                     \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Register_datarep_c(const char *abi_datarep,
-    MPIABI_Datarep_conversion_function_c *abi_read_conversion_fn,
-    MPIABI_Datarep_conversion_function_c *abi_write_conversion_fn,
-    MPIABI_Datarep_extent_function *abi_dtype_file_extent_fn,
-    void *abi_extra_state) BODY_MPI_Register_datarep_c(MPI_Register_datarep_c)
-static int w_PMPI_Register_datarep_c(const char *abi_datarep,
-    MPIABI_Datarep_conversion_function_c *abi_read_conversion_fn,
-    MPIABI_Datarep_conversion_function_c *abi_write_conversion_fn,
-    MPIABI_Datarep_extent_function *abi_dtype_file_extent_fn,
-    void *abi_extra_state) BODY_MPI_Register_datarep_c(PMPI_Register_datarep_c)
-
-/* ------------------------------------------------- MPI_Remove_error_class */
-
-/* dynamic error codes: renumbered into the ABI's range rather than passed
- * through (NOTES.md #5.6); no body yet (S4)
- */
-#define BODY_MPI_Remove_error_class(TARGET)                                    \
-  {                                                                            \
-    (void)abi_errorclass;                                                      \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Remove_error_class(int abi_errorclass)
-    BODY_MPI_Remove_error_class(MPI_Remove_error_class)
-static int w_PMPI_Remove_error_class(int abi_errorclass)
-    BODY_MPI_Remove_error_class(PMPI_Remove_error_class)
-
-/* -------------------------------------------------- MPI_Remove_error_code */
-
-/* dynamic error codes: renumbered into the ABI's range rather than passed
- * through (NOTES.md #5.6); no body yet (S4)
- */
-#define BODY_MPI_Remove_error_code(TARGET)                                     \
-  {                                                                            \
-    (void)abi_errorcode;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Remove_error_code(int abi_errorcode)
-    BODY_MPI_Remove_error_code(MPI_Remove_error_code)
-static int w_PMPI_Remove_error_code(int abi_errorcode)
-    BODY_MPI_Remove_error_code(PMPI_Remove_error_code)
-
-/* ------------------------------------------------ MPI_Remove_error_string */
-
-/* dynamic error codes: renumbered into the ABI's range rather than passed
- * through (NOTES.md #5.6); no body yet (S4)
- */
-#define BODY_MPI_Remove_error_string(TARGET)                                   \
-  {                                                                            \
-    (void)abi_errorcode;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Remove_error_string(int abi_errorcode)
-    BODY_MPI_Remove_error_string(MPI_Remove_error_string)
-static int w_PMPI_Remove_error_string(int abi_errorcode)
-    BODY_MPI_Remove_error_string(PMPI_Remove_error_string)
 
 /* ------------------------------------------------------- MPI_Request_free */
 
@@ -18470,48 +17928,6 @@ static int w_PMPI_Sendrecv_replace_c(void *abi_buf, MPIABI_Count abi_count,
                                      MPIABI_Status *abi_status)
     BODY_MPI_Sendrecv_replace_c(PMPI_Sendrecv_replace_c)
 
-/* ---------------------------------------------- MPI_Session_attach_buffer */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Session_attach_buffer(TARGET)                                 \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    (void)abi_buffer;                                                          \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_attach_buffer(MPIABI_Session abi_session,
-                                       void *abi_buffer, int abi_size)
-    BODY_MPI_Session_attach_buffer(MPI_Session_attach_buffer)
-static int w_PMPI_Session_attach_buffer(MPIABI_Session abi_session,
-                                        void *abi_buffer, int abi_size)
-    BODY_MPI_Session_attach_buffer(PMPI_Session_attach_buffer)
-
-/* -------------------------------------------- MPI_Session_attach_buffer_c */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Session_attach_buffer_c(TARGET)                               \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    (void)abi_buffer;                                                          \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_attach_buffer_c(MPIABI_Session abi_session,
-                                         void *abi_buffer,
-                                         MPIABI_Count abi_size)
-    BODY_MPI_Session_attach_buffer_c(MPI_Session_attach_buffer_c)
-static int w_PMPI_Session_attach_buffer_c(MPIABI_Session abi_session,
-                                          void *abi_buffer,
-                                          MPIABI_Count abi_size)
-    BODY_MPI_Session_attach_buffer_c(PMPI_Session_attach_buffer_c)
-
 /* -------------------------------------------- MPI_Session_call_errhandler */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Session_call_errhandler
@@ -18538,85 +17954,6 @@ static int w_MPI_Session_call_errhandler(MPIABI_Session abi_session,
 static int w_PMPI_Session_call_errhandler(MPIABI_Session abi_session,
                                           int abi_errorcode)
     BODY_MPI_Session_call_errhandler(PMPI_Session_call_errhandler)
-
-/* ------------------------------------------ MPI_Session_create_errhandler */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Session_create_errhandler(TARGET)                             \
-  {                                                                            \
-    (void)abi_session_errhandler_fn;                                           \
-    (void)abi_errhandler;                                                      \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_create_errhandler(
-    MPIABI_Session_errhandler_function *abi_session_errhandler_fn,
-    MPIABI_Errhandler *abi_errhandler)
-    BODY_MPI_Session_create_errhandler(MPI_Session_create_errhandler)
-static int w_PMPI_Session_create_errhandler(
-    MPIABI_Session_errhandler_function *abi_session_errhandler_fn,
-    MPIABI_Errhandler *abi_errhandler)
-    BODY_MPI_Session_create_errhandler(PMPI_Session_create_errhandler)
-
-/* ---------------------------------------------- MPI_Session_detach_buffer */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Session_detach_buffer(TARGET)                                 \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    (void)abi_buffer_addr;                                                     \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_detach_buffer(MPIABI_Session abi_session,
-                                       void *abi_buffer_addr, int *abi_size)
-    BODY_MPI_Session_detach_buffer(MPI_Session_detach_buffer)
-static int w_PMPI_Session_detach_buffer(MPIABI_Session abi_session,
-                                        void *abi_buffer_addr, int *abi_size)
-    BODY_MPI_Session_detach_buffer(PMPI_Session_detach_buffer)
-
-/* -------------------------------------------- MPI_Session_detach_buffer_c */
-
-/* buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership; no
- * body yet (S4)
- */
-#define BODY_MPI_Session_detach_buffer_c(TARGET)                               \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    (void)abi_buffer_addr;                                                     \
-    (void)abi_size;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_detach_buffer_c(MPIABI_Session abi_session,
-                                         void *abi_buffer_addr,
-                                         MPIABI_Count *abi_size)
-    BODY_MPI_Session_detach_buffer_c(MPI_Session_detach_buffer_c)
-static int w_PMPI_Session_detach_buffer_c(MPIABI_Session abi_session,
-                                          void *abi_buffer_addr,
-                                          MPIABI_Count *abi_size)
-    BODY_MPI_Session_detach_buffer_c(PMPI_Session_detach_buffer_c)
-
-/* --------------------------------------------------- MPI_Session_finalize */
-
-/* lifecycle: initialization state the wrapper itself has to track; no body
- * yet (S4)
- */
-#define BODY_MPI_Session_finalize(TARGET)                                      \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_finalize(MPIABI_Session *abi_session)
-    BODY_MPI_Session_finalize(MPI_Session_finalize)
-static int w_PMPI_Session_finalize(MPIABI_Session *abi_session)
-    BODY_MPI_Session_finalize(PMPI_Session_finalize)
 
 /* ----------------------------------------------- MPI_Session_flush_buffer */
 
@@ -18842,28 +18179,6 @@ static int w_MPI_Session_iflush_buffer(MPIABI_Session abi_session,
 static int w_PMPI_Session_iflush_buffer(MPIABI_Session abi_session,
                                         MPIABI_Request *abi_request)
     BODY_MPI_Session_iflush_buffer(PMPI_Session_iflush_buffer)
-
-/* ------------------------------------------------------- MPI_Session_init */
-
-/* lifecycle: initialization state the wrapper itself has to track; no body
- * yet (S4)
- */
-#define BODY_MPI_Session_init(TARGET)                                          \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    (void)abi_errhandler;                                                      \
-    (void)abi_session;                                                         \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_init(MPIABI_Info abi_info,
-                              MPIABI_Errhandler abi_errhandler,
-                              MPIABI_Session *abi_session)
-    BODY_MPI_Session_init(MPI_Session_init)
-static int w_PMPI_Session_init(MPIABI_Info abi_info,
-                               MPIABI_Errhandler abi_errhandler,
-                               MPIABI_Session *abi_session)
-    BODY_MPI_Session_init(PMPI_Session_init)
 
 /* --------------------------------------------- MPI_Session_set_errhandler */
 
@@ -20292,31 +19607,6 @@ static int w_PMPI_Type_create_indexed_block_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
     BODY_MPI_Type_create_indexed_block_c(PMPI_Type_create_indexed_block_c)
-
-/* ------------------------------------------------- MPI_Type_create_keyval */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Type_create_keyval(TARGET)                                    \
-  {                                                                            \
-    (void)abi_type_copy_attr_fn;                                               \
-    (void)abi_type_delete_attr_fn;                                             \
-    (void)abi_type_keyval;                                                     \
-    (void)abi_extra_state;                                                     \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Type_create_keyval(
-    MPIABI_Type_copy_attr_function *abi_type_copy_attr_fn,
-    MPIABI_Type_delete_attr_function *abi_type_delete_attr_fn,
-    int *abi_type_keyval, void *abi_extra_state)
-    BODY_MPI_Type_create_keyval(MPI_Type_create_keyval)
-static int w_PMPI_Type_create_keyval(
-    MPIABI_Type_copy_attr_function *abi_type_copy_attr_fn,
-    MPIABI_Type_delete_attr_function *abi_type_delete_attr_fn,
-    int *abi_type_keyval, void *abi_extra_state)
-    BODY_MPI_Type_create_keyval(PMPI_Type_create_keyval)
 
 /* ------------------------------------------------ MPI_Type_create_resized */
 
@@ -22460,52 +21750,6 @@ static int w_PMPI_Win_create_dynamic(MPIABI_Info abi_info,
                                      MPIABI_Comm abi_comm, MPIABI_Win *abi_win)
     BODY_MPI_Win_create_dynamic(PMPI_Win_create_dynamic)
 
-/* ---------------------------------------------- MPI_Win_create_errhandler */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Win_create_errhandler(TARGET)                                 \
-  {                                                                            \
-    (void)abi_win_errhandler_fn;                                               \
-    (void)abi_errhandler;                                                      \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Win_create_errhandler(
-    MPIABI_Win_errhandler_function *abi_win_errhandler_fn,
-    MPIABI_Errhandler *abi_errhandler)
-    BODY_MPI_Win_create_errhandler(MPI_Win_create_errhandler)
-static int w_PMPI_Win_create_errhandler(
-    MPIABI_Win_errhandler_function *abi_win_errhandler_fn,
-    MPIABI_Errhandler *abi_errhandler)
-    BODY_MPI_Win_create_errhandler(PMPI_Win_create_errhandler)
-
-/* -------------------------------------------------- MPI_Win_create_keyval */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Win_create_keyval(TARGET)                                     \
-  {                                                                            \
-    (void)abi_win_copy_attr_fn;                                                \
-    (void)abi_win_delete_attr_fn;                                              \
-    (void)abi_win_keyval;                                                      \
-    (void)abi_extra_state;                                                     \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Win_create_keyval(
-    MPIABI_Win_copy_attr_function *abi_win_copy_attr_fn,
-    MPIABI_Win_delete_attr_function *abi_win_delete_attr_fn,
-    int *abi_win_keyval, void *abi_extra_state)
-    BODY_MPI_Win_create_keyval(MPI_Win_create_keyval)
-static int w_PMPI_Win_create_keyval(
-    MPIABI_Win_copy_attr_function *abi_win_copy_attr_fn,
-    MPIABI_Win_delete_attr_function *abi_win_delete_attr_fn,
-    int *abi_win_keyval, void *abi_extra_state)
-    BODY_MPI_Win_create_keyval(PMPI_Win_create_keyval)
-
 /* ---------------------------------------------------- MPI_Win_delete_attr */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Win_delete_attr
@@ -24286,30 +23530,6 @@ static int w_PMPI_T_event_handle_alloc(int abi_event_index,
     MPIABI_T_event_registration *abi_event_registration)
     BODY_MPI_T_event_handle_alloc(PMPI_T_event_handle_alloc)
 
-/* ------------------------------------------------ MPI_T_event_handle_free */
-
-/* callback registration: the free callback runs on the way back into user
- * code, so it needs the same trampoline as the two registrars beside it
- * (NOTES.md #6.1). Its `user_data` can carry the {user_fn, user_extra}
- * pair, so this one needs no pool.; no body yet (S4)
- */
-#define BODY_MPI_T_event_handle_free(TARGET)                                   \
-  {                                                                            \
-    (void)abi_event_registration;                                              \
-    (void)abi_user_data;                                                       \
-    (void)abi_free_cb_function;                                                \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_T_event_handle_free(
-    MPIABI_T_event_registration abi_event_registration, void *abi_user_data,
-    MPIABI_T_event_free_cb_function abi_free_cb_function)
-    BODY_MPI_T_event_handle_free(MPI_T_event_handle_free)
-static int w_PMPI_T_event_handle_free(
-    MPIABI_T_event_registration abi_event_registration, void *abi_user_data,
-    MPIABI_T_event_free_cb_function abi_free_cb_function)
-    BODY_MPI_T_event_handle_free(PMPI_T_event_handle_free)
-
 /* -------------------------------------------- MPI_T_event_handle_get_info */
 
 #ifdef MPIWRAPPER_HAVE_MPI_T_event_handle_get_info
@@ -24405,53 +23625,6 @@ static int w_MPI_T_event_read(MPIABI_T_event_instance abi_event_instance,
 static int w_PMPI_T_event_read(MPIABI_T_event_instance abi_event_instance,
                                int abi_element_index, void *abi_buffer)
     BODY_MPI_T_event_read(PMPI_T_event_read)
-
-/* ------------------------------------------ MPI_T_event_register_callback */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_T_event_register_callback(TARGET)                             \
-  {                                                                            \
-    (void)abi_event_registration;                                              \
-    (void)abi_cb_safety;                                                       \
-    (void)abi_info;                                                            \
-    (void)abi_user_data;                                                       \
-    (void)abi_event_cb_function;                                               \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_T_event_register_callback(
-    MPIABI_T_event_registration abi_event_registration,
-    MPIABI_T_cb_safety abi_cb_safety, MPIABI_Info abi_info,
-    void *abi_user_data, MPIABI_T_event_cb_function abi_event_cb_function)
-    BODY_MPI_T_event_register_callback(MPI_T_event_register_callback)
-static int w_PMPI_T_event_register_callback(
-    MPIABI_T_event_registration abi_event_registration,
-    MPIABI_T_cb_safety abi_cb_safety, MPIABI_Info abi_info,
-    void *abi_user_data, MPIABI_T_event_cb_function abi_event_cb_function)
-    BODY_MPI_T_event_register_callback(PMPI_T_event_register_callback)
-
-/* ---------------------------------------- MPI_T_event_set_dropped_handler */
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_T_event_set_dropped_handler(TARGET)                           \
-  {                                                                            \
-    (void)abi_event_registration;                                              \
-    (void)abi_dropped_cb_function;                                             \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_T_event_set_dropped_handler(
-    MPIABI_T_event_registration abi_event_registration,
-    MPIABI_T_event_dropped_cb_function abi_dropped_cb_function)
-    BODY_MPI_T_event_set_dropped_handler(MPI_T_event_set_dropped_handler)
-static int w_PMPI_T_event_set_dropped_handler(
-    MPIABI_T_event_registration abi_event_registration,
-    MPIABI_T_event_dropped_cb_function abi_dropped_cb_function)
-    BODY_MPI_T_event_set_dropped_handler(PMPI_T_event_set_dropped_handler)
 
 /* --------------------------------------------------------- MPI_T_finalize */
 
@@ -25095,18 +24268,18 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Abi_set_fortran_booleans     = mpiwrapper_w_PMPI_Abi_set_fortran_booleans,
     .MPI_Abi_set_fortran_info          = mpiwrapper_w_MPI_Abi_set_fortran_info,
     .PMPI_Abi_set_fortran_info         = mpiwrapper_w_PMPI_Abi_set_fortran_info,
-    .MPI_Abort                         = w_MPI_Abort,
-    .PMPI_Abort                        = w_PMPI_Abort,
+    .MPI_Abort                         = mpiwrapper_w_MPI_Abort,
+    .PMPI_Abort                        = mpiwrapper_w_PMPI_Abort,
     .MPI_Accumulate                    = w_MPI_Accumulate,
     .PMPI_Accumulate                   = w_PMPI_Accumulate,
     .MPI_Accumulate_c                  = w_MPI_Accumulate_c,
     .PMPI_Accumulate_c                 = w_PMPI_Accumulate_c,
-    .MPI_Add_error_class               = w_MPI_Add_error_class,
-    .PMPI_Add_error_class              = w_PMPI_Add_error_class,
-    .MPI_Add_error_code                = w_MPI_Add_error_code,
-    .PMPI_Add_error_code               = w_PMPI_Add_error_code,
-    .MPI_Add_error_string              = w_MPI_Add_error_string,
-    .PMPI_Add_error_string             = w_PMPI_Add_error_string,
+    .MPI_Add_error_class               = mpiwrapper_w_MPI_Add_error_class,
+    .PMPI_Add_error_class              = mpiwrapper_w_PMPI_Add_error_class,
+    .MPI_Add_error_code                = mpiwrapper_w_MPI_Add_error_code,
+    .PMPI_Add_error_code               = mpiwrapper_w_PMPI_Add_error_code,
+    .MPI_Add_error_string              = mpiwrapper_w_MPI_Add_error_string,
+    .PMPI_Add_error_string             = mpiwrapper_w_PMPI_Add_error_string,
     .MPI_Allgather                     = w_MPI_Allgather,
     .PMPI_Allgather                    = w_PMPI_Allgather,
     .MPI_Allgather_c                   = w_MPI_Allgather_c,
@@ -25177,14 +24350,14 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Bsend_init                   = w_PMPI_Bsend_init,
     .MPI_Bsend_init_c                  = w_MPI_Bsend_init_c,
     .PMPI_Bsend_init_c                 = w_PMPI_Bsend_init_c,
-    .MPI_Buffer_attach                 = w_MPI_Buffer_attach,
-    .PMPI_Buffer_attach                = w_PMPI_Buffer_attach,
-    .MPI_Buffer_attach_c               = w_MPI_Buffer_attach_c,
-    .PMPI_Buffer_attach_c              = w_PMPI_Buffer_attach_c,
-    .MPI_Buffer_detach                 = w_MPI_Buffer_detach,
-    .PMPI_Buffer_detach                = w_PMPI_Buffer_detach,
-    .MPI_Buffer_detach_c               = w_MPI_Buffer_detach_c,
-    .PMPI_Buffer_detach_c              = w_PMPI_Buffer_detach_c,
+    .MPI_Buffer_attach                 = mpiwrapper_w_MPI_Buffer_attach,
+    .PMPI_Buffer_attach                = mpiwrapper_w_PMPI_Buffer_attach,
+    .MPI_Buffer_attach_c               = mpiwrapper_w_MPI_Buffer_attach_c,
+    .PMPI_Buffer_attach_c              = mpiwrapper_w_PMPI_Buffer_attach_c,
+    .MPI_Buffer_detach                 = mpiwrapper_w_MPI_Buffer_detach,
+    .PMPI_Buffer_detach                = mpiwrapper_w_PMPI_Buffer_detach,
+    .MPI_Buffer_detach_c               = mpiwrapper_w_MPI_Buffer_detach_c,
+    .PMPI_Buffer_detach_c              = mpiwrapper_w_PMPI_Buffer_detach_c,
     .MPI_Buffer_flush                  = w_MPI_Buffer_flush,
     .PMPI_Buffer_flush                 = w_PMPI_Buffer_flush,
     .MPI_Buffer_iflush                 = w_MPI_Buffer_iflush,
@@ -25211,10 +24384,10 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Close_port                   = w_PMPI_Close_port,
     .MPI_Comm_accept                   = w_MPI_Comm_accept,
     .PMPI_Comm_accept                  = w_PMPI_Comm_accept,
-    .MPI_Comm_attach_buffer            = w_MPI_Comm_attach_buffer,
-    .PMPI_Comm_attach_buffer           = w_PMPI_Comm_attach_buffer,
-    .MPI_Comm_attach_buffer_c          = w_MPI_Comm_attach_buffer_c,
-    .PMPI_Comm_attach_buffer_c         = w_PMPI_Comm_attach_buffer_c,
+    .MPI_Comm_attach_buffer            = mpiwrapper_w_MPI_Comm_attach_buffer,
+    .PMPI_Comm_attach_buffer           = mpiwrapper_w_PMPI_Comm_attach_buffer,
+    .MPI_Comm_attach_buffer_c          = mpiwrapper_w_MPI_Comm_attach_buffer_c,
+    .PMPI_Comm_attach_buffer_c         = mpiwrapper_w_PMPI_Comm_attach_buffer_c,
     .MPI_Comm_call_errhandler          = w_MPI_Comm_call_errhandler,
     .PMPI_Comm_call_errhandler         = w_PMPI_Comm_call_errhandler,
     .MPI_Comm_compare                  = w_MPI_Comm_compare,
@@ -25229,14 +24402,14 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Comm_create_from_group       = w_PMPI_Comm_create_from_group,
     .MPI_Comm_create_group             = w_MPI_Comm_create_group,
     .PMPI_Comm_create_group            = w_PMPI_Comm_create_group,
-    .MPI_Comm_create_keyval            = w_MPI_Comm_create_keyval,
-    .PMPI_Comm_create_keyval           = w_PMPI_Comm_create_keyval,
+    .MPI_Comm_create_keyval            = mpiwrapper_w_MPI_Comm_create_keyval,
+    .PMPI_Comm_create_keyval           = mpiwrapper_w_PMPI_Comm_create_keyval,
     .MPI_Comm_delete_attr              = w_MPI_Comm_delete_attr,
     .PMPI_Comm_delete_attr             = w_PMPI_Comm_delete_attr,
-    .MPI_Comm_detach_buffer            = w_MPI_Comm_detach_buffer,
-    .PMPI_Comm_detach_buffer           = w_PMPI_Comm_detach_buffer,
-    .MPI_Comm_detach_buffer_c          = w_MPI_Comm_detach_buffer_c,
-    .PMPI_Comm_detach_buffer_c         = w_PMPI_Comm_detach_buffer_c,
+    .MPI_Comm_detach_buffer            = mpiwrapper_w_MPI_Comm_detach_buffer,
+    .PMPI_Comm_detach_buffer           = mpiwrapper_w_PMPI_Comm_detach_buffer,
+    .MPI_Comm_detach_buffer_c          = mpiwrapper_w_MPI_Comm_detach_buffer_c,
+    .PMPI_Comm_detach_buffer_c         = mpiwrapper_w_PMPI_Comm_detach_buffer_c,
     .MPI_Comm_disconnect               = w_MPI_Comm_disconnect,
     .PMPI_Comm_disconnect              = w_PMPI_Comm_disconnect,
     .MPI_Comm_dup                      = w_MPI_Comm_dup,
@@ -25285,10 +24458,10 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Comm_set_name                = w_PMPI_Comm_set_name,
     .MPI_Comm_size                     = w_MPI_Comm_size,
     .PMPI_Comm_size                    = w_PMPI_Comm_size,
-    .MPI_Comm_spawn                    = w_MPI_Comm_spawn,
-    .PMPI_Comm_spawn                   = w_PMPI_Comm_spawn,
-    .MPI_Comm_spawn_multiple           = w_MPI_Comm_spawn_multiple,
-    .PMPI_Comm_spawn_multiple          = w_PMPI_Comm_spawn_multiple,
+    .MPI_Comm_spawn                    = mpiwrapper_w_MPI_Comm_spawn,
+    .PMPI_Comm_spawn                   = mpiwrapper_w_PMPI_Comm_spawn,
+    .MPI_Comm_spawn_multiple           = mpiwrapper_w_MPI_Comm_spawn_multiple,
+    .PMPI_Comm_spawn_multiple          = mpiwrapper_w_PMPI_Comm_spawn_multiple,
     .MPI_Comm_split                    = w_MPI_Comm_split,
     .PMPI_Comm_split                   = w_PMPI_Comm_split,
     .MPI_Comm_split_type               = w_MPI_Comm_split_type,
@@ -25327,8 +24500,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_File_call_errhandler         = w_PMPI_File_call_errhandler,
     .MPI_File_close                    = w_MPI_File_close,
     .PMPI_File_close                   = w_PMPI_File_close,
-    .MPI_File_create_errhandler        = w_MPI_File_create_errhandler,
-    .PMPI_File_create_errhandler       = w_PMPI_File_create_errhandler,
+    .MPI_File_create_errhandler        = mpiwrapper_w_MPI_File_create_errhandler,
+    .PMPI_File_create_errhandler       = mpiwrapper_w_PMPI_File_create_errhandler,
     .MPI_File_delete                   = w_MPI_File_delete,
     .PMPI_File_delete                  = w_PMPI_File_delete,
     .MPI_File_get_amode                = w_MPI_File_get_amode,
@@ -25501,8 +24674,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_File_write_shared_c          = w_PMPI_File_write_shared_c,
     .MPI_Finalize                      = mpiwrapper_w_MPI_Finalize,
     .PMPI_Finalize                     = mpiwrapper_w_PMPI_Finalize,
-    .MPI_Finalized                     = w_MPI_Finalized,
-    .PMPI_Finalized                    = w_PMPI_Finalized,
+    .MPI_Finalized                     = mpiwrapper_w_MPI_Finalized,
+    .PMPI_Finalized                    = mpiwrapper_w_PMPI_Finalized,
     .MPI_Free_mem                      = w_MPI_Free_mem,
     .PMPI_Free_mem                     = w_PMPI_Free_mem,
     .MPI_Gather                        = w_MPI_Gather,
@@ -25563,8 +24736,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Graphdims_get                = w_PMPI_Graphdims_get,
     .MPI_Grequest_complete             = w_MPI_Grequest_complete,
     .PMPI_Grequest_complete            = w_PMPI_Grequest_complete,
-    .MPI_Grequest_start                = w_MPI_Grequest_start,
-    .PMPI_Grequest_start               = w_PMPI_Grequest_start,
+    .MPI_Grequest_start                = mpiwrapper_w_MPI_Grequest_start,
+    .PMPI_Grequest_start               = mpiwrapper_w_PMPI_Grequest_start,
     .MPI_Group_compare                 = w_MPI_Group_compare,
     .PMPI_Group_compare                = w_PMPI_Group_compare,
     .MPI_Group_difference              = w_MPI_Group_difference,
@@ -25687,10 +24860,10 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Info_set                     = w_PMPI_Info_set,
     .MPI_Init                          = mpiwrapper_w_MPI_Init,
     .PMPI_Init                         = mpiwrapper_w_PMPI_Init,
-    .MPI_Init_thread                   = w_MPI_Init_thread,
-    .PMPI_Init_thread                  = w_PMPI_Init_thread,
-    .MPI_Initialized                   = w_MPI_Initialized,
-    .PMPI_Initialized                  = w_PMPI_Initialized,
+    .MPI_Init_thread                   = mpiwrapper_w_MPI_Init_thread,
+    .PMPI_Init_thread                  = mpiwrapper_w_PMPI_Init_thread,
+    .MPI_Initialized                   = mpiwrapper_w_MPI_Initialized,
+    .PMPI_Initialized                  = mpiwrapper_w_PMPI_Initialized,
     .MPI_Intercomm_create              = w_MPI_Intercomm_create,
     .PMPI_Intercomm_create             = w_PMPI_Intercomm_create,
     .MPI_Intercomm_create_from_groups  = w_MPI_Intercomm_create_from_groups,
@@ -25801,8 +24974,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Op_commutative               = w_PMPI_Op_commutative,
     .MPI_Op_create                     = mpiwrapper_w_MPI_Op_create,
     .PMPI_Op_create                    = mpiwrapper_w_PMPI_Op_create,
-    .MPI_Op_create_c                   = w_MPI_Op_create_c,
-    .PMPI_Op_create_c                  = w_PMPI_Op_create_c,
+    .MPI_Op_create_c                   = mpiwrapper_w_MPI_Op_create_c,
+    .PMPI_Op_create_c                  = mpiwrapper_w_PMPI_Op_create_c,
     .MPI_Op_free                       = w_MPI_Op_free,
     .PMPI_Op_free                      = w_PMPI_Op_free,
     .MPI_Open_port                     = mpiwrapper_w_MPI_Open_port,
@@ -25825,8 +24998,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Pack_size_c                  = w_PMPI_Pack_size_c,
     .MPI_Parrived                      = w_MPI_Parrived,
     .PMPI_Parrived                     = w_PMPI_Parrived,
-    .MPI_Pcontrol                      = w_MPI_Pcontrol,
-    .PMPI_Pcontrol                     = w_PMPI_Pcontrol,
+    .MPI_Pcontrol                      = mpiwrapper_w_MPI_Pcontrol,
+    .PMPI_Pcontrol                     = mpiwrapper_w_PMPI_Pcontrol,
     .MPI_Pready                        = w_MPI_Pready,
     .PMPI_Pready                       = w_PMPI_Pready,
     .MPI_Pready_list                   = w_MPI_Pready_list,
@@ -25887,16 +25060,16 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Reduce_scatter_init          = w_PMPI_Reduce_scatter_init,
     .MPI_Reduce_scatter_init_c         = w_MPI_Reduce_scatter_init_c,
     .PMPI_Reduce_scatter_init_c        = w_PMPI_Reduce_scatter_init_c,
-    .MPI_Register_datarep              = w_MPI_Register_datarep,
-    .PMPI_Register_datarep             = w_PMPI_Register_datarep,
-    .MPI_Register_datarep_c            = w_MPI_Register_datarep_c,
-    .PMPI_Register_datarep_c           = w_PMPI_Register_datarep_c,
-    .MPI_Remove_error_class            = w_MPI_Remove_error_class,
-    .PMPI_Remove_error_class           = w_PMPI_Remove_error_class,
-    .MPI_Remove_error_code             = w_MPI_Remove_error_code,
-    .PMPI_Remove_error_code            = w_PMPI_Remove_error_code,
-    .MPI_Remove_error_string           = w_MPI_Remove_error_string,
-    .PMPI_Remove_error_string          = w_PMPI_Remove_error_string,
+    .MPI_Register_datarep              = mpiwrapper_w_MPI_Register_datarep,
+    .PMPI_Register_datarep             = mpiwrapper_w_PMPI_Register_datarep,
+    .MPI_Register_datarep_c            = mpiwrapper_w_MPI_Register_datarep_c,
+    .PMPI_Register_datarep_c           = mpiwrapper_w_PMPI_Register_datarep_c,
+    .MPI_Remove_error_class            = mpiwrapper_w_MPI_Remove_error_class,
+    .PMPI_Remove_error_class           = mpiwrapper_w_PMPI_Remove_error_class,
+    .MPI_Remove_error_code             = mpiwrapper_w_MPI_Remove_error_code,
+    .PMPI_Remove_error_code            = mpiwrapper_w_PMPI_Remove_error_code,
+    .MPI_Remove_error_string           = mpiwrapper_w_MPI_Remove_error_string,
+    .PMPI_Remove_error_string          = mpiwrapper_w_PMPI_Remove_error_string,
     .MPI_Request_free                  = w_MPI_Request_free,
     .PMPI_Request_free                 = w_PMPI_Request_free,
     .MPI_Request_get_status            = w_MPI_Request_get_status,
@@ -25967,20 +25140,20 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Sendrecv_replace             = w_PMPI_Sendrecv_replace,
     .MPI_Sendrecv_replace_c            = w_MPI_Sendrecv_replace_c,
     .PMPI_Sendrecv_replace_c           = w_PMPI_Sendrecv_replace_c,
-    .MPI_Session_attach_buffer         = w_MPI_Session_attach_buffer,
-    .PMPI_Session_attach_buffer        = w_PMPI_Session_attach_buffer,
-    .MPI_Session_attach_buffer_c       = w_MPI_Session_attach_buffer_c,
-    .PMPI_Session_attach_buffer_c      = w_PMPI_Session_attach_buffer_c,
+    .MPI_Session_attach_buffer         = mpiwrapper_w_MPI_Session_attach_buffer,
+    .PMPI_Session_attach_buffer        = mpiwrapper_w_PMPI_Session_attach_buffer,
+    .MPI_Session_attach_buffer_c       = mpiwrapper_w_MPI_Session_attach_buffer_c,
+    .PMPI_Session_attach_buffer_c      = mpiwrapper_w_PMPI_Session_attach_buffer_c,
     .MPI_Session_call_errhandler       = w_MPI_Session_call_errhandler,
     .PMPI_Session_call_errhandler      = w_PMPI_Session_call_errhandler,
-    .MPI_Session_create_errhandler     = w_MPI_Session_create_errhandler,
-    .PMPI_Session_create_errhandler    = w_PMPI_Session_create_errhandler,
-    .MPI_Session_detach_buffer         = w_MPI_Session_detach_buffer,
-    .PMPI_Session_detach_buffer        = w_PMPI_Session_detach_buffer,
-    .MPI_Session_detach_buffer_c       = w_MPI_Session_detach_buffer_c,
-    .PMPI_Session_detach_buffer_c      = w_PMPI_Session_detach_buffer_c,
-    .MPI_Session_finalize              = w_MPI_Session_finalize,
-    .PMPI_Session_finalize             = w_PMPI_Session_finalize,
+    .MPI_Session_create_errhandler     = mpiwrapper_w_MPI_Session_create_errhandler,
+    .PMPI_Session_create_errhandler    = mpiwrapper_w_PMPI_Session_create_errhandler,
+    .MPI_Session_detach_buffer         = mpiwrapper_w_MPI_Session_detach_buffer,
+    .PMPI_Session_detach_buffer        = mpiwrapper_w_PMPI_Session_detach_buffer,
+    .MPI_Session_detach_buffer_c       = mpiwrapper_w_MPI_Session_detach_buffer_c,
+    .PMPI_Session_detach_buffer_c      = mpiwrapper_w_PMPI_Session_detach_buffer_c,
+    .MPI_Session_finalize              = mpiwrapper_w_MPI_Session_finalize,
+    .PMPI_Session_finalize             = mpiwrapper_w_PMPI_Session_finalize,
     .MPI_Session_flush_buffer          = w_MPI_Session_flush_buffer,
     .PMPI_Session_flush_buffer         = w_PMPI_Session_flush_buffer,
     .MPI_Session_get_errhandler        = w_MPI_Session_get_errhandler,
@@ -25995,8 +25168,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Session_get_pset_info        = w_PMPI_Session_get_pset_info,
     .MPI_Session_iflush_buffer         = w_MPI_Session_iflush_buffer,
     .PMPI_Session_iflush_buffer        = w_PMPI_Session_iflush_buffer,
-    .MPI_Session_init                  = w_MPI_Session_init,
-    .PMPI_Session_init                 = w_PMPI_Session_init,
+    .MPI_Session_init                  = mpiwrapper_w_MPI_Session_init,
+    .PMPI_Session_init                 = mpiwrapper_w_PMPI_Session_init,
     .MPI_Session_set_errhandler        = w_MPI_Session_set_errhandler,
     .PMPI_Session_set_errhandler       = w_PMPI_Session_set_errhandler,
     .MPI_Ssend                         = w_MPI_Ssend,
@@ -26075,8 +25248,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Type_create_indexed_block    = w_PMPI_Type_create_indexed_block,
     .MPI_Type_create_indexed_block_c   = w_MPI_Type_create_indexed_block_c,
     .PMPI_Type_create_indexed_block_c  = w_PMPI_Type_create_indexed_block_c,
-    .MPI_Type_create_keyval            = w_MPI_Type_create_keyval,
-    .PMPI_Type_create_keyval           = w_PMPI_Type_create_keyval,
+    .MPI_Type_create_keyval            = mpiwrapper_w_MPI_Type_create_keyval,
+    .PMPI_Type_create_keyval           = mpiwrapper_w_PMPI_Type_create_keyval,
     .MPI_Type_create_resized           = w_MPI_Type_create_resized,
     .PMPI_Type_create_resized          = w_PMPI_Type_create_resized,
     .MPI_Type_create_resized_c         = w_MPI_Type_create_resized_c,
@@ -26181,10 +25354,10 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Win_create_c                 = w_PMPI_Win_create_c,
     .MPI_Win_create_dynamic            = w_MPI_Win_create_dynamic,
     .PMPI_Win_create_dynamic           = w_PMPI_Win_create_dynamic,
-    .MPI_Win_create_errhandler         = w_MPI_Win_create_errhandler,
-    .PMPI_Win_create_errhandler        = w_PMPI_Win_create_errhandler,
-    .MPI_Win_create_keyval             = w_MPI_Win_create_keyval,
-    .PMPI_Win_create_keyval            = w_PMPI_Win_create_keyval,
+    .MPI_Win_create_errhandler         = mpiwrapper_w_MPI_Win_create_errhandler,
+    .PMPI_Win_create_errhandler        = mpiwrapper_w_PMPI_Win_create_errhandler,
+    .MPI_Win_create_keyval             = mpiwrapper_w_MPI_Win_create_keyval,
+    .PMPI_Win_create_keyval            = mpiwrapper_w_PMPI_Win_create_keyval,
     .MPI_Win_delete_attr               = w_MPI_Win_delete_attr,
     .PMPI_Win_delete_attr              = w_PMPI_Win_delete_attr,
     .MPI_Win_detach                    = w_MPI_Win_detach,
@@ -26349,18 +25522,18 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_T_event_get_timestamp        = w_PMPI_T_event_get_timestamp,
     .MPI_T_event_handle_alloc          = w_MPI_T_event_handle_alloc,
     .PMPI_T_event_handle_alloc         = w_PMPI_T_event_handle_alloc,
-    .MPI_T_event_handle_free           = w_MPI_T_event_handle_free,
-    .PMPI_T_event_handle_free          = w_PMPI_T_event_handle_free,
+    .MPI_T_event_handle_free           = mpiwrapper_w_MPI_T_event_handle_free,
+    .PMPI_T_event_handle_free          = mpiwrapper_w_PMPI_T_event_handle_free,
     .MPI_T_event_handle_get_info       = w_MPI_T_event_handle_get_info,
     .PMPI_T_event_handle_get_info      = w_PMPI_T_event_handle_get_info,
     .MPI_T_event_handle_set_info       = w_MPI_T_event_handle_set_info,
     .PMPI_T_event_handle_set_info      = w_PMPI_T_event_handle_set_info,
     .MPI_T_event_read                  = w_MPI_T_event_read,
     .PMPI_T_event_read                 = w_PMPI_T_event_read,
-    .MPI_T_event_register_callback     = w_MPI_T_event_register_callback,
-    .PMPI_T_event_register_callback    = w_PMPI_T_event_register_callback,
-    .MPI_T_event_set_dropped_handler   = w_MPI_T_event_set_dropped_handler,
-    .PMPI_T_event_set_dropped_handler  = w_PMPI_T_event_set_dropped_handler,
+    .MPI_T_event_register_callback     = mpiwrapper_w_MPI_T_event_register_callback,
+    .PMPI_T_event_register_callback    = mpiwrapper_w_PMPI_T_event_register_callback,
+    .MPI_T_event_set_dropped_handler   = mpiwrapper_w_MPI_T_event_set_dropped_handler,
+    .PMPI_T_event_set_dropped_handler  = mpiwrapper_w_PMPI_T_event_set_dropped_handler,
     .MPI_T_finalize                    = w_MPI_T_finalize,
     .PMPI_T_finalize                   = w_PMPI_T_finalize,
     .MPI_T_init_thread                 = w_MPI_T_init_thread,

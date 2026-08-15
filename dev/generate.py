@@ -76,6 +76,11 @@ FROZEN = {
     "error classes": 80,
     "generated": 565,
     "hand-written": 118,
+    # S4b's exit check as a tally rather than an assertion: every ledger entry
+    # has a body in src/mpiwrapper/, counted from handwritten.h. A body that
+    # disappears -- or a new ledger entry nobody wrote -- fails here rather
+    # than becoming one more run-time-reporting stub.
+    "hand-written bodies": 118,
     # The five MPI-3.0 deleted from the standard, answered by libmpi_abi in
     # terms of their replacements rather than forwarded to an implementation
     # that need not have them. Frozen, because a sixth is a decision.
@@ -2947,8 +2952,17 @@ def emit_constants_c(classes, handles, enums):
             rows.append(f"  case {src}: return {dst};")
             if g:
                 rows.append("#endif")
-        rows.append(f"  default: return "
-                    f"{'MPIABI_ERR_OTHER' if direction == 'toabi' else 'MPI_ERR_OTHER'};")
+        # Not "pass the value through" and not MPI_ERR_OTHER either, for the
+        # same reason as the keyval family below: the half of this family that
+        # is handed out at run time cannot be a case label, and the two sides'
+        # MPI_ERR_LASTCODE differ by five orders of magnitude. The registry in
+        # src/mpiwrapper/errorcodes.c answers, and answers *_ERR_OTHER for a
+        # code it never issued -- which is what this arm said before S4b.
+        rows.append(
+            "  default: return "
+            + ("mpiwrapper_errorcode_dynamic_toabi(ierror);"
+               if direction == "toabi"
+               else "mpiwrapper_errorcode_dynamic_fromabi(abi_ierror);"))
         rows.append("  }")
         rows.append("}")
         out.append("\n".join(rows) + "\n")
@@ -3178,9 +3192,10 @@ ERRORCODE_COMMENT = '''
 /* Error codes. The common case is MPI_SUCCESS, which is 0 everywhere, so it
  * costs one compare. Codes handed out at run time by MPI_Add_error_class/
  * _code need renumbering rather than passing through (the ABI caps
- * MPI_ERR_LASTCODE at 16383 against MPICH's 0x3fffffff); that registry is
- * S4's, and until it exists an unrecognized code maps to MPIABI_ERR_OTHER,
- * which is a legal answer for a class this ABI cannot name.
+ * MPI_ERR_LASTCODE at 16383 against MPICH's 0x3fffffff), so the default arm
+ * hands off to the registry in src/mpiwrapper/errorcodes.c, whose only writers
+ * are those two entry points. A code that registry never issued still answers
+ * *_ERR_OTHER, which is a legal class for an error this ABI cannot name.
  */'''
 
 RANKTAG_COMMENT = '''
@@ -3366,7 +3381,11 @@ def assign_status(protos, handwritten_bodies):
             ep.status = "hand-written"
             ep.detail = HAND_WRITTEN[name]
             if name not in handwritten_bodies:
-                ep.detail += "; no body yet (S4)"
+                # Unreachable since S4b, which is what the frozen
+                # "hand-written bodies" tally above says. It stays because a
+                # *new* ledger entry starts here, and this is what the report
+                # would say about it.
+                ep.detail += "; no body yet in src/mpiwrapper/"
             continue
         blocked = []
         for p in ep.params:
@@ -3484,12 +3503,26 @@ def emit_report(protos, tallies, handwritten_bodies):
 
     w("Hand-written (%d)" % sum(1 for e in mpi if e.status == "hand-written"))
     w("-" * 40)
-    w("  An entry point with a body in src/mpiwrapper/ is marked [done]; the")
-    w("  rest are stubs until S4b writes them, and the slot reports")
-    w("  MPI_ERR_UNSUPPORTED_OPERATION until then. S4a wrote the converter")
-    w("  face -- the handle and status converters, the status-consuming")
-    w("  functions, the output-string buffers and MPI_Abi_* -- so the 40 left")
-    w("  are the ones needing state the wrapper does not yet own.")
+    w("  An entry point with a body in src/mpiwrapper/ is marked [done]. All")
+    w("  of them are: S1 wrote eight, S4a the converter face (the handle and")
+    w("  status converters, the status-consuming functions, the output-string")
+    w("  buffers and MPI_Abi_*), and S4b the 40 that need state the wrapper")
+    w("  owns -- the lifecycle, the fifteen callback registrars, the buffer")
+    w("  attach and detach forms, the dynamic error-code registry, spawn and")
+    w("  MPI_Pcontrol. The count of bodies is a frozen tally above, so one")
+    w("  going missing fails generation rather than becoming a stub.")
+    w("")
+    w("  What still answers MPI_ERR_UNSUPPORTED_OPERATION is decided per")
+    w("  build by dev/probe_impl.py: an entry point the implementation does")
+    w("  not declare, hand-written or generated alike (decision 6).")
+    w("")
+    w("  One limitation is this library's rather than the implementation's,")
+    w("  and belongs here because no probe reports it: where the")
+    w("  implementation has no MPI_BUFFER_AUTOMATIC (it is MPI-4.1), the")
+    w("  wrapper emulates it with a fixed buffer of its own")
+    w("  (MPIWRAPPER_AUTOBUF_BYTES, 8 MiB). The standard's 'buffer of")
+    w("  sufficient size' is unbounded, so a program that would have run")
+    w("  against a real automatic buffer can still see MPI_ERR_BUFFER.")
     w("")
     for reason in sorted(set(HAND_WRITTEN.values())):
         w(f"  {reason}")
@@ -3631,6 +3664,7 @@ def main():
                              and n != "MPI_ERR_LASTCODE"),
         "generated": sum(1 for e in mpi_eps if e.status == "generated"),
         "hand-written": sum(1 for e in mpi_eps if e.status == "hand-written"),
+        "hand-written bodies": len(handwritten_bodies),
         "deferred to S3": sum(1 for e in mpi_eps if e.status == "deferred"),
         "ABI-side aliases": sum(1 for e in mpi_eps if e.status == "abi-alias"),
         "staged past return": sum(1 for e in mpi_eps if stages_past_return(e)),

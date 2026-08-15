@@ -1264,6 +1264,76 @@ contract is "the string terminates at the length reported", not "the length
 reported is `strlen`" — the wrapper passes the implementation's own count
 through, and the test asserts the former.
 
+### What S4b settled
+
+S4b wrote the last 40 of the ledger — the half that owns state — and five
+things it settled were not in the plan.
+
+**The thread level is not wrapper state, and the plan said it was.** STAGES.md
+asked for "an initialization state machine and a thread level the wrapper
+answers from". The state machine is real and §8 says why; the remembered
+thread level had no reader. The wrapper adds no thread state of its own —
+every shared table here is fixed-capacity and lock-free (decision 11) — so it
+neither caps what the implementation provides nor degrades anything when the
+level is low, and `MPI_Query_thread`, the entry point that reports the level
+afterwards, is generated and answers from the implementation through the same
+conversion table. A stored copy would have been a field nobody reads, so there
+is none. `test/abi_state_test.c` checks the two answers against each other
+instead.
+
+**MPICH answers essentially every error with an instance-specific code, so
+the error-code registry has to work in both directions rather than one.**
+§5.6 describes the registry as the place codes from `MPI_Add_error_class` are
+renumbered into the ABI's range. Measured natively, without the wrapper:
+MPICH 4.3.1 returns 604597509 for `MPI_Comm_rank(MPI_COMM_NULL)`, 807037698
+for a bad count and 874557989 for a missing file, each an encoded error stack
+whose class comes back from `MPI_Error_class`; Open MPI 5.0.6 returns the
+plain class in all three. The generated switch's default arm had answered
+`MPI_ERR_OTHER` for anything it could not name since S1, which meant *every*
+MPICH error reached the application as "other" and no application could ever
+be told `MPI_ERR_NO_SUCH_FILE`. So the registry interns the implementation's
+codes as well as the application's: the ABI-side value converts back down, and
+`MPI_Error_class` and `MPI_Error_string` then reach the implementation's own
+class and its own message. `test/abi_prototype_test.c`'s error-handler
+assertion changed with it — S1 asserted the code was `<= MPI_ERR_LASTCODE`,
+which is a property of predefined *classes* and not of codes, and it now
+asserts what the standard states instead.
+
+**Nothing needs a datarep or generalized-request registry.** §5.6 closes with
+"Generalized requests and datarep names need the same treatment", which turns
+out to be false and worth recording as such rather than leaving as an
+unfinished-looking line: both families' registrars take an `extra_state`
+argument that MPI hands back to every callback, so the `{user_fn, user_extra}`
+pair *is* the registry and nothing has to be keyed on a name or a handle. The
+one family that genuinely cannot do this is `MPI_T`'s events, and §6.1 already
+said why.
+
+**`MPI_BUFFER_AUTOMATIC` is emulated where the implementation lacks it, and
+the emulation is an approximation that has to be documented rather than
+hidden.** MPI-5.0 §3.6 says automatic buffering uses "a buffer of sufficient
+size", which is unbounded; the wrapper attaches a fixed 8 MiB block of its own
+and records that the block is ours, so that the detach can answer
+`MPI_BUFFER_AUTOMATIC` and free it. A program that would have run against a
+real automatic buffer can therefore still see `MPI_ERR_BUFFER`. Doing better
+means reimplementing buffered mode above the implementation — intercepting
+every `MPI_Bsend` to grow the buffer — which is a second implementation of the
+feature. The limitation is named in `gen/report.txt`, where a user reading the
+per-entry-point report will find it.
+
+**Three of the forty have no oracle on any implementation available here, and
+that is a fact about the implementations.** Measured: MPICH's ROMIO answers
+`MPI_Register_datarep` with "Read and Write datarep conversions are currently
+not supported by MPI-IO" and Open MPI does the same, so no user datarep
+conversion function can be called at all; MPICH declares every `MPI_T` event
+entry point and reports `MPI_T_event_get_num == 0`, so no event registration
+handle exists to key `toolevents.c` with, and Open MPI 5.0.6 has no event
+interface; and `MPI_Comm_spawn` **hangs** under MPICH 4.3.1's hydra on macOS
+26 with no wrapper involved — a fifteen-line C program does the same — while
+the same program under MPICH in a Linux container returns a clean error. So
+the spawn case is behind `-DMPI_ABI_TEST_SPAWN=ON`, off by default, because a
+test that hangs is worse than one that skips. These three are the weak rows of
+S4b's exit check and S7's suite is the next thing that can strengthen them.
+
 ### The five entry points MPI-3.0 deleted, and why they are not slots
 
 S3b's own exit check passed on every implementation and the *identity*
@@ -1661,13 +1731,33 @@ collide with ABI predefined values.
   the generated switch's default arm hands off to the registry instead of
   passing the value through. The reverse direction scans newest-first, because
   an implementation may reuse the number of a freed keyval. Its only writer is
-  `MPI_*_create_keyval`, which is S4's.
+  `MPI_*_create_keyval`, which **S4b wrote**.
 - **Error codes.** `MPI_ERR_LASTCODE` is 16383 in the ABI against MPICH's
-  0x3fffffff, so codes from `MPI_Add_error_class`/`_code` must be *renumbered* into
-  the ABI's range above its last predefined class, not passed through.
-  Bidirectional table, atomic append, capped at 16383.
+  0x3fffffff, so codes from `MPI_Add_error_class`/`_code` must be *renumbered*
+  into the ABI's range, not passed through. **S4b built it**
+  (`src/mpiwrapper/errorcodes.c`), with keyvals' shape and two corrections to
+  the sentence this bullet used to end with. The ABI-side value is drawn from
+  just *above* `MPI_ERR_LASTCODE` rather than capped at it: MPI-5.0 §9.5 puts
+  every dynamic class above the implementation's own last code, and above
+  16383 is where an application comparing against `MPI_ERR_LASTCODE` expects
+  to find one. And the table interns the *implementation's* dynamic codes too,
+  because MPICH answers essentially every error with one -- measured, with the
+  numbers, in §3's "What S4b settled". A code the table never issued still
+  answers `MPI_ERR_OTHER`, which is also what a full table falls back to.
 
-Generalized requests and datarep names need the same treatment.
+  One gap this cannot close, and it is worth naming rather than discovering
+  later: `MPI_LASTUSEDCODE` comes back through `MPI_Comm_get_attr` as an `int`
+  the implementation owns, and neither the generator nor the registry can see
+  that it is an error class rather than any other attribute value. An
+  application reading that attribute gets the implementation's number.
+
+Generalized requests and datarep names were listed here as needing the same
+treatment. **They do not**, and S4b settled it: both registrars take an
+`extra_state` argument that MPI hands back to every callback, so the
+`{user_fn, user_extra}` pair is the registry
+(`src/mpiwrapper/extrastate.c`) and nothing has to be keyed on a name or a
+handle. `MPI_T`'s events are the one family that genuinely cannot, and §6.1
+says why.
 
 ### 5.7 Arrays: always temporaries, never in place
 
@@ -1930,6 +2020,27 @@ implementation's registration handle serves both.
 A user reduction trampoline receives an implementation datatype and must convert it
 back to an ABI datatype, so it needs the reverse predefined-handle map (§5.1).
 
+**S4b built all sixteen, and the table's three mechanisms became three files.**
+`src/mpiwrapper/callbacks.c` holds the pools -- two user-op variants and four
+error-handler classes, 1024 and 256 static trampolines apiece;
+`src/mpiwrapper/extrastate.c` holds the families whose registrar carries an
+`extra_state` argument, which are the three keyval families, generalized
+requests and the two datarep forms; `src/mpiwrapper/toolevents.c` holds the
+`MPI_T` map. The registrars themselves are in `src/mpiwrapper/hw_callbacks.c`
+rather than beside their mechanism, because each exists twice -- once calling
+the implementation's `MPI_` name and once its `PMPI_` one (decision 7) -- and
+the files that own the trampolines must name neither.
+
+**One thing the table does not say and a body must not get wrong: the
+predefined attribute functions are sentinels.** The ABI spells
+`MPI_COMM_NULL_COPY_FN` as `(function *)0x0` and `MPI_COMM_DUP_FN` as
+`(function *)0x1`; both implementations spell them as real functions with real
+addresses (Open MPI's is `OMPI_C_MPI_COMM_DUP_FN`). So they are recognized and
+replaced with the implementation's own, exactly like `MPI_BOTTOM` (§5.3), and a
+trampoline must *not* be installed for them -- wrapping `MPI_COMM_DUP_FN` would
+turn a copy the implementation performs internally into a call into user code
+that is not there. `MPI_CONVERSION_FN_NULL` is the same shape for datareps.
+
 Errhandler trampolines must be **declared variadic**, matching
 `MPI_Comm_errhandler_function`'s `...`. Nothing needs forwarding — the extra
 arguments are implementation-specific and the user's ABI-side function is variadic
@@ -1984,6 +2095,13 @@ Consequences:
 - **Generalized requests are the one clean case:** free the pair inside our
   `free_fn` trampoline after calling the user's, unconditionally — MPI deallocates
   even if the user's `free_fn` returns an error.
+- **`MPI_T`'s event registrations are the second**, and S4b implements it:
+  `mpiwrapper_t_event_free_tramp` releases the map entry after the user's free
+  callback has run. Ours is installed even when the application passes no free
+  callback of its own, since otherwise a tool that allocates and frees
+  registrations in a loop would fill a map it never asked for. What that
+  reclamation is *not* is tested — no implementation available here raises an
+  event at all (§3, "What S4b settled").
 
 ### 6.3 Concurrency
 
@@ -2190,8 +2308,8 @@ generate, so the ledger is **118**. Both are generated now, with every other
 member of their families, and `src/mpiwrapper/handwritten.c` is down to S1's
 eight.
 
-**S4a wrote 70 of them**, so the ledger's **118 entries hold 78 bodies and 40
-stubs**. The 70 are the converter face: the 44 handle converters and the four
+**S4a wrote 70 of them**, so the ledger's 118 entries held 78 bodies and 40
+stubs. The 70 are the converter face: the 44 handle converters and the four
 status converters (`src/mpiwrapper/hw_converters.c`, with `serialize.c` behind
 `_toint`/`_fromint`), the ten status-consuming functions (`hw_status.c`), the
 ten output-string buffers with no length argument (`hw_strings.c`) and the six
@@ -2229,6 +2347,23 @@ not have and this one does.
   MPI.
 - **`MPI_File_get_view`** (`datarep` truncation) and the other nine output-string
   functions of §5.8 (10).
+
+**S4b wrote the last 40, so every one of the 118 has a body** — and the count
+of bodies is now a frozen tally of the generator's, read out of
+`handwritten.h`, so one going missing fails generation instead of quietly
+becoming a run-time-reporting stub. The 40 are the six remaining lifecycle
+entry points, the thirteen remaining registrars of §6.1, the twelve buffer
+attach and detach forms, the six dynamic error-code forms, the two spawn forms
+and `MPI_Pcontrol`. `src/mpiwrapper/handwritten.c` is gone with them: each of
+S1's eight belongs to a family that has a file now.
+
+Three of the bullets above were decided rather than merely implemented, and
+§3's "What S4b settled" has all three: the thread level is *not* wrapper state
+and the plan was wrong to ask for it; `MPI_BUFFER_AUTOMATIC` is emulated with
+a fixed buffer where the implementation has no such mode, which is an
+approximation `gen/report.txt` names; and `MPI_Pcontrol`'s trailing arguments
+are dropped rather than forwarded, which MPI-5.0 §14.2.2 permits because they
+are a profiling library's business and this library is below one.
 
 ---
 

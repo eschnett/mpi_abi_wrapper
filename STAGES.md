@@ -265,7 +265,7 @@ recovers it; and **`dev/probe_impl.py` now reads `src/mpiwrapper/` too**,
 because a hand-written body's `MPIWRAPPER_HAVE_` guard was silently false while
 the probe read only the generated sources.
 
-#### S4b — the state the wrapper has to own (40)
+#### S4b — the state the wrapper has to own (40) *(done: the ledger's 118 all have bodies)*
 
 The six remaining lifecycle entry points, the 13 remaining callback registrars
 of §6.1, the 12 buffer attach/detach forms, the six dynamic error-code forms,
@@ -291,9 +291,48 @@ the exception and should be named as one**: it needs a launcher, so it is
 MPICH-only here for the same reason `NOTES.md` §11 gives, and Open MPI's row is
 a documented gap rather than a pass.
 
-**Exit check (the stage).** `HAND_WRITTEN` fully implemented; `MPI_ERR_UNSUPPORTED_OPERATION`
-returned only for genuine implementation gaps, and `gen/report.txt` lists exactly
-those.
+**What the session did, and where the exit check turned out weaker than this
+predicted.** `test/abi_state_test.c` is the behavioural half and covers every
+subsystem above, each written against the shape a plausible-but-wrong body
+gets wrong rather than against the happy path: each of the four error-handler
+classes checks that the trampoline handed the callback *the handle it set the
+handler on*, the keyval case checks that `MPI_COMM_DUP_FN` reached the
+implementation as the implementation's own function rather than as the ABI's
+`(function *)0x1`, and the generalized request is asked `MPI_Get_count` on the
+status its query callback filled — which only answers if the whole blob crossed
+in both directions. `mpiwrapper_selftest` covers the error-code registry's
+capacity behaviour, which has no error channel in the `toabi` direction.
+
+**Three rows have no oracle here, and it is the implementations' doing rather
+than the test's.** No implementation available supports a user datarep at all
+(MPICH's ROMIO: "Read and Write datarep conversions are currently not supported
+by MPI-IO"); MPICH declares every `MPI_T` event entry point and reports zero
+event types, and Open MPI 5.0.6 has no event interface, so no registration
+handle exists to reach `toolevents.c`'s map with; and `MPI_Comm_spawn` *hangs*
+under MPICH's hydra on this host with no wrapper involved, so the spawn case is
+behind `-DMPI_ABI_TEST_SPAWN=ON` and off by default. S7's suite and S8's
+consumers are the next things that can strengthen those three.
+
+Five things it settled that this plan did not name, all in `NOTES.md` §3's
+"What S4b settled": **the thread level is not wrapper state** — this plan asked
+for one and it would have had no reader, since every table here is lock-free
+and `MPI_Query_thread` answers from the implementation; **the error-code
+registry has to intern the *implementation's* codes as well as the
+application's**, because MPICH answers essentially every error with an
+instance-specific code and all of them were reaching applications as
+`MPI_ERR_OTHER`; **generalized requests and datareps need no registry**,
+contrary to §5.6's last line, because their `extra_state` argument is one;
+**`MPI_BUFFER_AUTOMATIC` is emulated with a fixed buffer** where the
+implementation lacks the mode, which is an approximation `gen/report.txt`
+names; and **`MPI_Pcontrol`'s trailing arguments are dropped**, which §14.2.2
+permits because they belong to a profiling library above this one.
+
+**Exit check (the stage).** `HAND_WRITTEN` fully implemented — a frozen tally
+of the generator's now, counted from `handwritten.h`, so a body going missing
+fails generation rather than becoming a stub; `MPI_ERR_UNSUPPORTED_OPERATION`
+returned only for genuine implementation gaps, which `dev/probe_impl.py`
+decides per build, and `gen/report.txt` carries the one limitation that is this
+library's rather than an implementation's.
 
 **Model: Opus.** Per-function judgement against the standard, which is the definition
 of this set. **Two sessions**, split at conversion versus state.

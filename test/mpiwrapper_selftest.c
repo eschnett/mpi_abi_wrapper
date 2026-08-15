@@ -453,6 +453,99 @@ static void test_keyvals(void)
         "an implementation keyval we never registered was translated anyway");
 }
 
+/* -------------------------------------------------- the error-code registry */
+
+/* errorcodes.c, the other half of #5.6. abi_state_test exercises it from
+ * outside -- a class added, seen by MPI_Error_class and MPI_Error_string, and
+ * removed -- but two of its properties are only reachable from in here: what a
+ * full table does, which has no error channel of its own, and the recycling
+ * rule, which needs an implementation that reuses a number and neither of ours
+ * obliges on demand.
+ */
+static void test_error_codes(void)
+{
+  int abi_a = 0, abi_b = 0, abi_c = 0;
+
+  /* 1. The predefined half still goes through the generated switch, and the
+   * two sides' numbering really does differ (MPI_ERR_TRUNCATE is 15 in the
+   * ABI, and MPICH and Open MPI each have their own).
+   */
+  CHECK(mpiwrapper_errorcode_toabi(MPI_SUCCESS) == MPIABI_SUCCESS,
+        "MPI_SUCCESS does not convert");
+  CHECK(mpiwrapper_errorcode_toabi(MPI_ERR_TRUNCATE) == MPIABI_ERR_TRUNCATE,
+        "MPI_ERR_TRUNCATE does not convert");
+  CHECK(mpiwrapper_errorcode_fromabi(MPIABI_ERR_TRUNCATE) == MPI_ERR_TRUNCATE,
+        "MPI_ERR_TRUNCATE does not convert back");
+
+  /* 2. A registered code is renumbered *above* the ABI's MPI_ERR_LASTCODE,
+   * which is where MPI-5.0 9.5 puts a dynamic class and where an application
+   * comparing against MPI_ERR_LASTCODE expects to find one. Passing the
+   * implementation's own number through would put it five orders of magnitude
+   * higher on MPICH (0x3fffffff) and inside the predefined range on an
+   * implementation that numbered its classes densely.
+   */
+  CHECK(mpiwrapper_errorcode_add(0x5eed, &abi_a),
+        "the error-code table refused an add");
+  CHECK(abi_a > MPIABI_ERR_LASTCODE,
+        "a dynamic error code was issued as %d, not above MPI_ERR_LASTCODE",
+        abi_a);
+  CHECK(mpiwrapper_errorcode_fromabi(abi_a) == 0x5eed,
+        "a registered error code does not convert back");
+  CHECK(mpiwrapper_errorcode_toabi(0x5eed) == abi_a,
+        "a registered error code does not convert to the value issued for it");
+  CHECK(mpiwrapper_errorcode_toabi(MPI_ERR_TRUNCATE) == MPIABI_ERR_TRUNCATE,
+        "registering a dynamic error code disturbed a predefined one");
+
+  /* 3. A code the implementation invented is interned on sight, which is what
+   * keeps MPICH's instance-specific codes -- it answers essentially every
+   * error with one -- from all arriving as MPI_ERR_OTHER.
+   */
+  const int interned = mpiwrapper_errorcode_toabi(0x600d);
+  CHECK(interned > MPIABI_ERR_LASTCODE,
+        "an implementation error code came back as %d rather than interned",
+        interned);
+  CHECK(mpiwrapper_errorcode_fromabi(interned) == 0x600d,
+        "an interned error code does not convert back to the implementation's");
+  CHECK(mpiwrapper_errorcode_toabi(0x600d) == interned,
+        "the same implementation error code interned twice");
+
+  /* 4. Recycling, the same rule as the keyval registry above and for the same
+   * reason: the newest registration of a number is the live one.
+   */
+  CHECK(mpiwrapper_errorcode_add(0x5eed, &abi_b),
+        "the error-code table refused an add");
+  CHECK(abi_b != abi_a, "a re-registered error code reused its ABI value");
+  CHECK(mpiwrapper_errorcode_toabi(0x5eed) == abi_b,
+        "a recycled implementation error code resolves to the stale entry");
+  CHECK(mpiwrapper_errorcode_fromabi(abi_a) == 0x5eed,
+        "the stale ABI error code stopped converting");
+
+  /* 5. An ABI code this library never issued is not translatable, and says so
+   * with MPI_ERR_OTHER rather than passing a number down that the
+   * implementation would reject in some other way.
+   */
+  CHECK(mpiwrapper_errorcode_fromabi(MPIABI_ERR_LASTCODE - 1) == MPI_ERR_OTHER,
+        "an ABI error code we never issued was translated anyway");
+
+  /* 6. Overflow: the table degrades to the answer it gave before it existed,
+   * and what was already in it still converts. `add` reports, which is how
+   * MPI_Add_error_class turns a full table into MPIABI_ERR_INTERN; the toabi
+   * direction has nowhere to report and so falls back to MPI_ERR_OTHER.
+   */
+  for (int i = 0; i < MPIWRAPPER_ERRORCODE_SLOTS + 16; ++i)
+    (void)mpiwrapper_errorcode_add(0x100000 + i, &abi_c);
+
+  int overflow = 0;
+  CHECK(!mpiwrapper_errorcode_add(0x7fff0001, &overflow),
+        "a full error-code table issued a value anyway");
+  CHECK(mpiwrapper_errorcode_toabi(0x7fff0002) == MPIABI_ERR_OTHER,
+        "a full error-code table did not fall back to MPI_ERR_OTHER");
+  CHECK(mpiwrapper_errorcode_fromabi(abi_b) == 0x5eed,
+        "filling the table disturbed a code issued earlier");
+  CHECK(mpiwrapper_errorcode_toabi(MPI_ERR_TRUNCATE) == MPIABI_ERR_TRUNCATE,
+        "a full table stopped answering for predefined codes");
+}
+
 /* ------------------------------------------------- handle serialization */
 
 /* serialize.c, which abi_converters_test exercises from outside but cannot
@@ -597,6 +690,7 @@ int main(int argc, char **argv)
     test_dynamic_handles();
     test_staged_requests();
     test_keyvals();
+    test_error_codes();
     test_serialization();
     test_tool_handles();
   }

@@ -234,9 +234,18 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     src/mpiwrapper/toolobj.c
     src/mpiwrapper/callbacks.c
     src/mpiwrapper/serialize.c
+    src/mpiwrapper/errorcodes.c
+    src/mpiwrapper/buffers.c
+    src/mpiwrapper/extrastate.c
+    src/mpiwrapper/toolevents.c
   )
   set(MPIABI_WRAPPER_BODY_SOURCES
-    src/mpiwrapper/handwritten.c
+    src/mpiwrapper/hw_lifecycle.c
+    src/mpiwrapper/hw_callbacks.c
+    src/mpiwrapper/hw_buffers.c
+    src/mpiwrapper/hw_errors.c
+    src/mpiwrapper/hw_spawn.c
+    src/mpiwrapper/hw_pcontrol.c
     src/mpiwrapper/hw_converters.c
     src/mpiwrapper/hw_status.c
     src/mpiwrapper/hw_strings.c
@@ -436,6 +445,43 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_converters_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_converters_test PROPERTIES
     ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+
+  # The same for S4b: the state the wrapper owns. What it covers that no
+  # assertion in the generator can see is that a trampoline hands the
+  # application *its own* handle back -- each of the four error-handler classes
+  # checks the handle against the object it was set on -- that
+  # MPI_COMM_DUP_FN reaches the implementation as the implementation's own
+  # function rather than as the ABI's (function *)0x1, that a generalized
+  # request's status survives the round trip through the query callback
+  # (MPI_Get_count is what a body copying only the named fields fails), that
+  # MPI_BUFFER_AUTOMATIC comes back out of a detach on an implementation that
+  # has the mode and on one where the wrapper emulates it, and that a dynamic
+  # error class is renumbered into the ABI's range. It is also the only test
+  # that can ask MPI_Initialized before MPI_Init and MPI_Finalized after
+  # MPI_Finalize.
+  add_executable(abi_state_test test/abi_state_test.c)
+  target_include_directories(abi_state_test PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
+  target_compile_options(abi_state_test PRIVATE ${MPIABI_WARNINGS})
+  target_link_libraries(abi_state_test PRIVATE mpi_abi)
+
+  # Spawn is the one case that is off by default, and the reason is measured
+  # rather than cautious: MPI_Comm_spawn hangs under MPICH 4.3.1's hydra on
+  # macOS 26 with no wrapper involved -- a 15-line C program does the same --
+  # so a test that called it unconditionally would hang ctest instead of
+  # failing it. The same program under MPICH in a Linux container returns a
+  # clean error, which the test skips on. Turn this on where spawn works.
+  option(MPI_ABI_TEST_SPAWN
+    "Run abi_state_test's MPI_Comm_spawn case (needs a launcher that spawns)"
+    OFF)
+  set(MPIABI_STATE_TEST_ENV "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+  if(MPI_ABI_TEST_SPAWN)
+    list(APPEND MPIABI_STATE_TEST_ENV "MPI_ABI_TEST_SPAWN=1")
+  endif()
+
+  add_test(NAME abi_state_test
+    COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_state_test> ${MPIABI_RUN_POST})
+  set_tests_properties(abi_state_test PROPERTIES
+    ENVIRONMENT "${MPIABI_STATE_TEST_ENV}")
 
   # 20.2.1 wants libmpi_abi to be the application's only direct MPI dependency,
   # and oracles 1 and 2 want each library's export set to be exactly what the

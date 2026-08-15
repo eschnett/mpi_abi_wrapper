@@ -15,6 +15,7 @@ Frozen tallies
   error classes          80
   generated              565
   hand-written           118
+  hand-written bodies    118
   deferred to S3         0
   ABI-side aliases       5
   staged past return     8
@@ -589,12 +590,26 @@ Generated (565)
 
 Hand-written (118)
 ----------------------------------------
-  An entry point with a body in src/mpiwrapper/ is marked [done]; the
-  rest are stubs until S4b writes them, and the slot reports
-  MPI_ERR_UNSUPPORTED_OPERATION until then. S4a wrote the converter
-  face -- the handle and status converters, the status-consuming
-  functions, the output-string buffers and MPI_Abi_* -- so the 40 left
-  are the ones needing state the wrapper does not yet own.
+  An entry point with a body in src/mpiwrapper/ is marked [done]. All
+  of them are: S1 wrote eight, S4a the converter face (the handle and
+  status converters, the status-consuming functions, the output-string
+  buffers and MPI_Abi_*), and S4b the 40 that need state the wrapper
+  owns -- the lifecycle, the fifteen callback registrars, the buffer
+  attach and detach forms, the dynamic error-code registry, spawn and
+  MPI_Pcontrol. The count of bodies is a frozen tally above, so one
+  going missing fails generation rather than becoming a stub.
+
+  What still answers MPI_ERR_UNSUPPORTED_OPERATION is decided per
+  build by dev/probe_impl.py: an entry point the implementation does
+  not declare, hand-written or generated alike (decision 6).
+
+  One limitation is this library's rather than the implementation's,
+  and belongs here because no probe reports it: where the
+  implementation has no MPI_BUFFER_AUTOMATIC (it is MPI-4.1), the
+  wrapper emulates it with a fixed buffer of its own
+  (MPIWRAPPER_AUTOBUF_BYTES, 8 MiB). The standard's 'buffer of
+  sufficient size' is unbounded, so a program that would have run
+  against a real automatic buffer can still see MPI_ERR_BUFFER.
 
   ABI introspection: answers about this library, not about the wrapped MPI
     [done] MPI_Abi_get_fortran_booleans
@@ -611,37 +626,37 @@ Hand-written (118)
     [done] MPI_Status_f2c
 
   buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership
-         - MPI_Buffer_attach
-         - MPI_Buffer_attach_c
-         - MPI_Buffer_detach
-         - MPI_Buffer_detach_c
-         - MPI_Comm_attach_buffer
-         - MPI_Comm_attach_buffer_c
-         - MPI_Comm_detach_buffer
-         - MPI_Comm_detach_buffer_c
-         - MPI_Session_attach_buffer
-         - MPI_Session_attach_buffer_c
-         - MPI_Session_detach_buffer
-         - MPI_Session_detach_buffer_c
+    [done] MPI_Buffer_attach
+    [done] MPI_Buffer_attach_c
+    [done] MPI_Buffer_detach
+    [done] MPI_Buffer_detach_c
+    [done] MPI_Comm_attach_buffer
+    [done] MPI_Comm_attach_buffer_c
+    [done] MPI_Comm_detach_buffer
+    [done] MPI_Comm_detach_buffer_c
+    [done] MPI_Session_attach_buffer
+    [done] MPI_Session_attach_buffer_c
+    [done] MPI_Session_detach_buffer
+    [done] MPI_Session_detach_buffer_c
 
   callback registration: installs a trampoline or a pair (NOTES.md #6.1)
     [done] MPI_Comm_create_errhandler
-         - MPI_Comm_create_keyval
-         - MPI_File_create_errhandler
-         - MPI_Grequest_start
+    [done] MPI_Comm_create_keyval
+    [done] MPI_File_create_errhandler
+    [done] MPI_Grequest_start
     [done] MPI_Op_create
-         - MPI_Op_create_c
-         - MPI_Register_datarep
-         - MPI_Register_datarep_c
-         - MPI_Session_create_errhandler
-         - MPI_T_event_register_callback
-         - MPI_T_event_set_dropped_handler
-         - MPI_Type_create_keyval
-         - MPI_Win_create_errhandler
-         - MPI_Win_create_keyval
+    [done] MPI_Op_create_c
+    [done] MPI_Register_datarep
+    [done] MPI_Register_datarep_c
+    [done] MPI_Session_create_errhandler
+    [done] MPI_T_event_register_callback
+    [done] MPI_T_event_set_dropped_handler
+    [done] MPI_Type_create_keyval
+    [done] MPI_Win_create_errhandler
+    [done] MPI_Win_create_keyval
 
   callback registration: the free callback runs on the way back into user code, so it needs the same trampoline as the two registrars beside it (NOTES.md #6.1). Its `user_data` can carry the {user_fn, user_extra} pair, so this one needs no pool.
-         - MPI_T_event_handle_free
+    [done] MPI_T_event_handle_free
 
   consumes a status in the *in* direction (NOTES.md #5.2)
     [done] MPI_Get_count
@@ -656,15 +671,15 @@ Hand-written (118)
     [done] MPI_Test_cancelled
 
   dynamic error codes: renumbered into the ABI's range rather than passed through (NOTES.md #5.6)
-         - MPI_Add_error_class
-         - MPI_Add_error_code
-         - MPI_Add_error_string
-         - MPI_Remove_error_class
-         - MPI_Remove_error_code
-         - MPI_Remove_error_string
+    [done] MPI_Add_error_class
+    [done] MPI_Add_error_code
+    [done] MPI_Add_error_string
+    [done] MPI_Remove_error_class
+    [done] MPI_Remove_error_code
+    [done] MPI_Remove_error_string
 
   genuinely variadic
-         - MPI_Pcontrol
+    [done] MPI_Pcontrol
 
   handle converter: the reason mpif can run over any MPI
     [done] MPI_Comm_c2f
@@ -713,14 +728,14 @@ Hand-written (118)
     [done] MPI_Win_toint
 
   lifecycle: initialization state the wrapper itself has to track
-         - MPI_Abort
+    [done] MPI_Abort
     [done] MPI_Finalize
-         - MPI_Finalized
+    [done] MPI_Finalized
     [done] MPI_Init
-         - MPI_Init_thread
-         - MPI_Initialized
-         - MPI_Session_finalize
-         - MPI_Session_init
+    [done] MPI_Init_thread
+    [done] MPI_Initialized
+    [done] MPI_Session_finalize
+    [done] MPI_Session_init
 
   output string buffer with no length argument: truncate or error is a per-parameter judgement (NOTES.md #5.8)
     [done] MPI_Comm_get_name
@@ -735,8 +750,8 @@ Hand-written (118)
     [done] MPI_Win_get_name
 
   spawn: argv, array_of_argv and array_of_errcodes together
-         - MPI_Comm_spawn
-         - MPI_Comm_spawn_multiple
+    [done] MPI_Comm_spawn
+    [done] MPI_Comm_spawn_multiple
 
 Implemented on the ABI side (5)
 ----------------------------------------
