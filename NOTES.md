@@ -429,6 +429,7 @@ S1, all of it measured on macOS 26 / arm64 unless stated:
 |---|---|---|
 | macOS, native MPICH 4.3.1 | `RTLD_LOCAL` + two-level namespace | **works**, 6/6 tests, two ranks |
 | macOS, native Open MPI 5.0.6 | same | **works**, 6/6 tests, one rank (its launcher is broken here, unrelated to loading) |
+| macOS, native Open MPI 6.1.0a1 (main) | same | **works**, 6/6 tests, two ranks — despite 698 weak `MPI_*` |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
 | macOS, an ABI-implementing MPI (weak `MPI_*`) | none available | **refused at load**; see below |
 | Linux glibc, native MPICH 4.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6 tests, two ranks (Ubuntu 24.04, aarch64, in Docker) |
@@ -473,10 +474,8 @@ catches the capture at load, positively, on every platform, whatever the loader 
 dependencies. `src/mpiwrapper/getvtable.c` implements it.
 
 **But `dladdr` answers a subtly different question than the one that matters, and
-S1 found a case where the two answers differ.** With an implementation whose
-`MPI_*` symbols are **weak** — which is every ELF MPI, since that is how the
-profiling interface works, and in particular an Open MPI built for the standard
-ABI, where all 683 are weak while the `PMPI_*` are strong — macOS gives:
+S1 found a case where the two answers differ.** Wrapping an Open MPI built for the
+standard ABI — all 683 of its `MPI_*` weak, its `PMPI_*` strong — macOS gives:
 
 ```
 dladdr(&MPI_Send) inside the wrapper   ->  the implementation   (correct)
@@ -511,6 +510,30 @@ was discovered to be inadequate.
 The consequence for the *design* is that a wrapper cannot be layered over an
 ABI-implementing MPI on macOS at all: refusing at load is the best available
 outcome, and the wrapper says so. See oracle 5 in §10.
+
+**Weak `MPI_*` alone does not predict capture, and the probe is not a complete
+detector.** Two later measurements say so, and both are worth keeping because the
+tempting rule — "weak implementation symbols mean capture" — is wrong:
+
+- **Open MPI main (6.1.0a1), built natively**, has 698 weak `MPI_*` and 0 strong,
+  exactly the shape that captured above. It **wraps correctly**: 6/6 tests at two
+  ranks on macOS, with the probe passing. So the deciding factor is something
+  narrower than symbol binding, and we have not pinned it down — the Mach-O
+  header flags (`WEAK_DEFINES BINDS_TO_WEAK`) and install names are the same in
+  both.
+- The same Open MPI, with the wrapper deliberately built `-flat_namespace`,
+  captures **partially**: `MPI_Send` and the datatype conversions recurse until
+  the stack is exhausted, while `MPI_Get_version` — the probe's own call —
+  resolves outward and reports the right answer. So the probe returns "not
+  captured" and the process dies later of recursion.
+
+Both checks are therefore *sound and incomplete*: what they report is true, and
+what they miss is a partial capture whose sampled call happens to bind outward.
+The failure mode they leave is a stack overflow, not a wrong answer, which is why
+`test/check_isolation.cmake` treats a crash as an acceptable outcome and only a
+*successful* run of an unisolated wrapper as a failure. Sampling more entry points
+would narrow the gap and not close it; closing it would need the loader to answer
+"where does this call site bind", which neither `dladdr` nor `dlsym` will do.
 
 `size` is `sizeof(struct mpiwrapper_vtable)` as the *caller* understands it. A
 wrapper may accept a smaller size than its own and serve the common prefix; it must
