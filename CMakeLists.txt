@@ -77,6 +77,11 @@ set_target_properties(mpi_abi PROPERTIES OUTPUT_NAME mpi_abi)
 target_include_directories(mpi_abi PRIVATE
   ${MPIABI_GEN_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR})
 target_compile_options(mpi_abi PRIVATE ${MPIABI_WARNINGS})
+# dlopen/dlsym/dlerror live in libdl on glibc older than 2.34 and in libc from
+# 2.34 onwards, so this is empty on a current distro and "dl" on Ubuntu 20.04 --
+# which is how the omission stayed invisible until an MPI-3.0 implementation
+# forced an older container. CMAKE_DL_LIBS is the portable spelling.
+target_link_libraries(mpi_abi PRIVATE ${CMAKE_DL_LIBS})
 # Every MPI_*/PMPI_* entry point is exported and nothing else is: the ABI
 # functions carry default visibility from the ABI header, and the one internal
 # global is marked hidden in bootstrap.c.
@@ -203,7 +208,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     ${MPIABI_WRAPPER_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR} src/mpiwrapper)
   add_dependencies(mpiwrapper mpiabi_h_for_wrapper)
   target_compile_options(mpiwrapper PRIVATE ${MPIABI_WARNINGS})
-  target_link_libraries(mpiwrapper PRIVATE MPI::MPI_C)
+  target_link_libraries(mpiwrapper PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
   if(MPI_ABI_WRAP_ABI_IMPL)
     target_compile_definitions(mpiwrapper PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
   endif()
@@ -234,7 +239,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       ${MPIABI_WRAPPER_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR} src/mpiwrapper)
     add_dependencies(mpiwrapper_unisolated mpiabi_h_for_wrapper)
     target_compile_options(mpiwrapper_unisolated PRIVATE ${MPIABI_WARNINGS})
-    target_link_libraries(mpiwrapper_unisolated PRIVATE MPI::MPI_C)
+    target_link_libraries(mpiwrapper_unisolated PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
     if(MPI_ABI_WRAP_ABI_IMPL)
       target_compile_definitions(mpiwrapper_unisolated PRIVATE
         MPIWRAPPER_WRAP_ABI_IMPL)
@@ -277,7 +282,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     ${MPIABI_WRAPPER_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR} src/mpiwrapper)
   add_dependencies(mpiwrapper_selftest mpiabi_h_for_wrapper)
   target_compile_options(mpiwrapper_selftest PRIVATE ${MPIABI_WARNINGS})
-  target_link_libraries(mpiwrapper_selftest PRIVATE MPI::MPI_C)
+  target_link_libraries(mpiwrapper_selftest PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
   if(MPI_ABI_WRAP_ABI_IMPL)
     target_compile_definitions(mpiwrapper_selftest PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
   endif()

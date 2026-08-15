@@ -24,10 +24,19 @@
 #                    changes, never gated on.
 set -uo pipefail
 
+# Either a distro MPI by name, or the path to an mpicc -- the latter for an MPI
+# built from a pinned tarball, which is how NOTES.md #9 wants CI to provision
+# them and how anything older than the distro ships gets tested at all.
 which=${1:-}
+MPICC=""
 case $which in
   mpich|openmpi) ;;
-  *) echo "usage: $0 mpich|openmpi" >&2; exit 2 ;;
+  */*|mpicc*)
+    [ -x "$which" ] || { echo "$which: not executable" >&2; exit 2; }
+    MPICC=$which
+    which=$(basename "$(dirname "$(dirname "$MPICC")")")
+    ;;
+  *) echo "usage: $0 mpich|openmpi|/path/to/mpicc" >&2; exit 2 ;;
 esac
 
 SRC=${SRC:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
@@ -42,7 +51,7 @@ fail() { echo "FAILED: $*" >&2; status=1; }
 if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   pkgs="build-essential cmake python3 patch binutils"
-  case $which in
+  case ${MPICC:+path}$which in
     mpich)   pkgs="$pkgs libmpich-dev mpich" ;;
     openmpi) pkgs="$pkgs libopenmpi-dev openmpi-bin" ;;
   esac
@@ -52,8 +61,10 @@ if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null; then
 fi
 
 # Debian installs both MPIs' wrappers under alternatives; name the one we mean.
-MPICC=$(command -v "mpicc.$which" || command -v mpicc) || {
-  echo "no mpicc for $which" >&2; exit 2; }
+if [ -z "$MPICC" ]; then
+  MPICC=$(command -v "mpicc.$which" || command -v mpicc) || {
+    echo "no mpicc for $which" >&2; exit 2; }
+fi
 
 # --------------------------------------------------------------- environment
 

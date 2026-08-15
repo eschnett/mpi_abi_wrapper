@@ -198,9 +198,11 @@ MPICH 4.1     libmpich.so  0x10fe20 T MPI_Send  0x10fe20 T PMPI_Send   668 T, 0 
 Open MPI 4.1  libmpi.so    0x084630 T MPI_Send  0x084630 T PMPI_Send   432 T, 0 W
 ```
 
-Same address, both *strong*. What holds everywhere, and is all this argument needs,
-is that **both names exist and resolve to the same code when no tool is
-interposed**. Whether the alias is weak or strong is an ELF interposition detail
+Same address, both *strong*. MPICH 3.1.4, from 2014, is the other way round — 385
+weak `MPI_*` against 385 strong `PMPI_*`, exactly the shape the note above
+recorded — so the original observation was accurate for its time and MPICH
+changed. What holds everywhere, and is all this argument needs, is that **both
+names exist and resolve to the same code when no tool is interposed**. Whether the alias is weak or strong is an ELF interposition detail
 that matters to profiling tools, not to us — on ELF, scope order decides
 interposition, not binding strength.
 
@@ -405,6 +407,13 @@ rather than incidental: it is not one implementation's quirk but what happens wh
 anything inside a fresh namespace loads a plugin globally, which is what MPI
 runtimes do at startup.
 
+That diagnosis has since been confirmed from the other side. **MPICH 3.1.4 runs
+fine under `dlmopen`** — all tests pass in that mode — and it predates PMIx and
+loads no components at run time. So `dlmopen` itself is not broken; it is
+unusable with any MPI that `dlopen`s plugins, which is every current one. That
+narrows what S9 might do: an MPI configured with its components built in is a
+real option, not a hope.
+
 The consequence lands on S9. `dlmopen` was the designated fallback for the case
 where `RTLD_DEEPBIND` breaks the sanitizers, and that fallback does not exist. The
 options S9 actually has are: run the sanitizers with `RTLD_DEEPBIND` and find out
@@ -434,6 +443,7 @@ S1, all of it measured on macOS 26 / arm64 unless stated:
 | macOS, an ABI-implementing MPI (weak `MPI_*`) | none available | **refused at load**; see below |
 | Linux glibc, native MPICH 4.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6 tests, two ranks (Ubuntu 24.04, aarch64, in Docker) |
 | Linux glibc, native Open MPI 4.1 | same | **works**, 6/6 tests, two ranks |
+| Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6 tests, two ranks — the configure floor, verified rather than declared |
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI**; see below |
 | Linux musl | neither exists | expected to be refused at load; no Alpine support until something else is found (§12) |
@@ -1595,6 +1605,13 @@ cross-compiling works:
    The warning names the consequence — the `_c` slots become
    `MPI_ERR_UNSUPPORTED_OPERATION` stubs — and the floor sits at MPI-3.0, below
    which the ABI's own surface stops being expressible.
+
+   **The floor is tested, not just declared:** MPICH 3.1.4, which reports
+   `MPI_VERSION 3` / `MPI_SUBVERSION 0`, passes all six tests at two ranks. It
+   needs an older toolchain to build at all (gcc 9; gcc 11 and 13 both reject its
+   own headers) and a newer CMake than Ubuntu 20.04 ships, which is worth knowing
+   before S6 promises a distro matrix — our `cmake_minimum_required(3.20)` is
+   above that release's 3.16.
 2. **No self-wrapping.** Hard error if the found MPI prefix is *our own*
    installation, detected by the presence of `mpiwrapper_vtable.h` — a file only we
    install. Neither `MPI_ABI_VERSION` nor the library name discriminates: §20.2.1
