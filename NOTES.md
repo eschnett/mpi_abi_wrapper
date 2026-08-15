@@ -2376,7 +2376,7 @@ dev/               the Python generator and dev-time cross-checks
                      generate.py (the generator), generate_headers.py (the S0
                      step it imports), layout_hash.py, probe_impl.py
                      (the configure-time availability probe), check_prototype.py
-                     apis.json (vendored), check-c-bindings.py (Appendix A.2)
+                     apis.json (vendored), check-c-bindings.py (Appendix A.3)
                      and the five probes whose results this file cites
 dev/s1-reference/  S1's four hand-written stand-ins, frozen; not compiled.
                      What check_prototype.py measures the generator against
@@ -2551,12 +2551,34 @@ admissibility:
    translated exactly once, no ABI-typed parameter in an implementation call
    argument list, frozen tallies, unknown kind a hard stop — plus the empty-diff
    regeneration.
-4. **MPI-5.0 Appendix A.2 via `pdftotext -layout`** on `doc/mpi50-report.pdf`, as
-   an independent route from the same LaTeX that produced `apis.json`. Keep mpif's
-   two properties from `dev/check-f08-bindings.jl`: the parse validates itself
-   (every argument declared exactly once, else the text was misread and no
-   comparison is trustworthy), and exemptions are named, explained, and fail the
-   run when they stop firing.
+4. **MPI-5.0 Appendix A.3 ("C Bindings" — A.2 in this report is the op.-related
+   semantics summary, not the bindings) via `pdftotext -layout`** on
+   `doc/mpi50-report.pdf`, as an independent route from the same LaTeX that
+   produced `apis.json`. Keep mpif's two properties from
+   `dev/check-f08-bindings.jl`, adapted to C: since a C signature carries no
+   `INTENT`/`::` list to check completeness against, the parse instead checks that
+   A.3's open- and close-paren counts equal the number of signatures found, one
+   pair each, with nothing left over; exemptions are named, explained, and fail
+   the run when they stop firing. Array parameters are folded to their
+   pointer-decay form (`T x[]` and `T *x` name the same C declarator) before
+   comparison, since otherwise every array parameter the standard spells with
+   brackets where the header uses a star reads as a false type mismatch.
+
+   **Eight named exemptions**, all about *names* rather than semantics, since C
+   bindings have no `INTENT` for the standard and the header to disagree over:
+   fourteen predefined callback constants (`MPI_COMM_NULL_COPY_FN` and the rest)
+   that A.3 documents with prototype syntax but that are values, not entry
+   points; `MPI_Wtime`/`MPI_Wtick`/`MPI_Aint_add`/`MPI_Aint_diff`, which the
+   standard's body binds but A.3 itself never lists; `MPI_Status_f082f`/`_f2f08`,
+   real A.3 bindings this ABI omits by design (they compose from the four
+   converters it does carry — `NOTES.md` #1); `index`/`indx` (the libc-collision
+   dodge, seven functions); MPI_T's `pe_session`/`session`;
+   `MPI_Status_get/set_error`'s `err`/`error`; `MPI_Precv_init`'s `dest`, held
+   over from `MPI_Psend_init`'s template in the vendored mpi-abi-stubs header
+   rather than corrected to `source`; and `MPI_F08_Status`'s capital S, which
+   owes A.3's lowercase `mpi_f08_status` nothing since MPI-5.0 §20.4 states that
+   `MPI_F08_Status` is not part of the C ABI at all — the name is this project's
+   own coinage (`doc/mpi.h.patch`, `NOTES.md` #1 and #2).
 5. **The identity configuration: wrap an MPI that already implements the ABI.**
    Every conversion becomes an identity — predefined handle values, error codes,
    sentinels, `MPI_MAX_*`, ranks and tags all match — so the conversion tables are

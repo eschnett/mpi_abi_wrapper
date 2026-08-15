@@ -17,7 +17,7 @@ S0 headers+skeleton
  │        │                   │                                    ├─→ S7 MPICH suite ──→ S8 consumers
  │        │                   └─→ S4 the hand-written ~90 ─────────┘
  │        └─→ S6 packaging                                         └─→ S9 sanitizers/threads/32-bit
- └─→ S5 Appendix A.2 cross-check
+ └─→ S5 Appendix A.3 cross-check
 ```
 
 The critical path is **S0 → S1 → S2 → S3 → S7 → S8**. **S5** needs only S0 and
@@ -337,17 +337,50 @@ library's rather than an implementation's.
 **Model: Opus.** Per-function judgement against the standard, which is the definition
 of this set. **Two sessions**, split at conversion versus state.
 
-### S5 — Oracle 4: Appendix A.2 cross-check *(floats; needs only S0)*
+### S5 — Oracle 4: Appendix A.3 cross-check *(done: 688 match, 8 named exemptions)*
 
 `dev/check-c-bindings.py`: parse the C bindings out of `doc/mpi50-report.pdf` with
 `pdftotext -layout` and compare against the header. Keep mpif's two properties — the
 parse validates itself, and exemptions are named and fail when they stop firing.
 
-**Exit check.** Runs in CI; every one of the 688 signatures either matches or is a
-named exemption; breaking one signature on purpose makes it fail.
+**The appendix numbers itself A.3, not A.2** — this report's own table of contents
+gives A.2 to "Summary of the Semantics of all Op.-Related Routines" and A.3 to "C
+Bindings"; STAGES.md and NOTES.md #10 are corrected to match rather than left
+pointing at a section that doesn't hold what they say it holds.
+
+Unlike mpif's Fortran declarations, a C signature has no `INTENT`/`::` list to
+anchor a self-check on, so the parse validates itself differently: A.3 is a run of
+signatures and nothing else once headings and margin numbers are stripped, so its
+open- and close-paren counts must equal the signature count found, one pair each —
+any leftover means the text was misread. Array parameters are folded to their
+pointer-decay form before comparison (`T x[]` and `T *x` are the same C
+declarator), which is what the language says rather than an approximation.
+
+**Eight named exemptions, not one.** C has no per-argument prose to disagree
+over, so where mpif's divergences were about `INTENT` and buffer types, all of
+this stage's are about *names*: A.3 lists fourteen predefined callback constants
+(`MPI_COMM_NULL_COPY_FN` and so on) under prototype syntax though none is an entry
+point; `MPI_Wtime`, `MPI_Wtick`, `MPI_Aint_add` and `MPI_Aint_diff` have bindings
+in the standard's body but never appear in A.3 itself; `MPI_Status_f082f`/
+`_f2f08` are real A.3 bindings this ABI omits by design, composing from the four
+converters it does have; seven functions' `index` is `indx` in the header, the
+same libc-collision dodge every MPI implementation's own headers use; MPI_T's
+`pe_session` is `session`; `MPI_Status_get/set_error`'s `err` is `error`;
+`MPI_Precv_init` kept `MPI_Psend_init`'s `dest` in the vendored mpi-abi-stubs
+header, a copy-paste slip upstream rather than in this project; and the two
+Fortran-status converters take `MPI_F08_Status`, spelled with a capital S that
+owes A.3's lowercase `mpi_f08_status` nothing, since MPI-5.0 §20.4 says outright
+that `MPI_F08_Status` is not part of the C ABI at all — this project coined the
+name itself.
+
+**Exit check.** Runs in CI (`c-bindings-cross-check`); every one of the 688
+signatures either matches or is a named exemption; breaking one signature on
+purpose makes it fail — checked directly, not asserted.
 
 **Model: Sonnet.** Well-specified with a precedent to follow
-(`mpif/dev/check-f08-bindings.jl`).
+(`mpif/dev/check-f08-bindings.jl`), though the precedent's shape (Fortran
+`INTENT` lists) didn't carry over as directly as expected — a flat C prototype
+needed its own self-check and its own exemption shapes rather than a port.
 
 ### S6 — Build, packaging, CI matrix *(floats; needs only S1)*
 

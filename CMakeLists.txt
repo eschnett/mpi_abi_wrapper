@@ -17,6 +17,7 @@ set(MPIABI_GENERATE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/generate.py)
 set(MPIABI_PROBE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/probe_impl.py)
 set(MPIABI_LAYOUT_HASH_SCRIPT ${CMAKE_SOURCE_DIR}/dev/layout_hash.py)
 set(MPIABI_CHECK_PROTOTYPE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check_prototype.py)
+set(MPIABI_CHECK_C_BINDINGS_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check-c-bindings.py)
 
 # `-DMPI_ABI_BUILD_WRAPPER=OFF` builds libmpi_abi alone, which needs no MPI at
 # all. That is a developer option, not part of the normal flow: a user
@@ -63,6 +64,15 @@ add_test(NAME prototype-reproduced
 # handshake it exists for degrades into a constant nobody updates.
 add_test(NAME layout-hash
   COMMAND ${Python3_EXECUTABLE} ${MPIABI_LAYOUT_HASH_SCRIPT} --check
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# S5's exit check, oracle 4 of NOTES.md #10: every one of the 688 C bindings
+# in gen/include/mpi.h either matches MPI-5.0 Appendix A.3 or is a named,
+# self-firing exemption. Independent of apis.json and the generator -- it
+# reads only doc/mpi50-report.pdf and the committed header.
+add_test(NAME c-bindings-cross-check
+  COMMAND ${Python3_EXECUTABLE} ${MPIABI_CHECK_C_BINDINGS_SCRIPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
