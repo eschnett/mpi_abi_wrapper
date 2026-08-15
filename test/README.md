@@ -38,6 +38,14 @@ MPI actually guarantees for a single contribution. It is weaker than two ranks
 and much better than nothing, since every conversion still crosses the boundary
 twice.
 
+## Linux
+
+`ci-scripts/run-linux-docker.sh` builds and runs all of this on Linux against
+MPICH and Open MPI, from a macOS host with Docker. Worth doing early and often:
+the first Linux build needed four fixes that macOS could not have surfaced, and
+one of them was in the S0 header generator rather than in any of this stage's
+code.
+
 ## Two environment quirks seen on the machine this was written on
 
 Neither is about this project, and both cost an hour to attribute, so they are

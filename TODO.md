@@ -8,15 +8,12 @@
 
 - allow MPI 3.0
 
+- add a licence (same as mpif)
+
 - "Stage any array whose element type is not *identical* on both
   sides, even when no value mapping is needed": no. we design against
   the system ABI, not the language API, and these mismatches don't
   matter. verify this: the the system ABIs, and whether the compilers
   behave unexpectedly for such casts.
-
-- discuss weak definitions and dlopen on macos, i need to understand
-  the current state. what is working, what isn't?
-
-- add a licence (same as mpif)
 
 - re-think the overall approach and the stages. clean up the notes.
