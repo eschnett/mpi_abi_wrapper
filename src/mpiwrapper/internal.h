@@ -305,6 +305,36 @@ int mpiwrapper_filemode_toabi(int mode);
 int mpiwrapper_winassert_fromabi(int abi_mode);
 int mpiwrapper_winassert_toabi(int mode);
 
+/* The remaining mapped integer constants, one family per apis.json kind, all
+ * generated (gen/mpiwrapper/constants.c). They are switches rather than
+ * decompositions: unlike MPI_MODE_*, these are single values, and unlike ranks
+ * and tags they carry no sentinel that has to survive the round trip. The
+ * default arm passes an unrecognized value through for the implementation to
+ * reject, which is what an implementation missing an optional member does.
+ */
+int mpiwrapper_combiner_fromabi(int abi_combiner);
+int mpiwrapper_combiner_toabi(int combiner);
+int mpiwrapper_compare_fromabi(int abi_compare);
+int mpiwrapper_compare_toabi(int compare);
+int mpiwrapper_darg_fromabi(int abi_darg);
+int mpiwrapper_darg_toabi(int darg);
+int mpiwrapper_distribute_fromabi(int abi_distribute);
+int mpiwrapper_distribute_toabi(int distribute);
+int mpiwrapper_locktype_fromabi(int abi_locktype);
+int mpiwrapper_locktype_toabi(int locktype);
+int mpiwrapper_order_fromabi(int abi_order);
+int mpiwrapper_order_toabi(int order);
+int mpiwrapper_seek_fromabi(int abi_seek);
+int mpiwrapper_seek_toabi(int seek);
+int mpiwrapper_splittype_fromabi(int abi_splittype);
+int mpiwrapper_splittype_toabi(int splittype);
+int mpiwrapper_threadlevel_fromabi(int abi_threadlevel);
+int mpiwrapper_threadlevel_toabi(int threadlevel);
+int mpiwrapper_topology_fromabi(int abi_topology);
+int mpiwrapper_topology_toabi(int topology);
+int mpiwrapper_typeclass_fromabi(int abi_typeclass);
+int mpiwrapper_typeclass_toabi(int typeclass);
+
 /* --------------------------------------------------------------- sentinels */
 
 /* Pointer values with special meaning, fixed in the ABI and possibly
@@ -316,6 +346,7 @@ int mpiwrapper_winassert_toabi(int mode);
 const void *mpiwrapper_sendbuf_fromabi(const void *abi_buf);
 const void *mpiwrapper_sendbuf_inplace_fromabi(const void *abi_buf);
 void       *mpiwrapper_recvbuf_fromabi(void *abi_buf);
+void       *mpiwrapper_recvbuf_inplace_fromabi(void *abi_buf);
 
 /* ------------------------------------------------------------------ status */
 

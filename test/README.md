@@ -7,9 +7,11 @@ Our own tests (NOTES.md §9), as opposed to the MPICH suite in
 |---|---|---|
 | `compile_mpi_h.c`, `compile_mpiabi_h.c`, `compile_both_headers.c` | no | both generated headers compile standalone in a TU of their own, and together in one TU with no tag/typedef/macro/enumerator collision — the configuration `src/mpi_abi/` is built in |
 | `layout-hash` (`dev/layout_hash.py --check`) | no | `MPIWRAPPER_LAYOUT_HASH` still matches the slot list it summarizes |
+| `generated-up-to-date` (`dev/generate.py --check`) | no | a fresh generation reproduces the committed `gen/` byte for byte, the frozen tallies still hold, and every one of the 688 entry points is generated, in the ledger, or deferred with a reason |
+| `prototype-reproduced` (`dev/check_prototype.py`) | no | S2's exit check: the generator still reproduces `dev/s1-reference/`, item by item, or the difference is a named exemption that fails when it stops firing |
 | `mpiwrapper_selftest.c` | yes, one rank | white box: every predefined handle in both directions, the rank/tag/error/mode maps, the status blob, staging, the staged-request table, and the **dynamic-handle collision probe** |
 | `abi_prototype_test.c` | yes, two ranks by preference | black box: an ordinary MPI application over the ABI header, linking `libmpi_abi` and nothing else, exercising all 29 prototype entry points |
-| `check_exports.cmake` | no | `libmpiwrapper` exports exactly one symbol, `libmpi_abi` exports only entry points, and the application's only MPI dependency is `libmpi_abi` (MPI-5.0 §20.2.1) |
+| `check_exports.cmake` | no | `libmpiwrapper` exports exactly one symbol; `libmpi_abi`'s exports are exactly the ABI header's 1376 entry points, checked in both directions; and the application's only MPI dependency is `libmpi_abi` (MPI-5.0 §20.2.1) |
 
 `mpiwrapper_selftest` compiles the conversion runtime's sources into itself
 rather than loading the shared library, so it can walk the maps in both

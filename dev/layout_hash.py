@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_HEADER = ROOT / "src" / "include" / "mpiwrapper_vtable.h"
+DEFAULT_HEADER = ROOT / "gen" / "include" / "mpiwrapper_vtable.h"
 
 STRUCT_START = "struct mpiwrapper_vtable {"
 HASH_MACRO = "MPIWRAPPER_LAYOUT_HASH"

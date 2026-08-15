@@ -2,13 +2,15 @@
 #
 #  - libmpiwrapper exports exactly one symbol, mpiwrapper_get_vtable. Anything
 #    else it exported would be a symbol the loader could bind someone to.
-#  - libmpi_abi exports only MPI_*/PMPI_* entry points, and every slot in the
-#    vtable has one. (S1 checks the 56 the prototype covers; S2 raises this to
-#    the full 1376 by extracting the list from the ABI header instead.)
+#  - libmpi_abi's exports are exactly the ABI's entry points, MPI_ and PMPI_
+#    for each -- checked in *both* directions against dev/entrypoints.txt, so
+#    that an entry point the generator dropped fails here as loudly as a symbol
+#    it invented.
 #  - the test binary's only MPI dependency is libmpi_abi: no libmpi, no
 #    libmpiwrapper, since the wrapper is reached by dlopen.
 #
-# Invoked as: cmake -DABI_LIB=... -DWRAPPER_LIB=... -DTEST_BIN=... -P this
+# Invoked as:
+#   cmake -DABI_LIB=... -DWRAPPER_LIB=... -DTEST_BIN=... -DENTRYPOINTS=... -P this
 
 if(APPLE)
   set(NM_ARGS -gU)          # defined, external
@@ -58,11 +60,21 @@ exported_symbols(abi_syms ${ABI_LIB})
 # leak cannot hide behind a loose pattern.
 set(LINKER_PROVIDED _init _fini _edata _end __bss_start)
 
+file(STRINGS ${ENTRYPOINTS} bases)
+set(expected)
+foreach(base ${bases})
+  if(base)
+    list(APPEND expected MPI_${base} PMPI_${base})
+  endif()
+endforeach()
+list(SORT expected)
+list(LENGTH expected nexpected)
+
 set(bad)
-set(nmpi 0)
+set(exported)
 foreach(sym ${abi_syms})
   if(sym MATCHES "^P?MPI_")
-    math(EXPR nmpi "${nmpi} + 1")
+    list(APPEND exported ${sym})
   elseif(sym IN_LIST LINKER_PROVIDED)
     # not ours
   else()
@@ -73,12 +85,24 @@ if(bad)
   message(SEND_ERROR "libmpi_abi exports non-MPI symbols: ${bad}")
   math(EXPR errors "${errors} + 1")
 endif()
-if(NOT nmpi EQUAL 58)
+
+set(missing ${expected})
+list(REMOVE_ITEM missing ${exported})
+set(extra ${exported})
+list(REMOVE_ITEM extra ${expected})
+if(missing)
+  list(LENGTH missing n)
   message(SEND_ERROR
-    "libmpi_abi exports ${nmpi} MPI entry points; the S1 prototype has 58 "
-    "(29 entry points, MPI_ and PMPI_ each)")
+    "libmpi_abi is missing ${n} entry point(s) the ABI header declares: "
+    "${missing}")
   math(EXPR errors "${errors} + 1")
 endif()
+if(extra)
+  message(SEND_ERROR
+    "libmpi_abi exports MPI names the ABI header does not declare: ${extra}")
+  math(EXPR errors "${errors} + 1")
+endif()
+list(LENGTH exported nmpi)
 
 # --- the application's direct dependencies ---------------------------------
 if(APPLE)
@@ -101,5 +125,6 @@ endif()
 
 if(errors EQUAL 0)
   message(STATUS "exports: libmpiwrapper 1 symbol, libmpi_abi ${nmpi} entry "
-                 "points, no direct MPI dependency in the application")
+                 "points matching the header's ${nexpected} in both "
+                 "directions, no direct MPI dependency in the application")
 endif()

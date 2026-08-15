@@ -11,10 +11,10 @@ Hand-written: bootstrap, `dlopen` isolation, vtable acquisition. NOTES.md §2.
   `MPI_Get_version` call through a decoy vtable, because on macOS the address
   check can say "outward" while dyld's weak coalescing sends the actual call
   back into us (`NOTES.md` §2).
-- `entrypoints.c` — **S1 stand-in for `gen/mpi_abi/entrypoints.c`**. One line per
-  entry point, no conversion, no cast, no initialization check; 29 entry points
-  now (58 definitions), 688 when the generator writes it in S2 (1376
-  definitions).
+The entry points themselves are `gen/mpi_abi/entrypoints.c` since S2: one line
+per entry point, no conversion, no cast, no initialization check, 688 of them
+(1376 definitions). S1's 29-entry-point stand-in is frozen in
+`dev/s1-reference/` as what the generator has to reproduce.
 
 Environment variables it reads:
 

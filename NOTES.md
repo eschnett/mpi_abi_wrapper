@@ -904,6 +904,127 @@ anyway.
 | `gen/mpiwrapper/constants.c` | both | every `case` names a real implementation macro |
 | `gen/report.txt` | — | hand-written ledger, frozen tallies, unsupported list |
 
+The first two are the S0 step and live in `dev/generate_headers.py`, which
+`dev/generate.py` imports rather than duplicates, so one command writes all
+seven and one `--check` covers all seven.
+
+### What S2 settled
+
+S2 wrote the generator and the mechanical classes. Six things it had to decide
+that this section did not already answer, each recorded here because the code
+alone would not say why.
+
+**How a generated body knows the implementation has the function.** Decision 6
+says "generated `#ifdef` stubs" without saying what the `#ifdef` tests, and the
+obvious answer is wrong in both directions. `#if MPI_VERSION >= 4` under-reports
+— Open MPI 5.0.10 announces MPI-3.1 and has sessions and partitioned
+communication — and the gap it would have to cover is not small: the ABI is
+MPI-5.0 and the enforced floor is MPI-3.0, so a version test would stub a couple
+of hundred entry points that are there. `nm` over the implementation's library
+over-reports the absences instead, because it cannot see what the header
+provides as a macro, which is how Open MPI provides `MPI_Aint_add`.
+
+So `dev/probe_entrypoints.py` asks the compiler, at configure time, using the
+implementation's own header — the same header the wrapper bodies are compiled
+against. It writes `mpiwrapper_impl_config.h` with one
+`MPIWRAPPER_HAVE_<name>` per available entry point, and `wrappers.c` `#error`s
+if that file did not come from the probe, because a *missing* probe would
+otherwise turn the whole library into stubs, which links, loads, and answers
+`MPI_ERR_UNSUPPORTED_OPERATION` to everything.
+
+The probe is one translation unit with one line per name, compiled
+`-fsyntax-only`; a name that is a macro answers `#ifdef` and anything else has
+to be declared for `sizeof &name` to compile. When it fails it reads the
+diagnostics' *line numbers* — never their wording — drops those probes and
+compiles again, so the answer is always confirmed by a compile that succeeded.
+Measured: **0.3–0.6 s for 478 names**, against MPICH 4.3.1 (28 absent: the six
+`MPI_Abi_*` and the 22 `_toint`/`_fromint` converters, all MPI-5.0) and Open
+MPI 5.0.10 (231 absent, mostly the `_c` forms). Both agree exactly with `nm`
+where `nm` can answer. Everything about it is compile-only, so cross-compiling
+still works (§9).
+
+**The integer families cannot be guarded with `#ifdef`.** The predefined
+handles and error classes are macros in every implementation seen, which is
+what makes `constants.c`'s narrow rule sound — guard only what the standard
+makes optional, so a missing macro is a compile error rather than a wrong
+number. That does *not* extend to `MPI_COMBINER_*`, `MPI_THREAD_*`,
+`MPI_COMM_TYPE_*`, `MPI_IDENT`, `MPI_CART`: **MPICH spells the first two
+families as enumerators and Open MPI spells the others that way**, and `#ifdef`
+on an enumerator is quietly false. It would have dropped the case, reached the
+default arm, and passed an unmapped value through — silently, which is the one
+failure mode these tables exist to prevent. The five members a conforming
+implementation may genuinely lack go through the same probe; everything else in
+those families is MPI-3.0 or older and is emitted unguarded.
+
+**One implementation declaration disagrees with the standard.** Open MPI 5.0.x
+declares `MPI_Pready_list(int length, int partition_list[], MPI_Request)` where
+MPI-4.0 and the ABI header say `const int array_of_partitions[]`. That is a
+named `(routine, parameter)` entry in the generator, not a cast applied wherever
+a call fails to compile — the difference matters, because the second habit is
+how a real `const` violation gets absorbed.
+
+**`MPI_IN_PLACE` is not in `apis.json`.** Every choice buffer is just `BUFFER`
+there, so which sites accept `MPI_IN_PLACE` is a table, keyed on the base
+routine and the parameter name and covering the `I`, `_init` and `_c` forms.
+It has to exist: `MPI_IN_PLACE` is `(void *)1` in the ABI and `(void *)-1` in
+MPICH, so a site that omits the test hands MPICH an address of 1. S1 needed
+three sentinel mappers and S2 needs four — `MPI_Scatter` and `MPI_Scatterv`
+take `MPI_IN_PLACE` at a *receive* buffer, which is not `const`.
+
+**Two enum tags really are two types.** Rule 2 of the renaming leaves struct and
+enum tags alone precisely so that 1376 forwarders need no cast — but
+`MPI_T_cb_safety` and `MPI_T_source_order` spell their tag exactly like their
+typedef, so S0 had to rename both occurrences or they would collide with an
+implementation's own declaration. The consequence lands here: those two ABI
+types and their implementation counterparts are genuinely distinct, and the
+four `MPI_T` forwarders that pass them are the only place in `entrypoints.c`
+where a cast is correct. `MPI_Pcontrol` is the other exception, for an
+unrelated reason: C cannot forward `...`, and MPI-5.0 §14.2 lets a profiling
+layer ignore the extra arguments.
+
+**Where the generator stops.** 473 of the 688 are generated, 120 are in the
+ledger, 95 are deferred to S3 with the class that blocks them, and
+`gen/report.txt` names every one. The deferred set is exactly S3's list —
+out and inout arrays, status arrays, output-string buffers, keyvals, callbacks,
+`MPI_T` — plus one shape worth naming here because it is not an argument class
+at all: the eight `*alltoallw*` forms and six neighbourhood relatives take
+arrays whose length is *the size of the communicator*, not a parameter, so the
+generator has nothing to size a temporary from until it calls
+`PMPI_Comm_size` first, which is what S1's hand-written `MPI_Ialltoallw` does.
+
+### Reproducing the prototype
+
+`dev/s1-reference/` holds S1's four hand-written stand-ins, frozen, and
+`dev/check_prototype.py` compares them against the generated output item by
+item as the `prototype-reproduced` test. **194 items, 190 reproduced exactly,
+4 exempted with a reason** — and an exemption that stops firing fails the test,
+so the list cannot outlive its reason.
+
+Comparison is over normalized text (comments dropped, macro continuations
+joined, whitespace collapsed): the generator does not run `clang-format` and
+does not write S1's per-function prose, so a byte comparison would fail on
+formatting and say nothing about the code. In practice the simple bodies *are*
+byte-identical, alignment included, because the emitter reproduces
+`clang-format`'s two alignment rules directly.
+
+The four exemptions:
+
+- **`MPI_Comm_rank`.** S1 passed the out rank through, reasoning per-site that
+  a process's rank in its own communicator is never a sentinel. True here, false
+  one function away — `MPI_Group_rank` answers `MPI_UNDEFINED` — so the
+  generator maps every out-rank uniformly. Uniformity is the correctness
+  property; per-site reasoning is what a generator must not encode.
+- **`MPI_Type_create_struct` and its `_c` form.** Identical but for two
+  identifiers: the generator names a staging buffer `<local>_stack` where S1
+  wrote `typestack` (and `reqstack`, `ststack` in `MPI_Waitall`). Abbreviating
+  per site is not a rule. The `_c` form also lost S1's `#if MPI_VERSION >= 4`
+  to the availability probe, which is the same guard made exact.
+- **`MPI_Waitall`.** Not generated: an inout request array whose staged
+  temporaries are released *at completion* is S3's class. S1's body moved to
+  `src/mpiwrapper/handwritten.c` and is named in the ledger with that reason,
+  so the slot stays filled and the test that exercises it still passes. S3
+  deletes it, and the exemption with it.
+
 ---
 
 ## 4. Verified facts about the ABI and the two implementations
@@ -921,7 +1042,7 @@ unavailable on 32-bit targets, which is why the design below does not use one.
 
 Predefined handle constants occupy `0x00000020`..`0x000002eb` — **103** values,
 all < 748. (Counted out of `gen/include/mpi.h`, and equal to the number of
-`PREDEF(...)` rows in `src/mpiwrapper/constants.c`: 71 datatypes, 15 ops, 4
+`PREDEF(...)` rows in `gen/mpiwrapper/constants.c`: 71 datatypes, 15 ops, 4
 errhandlers, 3 comms, 2 each of group/info/message, 1 each of
 file/request/session/win. Earlier drafts said 104 in this section and in §10
 while §5.1 and §11 said 103; 103 is the checkable number.)
@@ -1112,6 +1233,14 @@ Pointer values with special meaning (`MPI_BOTTOM`, `MPI_IN_PLACE`,
 the ABI and may be non-constant in the implementation — possibly `extern void *`,
 i.e. constant at link time but not at build time. Translated the same way as
 handles: one test per site.
+
+Which sentinels are legal is a property of the *parameter*, not of the type, so
+choice buffers get four mappers rather than one: send and receive (the C type's
+constness decides which), each with and without `MPI_IN_PLACE`. `apis.json`
+does not record where `MPI_IN_PLACE` is allowed — every choice buffer is just
+`BUFFER` — so that is a named table in the generator, and it needs the receive
+form because `MPI_Scatter` and `MPI_Scatterv` take `MPI_IN_PLACE` at the
+*receive* buffer (§3).
 
 ### 5.4 Ranks and tags are different classes
 
@@ -1552,7 +1681,10 @@ clearing the block, and the releaser would free the new owner's block.
    MPI, and never the wrapped MPI's own prefix, since we install `mpi.h`,
    `mpicc` and `libmpi_abi` under names it already uses. §9.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
-   from generated `#ifdef` stubs, and the generator reports them.
+   from generated `#ifdef` stubs, and the generator reports them. What the
+   `#ifdef` tests is `MPIWRAPPER_HAVE_<name>`, written at configure time by
+   `dev/probe_entrypoints.py` from the implementation's own header. Not a
+   version test: Open MPI 5.0.10 reports MPI-3.1 and has sessions. §3.
 7. **PMPI gets its own vtable slots** (1376, not 688), calling the
    implementation's shifted names directly — no probe and no fallback, since both
    names always exist and reach the same code when nothing is interposed. (Which
@@ -1617,10 +1749,27 @@ question rather than a counting slip:
   S1 wrote as the template.**
 
 With those two settled the list below is what remains, and it adds up to **89**,
-not ~50. The honest summary is "roughly 90 hand-written, roughly 600
-mechanical"; the
-generator's frozen tally is the authority once S2 exists, and this prose should
-be replaced by a pointer to it rather than re-estimated.
+not ~50.
+
+**S2 exists now, so the tally is the generator's and it is 120**, in
+`HAND_WRITTEN` in `dev/generate.py` with a reason on every line and in
+`gen/report.txt` grouped by reason. The list below is still what the set is
+*for*; three groups differ from it, and each is a decision rather than a
+counting slip:
+
+- **`MPI_Wtime` and `MPI_Wtick` are generated**, not hand-written. This section
+  lists them under "no error code to map", but a `double` return with no error
+  code is mechanical — and S1 put `MPI_Wtime` in `wrappers.c` rather than
+  `handwritten.c`, which is the artifact that decides it.
+- **The MPI-5.0 `_toint`/`_fromint` handle converters are hand-written too**, so
+  the converter group is 44 rather than 22. They are the same conversion against
+  a different integer type, and this section predates them.
+- **`MPI_Remove_error_class`/`_code`/`_string` join `MPI_Add_error_*`**: they are
+  the other half of §5.6's dynamic error-code registry.
+
+Also here, and temporarily: **`MPI_Waitall` and `MPI_Ialltoallw`**, whose class
+is S3's rather than S2's. Both are named in the ledger with that reason and both
+leave again in S3.
 
 - **Bootstrap and lifecycle** (8): `MPI_Init`, `MPI_Init_thread`, `MPI_Finalize`,
   `MPI_Abort`, `MPI_Initialized`, `MPI_Finalized`, `MPI_Session_init`/`_finalize`.
@@ -1649,12 +1798,17 @@ be replaced by a pointer to it rather than re-estimated.
 
 ```
 dev/               the Python generator and dev-time cross-checks
+                     generate.py (the generator), generate_headers.py (the S0
+                     step it imports), layout_hash.py, probe_entrypoints.py
+                     (the configure-time availability probe), check_prototype.py
                      apis.json (vendored), check-c-bindings.py (Appendix A.2)
                      and the five probes whose results this file cites
+dev/s1-reference/  S1's four hand-written stand-ins, frozen; not compiled.
+                     What check_prototype.py measures the generator against
 gen/               committed generated output, never hand-edited
-src/include/       mpiwrapper_vtable.h until S2's generator emits it
 src/mpi_abi/       hand-written: bootstrap, dlopen, vtable acquisition
-src/mpiwrapper/    hand-written: the ~90, trampolines, maps, status conversion
+src/mpiwrapper/    hand-written: the ledger's bodies, trampolines, maps,
+                     status conversion
 examples/          narrated excerpts of each shape; src/ is the reference (§3)
 test/              our own tests
 ci-scripts/        MPI install and build-shape checks
@@ -1853,6 +2007,15 @@ admissibility:
    Linux rows of the matrix, and the macOS rows get its refusal as a test instead.
    The build option is `-DMPI_ABI_WRAP_ABI_IMPL=ON`, warned about by default.
 
+   **It does not currently build against Open MPI's own ABI mode**, and the
+   reason has nothing to do with the wrapper: `mpicc_abi`'s `mpi.h` does not
+   declare `MPI_Fint`, so `internal.h`'s `sizeof(MPI_Fint) == sizeof(MPIABI_Fint)`
+   assertion has nothing to name. Noticed in S2, confirmed to predate it (the
+   same configuration fails identically at S1's commit), and left alone: it is a
+   property of that header, and the right fix — probing for `MPI_Fint` the way
+   the entry points are probed, or dropping the assertion where the Fortran
+   interface is absent — belongs with whoever makes that oracle a CI row.
+
 ### Behavioural tests, in increasing cost
 
 - **`mpiwrapper_selftest`** — in-process, single rank; it calls `PMPI_Init`
@@ -1949,8 +2112,8 @@ than the "fifteen" the prose used to claim — `MPI_Comm_create_errhandler` and
 | `MPI_File_open` | bitmask arguments, second handle class |
 
 **What S1 actually built**, since S2 is measured against it. **Twenty-nine** entry
-points, **58 slots** — count them in `src/include/mpiwrapper_vtable.h`, which is
-the authority, and in `STAGES.md`'s S1 line. The sixteen above need thirteen more
+points, **58 slots** — count them in `dev/s1-reference/mpiwrapper_vtable.h`,
+which is the authority, and in `STAGES.md`'s S1 line. The sixteen above need thirteen more
 to be *testable* at all: `MPI_Isend`/`MPI_Irecv` to have requests for
 `MPI_Waitall`, `MPI_Comm_rank`, `MPI_Type_commit`/`_free`, `MPI_Comm_free`,
 `MPI_Op_create` (which the `MPI_Allreduce` row assumes but does not name) and
@@ -1958,10 +2121,19 @@ to be *testable* at all: `MPI_Isend`/`MPI_Irecv` to have requests for
 `MPI_Type_create_struct_c` for the `_c` pairing, and `MPI_Get_version` for the
 bootstrap's behavioural probe. Nine of the twenty-nine are hand-written
 (`src/mpiwrapper/handwritten.c`, and its header is the S1 `HAND_WRITTEN` ledger);
-the other **twenty** are in `src/mpiwrapper/wrappers.c`, written the way a generator
+the other **twenty** are in `dev/s1-reference/wrappers.c`, written the way a generator
 would write them — one `const` local per parameter, in parameter order, named after
 the parameter with `abi_` dropped, and one body macro instantiated twice. Those
 twenty are what S2 must reproduce.
+
+**What S2 delivered.** The generator (`dev/generate.py`), the availability probe
+(`dev/probe_entrypoints.py`) and the reproduction check
+(`dev/check_prototype.py`). All 688 entry points and all 1376 slots exist:
+**473 generated, 120 in the ledger (ten with bodies), 95 deferred to S3**, and
+`gen/report.txt` names every one. Of S1's 194 comparable items, **190 are
+reproduced exactly and four are exempted with a reason** (§3). Green against
+MPICH 4.3.1 at two ranks and Open MPI 5.0.10, 6.1.0a1 and 6.1.0a1-native as
+singletons.
 
 **What it was tested against.** MPICH 4.3.1 at two ranks, and Open MPI 5.0.6
 (built from source) as a singleton — no Open MPI 5.0.x launcher works on macOS 26,
@@ -1973,9 +2145,10 @@ the boundary twice; it is not enough for the two-rank message-passing paths, and
 The two implementations disagree about 13 predefined handles (98 mapped against
 85), which is the kind of difference the maps exist for.
 
-Four files are S1 stand-ins for generated output and disappear in S2:
-`src/include/mpiwrapper_vtable.h`, `src/mpi_abi/entrypoints.c`,
-`src/mpiwrapper/wrappers.c` and `src/mpiwrapper/constants.c`. `constants.c` was produced mechanically
+Four files are S1 stand-ins for generated output and left `src/` in S2, frozen
+into `dev/s1-reference/` rather than deleted, because an exit check is only
+worth something if it can fail *later*: `mpiwrapper_vtable.h`, `entrypoints.c`,
+`wrappers.c` and `constants.c`. `constants.c` was produced mechanically
 from `gen/include/mpiabi.h` rather than typed, because 103 predefined handles and
 80 error classes (62 `MPI_ERR_*` plus 18 `MPI_T_ERR_*`; the header's 63rd
 `MPI_ERR_*` is `MPI_ERR_LASTCODE`, a bound rather than a class) is exactly where

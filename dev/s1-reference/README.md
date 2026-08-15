@@ -1,0 +1,31 @@
+# `dev/s1-reference/`
+
+The four files S1 hand-wrote as stand-ins for generated output, frozen exactly
+as S1 left them, together with the two implementations they were tested
+against. They are **not compiled** and must not be edited: their whole job is
+to be the thing S2's generator is measured against.
+
+| file | what the generator emits instead |
+|---|---|
+| `mpiwrapper_vtable.h` | `gen/include/mpiwrapper_vtable.h` (58 slots -> 1376) |
+| `entrypoints.c` | `gen/mpi_abi/entrypoints.c` (29 entry points -> 688) |
+| `wrappers.c` | `gen/mpiwrapper/wrappers.c` (20 bodies -> 473 generated, the rest stubs) |
+| `constants.c` | `gen/mpiwrapper/constants.c` |
+
+`dev/check_prototype.py` compares them item by item and is wired up as the
+`prototype-reproduced` test, so S2's exit check keeps running rather than
+having been asserted once. It compares *normalized* text — comments dropped,
+macro continuations joined, whitespace collapsed — because the generator does
+not run clang-format and does not write S1's per-function prose, and a byte
+comparison would fail on formatting and say nothing about the code.
+
+At the time of writing: **194 items, 190 reproduced exactly, 4 exempted**, and
+each exemption names its reason in `dev/check_prototype.py`. An exemption that
+stops firing fails the test, so the list cannot quietly outlive its reason —
+when S3 generates `MPI_Waitall`, this test is what says so.
+
+Why keep them at all, rather than deleting them once the check has run once:
+the check is only worth something if it can fail *later*. A generator change
+that quietly stops reproducing `MPI_Send` is exactly the class of regression
+this project is built to catch, and there is nothing else in the tree that
+would notice.

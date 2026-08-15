@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(mpi_abi_wrapper C)
 
-# S0 built the two headers; S1 adds the prototype -- libmpi_abi, libmpiwrapper
-# and the tests for 29 entry points, 58 slots (STAGES.md). The dev/ generator
-# core is S2, packaging is S6.
+# S0 built the two headers, S1 the prototype; S2 replaces the four S1 stand-ins
+# with generated output -- all 688 entry points and 1376 slots (STAGES.md).
+# Packaging is S6.
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -12,9 +12,11 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
 set(MPIABI_GEN_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/gen/include)
-set(MPIABI_SRC_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/src/include)
 set(MPIABI_GENERATE_HEADERS_SCRIPT ${CMAKE_SOURCE_DIR}/dev/generate_headers.py)
+set(MPIABI_GENERATE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/generate.py)
+set(MPIABI_PROBE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/probe_entrypoints.py)
 set(MPIABI_LAYOUT_HASH_SCRIPT ${CMAKE_SOURCE_DIR}/dev/layout_hash.py)
+set(MPIABI_CHECK_PROTOTYPE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check_prototype.py)
 
 # `-DMPI_ABI_BUILD_WRAPPER=OFF` builds libmpi_abi alone, which needs no MPI at
 # all. That is a developer option, not part of the normal flow: a user
@@ -29,15 +31,31 @@ set(MPIABI_WARNINGS -Wall -Wextra -Wpedantic -Werror)
 # never part of the default build. CI instead runs the check tests below, which
 # fail on any drift between the committed files and a fresh generation.
 add_custom_target(regenerate
-  COMMAND ${Python3_EXECUTABLE} ${MPIABI_GENERATE_HEADERS_SCRIPT}
+  COMMAND ${Python3_EXECUTABLE} ${MPIABI_GENERATE_SCRIPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  COMMENT "Regenerating gen/include/mpi.h, gen/include/mpiabi.h, dev/entrypoints.txt"
+  COMMENT "Regenerating all seven artifacts under gen/"
 )
 
 enable_testing()
 
 add_test(NAME headers-up-to-date
   COMMAND ${Python3_EXECUTABLE} ${MPIABI_GENERATE_HEADERS_SCRIPT} --check
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# Generated output is committed and must never be hand-edited, so the check
+# that a fresh run reproduces it byte for byte is the gate (NOTES.md #3). It
+# also carries the frozen tallies and the HAND_WRITTEN ledger, either of which
+# failing means something was reclassified without anyone deciding to.
+add_test(NAME generated-up-to-date
+  COMMAND ${Python3_EXECUTABLE} ${MPIABI_GENERATE_SCRIPT} --check
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# S2's exit check: the generator reproduces the S1 prototype, or every
+# difference is a named exemption that fails when it stops firing.
+add_test(NAME prototype-reproduced
+  COMMAND ${Python3_EXECUTABLE} ${MPIABI_CHECK_PROTOTYPE_SCRIPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
@@ -71,11 +89,10 @@ endforeach()
 # variable between them).
 add_library(mpi_abi SHARED
   src/mpi_abi/bootstrap.c
-  src/mpi_abi/entrypoints.c
+  gen/mpi_abi/entrypoints.c
 )
 set_target_properties(mpi_abi PROPERTIES OUTPUT_NAME mpi_abi)
-target_include_directories(mpi_abi PRIVATE
-  ${MPIABI_GEN_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR})
+target_include_directories(mpi_abi PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
 target_compile_options(mpi_abi PRIVATE ${MPIABI_WARNINGS})
 # dlopen/dlsym/dlerror live in libdl on glibc older than 2.34 and in libc from
 # 2.34 onwards, so this is empty on a current distro and "dl" on Ubuntu 20.04 --
@@ -184,28 +201,59 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # internal.h carries an #error for the same mistake, as a backstop for
   # anyone building this outside CMake.
   set(MPIABI_WRAPPER_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/wrapper-include)
+  foreach(hdr mpiabi.h mpiwrapper_vtable.h)
+    add_custom_command(
+      OUTPUT ${MPIABI_WRAPPER_INCLUDE_DIR}/${hdr}
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different
+              ${MPIABI_GEN_INCLUDE_DIR}/${hdr}
+              ${MPIABI_WRAPPER_INCLUDE_DIR}/${hdr}
+      DEPENDS ${MPIABI_GEN_INCLUDE_DIR}/${hdr}
+      COMMENT "Staging ${hdr} where no mpi.h can shadow the implementation's")
+  endforeach()
+
+  # Decision 6's #ifdef stubs need something to test, and the only exact answer
+  # comes from the implementation's own header: MPI_VERSION is a proxy that
+  # both over- and under-reports (Open MPI 5.0.10 says MPI-3.1 and has
+  # sessions), and nm misses what the header provides as a macro. The probe is
+  # compile-only, so this stays cross-compilable, and it costs well under a
+  # second because all 478 questions go into one translation unit.
+  set(MPIABI_IMPL_CONFIG ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_impl_config.h)
+  set(MPIABI_PROBE_FLAGS)
+  foreach(dir ${MPI_C_INCLUDE_DIRS})
+    list(APPEND MPIABI_PROBE_FLAGS "--flag=-I${dir}")
+  endforeach()
+  foreach(opt ${MPI_C_COMPILE_OPTIONS})
+    list(APPEND MPIABI_PROBE_FLAGS "--flag=${opt}")
+  endforeach()
   add_custom_command(
-    OUTPUT ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiabi.h
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${MPIABI_GEN_INCLUDE_DIR}/mpiabi.h
-            ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiabi.h
-    DEPENDS ${MPIABI_GEN_INCLUDE_DIR}/mpiabi.h
-    COMMENT "Staging mpiabi.h where no mpi.h can shadow the implementation's")
+    OUTPUT ${MPIABI_IMPL_CONFIG}
+    COMMAND ${Python3_EXECUTABLE} ${MPIABI_PROBE_SCRIPT}
+            --cc ${CMAKE_C_COMPILER} ${MPIABI_PROBE_FLAGS}
+            --out ${MPIABI_IMPL_CONFIG}
+    DEPENDS ${MPIABI_PROBE_SCRIPT}
+            ${CMAKE_SOURCE_DIR}/gen/mpiwrapper/wrappers.c
+            ${CMAKE_SOURCE_DIR}/gen/mpiwrapper/constants.c
+            ${CMAKE_SOURCE_DIR}/dev/entrypoints.txt
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Probing which MPI entry points this implementation declares")
+
   add_custom_target(mpiabi_h_for_wrapper
-    DEPENDS ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiabi.h)
+    DEPENDS ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiabi.h
+            ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_vtable.h
+            ${MPIABI_IMPL_CONFIG})
 
   add_library(mpiwrapper SHARED
-    src/mpiwrapper/constants.c
+    gen/mpiwrapper/constants.c
     src/mpiwrapper/handles.c
     src/mpiwrapper/status.c
     src/mpiwrapper/staging.c
     src/mpiwrapper/callbacks.c
     src/mpiwrapper/handwritten.c
-    src/mpiwrapper/wrappers.c
+    gen/mpiwrapper/wrappers.c
     src/mpiwrapper/getvtable.c
   )
   target_include_directories(mpiwrapper PRIVATE
-    ${MPIABI_WRAPPER_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR} src/mpiwrapper)
+    ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
   add_dependencies(mpiwrapper mpiabi_h_for_wrapper)
   target_compile_options(mpiwrapper PRIVATE ${MPIABI_WARNINGS})
   target_link_libraries(mpiwrapper PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
@@ -226,17 +274,17 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # RTLD_DEEPBIND does it, so no second target is needed there.
   if(APPLE)
     add_library(mpiwrapper_unisolated SHARED
-      src/mpiwrapper/constants.c
+      gen/mpiwrapper/constants.c
       src/mpiwrapper/handles.c
       src/mpiwrapper/status.c
       src/mpiwrapper/staging.c
       src/mpiwrapper/callbacks.c
       src/mpiwrapper/handwritten.c
-      src/mpiwrapper/wrappers.c
+      gen/mpiwrapper/wrappers.c
       src/mpiwrapper/getvtable.c
     )
     target_include_directories(mpiwrapper_unisolated PRIVATE
-      ${MPIABI_WRAPPER_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR} src/mpiwrapper)
+      ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
     add_dependencies(mpiwrapper_unisolated mpiabi_h_for_wrapper)
     target_compile_options(mpiwrapper_unisolated PRIVATE ${MPIABI_WARNINGS})
     target_link_libraries(mpiwrapper_unisolated PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
@@ -272,14 +320,14 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # maps can be walked in both directions rather than inferred from results.
   add_executable(mpiwrapper_selftest
     test/mpiwrapper_selftest.c
-    src/mpiwrapper/constants.c
+    gen/mpiwrapper/constants.c
     src/mpiwrapper/handles.c
     src/mpiwrapper/status.c
     src/mpiwrapper/staging.c
     src/mpiwrapper/callbacks.c
   )
   target_include_directories(mpiwrapper_selftest PRIVATE
-    ${MPIABI_WRAPPER_INCLUDE_DIR} ${MPIABI_SRC_INCLUDE_DIR} src/mpiwrapper)
+    ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
   add_dependencies(mpiwrapper_selftest mpiabi_h_for_wrapper)
   target_compile_options(mpiwrapper_selftest PRIVATE ${MPIABI_WARNINGS})
   target_link_libraries(mpiwrapper_selftest PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
@@ -337,5 +385,6 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       -DABI_LIB=$<TARGET_FILE:mpi_abi>
       -DWRAPPER_LIB=$<TARGET_FILE:mpiwrapper>
       -DTEST_BIN=$<TARGET_FILE:abi_prototype_test>
+      -DENTRYPOINTS=${CMAKE_SOURCE_DIR}/dev/entrypoints.txt
       -P ${CMAKE_SOURCE_DIR}/test/check_exports.cmake)
 endif()

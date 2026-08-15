@@ -63,29 +63,57 @@ stage is measured against. `NOTES.md` §11 explains why it comes before the gene
 designing the generator before the shape of its output is known is the main way this
 goes wrong.
 
-### S2 — Generator core and the mechanical argument classes
+### S2 — Generator core and the mechanical argument classes *(done: 473 generated, 120 in the ledger, 95 deferred)*
 
-`dev/` generator: parse both inputs, classify, emit all seven artifacts. Cover
-passthrough scalars, scalar handles in/out/inout, error codes, ranks, tags and the
-other mapped integer constants. The `HAND_WRITTEN` ledger that fails if any of the 688
-is neither generated nor listed.
+`dev/generate.py`: parse both inputs, classify, emit all seven artifacts. The
+`HAND_WRITTEN` ledger fails if any of the 688 is neither generated nor listed,
+and `gen/report.txt` names all 688 with the reason for each.
 
-**Exit check — the important one.** The generator **reproduces the S1 prototype**,
-byte-identically or with a diff explained line by line. `libmpi_abi` links and `nm`
-matches the header's 1376 symbols in both directions.
+The classes it covers went past the plan, because the exit check demanded it:
+buffer sentinels, the mode bitmasks and the scalar out-status are on S3's list
+below, and without them `MPI_Send`, `MPI_File_open` and `MPI_Recv` — three of
+the twenty bodies S2 has to reproduce — could not be generated at all. It also
+covers passthrough arrays and in-direction arrays needing element-wise
+conversion, which cost nothing beyond `MPI_Type_create_struct`'s tested shape.
+What it does **not** touch is anything with a lifetime question: out and inout
+arrays, status arrays, and temporaries outliving their call.
+
+Two things S2 had to build that this plan did not name, both in `NOTES.md` §3:
+**`dev/probe_entrypoints.py`**, because decision 6's `#ifdef` stubs need
+something to test and neither a version test nor `nm` answers correctly; and
+**`dev/check_prototype.py`** over a frozen `dev/s1-reference/`, so that the exit
+check keeps running instead of having been asserted once.
+
+**Exit check — the important one.** The generator **reproduces the S1
+prototype**: 194 items, 190 exactly, 4 exempted with a reason in
+`dev/check_prototype.py` (uniform out-rank mapping, a staging-buffer name, and
+`MPI_Waitall`, whose class is S3's). `libmpi_abi` links and `nm` matches the
+header's 1376 symbols in both directions, checked *both* ways.
 
 **Model: Opus.** Cross-cutting structure, and every later generator session inherits
 its shape.
 
 ### S3 — The remaining argument classes
 
-Arrays and staging with the three lifetime rules, status arrays, bitmasks, keyvals,
-output-string buffers, sentinels, callbacks and trampoline pools, `MPI_T`. Staging
-includes the eight `*alltoallw*` forms whose temporaries outlive the call, which
-§8 used to list as hand-written; `MPI_Ialltoallw` in `handwritten.c` is their
-template, and S3 generates all eight and deletes it. Also S3's, and a ledger item
-rather than a matter of memory: *every* completion entry point must call
-`mpiwrapper_staged_release`, not just the ones S1 wrote (`NOTES.md` §6.3).
+Out and inout arrays with the three lifetime rules, status arrays, keyvals,
+output-string buffers, callbacks and trampoline pools, `MPI_T`. Bitmasks and
+sentinels moved forward into S2, above. **The list is no longer a matter of
+memory: `gen/report.txt` names all 95 deferred entry points with the class that
+blocks each**, and the generator fails when one stops being deferred without
+being reclassified.
+
+Staging includes the eight `*alltoallw*` forms whose temporaries outlive the
+call, which §8 used to list as hand-written; `MPI_Ialltoallw` in
+`handwritten.c` is their template, and S3 generates all eight and deletes it.
+Their arrays are also the shape S2 could not size: the length is the
+communicator's size rather than a parameter, so the body has to call
+`PMPI_Comm_size` first. `MPI_Waitall` is in `handwritten.c` for the same kind
+of reason and leaves the same way; `dev/check_prototype.py` fails when it does,
+asking for its exemption to be deleted.
+
+Also S3's, and a ledger item rather than a matter of memory: *every* completion
+entry point must call `mpiwrapper_staged_release`, not just the ones S1 wrote
+(`NOTES.md` §6.3).
 
 **Exit check.** Every one of the 688 is generated or in `HAND_WRITTEN`; frozen tallies
 per class; the "no ABI-typed parameter reaches the implementation call" assertion
@@ -192,6 +220,17 @@ those want the strongest model available.
 This is a judgement call rather than a measurement, and it is worth revisiting after
 S2: if the generator's assertions turn out to be as tight as intended, S3 may drop to
 Sonnet, which would be the single biggest cost saving available here.
+
+**After S2, that looks half-right.** The mechanical part of S3 is now strongly
+fenced: the ledger accounts for all 688, `gen/report.txt` names each deferred
+entry point *with the class that blocks it*, the frozen tallies fail on any
+reclassification, the "no ABI-typed parameter reaches the call" assertion runs
+over the emitted text, and `prototype-reproduced` catches a regression in any
+shape S1 tested. What none of those check is the part S3 is actually about —
+**when a staged temporary may be freed**. A body that releases at return
+instead of at completion passes every check listed above and corrupts memory
+under load. So: the array plumbing could be Sonnet's; the lifetime rules should
+not be.
 
 ## Session hygiene
 

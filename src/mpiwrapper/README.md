@@ -12,16 +12,19 @@ Permanent:
 | `status.c` | the status blob, both directions, with the layout assertions |
 | `staging.c` | call-scoped temporaries, and the request-keyed table for the ones that outlive their call |
 | `callbacks.c` | the op and error-handler trampoline pools |
-| `handwritten.c`, `handwritten.h` | the entry points needing per-function judgement; the header *is* the S1 `HAND_WRITTEN` ledger |
+| `handwritten.c`, `handwritten.h` | the entry points needing per-function judgement. The header is the list of bodies that *exist*; the ledger itself is `HAND_WRITTEN` in `dev/generate.py`, and the generator fails if the two disagree in either direction |
 | `getvtable.c` | the single exported symbol: handshake, outward-resolution check, map construction |
 
-S1 stand-ins for generated files, which S2 replaces:
+`constants.c` and `wrappers.c` moved to `gen/mpiwrapper/` in S2; S1's versions
+are frozen in `dev/s1-reference/` as what the generator must reproduce.
 
-| file | becomes |
-|---|---|
-| `constants.c` | `gen/mpiwrapper/constants.c` |
-| `wrappers.c` | `gen/mpiwrapper/wrappers.c` |
+`handwritten.c` has ten entry points, not S1's nine: S2 moved `MPI_Waitall`
+here, because its request array is inout and its staged temporaries are
+released at completion, which is S3's class rather than one S2 generates. S3
+takes `MPI_Waitall` and `MPI_Ialltoallw` back and deletes both bodies.
 
-S4 completes the hand-written set (~90; NOTES.md §8): lifecycle, the remaining callback
-registrations, spawn, buffer attach, `MPI_Pcontrol`, dynamic error codes, the 26
-Fortran converters, the ten output-string functions).
+The other 110 members of the ledger have no body yet and their slots report
+`MPI_ERR_UNSUPPORTED_OPERATION`; `gen/report.txt` lists exactly which. S4
+writes them: lifecycle, the remaining callback registrations, spawn, buffer
+attach, `MPI_Pcontrol`, dynamic error codes, the Fortran and integer handle
+converters, the ten output-string functions.
