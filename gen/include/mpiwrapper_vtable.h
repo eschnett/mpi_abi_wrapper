@@ -34,7 +34,7 @@
  * that changes the struct changes this value, and `ctest -R layout-hash` fails
  * until a regeneration updates it.
  */
-#define MPIWRAPPER_LAYOUT_HASH 0xc232540du
+#define MPIWRAPPER_LAYOUT_HASH 0x2bef627fu
 
 /* One slot per ABI entry point, so 1376 of them: MPI_X and PMPI_X get
  * their own, and each leads to a wrapper body that calls the implementation's
@@ -146,9 +146,6 @@ struct mpiwrapper_vtable {
                               void *, const MPIABI_Count[],
                               const MPIABI_Aint[], const MPIABI_Datatype[],
                               MPIABI_Comm, MPIABI_Info, MPIABI_Request *);
-  int (*MPI_Attr_delete)(MPIABI_Comm, int);
-  int (*MPI_Attr_get)(MPIABI_Comm, int, void *, int *);
-  int (*MPI_Attr_put)(MPIABI_Comm, int, void *);
   int (*MPI_Barrier)(MPIABI_Comm);
   int (*MPI_Barrier_init)(MPIABI_Comm, MPIABI_Info, MPIABI_Request *);
   int (*MPI_Bcast)(void *, int, MPIABI_Datatype, int, MPIABI_Comm);
@@ -677,9 +674,6 @@ struct mpiwrapper_vtable {
                     MPIABI_Request *);
   int (*MPI_Issend_c)(const void *, MPIABI_Count, MPIABI_Datatype, int, int,
                       MPIABI_Comm, MPIABI_Request *);
-  int (*MPI_Keyval_create)(MPIABI_Copy_function *, MPIABI_Delete_function *,
-                           int *, void *);
-  int (*MPI_Keyval_free)(int *);
   int (*MPI_Lookup_name)(const char *, MPIABI_Info, char *);
   int (*MPI_Mprobe)(int, int, MPIABI_Comm, MPIABI_Message *, MPIABI_Status *);
   int (*MPI_Mrecv)(void *, int, MPIABI_Datatype, MPIABI_Message *,
@@ -1333,9 +1327,6 @@ struct mpiwrapper_vtable {
                                void *, const MPIABI_Count[],
                                const MPIABI_Aint[], const MPIABI_Datatype[],
                                MPIABI_Comm, MPIABI_Info, MPIABI_Request *);
-  int (*PMPI_Attr_delete)(MPIABI_Comm, int);
-  int (*PMPI_Attr_get)(MPIABI_Comm, int, void *, int *);
-  int (*PMPI_Attr_put)(MPIABI_Comm, int, void *);
   int (*PMPI_Barrier)(MPIABI_Comm);
   int (*PMPI_Barrier_init)(MPIABI_Comm, MPIABI_Info, MPIABI_Request *);
   int (*PMPI_Bcast)(void *, int, MPIABI_Datatype, int, MPIABI_Comm);
@@ -1871,9 +1862,6 @@ struct mpiwrapper_vtable {
                      MPIABI_Request *);
   int (*PMPI_Issend_c)(const void *, MPIABI_Count, MPIABI_Datatype, int, int,
                        MPIABI_Comm, MPIABI_Request *);
-  int (*PMPI_Keyval_create)(MPIABI_Copy_function *, MPIABI_Delete_function *,
-                            int *, void *);
-  int (*PMPI_Keyval_free)(int *);
   int (*PMPI_Lookup_name)(const char *, MPIABI_Info, char *);
   int (*PMPI_Mprobe)(int, int, MPIABI_Comm, MPIABI_Message *, MPIABI_Status *);
   int (*PMPI_Mrecv)(void *, int, MPIABI_Datatype, MPIABI_Message *,

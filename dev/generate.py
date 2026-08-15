@@ -70,12 +70,16 @@ OUT_REPORT = ROOT / "gen" / "report.txt"
 # it describes, never copied from prose.
 FROZEN = {
     "entry points": 688,
-    "vtable slots": 1376,
+    "vtable slots": 1366,
     "handle classes": 11,
     "predefined handles": 103,
     "error classes": 80,
-    "generated": 569,
-    "hand-written": 119,
+    "generated": 565,
+    "hand-written": 118,
+    # The five MPI-3.0 deleted from the standard, answered by libmpi_abi in
+    # terms of their replacements rather than forwarded to an implementation
+    # that need not have them. Frozen, because a sixth is a decision.
+    "ABI-side aliases": 5,
     # S3b closed this out: every one of the 688 is now generated or in the
     # ledger. The tally stays, so that a future apis.json or ABI header
     # introducing a class the generator cannot place fails here instead of
@@ -147,7 +151,11 @@ _ledger(
     "MPI_Op_create", "MPI_Op_create_c", "MPI_Comm_create_errhandler",
     "MPI_File_create_errhandler", "MPI_Win_create_errhandler",
     "MPI_Session_create_errhandler", "MPI_Comm_create_keyval",
-    "MPI_Type_create_keyval", "MPI_Win_create_keyval", "MPI_Keyval_create",
+    "MPI_Type_create_keyval", "MPI_Win_create_keyval",
+    # MPI_Keyval_create was here until the deleted MPI-1 entry points moved to
+    # the ABI side: it is MPI_Comm_create_keyval under an older name, so it now
+    # forwards to that one's slot and the trampoline judgement lives in exactly
+    # one place rather than two. See ABI_ALIAS above.
     "MPI_Grequest_start", "MPI_Register_datarep", "MPI_Register_datarep_c",
     "MPI_T_event_register_callback", "MPI_T_event_set_dropped_handler",
 )
@@ -213,6 +221,65 @@ _ledger(
 # temporaries are released at completion, and temporaries that outlive their
 # call. Both are generated now, with every other member of their families, and
 # the bodies are gone from src/mpiwrapper/handwritten.c.
+
+# ---------------------------------------------------------------------------
+# Implemented on the ABI side, in terms of another entry point
+# ---------------------------------------------------------------------------
+
+# The five entry points MPI-3.0 *deleted* from the standard. The ABI header
+# still declares them -- an ABI is a promise about symbols, and removing one
+# would break a binary that was linked years ago -- but an implementation is
+# under no obligation to define them any more, and Open MPI main's `libmpi_abi`
+# does not: it declares all 688 and defines 683, and these are the five.
+#
+# Forwarding them through a vtable slot is therefore the wrong shape. The slot
+# would resolve against a name the implementation need not have, which is not a
+# run-time report but a **link** failure of the whole wrapper -- decision 6's
+# promise broken at the one point it cannot cover, because `dev/probe_impl.py`
+# asks the compiler and the compiler sees the declaration.
+#
+# So they are implemented in `libmpi_abi` instead, in terms of the replacements
+# MPI-2.0 named for them. That is exact rather than approximate: each is the
+# same function under an older name, and the generator checks it below --
+# return type, arity, and every parameter type, with the two callback typedefs
+# compared by the function type they name rather than by their spelling. What
+# it buys is that these five now work over *any* implementation that has the
+# MPI-2 attribute interface, which is all of them, instead of over the ones
+# that kept the MPI-1 spelling.
+#
+# There is no slot and no wrapper body, so nothing here reaches
+# `libmpiwrapper` at all. `libmpi_abi` still exports all 1376 names, which is
+# what the ABI actually promises.
+#
+# The set is closed, and it is closed by the header rather than by memory: it
+# is exactly the entry points the ABI header marks `deprecated: MPI-2.0`, and
+# the generator fails if a sixth appears without an entry here. MPI-3.0's other
+# deletions -- MPI_Address, MPI_Type_extent, MPI_Errhandler_create and the rest
+# -- are not in the ABI header at all, so there is nothing to do for them.
+ABI_ALIAS = {
+    "MPI_Attr_delete": "MPI_Comm_delete_attr",
+    "MPI_Attr_get": "MPI_Comm_get_attr",
+    "MPI_Attr_put": "MPI_Comm_set_attr",
+    "MPI_Keyval_create": "MPI_Comm_create_keyval",
+    "MPI_Keyval_free": "MPI_Comm_free_keyval",
+}
+
+# The two typedef pairs the alias check has to accept: MPI_Keyval_create takes
+# the MPI-1 spellings of the callbacks MPI_Comm_create_keyval takes, and they
+# name the same C function type. Checked rather than asserted -- parse_typedefs
+# compares what each expands to -- because a future ABI that changed one of the
+# four would otherwise turn a type error into a silent miscall.
+#
+# Their sentinel values agree too, which is what makes the pass-through exact
+# rather than merely well-typed: MPI_NULL_COPY_FN and MPI_COMM_NULL_COPY_FN are
+# both 0x0, MPI_DUP_FN and MPI_COMM_DUP_FN both 0x1, MPI_NULL_DELETE_FN and
+# MPI_COMM_NULL_DELETE_FN both 0x0. A cast to a pointer type is not an integer
+# constant expression, so that pair is checked at run time in
+# test/abi_tools_test.c rather than by a _Static_assert here.
+ALIAS_TYPEDEF_PAIRS = {
+    ("MPI_Copy_function", "MPI_Comm_copy_attr_function"),
+    ("MPI_Delete_function", "MPI_Comm_delete_attr_function"),
+}
 
 # ---------------------------------------------------------------------------
 # Named tables: the per-(routine, parameter) exceptions
@@ -729,14 +796,19 @@ class Param:
 
 
 class EntryPoint:
-    __slots__ = ("name", "ret", "params", "deprecated", "status", "detail",
-                 "ret_kind", "unguarded")
+    __slots__ = ("name", "ret", "params", "deprecated", "deprecated_in",
+                 "status", "detail", "ret_kind", "unguarded")
 
-    def __init__(self, name, ret, params, deprecated):
+    def __init__(self, name, ret, params, deprecated, deprecated_in=None):
         self.name = name
         self.ret = ret
         self.params = params
         self.deprecated = deprecated
+        # Which version deprecated it, from the header's own marker. What it
+        # separates is not cosmetic: `deprecated: MPI-2.0` is the MPI-1 set
+        # MPI-3.0 went on to *delete*, which is ABI_ALIAS's closed set, and
+        # everything later is merely deprecated and must still be provided.
+        self.deprecated_in = deprecated_in
         self.status = None   # 'generated' | 'hand-written' | 'deferred'
         self.detail = None   # the reason, for gen/report.txt
         self.unguarded = False  # true where the body never calls the impl
@@ -777,10 +849,12 @@ def parse_prototypes(text):
         m = _PROTO_RE.match(line)
         if not m:
             continue
+        comment = m.group("comment") or ""
+        since = re.search(r"deprecated:\s*(MPI-[\d.]+)", comment)
         protos[m.group("name")] = EntryPoint(
             m.group("name"), m.group("ret").strip(),
             parse_params(m.group("args")),
-            "deprecated" in (m.group("comment") or ""))
+            "deprecated" in comment, since.group(1) if since else None)
     return protos
 
 
@@ -822,6 +896,69 @@ def parse_enum_members(text):
         if m:
             out[m.group(1)] = (int(m.group(2), 0), m.group("note") or "")
     return out
+
+
+_TYPEDEF_FN_RE = re.compile(
+    r"^typedef\s+(?P<ret>[A-Za-z_][\w ]*?\s*\**)\s*"
+    r"\((?P<name>MPI_[A-Za-z0-9_]+)\)\s*\((?P<args>[^;]*)\)\s*;")
+
+
+def parse_typedefs(text):
+    """name -> (return type, [parameter base types]) for the function typedefs.
+
+    Only what the alias check needs: two typedefs are interchangeable when they
+    name the same function type, and that is what this compares -- never the
+    spelling of the name, which is the whole point.
+    """
+    out = {}
+    for line in text.splitlines():
+        m = _TYPEDEF_FN_RE.match(line.strip())
+        if m:
+            out[m.group("name")] = (
+                m.group("ret").strip(),
+                [p.base for p in parse_params(m.group("args"))])
+    return out
+
+
+def check_aliases(protos, typedefs, deprecated_mpi2):
+    """An ABI-side alias must be its replacement under an older name.
+
+    Checked, not asserted: return type, arity and every parameter type, with a
+    differing pair accepted only when both are function typedefs naming the
+    same type and ALIAS_TYPEDEF_PAIRS says so. A future ABI that changed either
+    signature fails here rather than producing a forwarder that miscalls.
+    """
+    missing = deprecated_mpi2 - set(ABI_ALIAS)
+    if missing:
+        raise SystemExit(
+            "the ABI header marks these deleted-in-MPI-3.0 entry points and "
+            "ABI_ALIAS does not name a replacement for them: "
+            + ", ".join(sorted(missing)))
+    for name, target in ABI_ALIAS.items():
+        if name not in protos:
+            raise SystemExit(f"ABI_ALIAS names {name}, which the ABI header "
+                             "does not have")
+        if target not in protos:
+            raise SystemExit(f"{name}'s replacement {target} is not an entry "
+                             "point")
+        if target in ABI_ALIAS:
+            raise SystemExit(f"{name} forwards to {target}, which is itself an "
+                             "ABI-side alias")
+        a, b = protos[name], protos[target]
+        if a.ret != b.ret or len(a.params) != len(b.params):
+            raise SystemExit(f"{name} and {target} no longer have the same "
+                             "shape; the ABI-side forwarder would miscall")
+        for pa, pb in zip(a.params, b.params):
+            if (pa.base, pa.suffix) == (pb.base, pb.suffix):
+                continue
+            ta, tb = pa.base.rstrip("* "), pb.base.rstrip("* ")
+            if ((ta, tb) in ALIAS_TYPEDEF_PAIRS and pa.suffix == pb.suffix
+                    and ta in typedefs and typedefs[ta] == typedefs.get(tb)):
+                continue
+            raise SystemExit(
+                f"{name}'s {pa.name} is {pa.base!r} where {target}'s "
+                f"{pb.name} is {pb.base!r}, and they are not a known pair of "
+                "typedefs for the same type")
 
 
 def added_after_floor(note):
@@ -2293,6 +2430,8 @@ def slot_declaration(ep):
 def emit_vtable_h(entrypoints):
     slots = []
     for ep in entrypoints:
+        if ep.status == "abi-alias":
+            continue
         slots += slot_declaration(ep)
     body = "\n".join(slots) + "\n"
     text = (VTABLE_PREAMBLE.format(hash=0, nslots=len(entrypoints)) + body +
@@ -2394,10 +2533,18 @@ def emit_entrypoints_c(entrypoints):
         decls = [declare(p.base, p.name, p.suffix) for p in named] or ["void"]
         if len(named) != len(ep.params):
             decls.append("...")
+        # An entry point MPI-3.0 deleted reaches the slot of the one that
+        # replaced it, with the prefix preserved: MPI_Attr_get calls the
+        # implementation's MPI_Comm_get_attr and PMPI_Attr_get calls its
+        # PMPI_Comm_get_attr, so the shifted-name rule that keeps a profiling
+        # layer honest survives the rename (NOTES.md #2).
+        slot = ep.name
+        if ep.status == "abi-alias":
+            slot = ("P" if ep.name.startswith("PMPI_") else "") + ep.detail
         head = wrap(f"{ep.ret} {ep.name}", decls, "", "",
                     len(ep.ret) + 1 + len(ep.name) + 1)
-        call = wrap(f"return VT()->{ep.name}", args, ";", "  ",
-                    2 + len("return VT()->") + len(ep.name) + 1)
+        call = wrap(f"return VT()->{slot}", args, ";", "  ",
+                    2 + len("return VT()->") + len(slot) + 1)
         if len(named) != len(ep.params):
             # MPI_Pcontrol is the only variadic entry point, and C gives a
             # forwarder no way to pass `...` along. Dropping the extra
@@ -2495,6 +2642,8 @@ def emit_wrappers_c(pairs, handwritten_bodies):
     initializers = []
 
     for ep, pep in pairs:
+        if ep.status == "abi-alias":
+            continue
         if ep.name in handwritten_bodies:
             for e in (ep, pep):
                 initializers.append((e.name, f"mpiwrapper_w_{e.name}"))
@@ -3205,6 +3354,14 @@ def assign_status(protos, handwritten_bodies):
     for name, ep in protos.items():
         if name.startswith("PMPI_"):
             continue
+        if name in ABI_ALIAS:
+            # No slot, no wrapper body: libmpi_abi answers this one itself, by
+            # calling the slot of the entry point that replaced it.
+            ep.status = "abi-alias"
+            ep.detail = ABI_ALIAS[name]
+            twin = protos["P" + name]
+            twin.status, twin.detail = ep.status, ep.detail
+            continue
         if name in HAND_WRITTEN:
             ep.status = "hand-written"
             ep.detail = HAND_WRITTEN[name]
@@ -3277,9 +3434,17 @@ def assert_no_abi_argument_reaches_the_call(wrappers_text):
 
 
 def assert_slots_complete(vtable_text, wrappers_text, names):
+    """One slot per entry point, in header order -- less the ABI-side aliases,
+    which libmpi_abi answers itself and which therefore have nothing on the
+    other side of the vtable to point at."""
     slots = re.findall(r"\(\*(P?MPI_[A-Za-z0-9_]+)\)", vtable_text)
-    if slots != names:
-        raise SystemExit("the vtable slot list is not the entry-point list")
+    expected = [n for n in names
+                if n.split("MPI_", 1)[1] not in
+                {a.split("MPI_", 1)[1] for a in ABI_ALIAS}]
+    if slots != expected:
+        raise SystemExit("the vtable slot list is not the entry-point list "
+                         "less the ABI-side aliases")
+    names = expected
     filled = re.findall(r"^\s*\.(P?MPI_[A-Za-z0-9_]+)\s*=", wrappers_text,
                         re.MULTILINE)
     if sorted(filled) != sorted(names):
@@ -3299,9 +3464,10 @@ def emit_report(protos, tallies, handwritten_bodies):
     w("The generator's ledger -- GENERATED FILE, do not edit by hand.")
     w("")
     w("Produced by dev/generate.py. Every ABI entry point appears exactly once")
-    w("below: generated, hand-written, or deferred with the argument class that")
-    w("blocks it. The generator fails if one appears in none of the three, which")
-    w("is what makes 'nothing was silently dropped' a checked property.")
+    w("below: generated, hand-written, implemented on the ABI side in terms of")
+    w("another, or deferred with the argument class that blocks it. The")
+    w("generator fails if one appears in none of the four, which is what makes")
+    w("'nothing was silently dropped' a checked property.")
     w("")
     w("Frozen tallies")
     w("--------------")
@@ -3329,6 +3495,28 @@ def emit_report(protos, tallies, handwritten_bodies):
                 mark = "[done]" if ep.name in handwritten_bodies else "     -"
                 w(f"    {mark} {ep.name}")
         w("")
+
+    aliases = [e for e in mpi if e.status == "abi-alias"]
+    w("Implemented on the ABI side (%d)" % len(aliases))
+    w("-" * 40)
+    w("  The entry points MPI-3.0 deleted from the standard. The ABI header")
+    w("  still declares them, because an ABI is a promise about symbols -- but")
+    w("  an implementation need not define them any more, and Open MPI main's")
+    w("  libmpi_abi does not. Forwarding through a slot would make that a")
+    w("  *link* failure of the whole wrapper rather than the run-time report")
+    w("  decision 6 promises, because the probe asks the compiler and the")
+    w("  compiler sees the declaration.")
+    w("")
+    w("  So libmpi_abi answers these itself, by calling the slot of the entry")
+    w("  point that replaced each. They have no slot and no wrapper body, and")
+    w("  they now work over any implementation with the MPI-2 attribute")
+    w("  interface rather than only over one that kept the MPI-1 spelling.")
+    w("  The generator checks each pair's return type, arity and parameter")
+    w("  types, so a signature that drifts fails generation.")
+    w("")
+    for ep in sorted(aliases, key=lambda e: e.name):
+        w(f"    {ep.name} -> {ep.detail}")
+    w("")
 
     outliving = [e for e in mpi if stages_past_return(e)]
     w("Staged past return (%d)" % len(outliving))
@@ -3407,6 +3595,13 @@ def main():
     handles = parse_handle_constants(patched, classes)
     enums = parse_enum_members(patched)
 
+    # The deleted-in-MPI-3.0 set, taken from the header's own marker rather
+    # than from a list here, so a sixth cannot appear unnoticed.
+    deprecated_mpi2 = {n for n, ep in protos.items()
+                       if not n.startswith("PMPI_")
+                       and ep.deprecated_in == "MPI-2.0"}
+    check_aliases(protos, parse_typedefs(patched), deprecated_mpi2)
+
     handwritten_bodies = parse_handwritten_h()
     assign_status(protos, handwritten_bodies)
 
@@ -3424,7 +3619,7 @@ def main():
 
     tallies = {
         "entry points": len(mpi_eps),
-        "vtable slots": len(protos),
+        "vtable slots": len(protos) - 2 * len(ABI_ALIAS),
         "handle classes": len(classes),
         "predefined handles": sum(len(v) for v in handles.values()),
         "error classes": sum(1 for n in enums
@@ -3434,6 +3629,7 @@ def main():
         "generated": sum(1 for e in mpi_eps if e.status == "generated"),
         "hand-written": sum(1 for e in mpi_eps if e.status == "hand-written"),
         "deferred to S3": sum(1 for e in mpi_eps if e.status == "deferred"),
+        "ABI-side aliases": sum(1 for e in mpi_eps if e.status == "abi-alias"),
         "staged past return": sum(1 for e in mpi_eps if stages_past_return(e)),
     }
     drift = {k: (v, FROZEN[k]) for k, v in tallies.items() if v != FROZEN.get(k)}

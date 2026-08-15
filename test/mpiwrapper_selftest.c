@@ -388,25 +388,43 @@ static void test_keyvals(void)
 
   /* 2. A registered keyval round-trips, and the ABI-side value it is given
    * lands outside every predefined key -- which is what keeps the two halves
-   * of the family from colliding by construction rather than by luck. 501 is
-   * used deliberately: it is MPI_TAG_UB's ABI value, so an implementation
-   * that handed out 501 as a dynamic keyval is exactly the collision #5.6
-   * describes.
+   * of the family from colliding by construction rather than by luck.
+   *
+   * The value registered is MPI_TAG_UB's *ABI* number, 501, because an
+   * implementation that handed that out as a dynamic keyval is exactly the
+   * collision #5.6 describes. It only means anything where the two numberings
+   * differ, though: an implementation never issues a dynamic keyval equal to
+   * one of its own predefined ones, so in the identity configuration -- where
+   * the implementation *is* the ABI -- 501 is MPI_TAG_UB on both sides and
+   * there is nothing to collide. Asking the map is how that is detected,
+   * rather than assuming a number.
    */
-  CHECK(mpiwrapper_keyval_add(501, &abi_a), "the keyval table refused an add");
-  CHECK(abi_a > MPIABI_WIN_MODEL,
-        "a dynamic keyval was issued as %d, inside the predefined range",
-        abi_a);
-  CHECK(mpiwrapper_keyval_fromabi(abi_a) == 501,
-        "a registered keyval does not convert back to the implementation's");
-  CHECK(mpiwrapper_keyval_toabi(501) == abi_a,
-        "a registered keyval does not convert to the ABI value issued for it");
-  /* And the predefined side is unmoved by it: the ABI's 501 is still
-   * MPI_TAG_UB, not the dynamic keyval that happens to have that value on the
-   * implementation's side.
-   */
-  CHECK(mpiwrapper_keyval_fromabi(MPIABI_TAG_UB) == MPI_TAG_UB,
-        "registering a dynamic keyval disturbed a predefined one");
+  {
+    int probe = MPIABI_TAG_UB;
+
+    if (mpiwrapper_keyval_toabi(probe) != MPIABI_KEYVAL_INVALID) {
+      printf("note: this implementation numbers its keyvals as the ABI does, "
+             "so no dynamic value can collide with a predefined one; the "
+             "registry is exercised on a plain value instead\n");
+      probe = 0x5eed;
+    }
+
+    CHECK(mpiwrapper_keyval_add(probe, &abi_a),
+          "the keyval table refused an add");
+    CHECK(abi_a > MPIABI_WIN_MODEL,
+          "a dynamic keyval was issued as %d, inside the predefined range",
+          abi_a);
+    CHECK(mpiwrapper_keyval_fromabi(abi_a) == probe,
+          "a registered keyval does not convert back to the implementation's");
+    CHECK(mpiwrapper_keyval_toabi(probe) == abi_a,
+          "a registered keyval does not convert to the ABI value issued for it");
+    /* And the predefined side is unmoved by it: the ABI's 501 is still
+     * MPI_TAG_UB, not the dynamic keyval that may have that value on the
+     * implementation's side.
+     */
+    CHECK(mpiwrapper_keyval_fromabi(MPIABI_TAG_UB) == MPI_TAG_UB,
+          "registering a dynamic keyval disturbed a predefined one");
+  }
 
   CHECK(mpiwrapper_keyval_add(7001, &abi_b), "the keyval table refused an add");
   CHECK(abi_b != abi_a, "two keyvals were issued the same ABI value");

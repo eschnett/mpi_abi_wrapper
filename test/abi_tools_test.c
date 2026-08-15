@@ -161,6 +161,114 @@ static void test_predefined_keyvals(void)
   }
 }
 
+/* ------------------------------------------------ the deleted MPI-1 five */
+
+/* MPI_Attr_delete, MPI_Attr_get, MPI_Attr_put, MPI_Keyval_create and
+ * MPI_Keyval_free are the entry points MPI-3.0 deleted from the standard. The
+ * ABI header still declares them and libmpi_abi still exports them, but no
+ * implementation is obliged to define them any more -- Open MPI main's
+ * libmpi_abi declares 688 and defines 683, and these are the five. So
+ * libmpi_abi answers them itself, calling the slot of the MPI-2 entry point
+ * that replaced each; there is no wrapper body and no vtable slot.
+ *
+ * What that has to be is *exact*, not approximate, and this is where it is
+ * checked at run time. The generator already checks the signatures; what it
+ * cannot check is the pair of sentinel values, because casting an integer to a
+ * pointer type is not an integer constant expression and so cannot be a
+ * _Static_assert. If MPI_DUP_FN ever stopped equalling MPI_COMM_DUP_FN, the
+ * forwarder would pass a request to duplicate attributes through as a function
+ * address.
+ */
+static void test_deleted_mpi1(void)
+{
+  void *value = NULL;
+  int   flag = 0, keyval = MPI_KEYVAL_INVALID, ierror;
+
+  if (rank == 0) printf("test_deleted_mpi1\n");
+
+  /* The three attribute callback sentinels, which the two spellings have to
+   * agree about for MPI_Keyval_create to be MPI_Comm_create_keyval.
+   */
+  /* Compared as function pointers, without going through `void *`: ISO C does
+   * not allow that conversion, and -Wpedantic says so. It is not needed --
+   * MPI_Copy_function and MPI_Comm_copy_attr_function are two names for one
+   * function type, which is the very thing being relied on, so the two
+   * spellings are already the same pointer type.
+   */
+  CHECK(MPI_NULL_COPY_FN == MPI_COMM_NULL_COPY_FN,
+        "MPI_NULL_COPY_FN and MPI_COMM_NULL_COPY_FN differ");
+  CHECK(MPI_DUP_FN == MPI_COMM_DUP_FN,
+        "MPI_DUP_FN and MPI_COMM_DUP_FN differ");
+  CHECK(MPI_NULL_DELETE_FN == MPI_COMM_NULL_DELETE_FN,
+        "MPI_NULL_DELETE_FN and MPI_COMM_NULL_DELETE_FN differ");
+
+  /* MPI_Attr_get against its replacement, on a key the standard requires to
+   * be set. The two must agree exactly: they are the same call.
+   */
+  CHECK_MPI(MPI_Attr_get(MPI_COMM_WORLD, MPI_TAG_UB, &value, &flag));
+  CHECK(flag, "MPI_Attr_get did not find MPI_TAG_UB");
+  if (flag) {
+    void *other = NULL;
+    int   other_flag = 0;
+    CHECK_MPI(MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_TAG_UB, &other,
+                                &other_flag));
+    CHECK(other_flag == flag && *(int *)other == *(int *)value,
+          "MPI_Attr_get and MPI_Comm_get_attr disagree about MPI_TAG_UB");
+  }
+
+  /* And the whole cycle. MPI_Keyval_create forwards to MPI_Comm_create_keyval,
+   * which is in the ledger with no body yet, so today this reports
+   * MPI_ERR_UNSUPPORTED_OPERATION and skips -- and that it reports *exactly*
+   * what its replacement reports is itself the forwarding working. When S4
+   * writes that body, this starts exercising the full chain with no change
+   * here.
+   */
+  ierror = MPI_Keyval_create(MPI_NULL_COPY_FN, MPI_NULL_DELETE_FN, &keyval,
+                             NULL);
+  if (unsupported(ierror, "MPI_Keyval_create")) {
+    const int replacement = MPI_Comm_create_keyval(
+        MPI_COMM_NULL_COPY_FN, MPI_COMM_NULL_DELETE_FN, &keyval, NULL);
+    CHECK(replacement == ierror,
+          "MPI_Keyval_create answered %d where MPI_Comm_create_keyval "
+          "answered %d; they are the same call",
+          ierror, replacement);
+    return;
+  }
+  CHECK(ierror == MPI_SUCCESS, "MPI_Keyval_create returned %d", ierror);
+  if (ierror != MPI_SUCCESS) return;
+
+  {
+    int  payload = 4242;
+    void *back   = NULL;
+
+    CHECK_MPI(MPI_Attr_put(MPI_COMM_WORLD, keyval, &payload));
+    flag = 0;
+    CHECK_MPI(MPI_Attr_get(MPI_COMM_WORLD, keyval, &back, &flag));
+    CHECK(flag, "the attribute we just put is not there");
+    if (flag)
+      CHECK(back == &payload && *(int *)back == 4242,
+            "the attribute came back as something else");
+
+    /* And through the replacement, which must see the same attribute: the
+     * MPI-1 and MPI-2 spellings are one keyval space, not two.
+     */
+    back = NULL;
+    flag = 0;
+    CHECK_MPI(MPI_Comm_get_attr(MPI_COMM_WORLD, keyval, &back, &flag));
+    CHECK(flag && back == &payload,
+          "MPI_Comm_get_attr does not see what MPI_Attr_put set");
+
+    CHECK_MPI(MPI_Attr_delete(MPI_COMM_WORLD, keyval));
+    flag = 1;
+    CHECK_MPI(MPI_Attr_get(MPI_COMM_WORLD, keyval, &back, &flag));
+    CHECK(!flag, "the attribute survived MPI_Attr_delete");
+  }
+
+  CHECK_MPI(MPI_Keyval_free(&keyval));
+  CHECK(keyval == MPI_KEYVAL_INVALID,
+        "MPI_Keyval_free left the keyval set to %d", keyval);
+}
+
 /* --------------------------------- output string buffers with a length */
 
 /* NOTES.md #5.8's safe half: the caller passes the buffer's size, so nothing
@@ -661,6 +769,7 @@ int main(int argc, char **argv)
     printf("abi_tools_test: %d rank%s\n", size, size == 1 ? "" : "s");
 
   test_predefined_keyvals();
+  test_deleted_mpi1();
   test_info_strings();
 
   test_tools_init();

@@ -16,6 +16,26 @@ per entry point, no conversion, no cast, no initialization check, 688 of them
 (1376 definitions). S1's 29-entry-point stand-in is frozen in
 `dev/s1-reference/` as what the generator has to reproduce.
 
+**Five of them do not forward to their own slot**, and they are the only place
+this library contains anything but a forwarder. `MPI_Attr_delete`,
+`MPI_Attr_get`, `MPI_Attr_put`, `MPI_Keyval_create` and `MPI_Keyval_free` are
+what MPI-3.0 *deleted* from the standard. The ABI header still declares them —
+an ABI is a promise about symbols, and withdrawing one breaks a binary that was
+linked years ago — but an implementation is under no obligation to define them,
+and Open MPI main's `libmpi_abi` does not: it declares all 688 and defines 683.
+
+A slot would make that a **link** failure of the whole wrapper rather than the
+run-time report decision 6 promises, because `dev/probe_impl.py` asks the
+compiler and the compiler sees the declaration. So these five are answered here
+instead, each calling the slot of the MPI-2 entry point that replaced it —
+`MPI_Attr_get` reaches the implementation's `MPI_Comm_get_attr` and
+`PMPI_Attr_get` its `PMPI_Comm_get_attr`, so the shifted-name rule survives the
+rename. The generator checks that each pair really is the same call: return
+type, arity and every parameter type, with the two MPI-1 callback typedefs
+compared by the function type they name. They have no slot and no wrapper body,
+so `libmpiwrapper` never mentions them; `libmpi_abi` still exports all 1376
+names, which is what the ABI actually promises. `gen/report.txt` lists them.
+
 Environment variables it reads:
 
 | | |

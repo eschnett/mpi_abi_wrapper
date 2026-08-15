@@ -335,17 +335,17 @@ int MPI_Alltoallw_init_c(const void *sendbuf, const MPI_Count sendcounts[],
 
 int MPI_Attr_delete(MPI_Comm comm, int keyval)
 {
-  return VT()->MPI_Attr_delete(comm, keyval);
+  return VT()->MPI_Comm_delete_attr(comm, keyval);
 }
 
 int MPI_Attr_get(MPI_Comm comm, int keyval, void *attribute_val, int *flag)
 {
-  return VT()->MPI_Attr_get(comm, keyval, attribute_val, flag);
+  return VT()->MPI_Comm_get_attr(comm, keyval, attribute_val, flag);
 }
 
 int MPI_Attr_put(MPI_Comm comm, int keyval, void *attribute_val)
 {
-  return VT()->MPI_Attr_put(comm, keyval, attribute_val);
+  return VT()->MPI_Comm_set_attr(comm, keyval, attribute_val);
 }
 
 int MPI_Barrier(MPI_Comm comm) { return VT()->MPI_Barrier(comm); }
@@ -2232,10 +2232,10 @@ int MPI_Keyval_create(MPI_Copy_function *copy_fn,
                       MPI_Delete_function *delete_fn, int *keyval,
                       void *extra_state)
 {
-  return VT()->MPI_Keyval_create(copy_fn, delete_fn, keyval, extra_state);
+  return VT()->MPI_Comm_create_keyval(copy_fn, delete_fn, keyval, extra_state);
 }
 
-int MPI_Keyval_free(int *keyval) { return VT()->MPI_Keyval_free(keyval); }
+int MPI_Keyval_free(int *keyval) { return VT()->MPI_Comm_free_keyval(keyval); }
 
 int MPI_Lookup_name(const char *service_name, MPI_Info info, char *port_name)
 {
@@ -4661,17 +4661,17 @@ int PMPI_Alltoallw_init_c(const void *sendbuf, const MPI_Count sendcounts[],
 
 int PMPI_Attr_delete(MPI_Comm comm, int keyval)
 {
-  return VT()->PMPI_Attr_delete(comm, keyval);
+  return VT()->PMPI_Comm_delete_attr(comm, keyval);
 }
 
 int PMPI_Attr_get(MPI_Comm comm, int keyval, void *attribute_val, int *flag)
 {
-  return VT()->PMPI_Attr_get(comm, keyval, attribute_val, flag);
+  return VT()->PMPI_Comm_get_attr(comm, keyval, attribute_val, flag);
 }
 
 int PMPI_Attr_put(MPI_Comm comm, int keyval, void *attribute_val)
 {
-  return VT()->PMPI_Attr_put(comm, keyval, attribute_val);
+  return VT()->PMPI_Comm_set_attr(comm, keyval, attribute_val);
 }
 
 int PMPI_Barrier(MPI_Comm comm) { return VT()->PMPI_Barrier(comm); }
@@ -6577,10 +6577,14 @@ int PMPI_Keyval_create(MPI_Copy_function *copy_fn,
                        MPI_Delete_function *delete_fn, int *keyval,
                        void *extra_state)
 {
-  return VT()->PMPI_Keyval_create(copy_fn, delete_fn, keyval, extra_state);
+  return VT()->PMPI_Comm_create_keyval(copy_fn, delete_fn, keyval,
+                                       extra_state);
 }
 
-int PMPI_Keyval_free(int *keyval) { return VT()->PMPI_Keyval_free(keyval); }
+int PMPI_Keyval_free(int *keyval)
+{
+  return VT()->PMPI_Comm_free_keyval(keyval);
+}
 
 int PMPI_Lookup_name(const char *service_name, MPI_Info info, char *port_name)
 {

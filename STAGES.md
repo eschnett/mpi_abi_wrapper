@@ -142,7 +142,7 @@ lifetime question that no assertion in the generator can see: a persistent
 `MPI_Alltoallw` started three times, and 1200 create/free cycles against a
 1024-entry table.
 
-#### S3b — keyvals, output strings, callbacks, `MPI_T` *(done: 569 generated, 119 in the ledger, 0 deferred)*
+#### S3b — keyvals, output strings, callbacks, `MPI_T` *(done: 565 generated, 118 in the ledger, 5 on the ABI side, 0 deferred)*
 
 The second session took the last 52: the 16 keyval entry points, the
 output-string buffers with an explicit length, `MPI_Info_create_env`, and the
@@ -166,6 +166,17 @@ is ours to choose and choosing it from a high base puts §5.6's collision beyond
 reach by construction; and **`src/mpiwrapper/toolobj.c`**, because
 `obj_handle`'s class is not in its own argument list — it is whatever a prior
 `get_info` reported in `bind`, so the wrapper asks first.
+
+**A fifth thing it settled, after the exit check had already passed:** the five
+entry points MPI-3.0 *deleted* are answered by `libmpi_abi` itself, in terms of
+the MPI-2 functions that replaced them, with no vtable slot and no wrapper body.
+Open MPI main's `libmpi_abi` declares all 688 and defines 683, and those five
+are the difference — so forwarding them through a slot is a *link* failure of
+the whole wrapper rather than decision 6's run-time report, because the probe
+asks the compiler and the compiler sees the declaration. They now work over any
+implementation with the MPI-2 attribute interface. `MPI_Keyval_create` left the
+ledger in the process, since it is `MPI_Comm_create_keyval` under an older name.
+`NOTES.md` §3 has the reasoning and the checks.
 
 `test/abi_tools_test.c` is the behavioural half, and the null-OUT path is what
 it covers that no assertion in the generator can see: every MPI_T query is

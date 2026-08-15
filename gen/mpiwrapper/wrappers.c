@@ -1846,100 +1846,6 @@ static int w_PMPI_Alltoallw_init_c(const void *abi_sendbuf,
                                    MPIABI_Request *abi_request)
     BODY_MPI_Alltoallw_init_c(PMPI_Alltoallw_init_c)
 
-/* -------------------------------------------------------- MPI_Attr_delete */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-#ifdef MPIWRAPPER_HAVE_MPI_Attr_delete
-#define BODY_MPI_Attr_delete(TARGET)                                           \
-  {                                                                            \
-    const MPI_Comm comm   = mpiwrapper_comm_fromabi(abi_comm);                 \
-    const int      keyval = mpiwrapper_keyval_fromabi(abi_keyval);             \
-                                                                               \
-    const int ierror = TARGET(comm, keyval);                                   \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-#else
-#define BODY_MPI_Attr_delete(TARGET)                                           \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_keyval;                                                          \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-#endif
-
-static int w_MPI_Attr_delete(MPIABI_Comm abi_comm, int abi_keyval)
-    BODY_MPI_Attr_delete(MPI_Attr_delete)
-static int w_PMPI_Attr_delete(MPIABI_Comm abi_comm, int abi_keyval)
-    BODY_MPI_Attr_delete(PMPI_Attr_delete)
-#pragma GCC diagnostic pop
-
-/* ----------------------------------------------------------- MPI_Attr_get */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-#ifdef MPIWRAPPER_HAVE_MPI_Attr_get
-#define BODY_MPI_Attr_get(TARGET)                                              \
-  {                                                                            \
-    const MPI_Comm comm          = mpiwrapper_comm_fromabi(abi_comm);          \
-    const int      keyval        = mpiwrapper_keyval_fromabi(abi_keyval);      \
-    void *const    attribute_val = abi_attribute_val;                          \
-    int *const     flag          = abi_flag;                                   \
-                                                                               \
-    const int ierror = TARGET(comm, keyval, attribute_val, flag);              \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-#else
-#define BODY_MPI_Attr_get(TARGET)                                              \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_keyval;                                                          \
-    (void)abi_attribute_val;                                                   \
-    (void)abi_flag;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-#endif
-
-static int w_MPI_Attr_get(MPIABI_Comm abi_comm, int abi_keyval,
-                          void *abi_attribute_val, int *abi_flag)
-    BODY_MPI_Attr_get(MPI_Attr_get)
-static int w_PMPI_Attr_get(MPIABI_Comm abi_comm, int abi_keyval,
-                           void *abi_attribute_val, int *abi_flag)
-    BODY_MPI_Attr_get(PMPI_Attr_get)
-#pragma GCC diagnostic pop
-
-/* ----------------------------------------------------------- MPI_Attr_put */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-#ifdef MPIWRAPPER_HAVE_MPI_Attr_put
-#define BODY_MPI_Attr_put(TARGET)                                              \
-  {                                                                            \
-    const MPI_Comm comm          = mpiwrapper_comm_fromabi(abi_comm);          \
-    const int      keyval        = mpiwrapper_keyval_fromabi(abi_keyval);      \
-    void *const    attribute_val = abi_attribute_val;                          \
-                                                                               \
-    const int ierror = TARGET(comm, keyval, attribute_val);                    \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-#else
-#define BODY_MPI_Attr_put(TARGET)                                              \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_keyval;                                                          \
-    (void)abi_attribute_val;                                                   \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-#endif
-
-static int w_MPI_Attr_put(MPIABI_Comm abi_comm, int abi_keyval,
-                          void *abi_attribute_val)
-    BODY_MPI_Attr_put(MPI_Attr_put)
-static int w_PMPI_Attr_put(MPIABI_Comm abi_comm, int abi_keyval,
-                           void *abi_attribute_val)
-    BODY_MPI_Attr_put(PMPI_Attr_put)
-#pragma GCC diagnostic pop
-
 /* ------------------------------------------------------------ MPI_Barrier */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Barrier
@@ -13663,59 +13569,6 @@ static int w_PMPI_Issend_c(const void *abi_buf, MPIABI_Count abi_count,
                            int abi_tag, MPIABI_Comm abi_comm,
                            MPIABI_Request *abi_request)
     BODY_MPI_Issend_c(PMPI_Issend_c)
-
-/* ------------------------------------------------------ MPI_Keyval_create */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-/* callback registration: installs a trampoline or a pair (NOTES.md #6.1);
- * no body yet (S4)
- */
-#define BODY_MPI_Keyval_create(TARGET)                                         \
-  {                                                                            \
-    (void)abi_copy_fn;                                                         \
-    (void)abi_delete_fn;                                                       \
-    (void)abi_keyval;                                                          \
-    (void)abi_extra_state;                                                     \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Keyval_create(MPIABI_Copy_function *abi_copy_fn,
-                               MPIABI_Delete_function *abi_delete_fn,
-                               int *abi_keyval, void *abi_extra_state)
-    BODY_MPI_Keyval_create(MPI_Keyval_create)
-static int w_PMPI_Keyval_create(MPIABI_Copy_function *abi_copy_fn,
-                                MPIABI_Delete_function *abi_delete_fn,
-                                int *abi_keyval, void *abi_extra_state)
-    BODY_MPI_Keyval_create(PMPI_Keyval_create)
-#pragma GCC diagnostic pop
-
-/* -------------------------------------------------------- MPI_Keyval_free */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-#ifdef MPIWRAPPER_HAVE_MPI_Keyval_free
-#define BODY_MPI_Keyval_free(TARGET)                                           \
-  {                                                                            \
-    int keyval = mpiwrapper_keyval_fromabi(*abi_keyval);                       \
-                                                                               \
-    const int ierror = TARGET(&keyval);                                        \
-    *abi_keyval = mpiwrapper_keyval_toabi(keyval);                             \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-#else
-#define BODY_MPI_Keyval_free(TARGET)                                           \
-  {                                                                            \
-    (void)abi_keyval;                                                          \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-#endif
-
-static int w_MPI_Keyval_free(int *abi_keyval)
-    BODY_MPI_Keyval_free(MPI_Keyval_free)
-static int w_PMPI_Keyval_free(int *abi_keyval)
-    BODY_MPI_Keyval_free(PMPI_Keyval_free)
-#pragma GCC diagnostic pop
 
 /* -------------------------------------------------------- MPI_Lookup_name */
 
@@ -26426,12 +26279,6 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Alltoallw_init               = w_PMPI_Alltoallw_init,
     .MPI_Alltoallw_init_c              = w_MPI_Alltoallw_init_c,
     .PMPI_Alltoallw_init_c             = w_PMPI_Alltoallw_init_c,
-    .MPI_Attr_delete                   = w_MPI_Attr_delete,
-    .PMPI_Attr_delete                  = w_PMPI_Attr_delete,
-    .MPI_Attr_get                      = w_MPI_Attr_get,
-    .PMPI_Attr_get                     = w_PMPI_Attr_get,
-    .MPI_Attr_put                      = w_MPI_Attr_put,
-    .PMPI_Attr_put                     = w_PMPI_Attr_put,
     .MPI_Barrier                       = w_MPI_Barrier,
     .PMPI_Barrier                      = w_PMPI_Barrier,
     .MPI_Barrier_init                  = w_MPI_Barrier_init,
@@ -27024,10 +26871,6 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Issend                       = w_PMPI_Issend,
     .MPI_Issend_c                      = w_MPI_Issend_c,
     .PMPI_Issend_c                     = w_PMPI_Issend_c,
-    .MPI_Keyval_create                 = w_MPI_Keyval_create,
-    .PMPI_Keyval_create                = w_PMPI_Keyval_create,
-    .MPI_Keyval_free                   = w_MPI_Keyval_free,
-    .PMPI_Keyval_free                  = w_PMPI_Keyval_free,
     .MPI_Lookup_name                   = w_MPI_Lookup_name,
     .PMPI_Lookup_name                  = w_PMPI_Lookup_name,
     .MPI_Mprobe                        = w_MPI_Mprobe,

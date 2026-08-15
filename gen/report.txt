@@ -1,23 +1,25 @@
 The generator's ledger -- GENERATED FILE, do not edit by hand.
 
 Produced by dev/generate.py. Every ABI entry point appears exactly once
-below: generated, hand-written, or deferred with the argument class that
-blocks it. The generator fails if one appears in none of the three, which
-is what makes 'nothing was silently dropped' a checked property.
+below: generated, hand-written, implemented on the ABI side in terms of
+another, or deferred with the argument class that blocks it. The
+generator fails if one appears in none of the four, which is what makes
+'nothing was silently dropped' a checked property.
 
 Frozen tallies
 --------------
   entry points           688
-  vtable slots           1376
+  vtable slots           1366
   handle classes         11
   predefined handles     103
   error classes          80
-  generated              569
-  hand-written           119
+  generated              565
+  hand-written           118
   deferred to S3         0
+  ABI-side aliases       5
   staged past return     8
 
-Generated (569)
+Generated (565)
 ----------------------------------------
   MPI_Accumulate
   MPI_Accumulate_c
@@ -48,9 +50,6 @@ Generated (569)
   MPI_Alltoallw_c
   MPI_Alltoallw_init
   MPI_Alltoallw_init_c
-  MPI_Attr_delete
-  MPI_Attr_get
-  MPI_Attr_put
   MPI_Barrier
   MPI_Barrier_init
   MPI_Bcast
@@ -317,7 +316,6 @@ Generated (569)
   MPI_Isendrecv_replace_c
   MPI_Issend
   MPI_Issend_c
-  MPI_Keyval_free
   MPI_Mprobe
   MPI_Mrecv
   MPI_Mrecv_c
@@ -589,7 +587,7 @@ Generated (569)
   MPI_Wtick
   MPI_Wtime
 
-Hand-written (119)
+Hand-written (118)
 ----------------------------------------
   A body in src/mpiwrapper/handwritten.c is marked [done]; the rest are
   stubs until S4 writes them, and the slot reports
@@ -628,7 +626,6 @@ Hand-written (119)
          - MPI_Comm_create_keyval
          - MPI_File_create_errhandler
          - MPI_Grequest_start
-         - MPI_Keyval_create
     [done] MPI_Op_create
          - MPI_Op_create_c
          - MPI_Register_datarep
@@ -737,6 +734,29 @@ Hand-written (119)
   spawn: argv, array_of_argv and array_of_errcodes together
          - MPI_Comm_spawn
          - MPI_Comm_spawn_multiple
+
+Implemented on the ABI side (5)
+----------------------------------------
+  The entry points MPI-3.0 deleted from the standard. The ABI header
+  still declares them, because an ABI is a promise about symbols -- but
+  an implementation need not define them any more, and Open MPI main's
+  libmpi_abi does not. Forwarding through a slot would make that a
+  *link* failure of the whole wrapper rather than the run-time report
+  decision 6 promises, because the probe asks the compiler and the
+  compiler sees the declaration.
+
+  So libmpi_abi answers these itself, by calling the slot of the entry
+  point that replaced each. They have no slot and no wrapper body, and
+  they now work over any implementation with the MPI-2 attribute
+  interface rather than only over one that kept the MPI-1 spelling.
+  The generator checks each pair's return type, arity and parameter
+  types, so a signature that drifts fails generation.
+
+    MPI_Attr_delete -> MPI_Comm_delete_attr
+    MPI_Attr_get -> MPI_Comm_get_attr
+    MPI_Attr_put -> MPI_Comm_set_attr
+    MPI_Keyval_create -> MPI_Comm_create_keyval
+    MPI_Keyval_free -> MPI_Comm_free_keyval
 
 Staged past return (8)
 ----------------------------------------

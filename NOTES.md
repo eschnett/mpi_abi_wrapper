@@ -1096,8 +1096,9 @@ implementation too old to have the function.
 
 ### What S3's second half settled
 
-S3b took the remaining 52 and closed the set: **569 of the 688 are generated
-and 119 are in the ledger, and nothing is deferred.** The zero is kept as a
+S3b took the remaining 52 and closed the set: nothing is deferred. **565 of the
+688 are generated, 118 are in the ledger, and 5 are answered by `libmpi_abi`
+itself** — the entry points MPI-3.0 deleted, which is the section after next. The zero is kept as a
 frozen tally, so that a future `apis.json` or ABI header carrying an argument
 class the generator cannot place fails there rather than quietly emitting one
 more stub.
@@ -1113,8 +1114,9 @@ installing it means a trampoline that converts an implementation registration
 handle and `cb_safety` back to the ABI's on the way *into* user code — §6.1's
 mechanism and §6.2's lifetime question, the same judgement as the two
 registrars beside it. So it moved into the ledger, which is why the
-hand-written count went from 118 to 119. It needs no pool: its own `user_data`
-parameter can carry the `{user_fn, user_extra}` pair.
+hand-written count went to 119. It needs no pool: its own `user_data`
+parameter can carry the `{user_fn, user_extra}` pair. (It came back to 118 when
+`MPI_Keyval_create` left the ledger; see the deleted-MPI-1 section below.)
 
 **MPI_T lets a caller pass a null pointer for any OUT parameter**, and each of
 the five query functions says so in its own words (15.3.6 through 15.3.9).
@@ -1199,6 +1201,78 @@ handle allocation. The switch from `bind` onto a handle class is generated into
 `constants.c` rather than hand-written, so that the `MPIWRAPPER_HAVE_` guards
 its cases need are probed like every other — `dev/probe_impl.py` reads the
 generated sources, not `src/`.
+
+### The five entry points MPI-3.0 deleted, and why they are not slots
+
+S3b's own exit check passed on every implementation and the *identity*
+configuration still would not link. That is worth recording as a finding rather
+than as a fix, because the cause is a limit of the probe and not a bug in
+anything: **`libmpi_abi` from Open MPI main declares all 688 entry points and
+defines 683.** The five it omits are `MPI_Attr_delete`, `MPI_Attr_get`,
+`MPI_Attr_put`, `MPI_Keyval_create` and `MPI_Keyval_free` — the attribute
+functions MPI-2.0 deprecated and MPI-3.0 deleted. Four had been deferred stubs
+until S3b generated them, which is why nothing had noticed.
+
+`dev/probe_impl.py` asks the *compiler* whether an entry point is available, on
+purpose: §9 keeps it compile-only so the build stays cross-compilable, and `nm`
+was rejected because a header may provide an entry point as a macro. Against a
+conventional MPI, whose header and library agree, that is exact. Against an MPI
+built from the ABI header it is not, and the failure mode is the worst
+available: decision 6 promises that a missing entry point keeps its slot and
+reports at run time, and instead the whole wrapper fails to **link**.
+
+Two fixes were available and the second is better.
+
+A **link stage** in the probe would fix the general case: linking is
+compile-time, and cross-compilation forbids only *running*, so §9's constraint
+survives. Done by bisection it needs no parsing of linker diagnostics at all,
+only their exit status. It is still the right answer for any *future* entry
+point an implementation declares and does not define, and it is not
+implemented.
+
+But for these five it treats the symptom. They are not entry points an
+implementation happens to lack; they are entry points the standard **removed**,
+and each is exactly the MPI-2 function that replaced it under an older name. So
+`libmpi_abi` implements them itself, in terms of the replacements, and they get
+no vtable slot and no wrapper body at all. What that buys is larger than the
+link: they now work over *any* implementation with the MPI-2 attribute
+interface, which is all of them, rather than over the ones that kept the MPI-1
+spelling — and it is the first case where the right answer was to stop
+forwarding rather than to forward more carefully.
+
+Details that make it exact rather than approximate:
+
+- **The set is closed by the header, not by memory.** It is precisely the entry
+  points the ABI header marks `deprecated: MPI-2.0`, and the generator fails if
+  a sixth appears without a replacement named for it. MPI-3.0's other deletions
+  — `MPI_Address`, `MPI_Type_extent`, `MPI_Errhandler_create` and the rest —
+  are not in the ABI header at all, so there is nothing to do for them.
+- **The equivalence is checked, not asserted**: return type, arity and every
+  parameter type. The one place the two differ is `MPI_Keyval_create`'s
+  callbacks, where `MPI_Copy_function` and `MPI_Comm_copy_attr_function` are
+  two names for one function type — compared by what they expand to rather than
+  by spelling, so an ABI that changed either fails generation instead of
+  producing a forwarder that miscalls.
+- **The sentinels agree, and that is tested at run time.** `MPI_NULL_COPY_FN`
+  and `MPI_COMM_NULL_COPY_FN` are both `0x0`, `MPI_DUP_FN` and `MPI_COMM_DUP_FN`
+  both `0x1`, `MPI_NULL_DELETE_FN` and `MPI_COMM_NULL_DELETE_FN` both `0x0`, so
+  the pass-through is exact and not merely well-typed. A cast to a pointer type
+  is not an integer constant expression, so this one cannot be a
+  `_Static_assert` (the same reason constants.c switches handles on numeric
+  labels) and lives in `test/abi_tools_test.c` instead.
+- **The shifted-name rule survives the rename.** `MPI_Attr_get` reaches the
+  implementation's `MPI_Comm_get_attr` and `PMPI_Attr_get` its
+  `PMPI_Comm_get_attr`, so §2's reason for two slots per entry point — that
+  bypassing profiling at the ABI level also bypasses it at the implementation
+  level — still holds across the substitution.
+- **`MPI_Keyval_create` left the ledger.** It was there as a callback registrar
+  (§6.1); it is `MPI_Comm_create_keyval` under an older name, so the trampoline
+  judgement now lives in exactly one place instead of two, and S4 has one fewer
+  body to write. The ledger is **118** again.
+- **The slots really are gone**, rather than kept and left unfilled. That is
+  what makes an old `libmpi_abi` paired with a new `libmpiwrapper` a clean
+  refusal: the layout hash covers the slot list, so the pairing fails the
+  handshake instead of reaching a slot that no longer means what it did.
 
 ### Reproducing the prototype
 
@@ -2037,9 +2111,10 @@ generate, so the ledger is **118**. Both are generated now, with every other
 member of their families, and `src/mpiwrapper/handwritten.c` is down to S1's
 eight.
 
-**S3's second half added `MPI_T_event_handle_free`**, so the ledger is **119**
-and it is now the *whole* of what the generator does not emit: nothing is
-deferred any more, and every one of the 688 is generated or here. The addition
+**S3's second half added `MPI_T_event_handle_free`** and took
+`MPI_Keyval_create` away again, so the ledger is **118**. Nothing is deferred
+any more, so it is now the whole of what the generator does not emit, beside
+the five §3 records as answered by `libmpi_abi` itself. The addition
 is the sixteenth callback registrar of §6.1 — the rule that finds it is a
 callback-typed parameter, which the two `MPI_T_event_callback_*_info` calls do
 not have and this one does.
@@ -2049,8 +2124,10 @@ not have and this one does.
 - **No error code to map** (2): `MPI_Wtime`, `MPI_Wtick` return `double`.
 - **The ten status-consuming functions** of §5.2, plus the four Fortran status
   converters (14).
-- **Callback registration** — the 16 of §6.1, each installing a trampoline or a
-  pair.
+- **Callback registration** — 15 of the 16 of §6.1, each installing a
+  trampoline or a pair. `MPI_Keyval_create` is the sixteenth and is not here:
+  it is `MPI_Comm_create_keyval` under a name MPI-3.0 deleted, so `libmpi_abi`
+  forwards it and the judgement is made once.
 - **Genuinely variadic** (1): `MPI_Pcontrol`.
 - **Dynamic error codes** (3): `MPI_Add_error_class`, `_code`, `_string`.
 - **Spawn** (2): `MPI_Comm_spawn`, `_multiple` (`argv`, `array_of_argv`,
@@ -2458,32 +2535,6 @@ emitted it is not committed, since S2's generator supersedes it. Everything else
 ---
 
 ## 13. Still open
-
-- **`dev/probe_impl.py` over-reports for an ABI-implementing MPI, and S3b
-  measured it.** The probe asks the *compiler*, deliberately — §9 keeps it
-  compile-only so the build stays cross-compilable, and `nm` was rejected
-  because a header can provide an entry point as a macro. That is right for a
-  conventional MPI, whose header and library agree. It is wrong for oracle 5:
-  Open MPI main's `libmpi_abi` is built against the ABI header, which declares
-  all 688, and it defines **683**. The five it omits are the MPI-1 attribute
-  functions MPI-4.0 removed from the standard — `MPI_Attr_delete`, `_get`,
-  `_put`, `MPI_Keyval_create`, `MPI_Keyval_free` — so the probe answers
-  "present", the generated bodies call them, and the wrapper fails to *link*
-  rather than reporting `MPI_ERR_UNSUPPORTED_OPERATION` as decision 6 promises.
-  Nothing about the five is special: any entry point an ABI-implementing MPI
-  declares and does not define does this.
-
-  It was invisible until S3b because four of the five were deferred stubs, and
-  it does not touch MPICH or Open MPI's native builds, where header and library
-  agree.
-
-  The fix that keeps §9's constraint is a **link** stage, not an `nm` stage:
-  linking is compile-time and cross-compilation forbids only *running*. Done by
-  bisection — link the whole name list, and on failure split and recurse — it
-  needs no parsing of linker diagnostics at all, only their exit status, which
-  makes it more robust than the compile probe rather than less. Cost is one
-  extra link in the common case. **Not implemented**: it changes the configure
-  contract for every build, so it wants a decision rather than a drive-by.
 
 - Windows/mingw: `dlopen` -> `LoadLibrary` shim, no RTLD flags, and which MPI is
   even the target there.

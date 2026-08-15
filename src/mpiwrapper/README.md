@@ -27,13 +27,15 @@ generate -- an inout request array released at completion, and temporaries that
 outlive their call. S3's first half generates both, with every other member of
 their families, so the bodies are gone.
 
-S3's second half added one *to* the ledger rather than taking one out:
-`MPI_T_event_handle_free` takes a callback-typed parameter, so installing it
-needs a trampoline like the two `MPI_T` registrars beside it (§6.1). That makes
-the ledger **119**, and -- since nothing is deferred any more -- it is now
-exactly the set the generator does not emit.
+S3's second half added `MPI_T_event_handle_free` *to* the ledger --  it takes a
+callback-typed parameter, so installing it needs a trampoline like the two
+`MPI_T` registrars beside it (§6.1) -- and took `MPI_Keyval_create` away again,
+since that one is `MPI_Comm_create_keyval` under a name MPI-3.0 deleted and
+`libmpi_abi` now forwards it (see `src/mpi_abi/README.md`). The ledger is
+**118**, and since nothing is deferred any more it is exactly what the
+generator does not emit.
 
-The other 111 members of the ledger have no body yet and their slots report
+The other 110 members of the ledger have no body yet and their slots report
 `MPI_ERR_UNSUPPORTED_OPERATION`; `gen/report.txt` lists exactly which. S4
 writes them: lifecycle, the callback registrations, spawn, buffer attach,
 `MPI_Pcontrol`, dynamic error codes, the Fortran and integer handle converters,
