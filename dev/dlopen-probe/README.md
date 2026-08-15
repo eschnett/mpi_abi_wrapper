@@ -112,6 +112,24 @@ reported `isolation check: FAIL (same base object)` before any call was made —
 is the difference between a clear diagnostic at startup and a stack overflow on the
 first message.
 
+## Scope: what this probe could not see
+
+**S1 disproved the generalisation of the `dlmopen` row.** It passes every test *here*
+and does not work with a real MPI: both MPICH 4.1 and Open MPI 4.1 segfault inside
+glibc's own loader during `MPI_Init`, in `add_to_global_resize`, because an MPI that
+`dlopen`s its own components (PMIx, Open MPI's MCA) asks to add to the global scope
+of a namespace that has no main map. MPICH 3.1.4, which predates PMIx and loads
+nothing at run time, *does* work under `dlmopen` — confirming the diagnosis from the
+other side: `dlmopen` is not broken, it is unusable with any MPI that loads plugins.
+
+Why this probe missed it is the part worth keeping: `libimpl` here is a single shared
+object that `dlopen`s nothing. The mock reproduced the *symbol resolution* faithfully
+and the *loading behaviour* not at all, and nothing in its own output hinted at the
+gap. A mock is evidence only about the axis it models.
+
+The recommendation below therefore stands for `RTLD_DEEPBIND`, which S1 confirmed on
+real MPIs, and **not** for `dlmopen`. See `NOTES.md` §2.
+
 ## Conclusion
 
 | platform | how to load the wrapper |
