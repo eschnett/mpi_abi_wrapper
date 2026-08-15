@@ -251,6 +251,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     src/mpiwrapper/handles.c
     src/mpiwrapper/status.c
     src/mpiwrapper/staging.c
+    src/mpiwrapper/extents.c
     src/mpiwrapper/callbacks.c
     src/mpiwrapper/handwritten.c
     gen/mpiwrapper/wrappers.c
@@ -282,6 +283,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       src/mpiwrapper/handles.c
       src/mpiwrapper/status.c
       src/mpiwrapper/staging.c
+      src/mpiwrapper/extents.c
       src/mpiwrapper/callbacks.c
       src/mpiwrapper/handwritten.c
       gen/mpiwrapper/wrappers.c
@@ -328,6 +330,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     src/mpiwrapper/handles.c
     src/mpiwrapper/status.c
     src/mpiwrapper/staging.c
+    src/mpiwrapper/extents.c
     src/mpiwrapper/callbacks.c
   )
   target_include_directories(mpiwrapper_selftest PRIVATE
@@ -371,6 +374,19 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_test(NAME abi_prototype_test
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_prototype_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_prototype_test PROPERTIES
+    ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+
+  # The same, for S3's argument classes -- and above all for the lifetime of a
+  # staged temporary, which is the property none of the generator's own
+  # assertions can see.
+  add_executable(abi_arrays_test test/abi_arrays_test.c)
+  target_include_directories(abi_arrays_test PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
+  target_compile_options(abi_arrays_test PRIVATE ${MPIABI_WARNINGS})
+  target_link_libraries(abi_arrays_test PRIVATE mpi_abi)
+
+  add_test(NAME abi_arrays_test
+    COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_arrays_test> ${MPIABI_RUN_POST})
+  set_tests_properties(abi_arrays_test PROPERTIES
     ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
 
   # 20.2.1 wants libmpi_abi to be the application's only direct MPI dependency,

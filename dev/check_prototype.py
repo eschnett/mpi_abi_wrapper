@@ -66,11 +66,23 @@ EXEMPT = {
         "decision 6's `#ifdef` made exact -- Open MPI 5.0.10 reports MPI-3.1 "
         "and has sessions, so the version test both over- and under-reports.",
     ("wrapper body", "MPI_Waitall"):
-        "Not generated at all: its request array is inout and its staged "
-        "temporaries are released at completion, which is S3's class. S1's "
-        "body moved to src/mpiwrapper/handwritten.c and is named in the "
-        "HAND_WRITTEN ledger with that reason, so the slot is filled and the "
-        "test that exercises it still passes. S3 deletes both.",
+        "S3 generates it, and the generated body is S1's code with four "
+        "differences, all of them shape rather than substance: the ABI "
+        "parameters are named after the ABI header's own parameters "
+        "(abi_array_of_requests, not S1's abi_requests); the staging buffers "
+        "are <local>_stack rather than S1's reqstack and ststack, which is "
+        "the same abbreviation the MPI_Type_create_struct entry covers; "
+        "`ierror` is declared const inside the inner block every generated "
+        "staged body uses, where S1 declared it uninitialized in the outer "
+        "group; and the two mpiwrapper_unstage calls run in declaration order "
+        "rather than S1's reverse order, which is immaterial because "
+        "mpiwrapper_unstage is independent per array. The staging, the "
+        "MPI_STATUSES_IGNORE short circuit, the release-at-completion rule, "
+        "the unconditional write-back and the single goto-done cleanup are "
+        "token-for-token S1's. What checks the body itself is behavioural: "
+        "test/abi_prototype_test.c exercises MPI_Waitall over both "
+        "implementations, including the staged-temporary release that "
+        "MPI_Ialltoallw sets up.",
 }
 
 

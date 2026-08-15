@@ -118,12 +118,43 @@ Also S3's, and a ledger item rather than a matter of memory: *every* completion
 entry point must call `mpiwrapper_staged_release`, not just the ones S1 wrote
 (`NOTES.md` §6.3).
 
+#### S3a — arrays, statuses and lifetimes *(done: 518 generated, 118 in the ledger, 52 deferred)*
+
+The first of the two sessions took the array half: out, inout and status
+arrays, the extents `apis.json` records as `*`, the graph topologies, the
+`ranges` triplet, the four `*_external` packing forms and the six pure
+ABI-side status accessors. Both stand-ins came back out of the ledger, and the
+release rule is emitted at all eleven entry points with an inout request.
+
+Three things it settled that this plan did not name, all in `NOTES.md` §3's
+"What S3's first half settled": the **lifetime rules need no flag** in the
+request map, because "the implementation nulled the handle" already
+distinguishes a completed nonblocking request from a merely-completed
+persistent one — one emitted rule, both lifetimes; **`src/mpiwrapper/
+extents.c`**, because an extent `apis.json` gives as `*` is a property of an
+object and the only place to ask is the implementation; and
+**`dev/get-contents-extent/`**, because Open MPI 5.0.6 dereferences the whole
+of `MPI_Type_get_contents`' `max_datatypes` and segfaults on a legal program,
+which is why the wrapper passes the envelope's count instead.
+
+`test/abi_arrays_test.c` is the behavioural half, and it is what covers the
+lifetime question that no assertion in the generator can see: a persistent
+`MPI_Alltoallw` started three times, and 1200 create/free cycles against a
+1024-entry table.
+
+#### S3b — keyvals, output strings, callbacks, `MPI_T` *(remaining)*
+
+The 52 still deferred, which `gen/report.txt` names with the class that blocks
+each: the 16 keyval entry points, the output-string buffers with an explicit
+length, `MPI_Info_create_env`, the callback-bearing `MPI_T` calls and the rest
+of the tool interface.
+
 **Exit check.** Every one of the 688 is generated or in `HAND_WRITTEN`; frozen tallies
 per class; the "no ABI-typed parameter reaches the implementation call" assertion
 passes over the emitted text; the whole thing compiles against both MPIs.
 
-**Model: Opus.** Likely **two sessions** — split at arrays/status versus
-callbacks/`MPI_T` if so.
+**Model: Opus.** **Two sessions**, split at arrays/status versus
+callbacks/`MPI_T`.
 
 ### S4 — The hand-written set (~90, not the "~50" earlier drafts claimed)
 

@@ -6,9 +6,10 @@
  * MPI_ and PMPI_ separately. If the two sets ever disagree the initializer
  * fails to compile, which is the cheapest possible version of the ledger check.
  *
- * S1 covers ten entry points (twenty slots) -- nine it wrote plus MPI_Waitall,
- * which S2 moved here because its class is S3's. S3 takes MPI_Waitall and
- * MPI_Ialltoallw back; S4 completes the rest of the ledger (NOTES.md #8).
+ * S1 covers eight entry points (sixteen slots). S3 took MPI_Waitall and
+ * MPI_Ialltoallw back, which S1 had written and S2 kept here as stand-ins for
+ * the two array classes it could not yet generate; S4 completes the rest of
+ * the ledger (NOTES.md #8).
  */
 
 #ifndef MPIWRAPPER_HANDWRITTEN_H
@@ -49,29 +50,5 @@ MPIABI_Fint mpiwrapper_w_PMPI_Comm_c2f(MPIABI_Comm abi_comm);
 
 MPIABI_Comm mpiwrapper_w_MPI_Comm_f2c(MPIABI_Fint abi_comm);
 MPIABI_Comm mpiwrapper_w_PMPI_Comm_f2c(MPIABI_Fint abi_comm);
-
-int mpiwrapper_w_MPI_Waitall(int abi_count, MPIABI_Request abi_requests[],
-                             MPIABI_Status *abi_statuses);
-int mpiwrapper_w_PMPI_Waitall(int abi_count, MPIABI_Request abi_requests[],
-                              MPIABI_Status *abi_statuses);
-
-int mpiwrapper_w_MPI_Ialltoallw(const void *abi_sendbuf,
-                                const int abi_sendcounts[],
-                                const int abi_sdispls[],
-                                const MPIABI_Datatype abi_sendtypes[],
-                                void *abi_recvbuf, const int abi_recvcounts[],
-                                const int abi_rdispls[],
-                                const MPIABI_Datatype abi_recvtypes[],
-                                MPIABI_Comm            abi_comm,
-                                MPIABI_Request        *abi_request);
-int mpiwrapper_w_PMPI_Ialltoallw(const void *abi_sendbuf,
-                                 const int abi_sendcounts[],
-                                 const int abi_sdispls[],
-                                 const MPIABI_Datatype abi_sendtypes[],
-                                 void *abi_recvbuf, const int abi_recvcounts[],
-                                 const int abi_rdispls[],
-                                 const MPIABI_Datatype abi_recvtypes[],
-                                 MPIABI_Comm            abi_comm,
-                                 MPIABI_Request        *abi_request);
 
 #endif /* MPIWRAPPER_HANDWRITTEN_H */

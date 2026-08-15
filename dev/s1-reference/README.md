@@ -9,7 +9,7 @@ to be the thing S2's generator is measured against.
 |---|---|
 | `mpiwrapper_vtable.h` | `gen/include/mpiwrapper_vtable.h` (58 slots -> 1376) |
 | `entrypoints.c` | `gen/mpi_abi/entrypoints.c` (29 entry points -> 688) |
-| `wrappers.c` | `gen/mpiwrapper/wrappers.c` (20 bodies -> 473 generated, the rest stubs) |
+| `wrappers.c` | `gen/mpiwrapper/wrappers.c` (20 bodies -> 518 generated, the rest stubs) |
 | `constants.c` | `gen/mpiwrapper/constants.c` |
 
 `dev/check_prototype.py` compares them item by item and is wired up as the
@@ -22,7 +22,9 @@ comparison would fail on formatting and say nothing about the code.
 At the time of writing: **194 items, 190 reproduced exactly, 4 exempted**, and
 each exemption names its reason in `dev/check_prototype.py`. An exemption that
 stops firing fails the test, so the list cannot quietly outlive its reason —
-when S3 generates `MPI_Waitall`, this test is what says so.
+when S3's first half generated `MPI_Waitall`, this test is what said so, and
+the exemption that replaced the old one enumerates the four ways the generated
+body differs from S1's, all of them naming and scoping rather than code.
 
 Why keep them at all, rather than deleting them once the check has run once:
 the check is only worth something if it can fail *later*. A generator change

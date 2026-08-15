@@ -1441,3 +1441,26 @@ void *mpiwrapper_recvbuf_inplace_fromabi(void *abi_buf)
   if (abi_buf == MPIABI_IN_PLACE) return MPI_IN_PLACE;
   return abi_buf;
 }
+
+/* The graph-topology weights. The ABI fixes MPI_UNWEIGHTED at (int *)10 and
+ * MPI_WEIGHTS_EMPTY at (int *)11; both implementations spell them as objects
+ * whose address is not a build-time constant, which is why this is a run-time
+ * test like every other sentinel and not a table. The weights themselves are
+ * plain ints and cross unconverted -- only the two pointers mean anything.
+ *
+ * The out form is MPI_Dist_graph_neighbors', where the caller passes
+ * MPI_UNWEIGHTED to say it does not want the weights back.
+ */
+const int *mpiwrapper_weights_fromabi(const int *abi_weights)
+{
+  if (abi_weights == MPIABI_UNWEIGHTED) return MPI_UNWEIGHTED;
+  if (abi_weights == MPIABI_WEIGHTS_EMPTY) return MPI_WEIGHTS_EMPTY;
+  return abi_weights;
+}
+
+int *mpiwrapper_weights_out_fromabi(int *abi_weights)
+{
+  if (abi_weights == MPIABI_UNWEIGHTED) return MPI_UNWEIGHTED;
+  if (abi_weights == MPIABI_WEIGHTS_EMPTY) return MPI_WEIGHTS_EMPTY;
+  return abi_weights;
+}

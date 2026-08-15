@@ -12,11 +12,12 @@ Frozen tallies
   handle classes         11
   predefined handles     103
   error classes          80
-  generated              473
-  hand-written           120
-  deferred to S3         95
+  generated              518
+  hand-written           118
+  deferred to S3         52
+  staged past return     8
 
-Generated (473)
+Generated (518)
 ----------------------------------------
   MPI_Accumulate
   MPI_Accumulate_c
@@ -43,6 +44,10 @@ Generated (473)
   MPI_Alltoallv_c
   MPI_Alltoallv_init
   MPI_Alltoallv_init_c
+  MPI_Alltoallw
+  MPI_Alltoallw_c
+  MPI_Alltoallw_init
+  MPI_Alltoallw_init_c
   MPI_Barrier
   MPI_Barrier_init
   MPI_Bcast
@@ -97,6 +102,9 @@ Generated (473)
   MPI_Comm_test_inter
   MPI_Compare_and_swap
   MPI_Dims_create
+  MPI_Dist_graph_create
+  MPI_Dist_graph_create_adjacent
+  MPI_Dist_graph_neighbors
   MPI_Dist_graph_neighbors_count
   MPI_Errhandler_free
   MPI_Error_class
@@ -207,6 +215,10 @@ Generated (473)
   MPI_Get_c
   MPI_Get_hw_resource_info
   MPI_Get_version
+  MPI_Graph_create
+  MPI_Graph_get
+  MPI_Graph_map
+  MPI_Graph_neighbors
   MPI_Graph_neighbors_count
   MPI_Graphdims_get
   MPI_Grequest_complete
@@ -217,8 +229,11 @@ Generated (473)
   MPI_Group_from_session_pset
   MPI_Group_incl
   MPI_Group_intersection
+  MPI_Group_range_excl
+  MPI_Group_range_incl
   MPI_Group_rank
   MPI_Group_size
+  MPI_Group_translate_ranks
   MPI_Group_union
   MPI_Iallgather
   MPI_Iallgather_c
@@ -230,6 +245,8 @@ Generated (473)
   MPI_Ialltoall_c
   MPI_Ialltoallv
   MPI_Ialltoallv_c
+  MPI_Ialltoallw
+  MPI_Ialltoallw_c
   MPI_Ibarrier
   MPI_Ibcast
   MPI_Ibcast_c
@@ -252,6 +269,8 @@ Generated (473)
   MPI_Ineighbor_alltoall_c
   MPI_Ineighbor_alltoallv
   MPI_Ineighbor_alltoallv_c
+  MPI_Ineighbor_alltoallw
+  MPI_Ineighbor_alltoallw_c
   MPI_Info_create
   MPI_Info_delete
   MPI_Info_dup
@@ -307,10 +326,18 @@ Generated (473)
   MPI_Neighbor_alltoallv_c
   MPI_Neighbor_alltoallv_init
   MPI_Neighbor_alltoallv_init_c
+  MPI_Neighbor_alltoallw
+  MPI_Neighbor_alltoallw_c
+  MPI_Neighbor_alltoallw_init
+  MPI_Neighbor_alltoallw_init_c
   MPI_Op_commutative
   MPI_Op_free
   MPI_Pack
   MPI_Pack_c
+  MPI_Pack_external
+  MPI_Pack_external_c
+  MPI_Pack_external_size
+  MPI_Pack_external_size_c
   MPI_Pack_size
   MPI_Pack_size_c
   MPI_Parrived
@@ -346,7 +373,9 @@ Generated (473)
   MPI_Reduce_scatter_init_c
   MPI_Request_free
   MPI_Request_get_status
+  MPI_Request_get_status_all
   MPI_Request_get_status_any
+  MPI_Request_get_status_some
   MPI_Rget
   MPI_Rget_accumulate
   MPI_Rget_accumulate_c
@@ -390,6 +419,13 @@ Generated (473)
   MPI_Ssend_init
   MPI_Ssend_init_c
   MPI_Start
+  MPI_Startall
+  MPI_Status_get_error
+  MPI_Status_get_source
+  MPI_Status_get_tag
+  MPI_Status_set_error
+  MPI_Status_set_source
+  MPI_Status_set_tag
   MPI_T_category_changed
   MPI_T_category_get_categories
   MPI_T_category_get_cvars
@@ -408,6 +444,9 @@ Generated (473)
   MPI_T_source_get_num
   MPI_T_source_get_timestamp
   MPI_Test
+  MPI_Testall
+  MPI_Testany
+  MPI_Testsome
   MPI_Topo_test
   MPI_Type_commit
   MPI_Type_contiguous
@@ -433,6 +472,8 @@ Generated (473)
   MPI_Type_create_subarray_c
   MPI_Type_dup
   MPI_Type_free
+  MPI_Type_get_contents
+  MPI_Type_get_contents_c
   MPI_Type_get_envelope
   MPI_Type_get_envelope_c
   MPI_Type_get_extent
@@ -453,8 +494,13 @@ Generated (473)
   MPI_Type_vector_c
   MPI_Unpack
   MPI_Unpack_c
+  MPI_Unpack_external
+  MPI_Unpack_external_c
   MPI_Unpublish_name
   MPI_Wait
+  MPI_Waitall
+  MPI_Waitany
+  MPI_Waitsome
   MPI_Win_allocate
   MPI_Win_allocate_c
   MPI_Win_allocate_shared
@@ -492,7 +538,7 @@ Generated (473)
   MPI_Wtick
   MPI_Wtime
 
-Hand-written (120)
+Hand-written (118)
 ----------------------------------------
   A body in src/mpiwrapper/handwritten.c is marked [done]; the rest are
   stubs until S4 writes them, and the slot reports
@@ -511,10 +557,6 @@ Hand-written (120)
          - MPI_Status_c2f08
          - MPI_Status_f082c
          - MPI_Status_f2c
-
-  S1's body, kept until S3 generates the class: an inout request array whose staged temporaries are released at completion (NOTES.md #5.7)
-    [done] MPI_Ialltoallw
-    [done] MPI_Waitall
 
   buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership
          - MPI_Buffer_attach
@@ -642,10 +684,31 @@ Hand-written (120)
          - MPI_Comm_spawn
          - MPI_Comm_spawn_multiple
 
-Deferred to S3 (95)
+Staged past return (8)
+----------------------------------------
+  These convert an in-direction array *and* hand back a request, so the
+  implementation may still be reading the temporary after the call
+  returns: the block is owned by the request and freed when the
+  implementation nulls the handle -- at completion for a nonblocking
+  operation, at MPI_Request_free for a persistent one (NOTES.md #5.7).
+  This is the one property no assertion here can check, which is why
+  the set is a frozen tally and why test/abi_arrays_test.c exercises
+  both lifetimes.
+
+    MPI_Alltoallw_init
+    MPI_Alltoallw_init_c
+    MPI_Ialltoallw
+    MPI_Ialltoallw_c
+    MPI_Ineighbor_alltoallw
+    MPI_Ineighbor_alltoallw_c
+    MPI_Neighbor_alltoallw_init
+    MPI_Neighbor_alltoallw_init_c
+
+Deferred to S3 (52)
 ----------------------------------------
   The slot exists and reports MPI_ERR_UNSUPPORTED_OPERATION at run time
-  (decision 6). The class named is what S3 has to add.
+  (decision 6). The class named is what S3's second half has to add;
+  its first half took the array and status classes.
 
   S3: ARGUMENT_COUNT (argc); inout array of ARGUMENT_LIST (argv)
     MPI_Info_create_env
@@ -656,7 +719,7 @@ Deferred to S3 (95)
   S3: BIND_TYPE (bind); TOOLS_ENUM (enumtype); TOOL_VAR_VERBOSITY (verbosity); VARIABLE_SCOPE (scope); output string buffer (desc); output string buffer (name)
     MPI_T_cvar_get_info
 
-  S3: BIND_TYPE (bind); TOOLS_ENUM (enumtype); TOOL_VAR_VERBOSITY (verbosity); out array of DATATYPE (array_of_datatypes); output string buffer (desc); output string buffer (name)
+  S3: BIND_TYPE (bind); TOOLS_ENUM (enumtype); TOOL_VAR_VERBOSITY (verbosity); output string buffer (desc); output string buffer (name)
     MPI_T_event_get_info
 
   S3: CALLBACK_SAFETY (cb_safety); EVENT_REGISTRATION (event_registration)
@@ -711,12 +774,6 @@ Deferred to S3 (95)
     MPI_Win_get_attr
     MPI_Win_set_attr
 
-  S3: POLYLOCATION (position); in array of STRING (datarep)
-    MPI_Pack_external
-    MPI_Pack_external_c
-    MPI_Unpack_external
-    MPI_Unpack_external_c
-
   S3: PVAR (handle); PVAR_SESSION (session)
     MPI_T_pvar_handle_free
     MPI_T_pvar_read
@@ -743,67 +800,6 @@ Deferred to S3 (95)
     MPI_T_enum_get_info
     MPI_T_enum_get_item
 
-  S3: array length '*' (destinations); in array of WEIGHT (weights)
-    MPI_Dist_graph_create
-
-  S3: array length '*' (edges)
-    MPI_Graph_create
-    MPI_Graph_map
-
-  S3: array length '*' (recvtypes); array length '*' (sendtypes)
-    MPI_Alltoallw
-    MPI_Alltoallw_c
-    MPI_Alltoallw_init
-    MPI_Alltoallw_init_c
-    MPI_Ialltoallw_c
-    MPI_Ineighbor_alltoallw
-    MPI_Ineighbor_alltoallw_c
-    MPI_Neighbor_alltoallw
-    MPI_Neighbor_alltoallw_c
-    MPI_Neighbor_alltoallw_init
-    MPI_Neighbor_alltoallw_init_c
-
-  S3: array length ['n', '3'] (ranges)
-    MPI_Group_range_excl
-    MPI_Group_range_incl
-
-  S3: in array of STRING (datarep)
-    MPI_Pack_external_size
-    MPI_Pack_external_size_c
-
-  S3: in array of WEIGHT (destweights); in array of WEIGHT (sourceweights)
-    MPI_Dist_graph_create_adjacent
-
-  S3: inout array of REQUEST (array_of_requests)
-    MPI_Startall
-    MPI_Testany
-    MPI_Waitany
-
-  S3: inout array of REQUEST (array_of_requests); out array of STATUS (array_of_statuses)
-    MPI_Testall
-    MPI_Testsome
-    MPI_Waitsome
-
-  S3: out array of DATATYPE (array_of_datatypes)
-    MPI_Type_get_contents
-    MPI_Type_get_contents_c
-
-  S3: out array of RANK (edges)
-    MPI_Graph_get
-
-  S3: out array of RANK (neighbors)
-    MPI_Graph_neighbors
-
-  S3: out array of RANK (ranks2)
-    MPI_Group_translate_ranks
-
-  S3: out array of RANK_NNI (destinations); out array of RANK_NNI (sources); out array of WEIGHT (destweights); out array of WEIGHT (sourceweights)
-    MPI_Dist_graph_neighbors
-
-  S3: out array of STATUS (array_of_statuses)
-    MPI_Request_get_status_all
-    MPI_Request_get_status_some
-
   S3: out array of STRING (value)
     MPI_Info_get
 
@@ -815,14 +811,6 @@ Deferred to S3 (95)
 
   S3: output string buffer (value)
     MPI_Info_get_string
-
-  S3: status in (status)
-    MPI_Status_get_error
-    MPI_Status_get_source
-    MPI_Status_get_tag
-    MPI_Status_set_error
-    MPI_Status_set_source
-    MPI_Status_set_tag
 
 Returns MPI_ERR_UNSUPPORTED_OPERATION at run time
 ----------------------------------------

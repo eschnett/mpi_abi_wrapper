@@ -1007,6 +1007,93 @@ arrays whose length is *the size of the communicator*, not a parameter, so the
 generator has nothing to size a temporary from until it calls
 `PMPI_Comm_size` first, which is what S1's hand-written `MPI_Ialltoallw` does.
 
+### What S3's first half settled
+
+S3a added the array classes: out, inout and status arrays, the extents
+`apis.json` records as `*`, and the lifetime rules. **518 of the 688 are now
+generated, 118 are in the ledger and 52 remain deferred** — the keyvals,
+output-string buffers, callbacks and `MPI_T` that S3's second half takes.
+`MPI_Waitall` and `MPI_Ialltoallw` left the ledger, since the classes S1 wrote
+them for are generated now.
+
+**The lifetime rules need no flag, because the implementation already keeps
+one.** §5.7 says the request-map entry needs a flag to tell a nonblocking
+operation's temporaries (freed at completion) from a persistent one's (freed at
+`MPI_Request_free`). It does not: at every completion site the discriminator is
+whether the implementation set the handle to `MPI_REQUEST_NULL`, which it does
+for a nonblocking request at completion and for a persistent one at
+`MPI_Request_free` — and *not* for a persistent request that has merely
+completed, which is exactly the case freeing early would corrupt. So one
+emitted rule covers both lifetimes, S1's `MPI_Waitall` already had it, and the
+generator has no per-entry-point state to get wrong. It also makes the release
+side uniform: every entry point with an inout request releases, which is the
+`MPI_Wait`/`Test`/`Request_free`/`Start` ledger item of §6.3, and `MPI_Start`
+and `MPI_Startall` get the same code and never fire it because they null
+nothing.
+
+Symmetrically, whether a temporary outlives its call is not a property of the
+routine's *name* — a lookup table of the eight `I`/`_init` forms — but of its
+signature: an in-direction array that has to be converted, in a routine that
+hands back a request. That predicate produces exactly the eight, and the count
+is a frozen tally, so a ninth would have to be admitted deliberately.
+
+**Extents that `apis.json` gives as `*`.** These are not one class. The
+communicator's size sizes `MPI_Alltoallw`'s datatype arrays (the *remote* size
+on an intercommunicator); two different degrees size the neighbourhood forms'
+send and receive arrays; the last entry of the index array sizes
+`MPI_Graph_create`'s edges; the degrees *sum* to `MPI_Dist_graph_create`'s
+destinations. Each is a named `(routine, parameter)` entry, and the ones that
+have to ask the implementation go through `src/mpiwrapper/extents.c` — before
+the call they serve, so that a failure returns the implementation's own error
+and nothing has been allocated. The errors coincide: asking a communicator with
+no topology for its neighbour counts fails with the `MPI_ERR_TOPOLOGY` the
+neighbourhood collective would itself have returned.
+
+The same table carries a second kind of entry that is easy to miss: an OUT
+array the implementation fills only *partly*. `MPI_Graph_get`,
+`MPI_Graph_neighbors`, `MPI_Dist_graph_neighbors` and `MPI_Type_get_contents`
+all take a caller's maximum and write however much the object actually has, and
+converting the tail would convert uninitialized elements — a wrong answer
+wherever the garbage collides with an implementation sentinel, and a sanitizer
+report always. So those carry an allocation extent and a smaller conversion
+extent.
+
+**Two arrays that must not be read at all.** With `MPI_IN_PLACE` at `sendbuf`,
+MPI-5.0 §6.11 makes `sendcounts`, `sdispls` and `sendtypes` *ignored*, and a
+legal program may pass a null pointer for them. That is harmless for the two
+the wrapper merely forwards and fatal for the datatype array it reads element
+by element, so the six non-neighbourhood `alltoallw` forms fill their staged
+send array with `MPI_DATATYPE_NULL` in that case instead. Measured rather than
+assumed: both implementations accept such a call with all three arguments null,
+so neither reads them.
+
+**`MPI_Type_get_contents`' `max_datatypes` is not forwarded.** The standard
+makes it an upper bound, so the wrapper passes the *envelope's* count instead
+and stages an array that size. `dev/get-contents-extent/` measures why: Open
+MPI 5.0.6 walks the whole of `max_datatypes` and dereferences each entry it
+finds there — which for an OUT parameter is whatever the caller's memory held —
+and segfaults on a legal program with no wrapper involved. Passing the
+envelope's count satisfies "at least as large as" exactly, is what the
+implementation was going to write either way, and keeps our staged array's
+uninitialized tail out of its reach; a caller's too-*small* maximum still
+reaches the implementation and is still rejected, because the substitution is a
+minimum.
+
+**One array crosses unconverted although its kind says otherwise.**
+`MPI_Group_range_incl`'s `ranges` is `int[][3]` and `apis.json` calls the whole
+triplet a `RANK`. Two thirds of it is one; the third column is a *stride*, and
+mapping it would be a wrong answer rather than a redundant one — a stride of
+-1 is `MPI_ANY_SOURCE`'s ABI value and would reach MPICH as -2. Neither of the
+two genuine ranks can be a sentinel, since both have to name a member of the
+group, so the whole array passes through. Named table, with that reason.
+
+**Six entry points are generated without a `MPIWRAPPER_HAVE_` guard**, the only
+ones: `MPI_Status_get_source`/`_tag`/`_error` and the three setters read and
+write named fields of the caller's own ABI status, which already holds the
+ABI's encoding (§5.2). The implementation is not involved, so decision 6's stub
+would be a regression rather than a fallback — they answer correctly over an
+implementation too old to have the function.
+
 ### Reproducing the prototype
 
 `dev/s1-reference/` holds S1's four hand-written stand-ins, frozen, and
@@ -1248,6 +1335,13 @@ So all 20 bytes hold the blob, there is no second code path, and
 `MPI_Status_get_source`/`_tag`/`_error` and `MPI_Status_set_source`/`_tag`/`_error`
 touch only named fields, and all four Fortran converters are memcpy-shaped.
 
+S3 generates those six, and they are the only generated bodies emitted without
+a `MPIWRAPPER_HAVE_` guard: the field they read or write is in the caller's own
+ABI status and already carries the ABI's encoding, so nothing about them
+depends on the implementation having the entry point — decision 6's stub would
+turn a working answer into `MPI_ERR_UNSUPPORTED_OPERATION` over an MPI-3.1
+implementation for no reason.
+
 ### 5.3 Sentinels
 
 Pointer values with special meaning (`MPI_BOTTOM`, `MPI_IN_PLACE`,
@@ -1388,8 +1482,19 @@ Four independent reasons, each sufficient:
 - **Nonblocking:** heap, owned by the request, freed at completion.
 - **Persistent:** freed at `MPI_Request_free`, **not** at completion — the request
   is re-armed by `MPI_Start` repeatedly, so freeing at completion is a
-  use-after-free on the second `MPI_Start`. `MPI_Waitall` can mix both kinds, so
-  the request-map entry needs a flag.
+  use-after-free on the second `MPI_Start`. `MPI_Waitall` can mix both kinds.
+
+  **S3 found that this needs no flag in the request map**, which is what this
+  paragraph said until then. The two lifetimes have one discriminator, and the
+  implementation maintains it: a request it has set to `MPI_REQUEST_NULL` is
+  finished with, and it nulls a nonblocking request at completion and a
+  persistent one at `MPI_Request_free` — and *not* at a persistent request's
+  completion, which is precisely the case an early free would corrupt. So
+  "release the pre-call handle wherever the post-call handle is null" is the
+  whole rule, it is emitted identically at every completion site, and there is
+  no per-entry state for the generator to get wrong. S1's `MPI_Waitall` already
+  read this way; `test/abi_arrays_test.c` starts a persistent `MPI_Alltoallw`
+  three times over, which is the shape a flag-free wrong answer breaks on.
 - **`MPI_STATUSES_IGNORE`** (NULL in the ABI) must short-circuit before any
   temporary is allocated.
 - **Stage for value mapping or for representation, never for spelling.** An
@@ -1661,6 +1766,12 @@ release at `MPI_Request_free` rather than at completion). S1 implements
 `MPI_Waitall` only; S3 owes the rest, and that list is a ledger item rather than a
 matter of memory.
 
+**S3 discharged it, and by construction rather than by list**: the generator
+emits the release wherever an entry point has an *inout request* parameter,
+which is those eleven and nothing else — `MPI_Start` and `MPI_Startall` are in
+the set too and never fire it, because they null nothing. §5.7 records why the
+same emitted rule serves both lifetimes.
+
 Refusing is safe but not free: it answers `MPI_ERR_INTERN` to a legal call. It is
 not a memory-safety problem — a shared built-in request is by construction already
 complete, so nothing is reading the block when it is freed — which points at the
@@ -1790,9 +1901,11 @@ counting slip:
 - **`MPI_Remove_error_class`/`_code`/`_string` join `MPI_Add_error_*`**: they are
   the other half of §5.6's dynamic error-code registry.
 
-Also here, and temporarily: **`MPI_Waitall` and `MPI_Ialltoallw`**, whose class
-is S3's rather than S2's. Both are named in the ledger with that reason and both
-leave again in S3.
+**S3's first half took `MPI_Waitall` and `MPI_Ialltoallw` back**, which S2 had
+kept here as S1's stand-ins for the two array classes it could not yet
+generate, so the ledger is **118**. Both are generated now, with every other
+member of their families, and `src/mpiwrapper/handwritten.c` is down to S1's
+eight.
 
 - **Bootstrap and lifecycle** (8): `MPI_Init`, `MPI_Init_thread`, `MPI_Finalize`,
   `MPI_Abort`, `MPI_Initialized`, `MPI_Finalized`, `MPI_Session_init`/`_finalize`.
@@ -2191,7 +2304,9 @@ emitted it is not committed, since S2's generator supersedes it. Everything else
   function; and non-blocking `MPI_Alltoallw` needs a request->array map, which puts
   a branch on every request-completion call. The EuroMPI'23 ABI paper notes these
   as the only two places translation is not trivial, and both are addressed in
-  §6.3.
+  §6.3. **The branch exists now**, on all eleven entry points with an inout
+  request: one relaxed load and a compare against zero where the application
+  never uses the routines that stage.
 - ~~Whether `RTLD_DEEPBIND` applies transitively.~~ **Settled** by
   `dev/dlopen-probe/`: it does. See §2.
 - Whether `RTLD_DEEPBIND` survives ASan, which is the case it is most likely to

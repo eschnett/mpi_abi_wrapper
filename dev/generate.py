@@ -16,15 +16,20 @@ NOTES.md #3:
 The first two are the S0 step and live in `dev/generate_headers.py`, which this
 script imports rather than duplicates; `--check` covers all seven.
 
-**What S2 emits.** The mechanical argument classes: passthrough scalars and
+**What it emits.** S2's mechanical argument classes: passthrough scalars and
 passthrough arrays, scalar handles in all three directions, error codes, ranks,
 tags, the mapped integer constants, the two mode bitmasks, choice buffers with
 their sentinels, in-direction arrays needing element-wise conversion, and the
-scalar out-status. Everything else -- out and inout arrays with their lifetime
-rules, status arrays, output-string buffers, keyvals, callbacks, MPI_T -- is
-S3's, and is emitted as the stub decision 6 describes: the slot stays present
-and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time, and gen/report.txt
-names it together with the class that blocks it.
+scalar out-status. S3's first half added the rest of the arrays: out, inout and
+status arrays, the extents apis.json records as `*`, the three lifetime rules
+of NOTES.md #5.7 -- which turn out to be two mechanical tests, see
+stages_past_return() and emit_releases() -- and the six pure ABI-side status
+accessors.
+
+What is left is S3's second half: output-string buffers, keyvals, callbacks and
+MPI_T. Those are emitted as the stub decision 6 describes -- the slot stays
+present and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time -- and
+gen/report.txt names each with the class that blocks it.
 
 **The ledger.** Every one of the 688 entry points is generated, named in
 HAND_WRITTEN, or deferred with a reason. The generator fails if one is in none
@@ -65,9 +70,14 @@ FROZEN = {
     "handle classes": 11,
     "predefined handles": 103,
     "error classes": 80,
-    "generated": 473,
-    "hand-written": 120,
-    "deferred to S3": 95,
+    "generated": 518,
+    "hand-written": 118,
+    "deferred to S3": 52,
+    # Where a staged temporary has to outlive the call that made it, which is
+    # the property S3's exit check cannot see and the one a wrong body would
+    # get wrong silently (NOTES.md #5.7, #6.3). Frozen so that a routine
+    # entering or leaving the set is a deliberate act.
+    "staged past return": 8,
 }
 
 # ---------------------------------------------------------------------------
@@ -169,11 +179,11 @@ _ledger(
     "MPI_Info_get_nthkey", "MPI_Open_port", "MPI_Lookup_name",
     "MPI_File_get_view",
 )
-_ledger(
-    "S1's body, kept until S3 generates the class: an inout request array "
-    "whose staged temporaries are released at completion (NOTES.md #5.7)",
-    "MPI_Waitall", "MPI_Ialltoallw",
-)
+# MPI_Waitall and MPI_Ialltoallw were here until S3, as S1's stand-ins for the
+# two classes it could not yet generate -- an inout request array whose staged
+# temporaries are released at completion, and temporaries that outlive their
+# call. Both are generated now, with every other member of their families, and
+# the bodies are gone from src/mpiwrapper/handwritten.c.
 
 # ---------------------------------------------------------------------------
 # Named tables: the per-(routine, parameter) exceptions
@@ -233,6 +243,219 @@ IN_PLACE_SEND = {
     "reduce_scatter_block", "scan",
 }
 IN_PLACE_RECV = {"scatter", "scatterv"}
+
+# ---------------------------------------------------------------------------
+# Array extents: how many elements a call touches (S3)
+# ---------------------------------------------------------------------------
+
+# `apis.json` gives an array's length as the name of another parameter wherever
+# it is one, and the generator uses that directly. The table below is for the
+# rest, and there are exactly two kinds of rest:
+#
+#  - `length: '*'`, meaning the length is a property of an *object* -- the
+#    communicator's group, the topology's degrees, the datatype's envelope --
+#    so the only place to ask is the implementation, through src/mpiwrapper/
+#    extents.c. A body asks *before* the call it wraps and returns the query's
+#    error if one fails; the two coincide, since asking a communicator with no
+#    topology for its neighbour counts fails with the MPI_ERR_TOPOLOGY the
+#    neighbourhood collective would itself have returned.
+#
+#  - an OUT array the implementation may fill only *partly*: the caller says
+#    how much room there is, the object says how much of it gets written, and
+#    the two are different numbers. Converting the tail would convert
+#    uninitialized elements -- a wrong answer where the garbage happens to
+#    collide with an implementation sentinel, and a sanitizer report always.
+#    So these carry an `alloc` (the caller's room) and a smaller `conv`.
+#
+# Everything here is a per-(routine, parameter) judgement, which is why it is a
+# named table and not a rule in the emitter.
+
+
+class Extent:
+    """How many elements of an array parameter a call touches.
+
+    `alloc` sizes the temporary and must be valid *before* the call; `conv`
+    counts the elements converted and may be computed after it. `probe` is an
+    extents.c query, `pre` plain lines that follow it, `reject` guards that
+    return an ABI error before anything is allocated, and `post` lines emitted
+    after the call for a `conv` that only then becomes knowable.
+    """
+
+    __slots__ = ("alloc", "conv", "ctype", "probe", "pre", "reject", "post")
+
+    def __init__(self, alloc, conv=None, ctype="int", probe=None, pre=(),
+                 reject=(), post=()):
+        self.alloc = alloc
+        self.conv = conv if conv is not None else alloc
+        self.ctype = ctype
+        self.probe = probe            # (declaration line, call expression)
+        self.pre = list(pre)
+        self.reject = list(reject)    # (condition, ABI error) -> early return
+        self.post = list(post)
+
+
+# The group whose size sizes MPI_Alltoallw's datatype arrays -- the *remote*
+# group on an intercommunicator, which extents.c handles.
+_COMM_PROBE = ("int ntypes = 0;", "mpiwrapper_comm_extent(comm, &ntypes)")
+
+# The neighbourhood forms instead take one degree per direction. indegree sizes
+# the receive arrays and outdegree the send ones, which is the argument order
+# here and the reason the two are not interchangeable.
+_NEIGHBOR_PROBE = ("int nsendtypes = 0, nrecvtypes = 0;",
+                   "mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes)")
+
+_DIST_PROBE = ("int nsources = 0, ndestinations = 0;",
+               "mpiwrapper_dist_graph_extents(comm, &nsources, &ndestinations)")
+
+ARRAY_EXTENT = {}
+
+# The twelve *alltoallw* forms. Their datatype arrays are the one array class
+# S2 could not size at all, and eight of the twelve are also where a staged
+# temporary has to outlive its call (NOTES.md #5.7, #6.3).
+for _base in ("Alltoallw", "Alltoallw_c", "Alltoallw_init", "Alltoallw_init_c",
+              "Ialltoallw", "Ialltoallw_c"):
+    for _p in ("sendtypes", "recvtypes"):
+        ARRAY_EXTENT[("MPI_" + _base, _p)] = Extent("ntypes", probe=_COMM_PROBE)
+for _base in ("Neighbor_alltoallw", "Neighbor_alltoallw_c",
+              "Neighbor_alltoallw_init", "Neighbor_alltoallw_init_c",
+              "Ineighbor_alltoallw", "Ineighbor_alltoallw_c"):
+    ARRAY_EXTENT[("MPI_" + _base, "sendtypes")] = Extent(
+        "nsendtypes", probe=_NEIGHBOR_PROBE)
+    ARRAY_EXTENT[("MPI_" + _base, "recvtypes")] = Extent(
+        "nrecvtypes", probe=_NEIGHBOR_PROBE)
+
+# The graph constructors. `edges` is as long as the last entry of the index
+# array says, which is an expression over two other parameters rather than an
+# object's property -- so no probe, and the rejection is ours because we are
+# about to size a temporary from it.
+for _name in ("MPI_Graph_create", "MPI_Graph_map"):
+    ARRAY_EXTENT[(_name, "edges")] = Extent(
+        "nedges",
+        pre=["const int nedges = nnodes > 0 ? indx[nnodes - 1] : 0;"],
+        reject=[("nedges < 0", "MPIABI_ERR_ARG")])
+
+ARRAY_EXTENT[("MPI_Dist_graph_create", "destinations")] = Extent(
+    "ndestinations",
+    pre=["int ndestinations = 0;"],
+    reject=[("!mpiwrapper_sum_degrees(degrees, n, &ndestinations)",
+             "MPIABI_ERR_ARG")])
+
+# The graph queries, where the caller's maximum and the topology's actual
+# extent are different numbers.
+ARRAY_EXTENT[("MPI_Graph_get", "edges")] = Extent(
+    "maxedges", conv="nedges",
+    probe=("int nedges = 0;", "mpiwrapper_graph_nedges(comm, &nedges)"),
+    pre=["if (nedges > maxedges) nedges = maxedges;",
+         "if (nedges < 0) nedges = 0;"])
+ARRAY_EXTENT[("MPI_Graph_neighbors", "neighbors")] = Extent(
+    "maxneighbors", conv="nneighbors",
+    probe=("int nneighbors = 0;",
+           "mpiwrapper_graph_nneighbors(comm, rank, &nneighbors)"),
+    pre=["if (nneighbors > maxneighbors) nneighbors = maxneighbors;",
+         "if (nneighbors < 0) nneighbors = 0;"])
+ARRAY_EXTENT[("MPI_Dist_graph_neighbors", "sources")] = Extent(
+    "maxindegree", conv="nsources", probe=_DIST_PROBE,
+    pre=["if (nsources > maxindegree) nsources = maxindegree;",
+         "if (nsources < 0) nsources = 0;"])
+ARRAY_EXTENT[("MPI_Dist_graph_neighbors", "destinations")] = Extent(
+    "maxoutdegree", conv="ndestinations", probe=_DIST_PROBE,
+    pre=["if (ndestinations > maxoutdegree) ndestinations = maxoutdegree;",
+         "if (ndestinations < 0) ndestinations = 0;"])
+
+# MPI_Type_get_contents writes as many datatypes as the envelope says, and the
+# standard makes the caller's max_datatypes an upper bound on it -- so the
+# staged array is the envelope's size and the *implementation* is told that
+# size too, not the caller's. dev/get-contents-extent measures why: Open MPI
+# 5.0.6 walks the whole of max_datatypes and dereferences each entry it finds
+# there, which for an OUT parameter is whatever the caller's memory held, and
+# it segfaults on a legal program with no wrapper in sight. Passing the
+# envelope's count satisfies "at least as large as" exactly, is what the
+# implementation was going to write either way, and keeps our staged array's
+# uninitialized tail out of its reach. A caller's too-*small* max still
+# reaches the implementation and is still rejected, because the clamp below is
+# a minimum.
+ARRAY_EXTENT[("MPI_Type_get_contents", "array_of_datatypes")] = Extent(
+    "ndatatypes",
+    probe=("int ndatatypes = 0;",
+           "mpiwrapper_type_ndatatypes(datatype, &ndatatypes)"),
+    pre=["if (ndatatypes > max_datatypes) ndatatypes = max_datatypes;",
+         "if (ndatatypes < 0) ndatatypes = 0;"])
+ARRAY_EXTENT[("MPI_Type_get_contents_c", "array_of_datatypes")] = Extent(
+    "ndatatypes", ctype="MPI_Count",
+    probe=("MPI_Count ndatatypes = 0;",
+           "mpiwrapper_type_ndatatypes_c(datatype, &ndatatypes)"),
+    pre=["if (ndatatypes > max_datatypes) ndatatypes = max_datatypes;",
+         "if (ndatatypes < 0) ndatatypes = 0;"])
+
+# The capacity argument that goes with the array above: what the wrapper tells
+# the implementation the array holds. Named per (routine, parameter) with the
+# reason, because silently passing something other than what the caller passed
+# is exactly the kind of thing that must not be a rule in the emitter.
+ARG_SUBSTITUTE = {
+    ("MPI_Type_get_contents", "max_datatypes"): "ndatatypes",
+    ("MPI_Type_get_contents_c", "max_datatypes"): "ndatatypes",
+}
+
+# Arrays that MPI_IN_PLACE makes *ignored*, so that the wrapper must not read
+# them. MPI-5.0 §6.11: with MPI_IN_PLACE at sendbuf, "sendcounts, sdispls and
+# sendtypes are ignored", and a legal program may pass a null pointer for any
+# of them. Only the arrays a wrapper reads element by element need naming --
+# the ones it merely forwards carry a null through harmlessly, which is why
+# this list is the datatype arrays of the six non-neighbourhood alltoallw
+# forms and nothing else. (The neighbourhood forms do not take MPI_IN_PLACE at
+# all.)
+#
+# What goes into the temporary instead is the implementation's null datatype.
+# Measured rather than assumed: MPICH 4.3.1 and Open MPI 5.0.6 both accept an
+# MPI_IN_PLACE alltoallw whose sendtypes are MPI_DATATYPE_NULL *and* one whose
+# sendtypes pointer is null, so neither reads the argument at all.
+IN_PLACE_IGNORES = {
+    ("MPI_" + base, "sendtypes")
+    for base in ("Alltoallw", "Alltoallw_c", "Alltoallw_init",
+                 "Alltoallw_init_c", "Ialltoallw", "Ialltoallw_c")
+}
+
+# The status arrays. The *all* forms fill one per request; the *some* forms
+# fill `outcount` of them and leave the rest untouched, and outcount is
+# MPI_UNDEFINED when no request was active -- hence the clamp rather than a
+# bare assignment.
+for _name in ("MPI_Waitall", "MPI_Testall", "MPI_Request_get_status_all"):
+    ARRAY_EXTENT[(_name, "array_of_statuses")] = Extent("count")
+for _name in ("MPI_Waitsome", "MPI_Testsome", "MPI_Request_get_status_some"):
+    ARRAY_EXTENT[(_name, "array_of_statuses")] = Extent(
+        "incount", conv="nstatuses",
+        post=["int nstatuses = *outcount;",
+              "if (nstatuses < 0 || nstatuses > incount) nstatuses = 0;"])
+
+# Arrays that cross unconverted although their kind says otherwise, each with
+# the reason. This is not the general passthrough rule -- these are named
+# exceptions to it.
+ARRAY_PASSTHROUGH = {
+    ("MPI_Group_range_incl", "ranges"):
+        "apis.json calls the whole triplet a RANK, and two thirds of it is: "
+        "ranges[i][0] and [1] are ranks in the group. ranges[i][2] is a "
+        "*stride*, and mapping it would be a wrong answer rather than an "
+        "unnecessary one -- a stride of -1 is MPI_ANY_SOURCE's ABI value and "
+        "would arrive at MPICH as -2. Neither of the two genuine ranks can be "
+        "a sentinel, since both have to name a member of the group.",
+}
+ARRAY_PASSTHROUGH[("MPI_Group_range_excl", "ranges")] = \
+    ARRAY_PASSTHROUGH[("MPI_Group_range_incl", "ranges")]
+
+# The six status accessors of NOTES.md #5.2 that are *pure ABI-side*: the ABI
+# status already holds its three named fields in the ABI's own encoding, put
+# there by mpiwrapper_status_toabi, so reading or writing one is a field access
+# and the implementation is not involved at all. That is also why these are the
+# only generated bodies emitted without a MPIWRAPPER_HAVE_ guard: they work
+# over an implementation that does not have the function.
+STATUS_FIELD = {
+    "MPI_Status_get_source": ("MPI_SOURCE", "get"),
+    "MPI_Status_set_source": ("MPI_SOURCE", "set"),
+    "MPI_Status_get_tag": ("MPI_TAG", "get"),
+    "MPI_Status_set_tag": ("MPI_TAG", "set"),
+    "MPI_Status_get_error": ("MPI_ERROR", "get"),
+    "MPI_Status_set_error": ("MPI_ERROR", "set"),
+}
 
 # Constants a conforming implementation may legitimately not have. Everything
 # else is emitted unguarded, so that an implementation missing one fails the
@@ -340,7 +563,7 @@ class Param:
 
 class EntryPoint:
     __slots__ = ("name", "ret", "params", "deprecated", "status", "detail",
-                 "ret_kind")
+                 "ret_kind", "unguarded")
 
     def __init__(self, name, ret, params, deprecated):
         self.name = name
@@ -349,6 +572,7 @@ class EntryPoint:
         self.deprecated = deprecated
         self.status = None   # 'generated' | 'hand-written' | 'deferred'
         self.detail = None   # the reason, for gen/report.txt
+        self.unguarded = False  # true where the body never calls the impl
 
     @property
     def base(self):
@@ -470,7 +694,12 @@ PASSTHROUGH_KIND = {
     "POLYDISPLACEMENT", "POLYDISPLACEMENT_AINT_COUNT",
     "POLYDISPLACEMENT_COUNT", "POLYDISPOFFSET", "POLYDTYPE_NUM_ELEM",
     "POLYDTYPE_NUM_ELEM_NNI", "POLYDTYPE_NUM_ELEM_PI", "POLYDTYPE_PACK_SIZE",
-    "POLYDTYPE_STRIDE_BYTES", "POLYNUM_BYTES", "POLYNUM_BYTES_NNI",
+    "POLYDTYPE_STRIDE_BYTES",
+    # MPI_Pack_external's `position`: the large-count twin of LOCATION_SMALL
+    # above, an inout byte offset, which is representation and not spelling in
+    # exactly the way its small form is (#5.7).
+    "POLYLOCATION",
+    "POLYNUM_BYTES", "POLYNUM_BYTES_NNI",
     "POLYNUM_PARAM_VALUES", "POLYRMA_DISPLACEMENT", "POLYXFER_NUM_ELEM",
     "POLYXFER_NUM_ELEM_NNI", "PROCESS_GRID_SIZE", "PROFILE_LEVEL",
     "PVAR_INDEX", "RMA_DISPLACEMENT_NNI", "SOURCE_INDEX", "STRING_LENGTH",
@@ -557,17 +786,61 @@ def in_place_site(ep, p):
     return False
 
 
+def convertible_element(kind):
+    """True where an array of this kind needs converting element by element."""
+    return (kind in HANDLE_KIND or kind in RANK_KIND or kind in TAG_KIND
+            or kind in SWITCH_KIND)
+
+
+def array_extent(ep, p):
+    """The Extent of an array parameter, or None if nothing can size it.
+
+    apis.json's own answer wherever it names a parameter; the named table
+    otherwise, which is where every `*` and every partly-filled OUT array is
+    accounted for by hand.
+    """
+    named = ARRAY_EXTENT.get((ep.name, p.name))
+    if named is not None:
+        return named
+    if isinstance(p.length, str) and p.length.isidentifier():
+        return Extent(p.length, ctype=length_type(ep, p.length))
+    return None
+
+
 def classify(ep, p):
     """One parameter's class, or an 'S3:...' marker naming what blocks it."""
     kind, direction = p.kind, p.direction
     if p.is_array:
-        if kind in PASSTHROUGH_KIND:
+        # A `const char datarep[]` is a string that happens to be spelled as an
+        # array; apis.json gives it length `*` because a string's length is not
+        # in the argument list, which says nothing about how it converts.
+        if kind == "STRING" and direction == "in" and p.constant:
+            return "string_in"
+        if kind in PASSTHROUGH_KIND or (ep.name, p.name) in ARRAY_PASSTHROUGH:
             return "array_passthrough"
-        if direction == "in" and (kind in HANDLE_KIND or kind in RANK_KIND or
-                                  kind in TAG_KIND or kind in SWITCH_KIND):
-            if not (isinstance(p.length, str) and p.length.isidentifier()):
-                return f"S3:array length {p.length!r}"
+        # The graph weights: plain ints, but MPI_UNWEIGHTED and
+        # MPI_WEIGHTS_EMPTY are pointer sentinels that have to be translated
+        # (NOTES.md #5.3). Nothing else about the array changes.
+        if kind == "WEIGHT":
+            return "array_weights_in" if direction == "in" \
+                else "array_weights_out"
+        if array_extent(ep, p) is None:
+            return f"S3:array length {p.length!r}"
+        if direction == "in" and convertible_element(kind):
             return "array_convert_in"
+        if direction == "inout" and kind in HANDLE_KIND:
+            return "array_stage_inout"
+        if direction == "out":
+            # Handles differ in *size* between the ABI and the implementation
+            # and statuses differ in layout, so both are staged. The integer
+            # families do not: an int is an int on both sides, and these are
+            # the OUT arrays NOTES.md #5.7 allows to be mapped in place.
+            if kind in HANDLE_KIND:
+                return "array_stage_out"
+            if kind == "STATUS":
+                return "array_status_out"
+            if convertible_element(kind):
+                return "array_map_out"
         return f"S3:{direction} array of {kind}"
     if kind in HANDLE_KIND:
         return {"in": "handle_in", "out": "handle_out",
@@ -632,6 +905,20 @@ def local_type(p):
     if p.suffix:                       # `const MPI_Aint x[]` -> `const MPI_Aint *`
         return p.base + " *"
     return p.base
+
+
+def array_row(p, name, init, ptr=None):
+    """An align() row declaring the local for a decayed array parameter.
+
+    `int ranges[][3]` decays to `int (*)[3]` rather than to `int *`, and the
+    declarator wraps the name -- so the row's name column carries it. The
+    one-dimensional case is the ordinary `T *const name`.
+    """
+    dims = p.suffix[len("[]"):]
+    if dims:
+        return (p.base, f"(*const {name}){dims}", init)
+    return ((local_type(p).rstrip() if ptr is None else ptr) + "const", name,
+            init)
 
 
 # ---------------------------------------------------------------------------
@@ -716,6 +1003,14 @@ def wrap(prefix, args, tail, indent, cont):
     return lines
 
 
+def assign(lhs, expr, ind):
+    """`lhs = expr;`, broken under the assignment when it does not fit."""
+    one = f"{ind}{lhs} = {expr};"
+    if len(one) <= 79:
+        return [one]
+    return [f"{ind}{lhs} =", f"{ind}    {expr};"]
+
+
 def signature(ret, name, params):
     """`static int w_MPI_Send(const void *abi_buf, ...)`, wrapped at 79."""
     args = [abi_decl(p) for p in params] or ["void"]
@@ -772,18 +1067,100 @@ def scalar_family(p, cls):
     raise AssertionError(cls)
 
 
+class Staged:
+    """One array converted through a temporary rather than in place.
+
+    `mode` is the direction of the copying, not of the parameter: "in" fills
+    the temporary before the call, "out" reads it after, "inout" does both, and
+    "status" is "out" plus the MPI_STATUSES_IGNORE short circuit.
+    """
+
+    __slots__ = ("p", "name", "elem", "mode", "extent", "family", "ignored")
+
+    def __init__(self, p, name, elem, mode, extent, family, ignored=False):
+        self.p = p
+        self.name = name
+        self.elem = elem
+        self.mode = mode
+        self.extent = extent
+        self.family = family
+        self.ignored = ignored   # MPI_IN_PLACE makes this argument ignored
+
+    def fill(self, lead):
+        """The conversion loop's assignment, `lead` being everything up to and
+        including the `= `."""
+        convert = f"mpiwrapper_{self.family}_fromabi(abi_{self.p.name}[i])"
+        if not self.ignored:
+            return [f"{lead}{convert};"]
+        pad = " " * (len(lead) + 4)
+        return [f"{lead}{self.p.name}_ignored",
+                f"{pad}? {impl_null_handle(self.p.kind)}",
+                f"{pad}: {convert};"]
+
+
+def impl_null_handle(kind):
+    """The implementation's null handle of a class, as it spells it."""
+    return "MPI_" + HANDLE_KIND[kind].upper() + "_NULL"
+
+
 def emit_body(ep):
     """The lines of BODY_MPI_X(TARGET), or None if some class blocks it."""
+    if ep.name in STATUS_FIELD:
+        return emit_status_field(ep)
+
     decls, outs, post, args = [], [], [], []
     staged, checks, checked_lengths = [], [], set()
+    probes, pre, rejects, extent_post, maps, releases = [], [], [], [], [], []
     handle_out = False
     status_local = False
+
+    def use(extent, elem, allocates=True):
+        """Record what an Extent needs emitted before the call, once each.
+
+        The `< 0` check is per length and the overflow check per array, which
+        is what S1's MPI_Type_create_struct does and what keeps the two forms
+        of a large-count routine reading alike.
+        """
+        if extent.probe and extent.probe not in probes:
+            probes.append(extent.probe)
+        for line in extent.pre:
+            if line not in pre:
+                pre.append(line)
+        for guard in extent.reject:
+            if guard not in rejects:
+                rejects.append(guard)
+        for line in extent.post:
+            if line not in extent_post:
+                extent_post.append(line)
+        # An in-place map allocates nothing, so a length check here would
+        # preempt the implementation's own argument error rather than protect
+        # anything; an extents.c answer is non-negative by construction.
+        if not allocates or not any(q.name == extent.alloc
+                                    for q in ep.params):
+            return extent
+        if extent.alloc not in checked_lengths:
+            checked_lengths.add(extent.alloc)
+            checks.append((extent.alloc,
+                           f"if ({extent.alloc} < 0) return MPIABI_ERR_COUNT;"))
+        if extent.ctype != "int":
+            # The length is wider than size_t may be, so the byte count can
+            # overflow before mpiwrapper_stage sees it.
+            checks.append((extent.alloc,
+                           f"if ((uint64_t){extent.alloc} > SIZE_MAX / "
+                           f"sizeof({elem}))"))
+            checks.append((extent.alloc, "  return MPIABI_ERR_COUNT;"))
+        return extent
 
     for p in ep.params:
         cls = p.cls
         name = local_name(p)
         abi = "abi_" + p.name
-        if cls == "passthrough":
+        if cls == "passthrough" and (ep.name, p.name) in ARG_SUBSTITUTE:
+            # The local is still the caller's value -- the extent clamp reads
+            # it -- but what reaches the implementation is the substitute.
+            decls.append(("const " + p.base, name, abi))
+            args.append(ARG_SUBSTITUTE[(ep.name, p.name)])
+        elif cls == "passthrough":
             if p.is_pointer:
                 init = f"({p.base.rstrip()})" + abi if renamed(p.base) else abi
                 decls.append((p.base + "const", name, init))
@@ -797,7 +1174,7 @@ def emit_body(ep):
             init = (f"({ptr})" + abi
                     if renamed(p.base) or (ep.name, p.name) in CONST_MISMATCH
                     else abi)
-            decls.append((ptr + "const", name, init))
+            decls.append(array_row(p, name, init, ptr))
             args.append(name)
         elif cls in ("buffer", "buffer_inplace"):
             # Which sentinels are legal is a property of the parameter, and so
@@ -810,6 +1187,15 @@ def emit_body(ep):
                   if cls == "buffer_inplace" else f"mpiwrapper_{role}_fromabi")
             decls.append((p.base + "const", name, f"{fn}({abi})"))
             args.append(name)
+            if cls == "buffer_inplace":
+                # One flag per array the standard makes ignored when *this*
+                # buffer is MPI_IN_PLACE, named after the array rather than
+                # after the buffer, so a routine with two of them cannot
+                # conflate them.
+                for q in ep.params:
+                    if (ep.name, q.name) in IN_PLACE_IGNORES:
+                        decls.append(("const int", q.name + "_ignored",
+                                      f"{abi} == MPIABI_IN_PLACE"))
         elif cls == "handle_in":
             cl = HANDLE_KIND[p.kind]
             if p.is_pointer:
@@ -855,7 +1241,7 @@ def emit_body(ep):
                           f"{abi} == MPIABI_UNDEFINED ? MPI_UNDEFINED : {abi}"))
             args.append(name)
         elif cls == "string_in":
-            decls.append((p.base + "const", name, abi))
+            decls.append((local_type(p).rstrip() + "const", name, abi))
             args.append(name)
         elif cls == "status_out":
             decls.append(("const int", "ignore",
@@ -863,25 +1249,64 @@ def emit_body(ep):
             args.append("ignore ? MPI_STATUS_IGNORE : &status")
             post.append((f"if (!ignore) mpiwrapper_status_toabi(&status, {abi});",))
             status_local = True
-        elif cls == "array_convert_in":
-            elem = p.elem_type()
-            length = p.length
-            ltype = length_type(ep, length)
-            if length not in checked_lengths:
-                checked_lengths.add(length)
-                checks.append((length, f"if ({length} < 0) return MPIABI_ERR_COUNT;"))
-            if ltype != "int":
-                # The length is wider than size_t may be, so the byte count can
-                # overflow before mpiwrapper_stage sees it.
-                checks.append((length,
-                               f"if ((uint64_t){length} > SIZE_MAX / sizeof({elem}))"))
-                checks.append((length, f"  return MPIABI_ERR_COUNT;"))
-            staged.append((p, name, elem, length, ltype))
+        elif cls in ("array_convert_in", "array_stage_inout",
+                     "array_stage_out", "array_status_out"):
+            elem = "MPI_Status" if cls == "array_status_out" else p.elem_type()
+            extent = use(array_extent(ep, p), elem)
+            mode = {"array_convert_in": "in", "array_stage_inout": "inout",
+                    "array_stage_out": "out",
+                    "array_status_out": "status"}[cls]
+            family = (scalar_family(p, "array_convert_in")
+                      if cls != "array_status_out" else None)
+            staged.append(Staged(p, name, elem, mode, extent, family,
+                                 (ep.name, p.name) in IN_PLACE_IGNORES))
+            if cls == "array_status_out":
+                # NULL in the ABI, and the test has to come before we allocate
+                # room for statuses nobody wants (NOTES.md #5.7).
+                decls.append(("const int", "ignore",
+                              f"{abi} == MPIABI_STATUSES_IGNORE"))
+                args.append(f"ignore ? MPI_STATUSES_IGNORE : {name}")
+            else:
+                args.append(name)
+            # The out direction of a handle array can fail the same way a
+            # scalar out handle can: a dynamic handle whose bits collide with
+            # the ABI's predefined range (NOTES.md #5.1).
+            if mode in ("out", "inout") and p.kind in HANDLE_KIND:
+                handle_out = True
+            if mode == "inout" and p.kind == "REQUEST":
+                releases.append(("array", staged[-1]))
+        elif cls == "array_map_out":
+            # The one legitimate in-place case (NOTES.md #5.7): an OUT array
+            # whose element is an int on both sides, so the implementation
+            # writes straight into the caller's array and each element is
+            # mapped where it lies. No const, no concurrent-read expectation,
+            # no restore path.
+            extent = use(array_extent(ep, p), p.elem_type(), allocates=False)
+            decls.append(array_row(p, name, abi))
+            maps.append((p, name, extent))
+            args.append(name)
+        elif cls in ("array_weights_in", "array_weights_out"):
+            # Plain ints, but MPI_UNWEIGHTED and MPI_WEIGHTS_EMPTY are pointer
+            # sentinels with different values on the two sides.
+            fn = ("mpiwrapper_weights_fromabi" if cls == "array_weights_in"
+                  else "mpiwrapper_weights_out_fromabi")
+            decls.append(array_row(p, name, f"{fn}({abi})"))
             args.append(name)
         else:
             return None
+
+    for p in ep.params:
+        # A scalar inout request is a completion site too, and its pre-call
+        # value has to be kept: the local is overwritten by the call, and the
+        # release is keyed on what the request was.
+        if p.cls == "handle_inout" and p.kind == "REQUEST":
+            name = local_name(p)
+            decls.append(("const " + p.pointee(), name + "_before", name))
+            releases.append(("scalar", name))
+
     return assemble(ep, decls, outs, post, args, staged, checks, handle_out,
-                    status_local)
+                    status_local, probes, pre, rejects, extent_post, maps,
+                    releases)
 
 
 def length_type(ep, length):
@@ -891,8 +1316,33 @@ def length_type(ep, length):
     raise SystemExit(f"{ep.name}: array length {length!r} is not a parameter")
 
 
+def stages_past_return(ep):
+    """True where this entry point's staged temporaries outlive its call.
+
+    The whole of S3's lifetime question is in this predicate: an in-direction
+    array that has to be converted, in a routine that hands back a request the
+    implementation may still be reading it through. Everything else is scoped
+    to the call.
+    """
+    return (ep.status == "generated" and request_out(ep) is not None
+            and any(p.cls == "array_convert_in" for p in ep.params))
+
+
+def request_out(ep):
+    """The out request parameter, for the routines whose staged temporaries
+    have to outlive the call."""
+    for p in ep.params:
+        if p.cls == "handle_out" and p.kind == "REQUEST":
+            return p
+    return None
+
+
 def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
-             status_local):
+             status_local, probes, pre, rejects, extent_post, maps, releases):
+    if staged and any(s.mode == "in" for s in staged) and request_out(ep):
+        return assemble_outliving(ep, decls, args, staged, checks, probes, pre,
+                                  rejects)
+
     # Absolute indentation, including the two columns the body macro adds:
     # the outer brace sits at column 3 and statements at column 5, which is
     # where S1's clang-formatted bodies put them.
@@ -914,29 +1364,55 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         body += [ind + ln for ln in align(decls, ind)]
         body.append("")
 
+    body += emit_extent_queries(ep, probes, pre, rejects, ind)
+
     if staged:
         rows = []
-        for p, name, elem, length, ltype in staged:
+        for s in staged:
             rows.append(
-                (elem, f"{name}_stack[MPIWRAPPER_STAGE_BYTES / sizeof({elem})]",
+                (s.elem,
+                 f"{s.name}_stack[MPIWRAPPER_STAGE_BYTES / sizeof({s.elem})]",
                  None))
-            rows.append((elem + " *", name, "NULL"))
+            rows.append((s.elem + " *", s.name, "NULL"))
         rows.append(("int", "abi_ierror", "MPIABI_ERR_INTERN"))
         body += [ind + ln for ln in align(rows, ind)]
         body.append("")
-        for p, name, elem, length, ltype in staged:
-            body += wrap(f"{name} = mpiwrapper_stage",
-                         [f"{name}_stack", f"sizeof {name}_stack",
-                          f"(size_t){length}", f"sizeof *{name}"],
-                         ";", ind,
-                         len(ind) + len(name) + len(" = mpiwrapper_stage("))
-            body.append(ind + f"if (!{name}) goto done;")
-        body.append("")
-        for p, name, elem, length, ltype in staged:
-            fn = "mpiwrapper_" + scalar_family(p, "array_convert_in")
-            body.append(ind + f"for ({ltype} i = 0; i < {length}; ++i)")
-            body.append(ind + f"  {name}[i] = {fn}_fromabi(abi_{p.name}[i]);")
-        body.append("")
+        for s in staged:
+            # A status array the caller does not want is not allocated at all,
+            # which is the point of testing MPI_STATUSES_IGNORE this early.
+            guarded = s.mode == "status"
+            inner = ind + "  " if guarded else ind
+            if guarded:
+                if body[-1] != "":
+                    body.append("")
+                body.append(ind + "if (!ignore) {")
+            body += wrap(f"{s.name} = mpiwrapper_stage",
+                         [f"{s.name}_stack", f"sizeof {s.name}_stack",
+                          f"(size_t){s.extent.alloc}", f"sizeof *{s.name}"],
+                         ";", inner,
+                         len(inner) + len(s.name) + len(" = mpiwrapper_stage("))
+            body.append(inner + f"if (!{s.name}) goto done;")
+            if guarded:
+                # Zeroed rather than left as stack garbage, so that a status
+                # the implementation does not fill converts reproducibly.
+                body += wrap("memset",
+                             [s.name, "0", f"(size_t){s.extent.alloc} * "
+                              f"sizeof *{s.name}"], ";", inner,
+                             len(inner) + len("memset("))
+                body.append(ind + "}")
+                body.append("")
+        if body[-1] != "":
+            body.append("")
+        loops = []
+        for s in staged:
+            if s.mode not in ("in", "inout"):
+                continue
+            loops.append(ind + f"for ({s.extent.ctype} i = 0; "
+                               f"i < {s.extent.alloc}; ++i)")
+            loops += s.fill(f"{ind}  {s.name}[i] = ")
+        if loops:
+            body += loops
+            body.append("")
         body.append("    {")
         ind = "      "
 
@@ -965,10 +1441,16 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         body.append("  }")
         return body
 
-    if post and outs:
+    rel = emit_releases(releases, ind)
+    wb = emit_writeback(staged, maps, extent_post, ind)
+    tail = rel + ([""] if rel and wb else []) + wb
+    if (post and outs) or tail:
         body.append("")
     for group in post:
         body += [ind + ln for ln in group]
+    if post and tail:
+        body.append("")
+    body += tail
 
     if staged:
         body.append(ind + "abi_ierror = mpiwrapper_errorcode_toabi(ierror);")
@@ -983,8 +1465,8 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         body.append("    }")
         body.append("")
         body.append("  done:")
-        for p, name, elem, length, ltype in staged:
-            body.append("    " + f"mpiwrapper_unstage({name}, {name}_stack);")
+        for s in staged:
+            body.append("    " + f"mpiwrapper_unstage({s.name}, {s.name}_stack);")
         body.append("    return abi_ierror;")
     else:
         if handle_out:
@@ -992,6 +1474,235 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
                               "return MPIABI_ERR_INTERN;")
         body.append(ind + "return mpiwrapper_errorcode_toabi(ierror);")
 
+    body.append("  }")
+    return body
+
+
+def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
+    """The body of a routine whose staged arrays outlive it.
+
+    A nonblocking or persistent collective may keep reading the arrays it was
+    given until the operation completes or the request is freed (NOTES.md
+    #5.7), and the arrays it is given are *ours*. So the temporaries go on the
+    heap in one block owned by the request, and the release rule that frees
+    them is the same one every completion entry point runs.
+
+    The two lifetimes NOTES.md #5.7 distinguishes -- freed at completion for
+    the nonblocking forms, at MPI_Request_free for the persistent ones -- need
+    no flag here and no distinction in the emitted text: both are exactly
+    "when the implementation nulls the handle".
+    """
+    p_request = request_out(ep)
+    others = [p for p in ep.params
+              if p.cls in ("handle_out", "handle_inout") and p is not p_request]
+    if others:
+        raise SystemExit(
+            f"{ep.name}: a routine that stages past its return may produce no "
+            "handle but the request: " + ", ".join(p.name for p in others))
+    elems = {s.elem for s in staged}
+    if len(elems) != 1 or any(s.mode != "in" for s in staged):
+        raise SystemExit(
+            f"{ep.name}: temporaries that outlive their call are carved out of "
+            "one block, so they must all be in-direction and of one element "
+            f"type; got {sorted(elems)}")
+    elem = elems.pop()
+    ind = "    "
+    body = ["  {"]
+
+    if checks:
+        cut = 1 + max(i for i, (t, n, v) in enumerate(decls)
+                      if n in {c[0] for c in checks})
+        body += [ind + ln for ln in align(decls[:cut], ind)]
+        body += [ind + text for _, text in checks]
+        body.append("")
+        decls = decls[cut:]
+    if decls:
+        body += [ind + ln for ln in align(decls, ind)]
+        body.append("")
+    body += emit_extent_queries(ep, probes, pre, rejects, ind)
+
+    total = " + ".join(f"(size_t){s.extent.alloc}" for s in staged)
+    rows = [("const size_t", "nstaged", total), (elem + " *", "block", "NULL")]
+    body += [ind + ln for ln in align(rows, ind)]
+    body.append(ind + "if (nstaged <= SIZE_MAX / sizeof *block)")
+    body.append(ind + "  block = malloc(nstaged * sizeof *block);")
+    body.append(ind + "if (!block && nstaged > 0) {")
+    body += null_out_handles(ep, ind + "  ")
+    body.append(ind + "  return MPIABI_ERR_INTERN;")
+    body.append(ind + "}")
+
+    offset = None
+    rows = []
+    for s in staged:
+        init = "block" if offset is None else f"block + {offset}"
+        rows.append((elem + " *const", s.name, init))
+        offset = s.extent.alloc if offset is None \
+            else f"{offset} + {s.extent.alloc}"
+    body += [ind + ln for ln in align(rows, ind)]
+    body.append("")
+
+    for s in staged:
+        body.append(ind + f"for ({s.extent.ctype} i = 0; "
+                          f"i < {s.extent.alloc}; ++i)")
+        body += s.fill(f"{ind}  {s.name}[i] = ")
+    body.append("")
+
+    name = local_name(p_request)
+    body.append(ind + f"{p_request.pointee()} {name};")
+    body += wrap("const int ierror = TARGET", args, ";", ind,
+                 len(ind) + len("const int ierror = TARGET("))
+    body.append(ind + "if (ierror != MPI_SUCCESS) {")
+    body.append(ind + "  free(block);")
+    body += null_out_handles(ep, ind + "  ")
+    body.append(ind + "  return mpiwrapper_errorcode_toabi(ierror);")
+    body.append(ind + "}")
+    body.append("")
+    body.append(ind + f"*abi_{p_request.name} = "
+                      f"mpiwrapper_request_toabi({name});")
+    body.append(ind + "if (mpiwrapper_take_handle_error()) "
+                      "return MPIABI_ERR_INTERN;")
+    body.append("")
+    # The operation is already in flight, so a table that cannot take the block
+    # leaves nothing safe to do: freeing it would be a use-after-free while the
+    # implementation reads it, and the operation cannot be un-started. Leaking
+    # it and saying so is the only honest answer, and the limit that produced
+    # it is a build-time constant.
+    body.append(ind + f"if (!mpiwrapper_staged_attach({name}, block))")
+    body.append(ind + "  return MPIABI_ERR_INTERN;")
+    body.append(ind + "return MPIABI_SUCCESS;")
+    body.append("  }")
+    return body
+
+
+def null_out_handles(ep, ind):
+    """What an early return owes the caller: a null handle in every out
+    parameter, so that nobody is handed an uninitialized one."""
+    return [ind + f"*abi_{p.name} = {NULL_HANDLE[HANDLE_KIND[p.kind]]};"
+            for p in ep.params if p.cls == "handle_out"]
+
+
+def emit_extent_queries(ep, probes, pre, rejects, ind):
+    """The extent queries of an array whose length apis.json gives as `*`.
+
+    They run before the call they serve, so that a failure returns the
+    implementation's own error and nothing has been allocated yet.
+    """
+    if not (probes or pre or rejects):
+        return []
+    body = []
+    for decl, call in probes:
+        nulls = null_out_handles(ep, ind + "    ")
+        body.append(ind + decl)
+        body.append(ind + "{")
+        body += assign("const int ierror", call, ind + "  ")
+        if nulls:
+            body.append(ind + "  if (ierror != MPI_SUCCESS) {")
+            body += nulls
+            body.append(ind + "    return mpiwrapper_errorcode_toabi(ierror);")
+            body.append(ind + "  }")
+        else:
+            body.append(ind + "  if (ierror != MPI_SUCCESS)")
+            body.append(ind + "    return mpiwrapper_errorcode_toabi(ierror);")
+        body.append(ind + "}")
+    body += [ind + line for line in pre]
+    for cond, err in rejects:
+        nulls = null_out_handles(ep, ind + "  ")
+        if nulls:
+            body.append(ind + f"if ({cond}) {{")
+            body += nulls
+            body.append(ind + f"  return {err};")
+            body.append(ind + "}")
+        else:
+            body.append(ind + f"if ({cond}) return {err};")
+    body.append("")
+    return body
+
+
+def emit_releases(releases, ind):
+    """Every completion entry point releases, not just the ones an author
+    happens to think of (NOTES.md #6.3).
+
+    The discriminator is the implementation's own: a request it has set to
+    MPI_REQUEST_NULL is complete and deallocated, so nothing can still be
+    reading the block. A persistent request survives its completion with the
+    same handle and is released at MPI_Request_free instead -- which the same
+    test covers, because that is where the implementation nulls it. There is
+    no separate flag: the null-out *is* the flag.
+    """
+    body = []
+    for kind, item in releases:
+        if kind == "scalar":
+            name = item
+            body.append(ind + f"if (mpiwrapper_staged_any() && "
+                              f"{name} == MPI_REQUEST_NULL &&")
+            body.append(ind + f"    {name}_before != MPI_REQUEST_NULL)")
+            body.append(ind + f"  mpiwrapper_staged_release({name}_before);")
+        else:
+            s = item
+            body.append(ind + "if (mpiwrapper_staged_any())")
+            body.append(ind + f"  for ({s.extent.ctype} i = 0; "
+                              f"i < {s.extent.alloc}; ++i)")
+            body.append(ind + f"    if ({s.name}[i] == MPI_REQUEST_NULL) {{")
+            body.append(ind + "      const MPI_Request before =")
+            body.append(ind + "          mpiwrapper_request_fromabi("
+                              f"abi_{s.p.name}[i]);")
+            body.append(ind + "      if (before != MPI_REQUEST_NULL) "
+                              "mpiwrapper_staged_release(before);")
+            body.append(ind + "    }")
+    return body
+
+
+def emit_writeback(staged, maps, extent_post, ind):
+    """The out direction of every array: the staged temporaries copied back
+    and the in-place ones mapped where they lie."""
+    body = [ind + line for line in extent_post]
+    for s in staged:
+        if s.mode == "inout":
+            # Unconditionally, *including* on error: MPI_ERR_IN_STATUS means
+            # the per-request error codes are the payload, and the request
+            # array has been partially updated either way.
+            body.append(ind + f"for ({s.extent.ctype} i = 0; "
+                              f"i < {s.extent.alloc}; ++i)")
+            body.append(ind + f"  abi_{s.p.name}[i] = "
+                              f"mpiwrapper_request_toabi({s.name}[i]);")
+        elif s.mode == "status":
+            body.append(ind + "if (!ignore)")
+            body.append(ind + f"  for (int i = 0; i < {s.extent.conv}; ++i)")
+            body.append(ind + f"    mpiwrapper_status_toabi(&{s.name}[i], "
+                              f"&abi_{s.p.name}[i]);")
+        elif s.mode == "out":
+            fn = "mpiwrapper_" + s.family
+            body.append(ind + "if (ierror == MPI_SUCCESS)")
+            body.append(ind + f"  for ({s.extent.ctype} i = 0; "
+                              f"i < {s.extent.conv}; ++i)")
+            body.append(ind + f"    abi_{s.p.name}[i] = {fn}_toabi({s.name}[i]);")
+    for p, name, extent in maps:
+        fn = "mpiwrapper_" + scalar_family(p, "array_convert_in")
+        body.append(ind + "if (ierror == MPI_SUCCESS)")
+        body.append(ind + f"  for ({extent.ctype} i = 0; i < {extent.conv}; ++i)")
+        body.append(ind + f"    {name}[i] = {fn}_toabi({name}[i]);")
+    return body
+
+
+def emit_status_field(ep):
+    """One of the six accessors that never reach the implementation.
+
+    The ABI status carries its three named fields in the ABI's own encoding --
+    mpiwrapper_status_toabi put them there -- so getting or setting one is a
+    field access on the caller's own storage. Converting through an
+    implementation status and back would be the same value by a longer route,
+    and would fail over an implementation too old to have the function.
+    """
+    field, direction = STATUS_FIELD[ep.name]
+    value = [p for p in ep.params if p.kind != "STATUS"]
+    assert len(value) == 1, ep.name
+    v = "abi_" + value[0].name
+    body = ["  {"]
+    if direction == "get":
+        body.append(f"    *{v} = abi_status->{field};")
+    else:
+        body.append(f"    abi_status->{field} = {v};")
+    body.append("    return MPIABI_SUCCESS;")
     body.append("  }")
     return body
 
@@ -1291,9 +2002,14 @@ WRAPPERS_PREAMBLE = '''\
  * compiler about the implementation's own header. An entry point the implementation
  * does not have gets the stub of decision 6 instead: the slot stays present
  * and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time, so the ABI surface
- * never shrinks. The classes this stage does not yet generate -- out and inout
- * arrays, status arrays, output strings, keyvals, callbacks, MPI_T -- get the
- * same stub, and gen/report.txt names every one of them.
+ * never shrinks. The classes not yet generated -- output strings, keyvals,
+ * callbacks, MPI_T -- get the same stub, and gen/report.txt names every one of
+ * them.
+ *
+ * Six bodies carry no guard: the status accessors of NOTES.md #5.2 read and
+ * write a named field of the caller's own ABI status and never reach the
+ * implementation, so a stub there would replace a working answer with an
+ * error.
  *
  * The bodies are static: only mpiwrapper_get_vtable is exported, and static
  * enforces that in the language rather than relying on the linker script.
@@ -1304,6 +2020,7 @@ WRAPPERS_PREAMBLE = '''\
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 '''
@@ -1345,7 +2062,18 @@ def emit_wrappers_c(pairs, handwritten_bodies):
         chunk = [banner(ep.name), ""]
         head = f"#define BODY_{ep.name}(TARGET)"
         stub = macro_lines(head, emit_stub(ep))
-        if ep.status == "generated":
+        if ep.status == "generated" and ep.unguarded:
+            # A body that never reaches the implementation works over one that
+            # does not have the entry point at all, so decision 6's stub would
+            # be a regression rather than a fallback (NOTES.md #5.2).
+            chunk += block_comment(
+                "Pure ABI-side: this reads or writes a named field of the "
+                "caller's own status, which already holds the ABI's encoding. "
+                "The implementation is not involved, so there is no "
+                "MPIWRAPPER_HAVE_ guard and no stub -- it answers correctly "
+                "over an implementation too old to have the function.")
+            chunk += macro_lines(head, emit_body(ep))
+        elif ep.status == "generated":
             body = macro_lines(head, emit_body(ep))
             # Decision 6: an entry point the implementation does not have keeps
             # its slot and reports at run time. The probe is what decides, not
@@ -1821,6 +2549,29 @@ void *mpiwrapper_recvbuf_inplace_fromabi(void *abi_buf)
   if (abi_buf == MPIABI_IN_PLACE) return MPI_IN_PLACE;
   return abi_buf;
 }
+
+/* The graph-topology weights. The ABI fixes MPI_UNWEIGHTED at (int *)10 and
+ * MPI_WEIGHTS_EMPTY at (int *)11; both implementations spell them as objects
+ * whose address is not a build-time constant, which is why this is a run-time
+ * test like every other sentinel and not a table. The weights themselves are
+ * plain ints and cross unconverted -- only the two pointers mean anything.
+ *
+ * The out form is MPI_Dist_graph_neighbors', where the caller passes
+ * MPI_UNWEIGHTED to say it does not want the weights back.
+ */
+const int *mpiwrapper_weights_fromabi(const int *abi_weights)
+{
+  if (abi_weights == MPIABI_UNWEIGHTED) return MPI_UNWEIGHTED;
+  if (abi_weights == MPIABI_WEIGHTS_EMPTY) return MPI_WEIGHTS_EMPTY;
+  return abi_weights;
+}
+
+int *mpiwrapper_weights_out_fromabi(int *abi_weights)
+{
+  if (abi_weights == MPIABI_UNWEIGHTED) return MPI_UNWEIGHTED;
+  if (abi_weights == MPIABI_WEIGHTS_EMPTY) return MPI_WEIGHTS_EMPTY;
+  return abi_weights;
+}
 '''
 
 
@@ -1902,6 +2653,13 @@ def assign_status(protos, handwritten_bodies):
                 blocked.append(p.cls[len("S3:"):] + f" ({p.name})")
         if ep.ret_kind not in {"ERROR_CODE"} | RET_PASSTHROUGH:
             blocked.append(f"return kind {ep.ret_kind}")
+        if name in STATUS_FIELD:
+            # Pure ABI-side: the body reads or writes a named field of the
+            # caller's own status and never reaches the implementation, so the
+            # `status in` class that blocks the other six does not arise, and
+            # the body needs no MPIWRAPPER_HAVE_ guard either.
+            blocked = []
+            ep.unguarded = True
         if blocked:
             ep.status = "deferred"
             ep.detail = "S3: " + "; ".join(sorted(set(blocked)))
@@ -1911,6 +2669,7 @@ def assign_status(protos, handwritten_bodies):
         # The PMPI_ twin shares the classification, since it shares the body.
         twin = protos["P" + name]
         twin.status, twin.detail = ep.status, ep.detail
+        twin.unguarded = ep.unguarded
         for p, tp in zip(ep.params, twin.params):
             tp.cls = p.cls
 
@@ -2003,11 +2762,28 @@ def emit_report(protos, tallies, handwritten_bodies):
                 w(f"    {mark} {ep.name}")
         w("")
 
+    outliving = [e for e in mpi if stages_past_return(e)]
+    w("Staged past return (%d)" % len(outliving))
+    w("-" * 40)
+    w("  These convert an in-direction array *and* hand back a request, so the")
+    w("  implementation may still be reading the temporary after the call")
+    w("  returns: the block is owned by the request and freed when the")
+    w("  implementation nulls the handle -- at completion for a nonblocking")
+    w("  operation, at MPI_Request_free for a persistent one (NOTES.md #5.7).")
+    w("  This is the one property no assertion here can check, which is why")
+    w("  the set is a frozen tally and why test/abi_arrays_test.c exercises")
+    w("  both lifetimes.")
+    w("")
+    for ep in sorted(outliving, key=lambda e: e.name):
+        w(f"    {ep.name}")
+    w("")
+
     deferred = [e for e in mpi if e.status == "deferred"]
     w("Deferred to S3 (%d)" % len(deferred))
     w("-" * 40)
     w("  The slot exists and reports MPI_ERR_UNSUPPORTED_OPERATION at run time")
-    w("  (decision 6). The class named is what S3 has to add.")
+    w("  (decision 6). The class named is what S3's second half has to add;")
+    w("  its first half took the array and status classes.")
     w("")
     by_reason = {}
     for ep in deferred:
@@ -2080,6 +2856,7 @@ def main():
         "generated": sum(1 for e in mpi_eps if e.status == "generated"),
         "hand-written": sum(1 for e in mpi_eps if e.status == "hand-written"),
         "deferred to S3": sum(1 for e in mpi_eps if e.status == "deferred"),
+        "staged past return": sum(1 for e in mpi_eps if stages_past_return(e)),
     }
     drift = {k: (v, FROZEN[k]) for k, v in tallies.items() if v != FROZEN.get(k)}
     if drift:

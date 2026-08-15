@@ -366,6 +366,16 @@ const void *mpiwrapper_sendbuf_inplace_fromabi(const void *abi_buf);
 void       *mpiwrapper_recvbuf_fromabi(void *abi_buf);
 void       *mpiwrapper_recvbuf_inplace_fromabi(void *abi_buf);
 
+/* The graph-topology weight arrays. MPI_UNWEIGHTED and MPI_WEIGHTS_EMPTY are
+ * (int *)10 and (int *)11 in the ABI and are ordinary extern objects in both
+ * implementations, so the pointer needs translating even though the weights
+ * themselves are plain ints that pass straight through. Two roles again,
+ * because MPI_Dist_graph_neighbors takes the same sentinels at an *out*
+ * parameter, where the array must not be const.
+ */
+const int *mpiwrapper_weights_fromabi(const int *abi_weights);
+int       *mpiwrapper_weights_out_fromabi(int *abi_weights);
+
 /* ------------------------------------------------------------------ status */
 
 void mpiwrapper_status_toabi(const MPI_Status *st, MPIABI_Status *abi);
@@ -391,6 +401,29 @@ void  mpiwrapper_unstage(void *p, void *stackbuf);
 int  mpiwrapper_staged_attach(MPI_Request request, void *block);
 void mpiwrapper_staged_release(MPI_Request request);
 int  mpiwrapper_staged_any(void);
+
+/* ----------------------------------------------------------------- extents */
+
+/* How long an array parameter is, where `apis.json` answers `*` -- i.e. where
+ * the length is a property of an object rather than of the argument list, so
+ * the only place to ask is the implementation (extents.c). Each returns an
+ * implementation error code, which the generated body maps like any other; a
+ * body runs its extent queries before the call it wraps, and the two errors
+ * coincide.
+ */
+int mpiwrapper_comm_extent(MPI_Comm comm, int *n);
+int mpiwrapper_neighbor_extents(MPI_Comm comm, int *indegree, int *outdegree);
+int mpiwrapper_dist_graph_extents(MPI_Comm comm, int *indegree, int *outdegree);
+int mpiwrapper_graph_nedges(MPI_Comm comm, int *nedges);
+int mpiwrapper_graph_nneighbors(MPI_Comm comm, int rank, int *nneighbors);
+int mpiwrapper_type_ndatatypes(MPI_Datatype datatype, int *ndatatypes);
+int mpiwrapper_type_ndatatypes_c(MPI_Datatype datatype, MPI_Count *ndatatypes);
+
+/* Not an implementation error code: a plain 0 for a negative degree or an
+ * overflowing sum, which the caller turns into MPIABI_ERR_ARG before anything
+ * is allocated from it.
+ */
+int mpiwrapper_sum_degrees(const int *degrees, int n, int *total);
 
 /* ------------------------------------------------------------- trampolines */
 
