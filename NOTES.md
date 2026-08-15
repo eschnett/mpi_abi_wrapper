@@ -717,10 +717,12 @@ requires:
 ## 3. The generator
 
 **All 688 entry points are accounted for by a generator, in Python, with a named
-set written by hand.** Roughly 600 are mechanical translation; the remaining ~90
-involve per-function judgement and are listed in §8 — which is where that number
-is derived, since an earlier draft said "roughly 50" here and in §8 while §8's
-own list named about twice that.
+set written by hand.** Since S2 the split is not an estimate: **568 mechanical
+against 120 needing per-function judgement**, and `gen/report.txt` names every
+one of the 688. (Earlier drafts said "roughly 600 and ~50" here and in §8,
+while §8's own list added up to about twice the 50.) Of the 568 mechanical,
+473 are generated today and 95 wait on the argument classes S3 adds; the
+generator fails if an entry point is in neither set and not in the ledger.
 
 ### Why a generator
 
@@ -835,8 +837,9 @@ This is not cosmetic. It makes the load-bearing generator assertion a grep:
 implementation call** — only locally declared converted values may. If the
 generator emits `MPI_Send(abi_buf, ...)`, that is a hard stop.
 
-**Since S1 the worked version of each shape is `src/`, not `examples/`**, and the
-generator is required to reproduce *that*. The examples were written before any of
+**Since S1 the worked version of each shape is the tested code, not
+`examples/`**, and the generator is required to reproduce *that* — which since
+S2 means `dev/s1-reference/`, frozen, checked by `dev/check_prototype.py`. The examples were written before any of
 this ran, and three of their details turned out to be wrong once it did: the
 reverse-map tables are `static const uint64_t` arrays initialized from handle
 macros, which is not a constant expression on an implementation whose handles are
@@ -848,7 +851,9 @@ truth, and the tested one wins.
 
 ### One portability trap in generated switches
 
-Case labels must be **numeric, with the symbolic name in a comment**:
+Case labels over *handles* must be **numeric, with the symbolic name in a
+comment** — the integer families are ordinary enumerators and are switched by
+name:
 
 ```c
 case 0x00000209: return MPI_INT;  /* MPIABI_INT */
