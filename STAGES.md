@@ -200,12 +200,82 @@ converters, the ten status-consuming functions and the ten output-string
 functions. `NOTES.md` §8 adds these up; the total is about 90, which is why this
 stage is sized for two sessions rather than one.
 
-**Exit check.** `HAND_WRITTEN` fully implemented; `MPI_ERR_UNSUPPORTED_OPERATION`
+**The estimate is a tally now, and it is larger.** `HAND_WRITTEN` holds **118**,
+of which S1 wrote 8 (`MPI_Init`, `MPI_Finalize`, `MPI_Get_count`,
+`MPI_Op_create`, `MPI_Comm_create_errhandler`, `MPI_Error_string`,
+`MPI_Comm_c2f`/`_f2c`), so S4's work is the remaining **110** — §8's list plus
+MPI-5.0's `_toint`/`_fromint`, which make the converter group 44 rather than 22,
+and the three `MPI_Remove_error_*` forms. `gen/report.txt` groups all 118 by
+reason and marks each `[done]`, so neither session has to reconstruct the list.
+
+**Two sessions, and the cut is not by count.** It falls on whether a body is a
+per-call conversion the design already has a rule for, or a piece of
+wrapper-owned state that does not exist yet. That puts 70 entry points in the
+first session and 40 in the second, which is the right imbalance: 42 of the
+first session's 70 are one table written eleven times.
+
+#### S4a — the converter face (70)
+
+The 42 remaining handle converters, the four Fortran status converters, the nine
+remaining status-consuming functions of §5.2, the nine remaining output-string
+functions of §5.8, and the six `MPI_Abi_*` introspection calls.
+
+None of these add state to the wrapper. The handle converters are
+`handwritten.c`'s `MPI_Comm_c2f`/`_f2c` pair against the other ten classes —
+`handles.c`'s existing maps in one direction and the implementation's own
+converter in the other, with `_toint`/`_fromint` the same conversion against
+`int` instead of `MPI_Fint`. Statuses go through `status.c`, sized by §4.4;
+the strings follow §5.8's truncation rule with `MPI_Error_string` as the
+template; and the `MPI_Abi_*` calls answer about this library rather than the
+wrapped one. Three of the five groups therefore have a tested S1 body to copy,
+and the two that do not — the status converters and `MPI_Abi_*` — are the
+session's real judgement: what the ABI reports for Fortran `LOGICAL` and how the
+`MPI_Fint`/`MPI_F08_status` blobs are sized and copied.
+
+**Exit check.** All 70 implemented, none of them still reporting
+`MPI_ERR_UNSUPPORTED_OPERATION`; a behavioural test round-trips a predefined and
+a live handle of each of the 11 classes through `c2f`→`f2c` and
+`toint`→`fromint`, and a status through all four converters, against both MPIs.
+
+**This is the weakest exit check in S4, and it is weak in a specific way.** A
+round-trip that converts with our own code in both directions passes even if the
+Fortran integer we hand out is not the one the implementation's own Fortran side
+would recognise, which is the entire point of these 44 functions. The real
+oracle is **mpif in S8**; until then, keep the round-trip honest by checking
+against handles the *implementation* produced rather than only ones we made.
+
+#### S4b — the state the wrapper has to own (40)
+
+The six remaining lifecycle entry points, the 13 remaining callback registrars
+of §6.1, the 12 buffer attach/detach forms, the six dynamic error-code forms,
+the two spawn forms and `MPI_Pcontrol`.
+
+Every group here needs something that does not exist yet: an initialization
+state machine and a thread level the wrapper answers from (`MPI_Initialized`
+and `MPI_Finalized` are true statements about *us*, not forwarded questions);
+trampoline pools beside S1's two for the file/session/window errhandlers,
+`MPI_Grequest_start`, the datarep pair, the three keyval create forms and the
+two `MPI_T` event handlers; §5.6's dynamic error-code registry, which
+`MPI_Add_error_string` shares with the `MPI_Error_string` body S1 already wrote;
+the attached buffer's ownership record, including `MPI_BUFFER_AUTOMATIC` where
+the implementation does not have it; and spawn's `argv`/`array_of_argv`/
+`array_of_errcodes` together.
+
+**Exit check.** All 40 implemented; a behavioural test per subsystem —
+`MPI_Init_thread` and the state machine's answers before, between and after; a
+registrar of each new pool called and its callback observed running; a buffer
+attached, used, detached and its ownership verified; a dynamic error class
+added, seen by `MPI_Error_class` and `MPI_Error_string`, and removed. **Spawn is
+the exception and should be named as one**: it needs a launcher, so it is
+MPICH-only here for the same reason `NOTES.md` §11 gives, and Open MPI's row is
+a documented gap rather than a pass.
+
+**Exit check (the stage).** `HAND_WRITTEN` fully implemented; `MPI_ERR_UNSUPPORTED_OPERATION`
 returned only for genuine implementation gaps, and `gen/report.txt` lists exactly
 those.
 
 **Model: Opus.** Per-function judgement against the standard, which is the definition
-of this set. May run to two sessions.
+of this set. **Two sessions**, split at conversion versus state.
 
 ### S5 — Oracle 4: Appendix A.2 cross-check *(floats; needs only S0)*
 
