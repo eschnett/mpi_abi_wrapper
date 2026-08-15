@@ -1010,9 +1010,9 @@ generator has nothing to size a temporary from until it calls
 ### What S3's first half settled
 
 S3a added the array classes: out, inout and status arrays, the extents
-`apis.json` records as `*`, and the lifetime rules. **518 of the 688 are now
-generated, 118 are in the ledger and 52 remain deferred** — the keyvals,
-output-string buffers, callbacks and `MPI_T` that S3's second half takes.
+`apis.json` records as `*`, and the lifetime rules. It left **518 of the 688
+generated, 118 in the ledger and 52 deferred** — the keyvals, output-string
+buffers, callbacks and `MPI_T` that S3's second half took, below.
 `MPI_Waitall` and `MPI_Ialltoallw` left the ledger, since the classes S1 wrote
 them for are generated now.
 
@@ -1093,6 +1093,112 @@ write named fields of the caller's own ABI status, which already holds the
 ABI's encoding (§5.2). The implementation is not involved, so decision 6's stub
 would be a regression rather than a fallback — they answer correctly over an
 implementation too old to have the function.
+
+### What S3's second half settled
+
+S3b took the remaining 52 and closed the set: **569 of the 688 are generated
+and 119 are in the ledger, and nothing is deferred.** The zero is kept as a
+frozen tally, so that a future `apis.json` or ABI header carrying an argument
+class the generator cannot place fails there rather than quietly emitting one
+more stub.
+
+**Where the callback boundary falls, stated as a rule rather than a list.**
+Two of the 52 sat against §6.1's registrars and the split had been a matter of
+memory. The rule is **a callback-typed parameter**, not the word "callback" in
+a class name. `MPI_T_event_callback_get_info` and `_set_info` take a
+`CALLBACK_SAFETY`, which is an enumerator naming a safety level — they convert
+an enum and a registration handle and nothing else, so they are generated.
+`MPI_T_event_handle_free` takes an `MPI_T_event_free_cb_function`, and
+installing it means a trampoline that converts an implementation registration
+handle and `cb_safety` back to the ABI's on the way *into* user code — §6.1's
+mechanism and §6.2's lifetime question, the same judgement as the two
+registrars beside it. So it moved into the ledger, which is why the
+hand-written count went from 118 to 119. It needs no pool: its own `user_data`
+parameter can carry the `{user_fn, user_extra}` pair.
+
+**MPI_T lets a caller pass a null pointer for any OUT parameter**, and each of
+the five query functions says so in its own words (15.3.6 through 15.3.9).
+Nothing else in MPI works this way. A parameter that merely passes through
+needs nothing — the null reaches the implementation, which is what the caller
+asked for — but a *converted* one is written through a local and copied back,
+and both halves have to become conditional or the copy writes through the null.
+That includes `MPI_T_event_get_info`'s staged datatype array, where the
+destination of the write-back is the null pointer itself. A named set of
+routines, with the citation, rather than a rule in the emitter.
+
+Emitting `TARGET(..., abi_x ? &x : NULL, ...)` would have been the short way
+and it is refused: the generator's load-bearing assertion is that **no
+ABI-typed parameter appears in the argument list of the implementation call**,
+and that assertion is a grep. So the test is hoisted into a declared
+`T *const x_p = abi_x ? &x : NULL;` and the assertion stays exactly as strong
+as it was. A property worth a named local is worth not carving an exception
+into.
+
+**MPI_T's six handle classes are deliberately not the eleven's machinery.**
+The eleven have up to 103 predefined values apiece, spelled in the
+implementation as addresses that are not compile-time constants, which is what
+§5.1's perfect-hash reverse map exists for. `MPI_T_enum`, `MPI_T_cvar_handle`,
+`MPI_T_pvar_handle`, `MPI_T_pvar_session`, `MPI_T_event_registration` and
+`MPI_T_event_instance` have at most *two* apiece, so each direction is one or
+two compares — §5.3's sentinel shape. Keeping them out also keeps "handle
+classes: 11" and "predefined handles: 103" the frozen tallies they were.
+
+The sentinels really do need translating, which is what makes this more than a
+bit-cast: the ABI fixes `MPI_T_PVAR_ALL_HANDLES` at 1, Open MPI 5.0.6 spells it
+`-1`, and MPICH 4.3.1 declares it `extern struct MPIR_T_pvar_handle_s * const`
+— a value that is not a constant expression at all, so it could not be a case
+label anywhere and both directions have to be run-time compares. A dynamic
+handle whose bits landed on 0 or 1 would read back as a sentinel, so the
+`toabi` direction rejects it exactly as §5.1 does.
+
+**Guarding them needed a probe for a *type*, not for a constant.**
+`MPI_T_event_registration` has no null constant in the ABI header to test, and
+Open MPI 5.0.6 has cvars, pvars and enums but declares neither event type. It
+turns out `dev/probe_impl.py` already answers this: its constant probe emits
+`sizeof (NAME)`, which is valid C for a type name too, so
+`MPIWRAPPER_HAVE_MPI_T_event_registration` is asked and answered like any other
+guard. That is now written down in the probe rather than left as a thing that
+happens to work.
+
+**Keyvals are the one mapped integer family with a dynamic half** (§5.6). The
+thirteen predefined attribute keys convert through a generated switch like
+every other family; a keyval the implementation handed out at run time cannot,
+because it is an `int` with no structure and no pointer slack to tag around,
+and it can land on top of the ABI's 501-507 or 601-605. So the switch's default
+arm asks `src/mpiwrapper/keyvals.c` instead of passing the value through, and
+the ABI-side value is *ours to choose* — drawn from a base far above any
+predefined key, which makes "predefined or dynamic" a property of the value and
+puts the collision beyond reach by construction rather than by luck. The
+reverse direction scans newest-first, because an implementation may reuse the
+number of a freed keyval and the entry that matters is then the most recent
+registration. Nothing is ever removed, per §6.2. The registry is complete now
+and `MPI_*_create_keyval` — its only writer — is S4's.
+
+**Output string buffers split exactly where §5.8 said, and the table is what
+decides it.** With an explicit length argument the caller bounds the write, a
+`char *` is a `char *` on both sides, and buffer and length both pass through
+untouched: that is `MPI_Info_get`, `MPI_Info_get_string`,
+`MPI_Session_get_nth_pset` and MPI_T's twelve. Without one, an implementation
+whose `MPI_MAX_*` exceeds the ABI's writes past the caller's array, and
+truncate-or-error is a per-parameter judgement — those ten stay in the ledger.
+The named `(routine, parameter)` table gives the length parameter rather than
+deriving it, and the generator checks it against the signature, because that
+naming is the *only* thing separating the safe class from the dangerous one.
+
+**`obj_handle` is the one parameter whose class is not in its own argument
+list.** MPI-5.0 15.3.6 makes it "an address to a local variable that stores the
+object's handle", and which class of handle that is comes from the `bind` a
+prior `get_info` reported. So the three allocators query it first —
+`src/mpiwrapper/toolobj.c`, the same shape as `extents.c`: a `PMPI_` call the
+wrapper makes for its own purposes, run before the call it serves, returning an
+implementation error code the body maps like any other. Every OUT argument of
+that query but `bind` is a null pointer, which is standard rather than a
+liberty and avoids a real leak: `MPI_T_EVENT_GET_INFO` is *required* to return
+a newly created info object when one is asked for, so asking would leak one per
+handle allocation. The switch from `bind` onto a handle class is generated into
+`constants.c` rather than hand-written, so that the `MPIWRAPPER_HAVE_` guards
+its cases need are probed like every other — `dev/probe_impl.py` reads the
+generated sources, not `src/`.
 
 ### Reproducing the prototype
 
@@ -1403,9 +1509,15 @@ hypothetical: `MPI_File_get_amode` returns one.
 Both are plain `int`s handed out by the implementation at run time, and both can
 collide with ABI predefined values.
 
-- **Keyvals.** ABI predefined values are at 501-504 and 601+; Open MPI hands out
-  small sequential ints, which could in principle reach 501. No pointer slack is
-  available, so dynamic keyvals need an additive bias or a high-bit tag.
+- **Keyvals.** ABI predefined values are at 501-507 and 601-605; Open MPI hands
+  out small sequential ints, which could in principle reach 501. No pointer
+  slack is available, so dynamic keyvals need an additive bias or a high-bit
+  tag. **S3b built it** (`src/mpiwrapper/keyvals.c`): the ABI-side value is
+  ours to choose, so it is drawn from a base far above any predefined key, and
+  the generated switch's default arm hands off to the registry instead of
+  passing the value through. The reverse direction scans newest-first, because
+  an implementation may reuse the number of a freed keyval. Its only writer is
+  `MPI_*_create_keyval`, which is S4's.
 - **Error codes.** `MPI_ERR_LASTCODE` is 16383 in the ABI against MPICH's
   0x3fffffff, so codes from `MPI_Add_error_class`/`_code` must be *renumbered* into
   the ABI's range above its last predefined class, not passed through.
@@ -1562,7 +1674,10 @@ block porting to a new MPI over a contingency that may never fire for the functi
 that user needs.
 
 **Truncate or error is a per-parameter judgement**, and belongs in the named
-`(routine, parameter)` table:
+`(routine, parameter)` table. The *other* set — everything with an explicit
+length argument — is a named table too (`STRING_OUT_LENGTH`), naming the
+parameter that bounds each buffer and checked against the signature, because
+that naming is the only thing that separates the safe class from this one:
 
 - **Prose -> truncate silently**, which is what an implementation does with its own
   too-short buffer anyway: `MPI_Error_string`, `MPI_Get_library_version`, and the
@@ -1619,9 +1734,11 @@ is observable, fail the build when it is not.
 
 ### 6.1 Which need trampoline pools
 
-Seven typedef families, **15** registration functions — the table below sums to
-15, and an earlier draft said 16 here and in §6.2 without the extra one ever
-being named. The ones with an extra-state
+Seven typedef families, **16** registration functions. The table below sums to
+15 and an earlier draft said 16 here and in §6.2 without the extra one ever
+being named; S3b found a sixteenth on its own terms and named it — see the note
+after the table, and `MPI_T_event_handle_free` in §6.2's. The ones with an
+extra-state
 argument can carry a heap-allocated `{user_fn, user_extra}` pair; the ones without
 need a pool of generated static trampolines, each knowing its own index.
 
@@ -1638,6 +1755,18 @@ need a pool of generated static trampolines, each knowing its own index.
 Error handlers are the non-obvious pool case: `MPI_Comm_errhandler_function` and
 its three siblings have no extra-state argument, so `MPI_Op_create` is *not* the
 only exception.
+
+**A sixteenth registrar, and the rule that finds it.** S3b added
+`MPI_T_event_handle_free` to this set, which the table above did not name. The
+discriminator is **a callback-typed parameter**, not the word "callback" in an
+argument class: `MPI_T_event_callback_get_info` and `_set_info` carry a
+`CALLBACK_SAFETY`, which is an enumerator naming a safety level and converts
+like any other enum, so those are generated. `MPI_T_event_handle_free` carries
+an `MPI_T_event_free_cb_function`, which runs on the way back *into* user code
+and must therefore convert an implementation registration handle and
+`cb_safety` to the ABI's — a trampoline, and the same judgement as the fifteen
+above. It needs no pool: its own `user_data` parameter carries the
+`{user_fn, user_extra}` pair.
 
 `MPI_T` events need a map rather than a pool: `MPI_T_event_set_dropped_handler` has
 no `user_data` parameter even though `MPI_T_event_dropped_cb_function` takes one,
@@ -1677,6 +1806,7 @@ the object will be deallocated afterwards."
 | `MPI_Register_datarep`, `_c` | **never** — MPI has no deregistration call |
 | `MPI_T_event_register_callback` | **the free callback**: §15.3 invoked "when it is able to guarantee that no further event instances ... will be raised" |
 | `MPI_T_event_set_dropped_handler` | same |
+| `MPI_T_event_handle_free` | its own `free_cb_function`, invoked once when the registration is released |
 
 Consequences:
 
@@ -1907,12 +2037,19 @@ generate, so the ledger is **118**. Both are generated now, with every other
 member of their families, and `src/mpiwrapper/handwritten.c` is down to S1's
 eight.
 
+**S3's second half added `MPI_T_event_handle_free`**, so the ledger is **119**
+and it is now the *whole* of what the generator does not emit: nothing is
+deferred any more, and every one of the 688 is generated or here. The addition
+is the sixteenth callback registrar of §6.1 — the rule that finds it is a
+callback-typed parameter, which the two `MPI_T_event_callback_*_info` calls do
+not have and this one does.
+
 - **Bootstrap and lifecycle** (8): `MPI_Init`, `MPI_Init_thread`, `MPI_Finalize`,
   `MPI_Abort`, `MPI_Initialized`, `MPI_Finalized`, `MPI_Session_init`/`_finalize`.
 - **No error code to map** (2): `MPI_Wtime`, `MPI_Wtick` return `double`.
 - **The ten status-consuming functions** of §5.2, plus the four Fortran status
   converters (14).
-- **Callback registration** — the 15 of §6.1, each installing a trampoline or a
+- **Callback registration** — the 16 of §6.1, each installing a trampoline or a
   pair.
 - **Genuinely variadic** (1): `MPI_Pcontrol`.
 - **Dynamic error codes** (3): `MPI_Add_error_class`, `_code`, `_string`.
@@ -2321,6 +2458,32 @@ emitted it is not committed, since S2's generator supersedes it. Everything else
 ---
 
 ## 13. Still open
+
+- **`dev/probe_impl.py` over-reports for an ABI-implementing MPI, and S3b
+  measured it.** The probe asks the *compiler*, deliberately — §9 keeps it
+  compile-only so the build stays cross-compilable, and `nm` was rejected
+  because a header can provide an entry point as a macro. That is right for a
+  conventional MPI, whose header and library agree. It is wrong for oracle 5:
+  Open MPI main's `libmpi_abi` is built against the ABI header, which declares
+  all 688, and it defines **683**. The five it omits are the MPI-1 attribute
+  functions MPI-4.0 removed from the standard — `MPI_Attr_delete`, `_get`,
+  `_put`, `MPI_Keyval_create`, `MPI_Keyval_free` — so the probe answers
+  "present", the generated bodies call them, and the wrapper fails to *link*
+  rather than reporting `MPI_ERR_UNSUPPORTED_OPERATION` as decision 6 promises.
+  Nothing about the five is special: any entry point an ABI-implementing MPI
+  declares and does not define does this.
+
+  It was invisible until S3b because four of the five were deferred stubs, and
+  it does not touch MPICH or Open MPI's native builds, where header and library
+  agree.
+
+  The fix that keeps §9's constraint is a **link** stage, not an `nm` stage:
+  linking is compile-time and cross-compilation forbids only *running*. Done by
+  bisection — link the whole name list, and on failure split and recurse — it
+  needs no parsing of linker diagnostics at all, only their exit status, which
+  makes it more robust than the compile probe rather than less. Cost is one
+  extra link in the common case. **Not implemented**: it changes the configure
+  contract for every build, so it wants a decision rather than a drive-by.
 
 - Windows/mingw: `dlopen` -> `LoadLibrary` shim, no RTLD flags, and which MPI is
   even the target there.

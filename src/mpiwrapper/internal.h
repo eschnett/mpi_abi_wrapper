@@ -120,6 +120,15 @@ static inline int mpiwrapper_in_predef_range(uint64_t bits)
   return bits >= MPIWRAPPER_PREDEF_FIRST && bits <= MPIWRAPPER_PREDEF_LAST;
 }
 
+/* The same idea for MPI_T's six handle classes, which are not among the eleven
+ * and have their own, much smaller, predefined range: the ABI gives every
+ * MPI_T null handle the value 0 and MPI_T_PVAR_ALL_HANDLES the value 1, and
+ * nothing else. A dynamic implementation handle whose bits landed there would
+ * come back out as a sentinel, so the toabi direction rejects it -- one
+ * compare, on a path that allocates a tool handle.
+ */
+#define MPIWRAPPER_TOOL_PREDEF_LAST 0x1u
+
 /* ---------------------------------------------------------- tunable limits */
 
 /* All shared tables are fixed-capacity and lock-free (NOTES.md #6.3). Overflow
@@ -198,6 +207,104 @@ MPIABI_Win        mpiwrapper_win_toabi(MPI_Win h);
  * cannot be attributed to another's call.
  */
 int mpiwrapper_take_handle_error(void);
+
+/* Sets the same flag. Exists because the MPI_T handle conversions are
+ * generated into constants.c -- their guards have to appear in a generated
+ * source for dev/probe_impl.py to ask about them -- while the flag itself is
+ * the thread-local in handles.c and stays owned there.
+ */
+void mpiwrapper_set_handle_error(void);
+
+/* ------------------------------------------------- MPI_T's handle classes */
+
+/* Not the eleven above, and deliberately not their machinery: at most two
+ * predefined values apiece, so each direction is one or two compares rather
+ * than a perfect-hash lookup. Generated into constants.c from the ABI header's
+ * own sentinels (NOTES.md #5.3), and guarded on the *type*, since an
+ * implementation without MPI_T -- or with MPI_T but without MPI-4.0's events
+ * -- does not declare it.
+ *
+ * The sentinels really do differ: the ABI fixes MPI_T_PVAR_ALL_HANDLES at 1,
+ * Open MPI 5.0.6 spells it -1, and MPICH 4.3.1 makes it an `extern ... * const`
+ * whose value is not a constant expression, so it cannot be a case label
+ * anywhere and both directions are run-time compares.
+ */
+#ifdef MPIWRAPPER_HAVE_MPI_T_enum
+MPI_T_enum            mpiwrapper_t_enum_fromabi(MPIABI_T_enum abi);
+MPIABI_T_enum         mpiwrapper_t_enum_toabi(MPI_T_enum h);
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_cvar_handle
+MPI_T_cvar_handle     mpiwrapper_t_cvar_handle_fromabi(MPIABI_T_cvar_handle abi);
+MPIABI_T_cvar_handle  mpiwrapper_t_cvar_handle_toabi(MPI_T_cvar_handle h);
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_handle
+MPI_T_pvar_handle     mpiwrapper_t_pvar_handle_fromabi(MPIABI_T_pvar_handle abi);
+MPIABI_T_pvar_handle  mpiwrapper_t_pvar_handle_toabi(MPI_T_pvar_handle h);
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_session
+MPI_T_pvar_session    mpiwrapper_t_pvar_session_fromabi(MPIABI_T_pvar_session abi);
+MPIABI_T_pvar_session mpiwrapper_t_pvar_session_toabi(MPI_T_pvar_session h);
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_registration
+MPI_T_event_registration
+mpiwrapper_t_event_registration_fromabi(MPIABI_T_event_registration abi);
+MPIABI_T_event_registration
+mpiwrapper_t_event_registration_toabi(MPI_T_event_registration h);
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_instance
+MPI_T_event_instance
+mpiwrapper_t_event_instance_fromabi(MPIABI_T_event_instance abi);
+MPIABI_T_event_instance
+mpiwrapper_t_event_instance_toabi(MPI_T_event_instance h);
+#endif
+
+/* ------------------------------------------------------ MPI_T's obj_handle */
+
+/* MPI_T's three handle allocators take `void *obj_handle`, which MPI-5.0
+ * 15.3.6 defines as the address of a local variable holding an MPI handle --
+ * of a class that is nowhere in the argument list. What decides it is the
+ * `bind` a prior get_info reported, so the wrapper asks for that first
+ * (toolobj.c below) and then converts through this union, whose address is
+ * what the implementation is given in place of the caller's.
+ *
+ * The storage is a local of the generated body and lives exactly as long as
+ * the call: MPI-5.0 says the object is bound, not the pointer, and neither
+ * implementation retains the address.
+ */
+union mpiwrapper_tool_obj {
+  MPI_Comm       comm;
+  MPI_Datatype   datatype;
+  MPI_Errhandler errhandler;
+  MPI_File       file;
+  MPI_Group      group;
+  MPI_Info       info;
+  MPI_Message    message;
+  MPI_Op         op;
+  MPI_Request    request;
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
+  MPI_Session    session;
+#endif
+  MPI_Win        win;
+};
+
+/* Generated (constants.c): the switch from a bind value onto a handle class.
+ * Generated rather than hand-written so that the MPIWRAPPER_HAVE_ guards its
+ * cases need are probed like every other -- dev/probe_impl.py reads the
+ * generated sources, not these. Returns NULL for a null obj_handle and for
+ * MPI_T_BIND_NO_OBJECT, which the standard makes the same thing.
+ */
+void *mpiwrapper_tool_obj_fromabi(int bind, void *abi_obj,
+                                  union mpiwrapper_tool_obj *out);
+
+/* Hand-written (toolobj.c): what class of object a control variable,
+ * performance variable or event type must be bound to. One per routine,
+ * because the query differs per routine and is not derivable from the
+ * parameter. Each returns an implementation error code, like the extents
+ * above and for the same reason.
+ */
+int mpiwrapper_cvar_bind(int cvar_index, int *bind);
+int mpiwrapper_pvar_bind(int pvar_index, int *bind);
+int mpiwrapper_event_bind(int event_index, int *bind);
 
 /* ---------------------------------------------------- the reverse handle map */
 
@@ -352,6 +459,53 @@ int mpiwrapper_topology_fromabi(int abi_topology);
 int mpiwrapper_topology_toabi(int topology);
 int mpiwrapper_typeclass_fromabi(int abi_typeclass);
 int mpiwrapper_typeclass_toabi(int typeclass);
+
+/* MPI_T's six enumerated families. Every case is guarded, because the whole
+ * tool interface is optional; a family whose members are all absent still
+ * compiles, as a function whose switch is only its default arm.
+ */
+int mpiwrapper_tbind_fromabi(int abi_tbind);
+int mpiwrapper_tbind_toabi(int tbind);
+int mpiwrapper_tcbsafety_fromabi(int abi_tcbsafety);
+int mpiwrapper_tcbsafety_toabi(int tcbsafety);
+int mpiwrapper_tpvarclass_fromabi(int abi_tpvarclass);
+int mpiwrapper_tpvarclass_toabi(int tpvarclass);
+int mpiwrapper_tscope_fromabi(int abi_tscope);
+int mpiwrapper_tscope_toabi(int tscope);
+int mpiwrapper_tsourceorder_fromabi(int abi_tsourceorder);
+int mpiwrapper_tsourceorder_toabi(int tsourceorder);
+int mpiwrapper_tverbosity_fromabi(int abi_tverbosity);
+int mpiwrapper_tverbosity_toabi(int tverbosity);
+
+/* --------------------------------------------------------------- keyvals */
+
+/* The one mapped integer family with a *dynamic* half. The thirteen
+ * predefined attribute keys convert through a generated switch like any other
+ * family; a keyval the implementation handed out at run time cannot, because
+ * it is an int with no structure and it can land anywhere -- including on top
+ * of the ABI's predefined 501-507 and 601-605, which Open MPI's small
+ * sequential keyvals could in principle reach (NOTES.md #5.6).
+ *
+ * So the switch's default arm asks the registry below instead of passing the
+ * value through. Every dynamic keyval an application can hold came out of one
+ * of the four MPI_*_create_keyval calls, which is where mpiwrapper_keyval_add
+ * is called from (S4) -- so a value neither predefined nor registered is one
+ * this library never issued, and both directions answer MPI_KEYVAL_INVALID
+ * rather than invent a mapping.
+ */
+int mpiwrapper_keyval_fromabi(int abi_keyval);
+int mpiwrapper_keyval_toabi(int keyval);
+int mpiwrapper_keyval_dynamic_fromabi(int abi_keyval);
+int mpiwrapper_keyval_dynamic_toabi(int keyval);
+
+/* Registers a keyval the implementation just created and returns the ABI-side
+ * value to hand back to the caller, or 0 if the table is full -- which the
+ * caller turns into MPIABI_ERR_INTERN, as every fixed-capacity table here
+ * does. The ABI-side values are drawn from a high range that no predefined key
+ * can reach, so the two halves of the family cannot collide by construction
+ * rather than by luck.
+ */
+int mpiwrapper_keyval_add(int keyval, int *abi_keyval);
 
 /* --------------------------------------------------------------- sentinels */
 

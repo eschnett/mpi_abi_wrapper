@@ -142,12 +142,37 @@ lifetime question that no assertion in the generator can see: a persistent
 `MPI_Alltoallw` started three times, and 1200 create/free cycles against a
 1024-entry table.
 
-#### S3b — keyvals, output strings, callbacks, `MPI_T` *(remaining)*
+#### S3b — keyvals, output strings, callbacks, `MPI_T` *(done: 569 generated, 119 in the ledger, 0 deferred)*
 
-The 52 still deferred, which `gen/report.txt` names with the class that blocks
-each: the 16 keyval entry points, the output-string buffers with an explicit
-length, `MPI_Info_create_env`, the callback-bearing `MPI_T` calls and the rest
-of the tool interface.
+The second session took the last 52: the 16 keyval entry points, the
+output-string buffers with an explicit length, `MPI_Info_create_env`, and the
+whole tool interface. **Every one of the 688 is now generated or in the
+ledger.** The "deferred" tally stays at a frozen *zero*, so a future
+`apis.json` or ABI header carrying a class the generator cannot place fails
+there rather than quietly emitting one more stub.
+
+Four things it settled that this plan did not name, all in `NOTES.md` §3's
+"What S3's second half settled": **where the callback boundary falls**, as a
+rule rather than a list — a callback-*typed parameter*, which puts
+`MPI_T_event_handle_free` in the ledger beside the two registrars and leaves
+the two `MPI_T_event_callback_*_info` calls generated, since a
+`CALLBACK_SAFETY` is an enumerator and not a function; **MPI_T's null OUT
+pointers**, which every one of its five query functions permits and which make
+each converted write-back conditional — hoisted into a declared local rather
+than written `abi_x ? &x : NULL` in the call, so that the "no ABI-typed
+parameter reaches the implementation call" assertion stays a grep;
+**`src/mpiwrapper/keyvals.c`**, because the ABI-side value of a dynamic keyval
+is ours to choose and choosing it from a high base puts §5.6's collision beyond
+reach by construction; and **`src/mpiwrapper/toolobj.c`**, because
+`obj_handle`'s class is not in its own argument list — it is whatever a prior
+`get_info` reported in `bind`, so the wrapper asks first.
+
+`test/abi_tools_test.c` is the behavioural half, and the null-OUT path is what
+it covers that no assertion in the generator can see: every MPI_T query is
+called twice, once asking for everything and once for a single field, and a
+body that copied back unconditionally writes through the nulls of the second
+call. It also covers the `MPI_T_PVAR_ALL_HANDLES` sentinel, which is 1 in the
+ABI, -1 in Open MPI and an `extern ... * const` in MPICH.
 
 **Exit check.** Every one of the 688 is generated or in `HAND_WRITTEN`; frozen tallies
 per class; the "no ABI-typed parameter reaches the implementation call" assertion

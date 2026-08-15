@@ -12,6 +12,8 @@ Permanent:
 | `status.c` | the status blob, both directions, with the layout assertions |
 | `staging.c` | call-scoped temporaries, and the request-keyed table for the ones that outlive their call |
 | `extents.c` | how long an array is where `apis.json` answers `*` -- the group's size, the topology's degrees, the datatype's envelope. Every call in it is `PMPI_`, because none of it is application traffic |
+| `keyvals.c` | the *dynamic* half of the keyval family: the predefined thirteen convert through a generated switch, and a keyval the implementation handed out at run time cannot, because an `int` has no slack to tag around (§5.6) |
+| `toolobj.c` | what class of object an `MPI_T` variable binds to, for the `obj_handle` whose class is not in its own argument list. Same shape and same `PMPI_` rule as `extents.c` |
 | `callbacks.c` | the op and error-handler trampoline pools |
 | `handwritten.c`, `handwritten.h` | the entry points needing per-function judgement. The header is the list of bodies that *exist*; the ledger itself is `HAND_WRITTEN` in `dev/generate.py`, and the generator fails if the two disagree in either direction |
 | `getvtable.c` | the single exported symbol: handshake, outward-resolution check, map construction |
@@ -23,10 +25,19 @@ are frozen in `dev/s1-reference/` as what the generator must reproduce.
 `MPI_Ialltoallw` here, as stand-ins for the two array classes it could not
 generate -- an inout request array released at completion, and temporaries that
 outlive their call. S3's first half generates both, with every other member of
-their families, so the bodies are gone and the ledger is 118.
+their families, so the bodies are gone.
 
-The other 110 members of the ledger have no body yet and their slots report
+S3's second half added one *to* the ledger rather than taking one out:
+`MPI_T_event_handle_free` takes a callback-typed parameter, so installing it
+needs a trampoline like the two `MPI_T` registrars beside it (§6.1). That makes
+the ledger **119**, and -- since nothing is deferred any more -- it is now
+exactly the set the generator does not emit.
+
+The other 111 members of the ledger have no body yet and their slots report
 `MPI_ERR_UNSUPPORTED_OPERATION`; `gen/report.txt` lists exactly which. S4
-writes them: lifecycle, the remaining callback registrations, spawn, buffer
-attach, `MPI_Pcontrol`, dynamic error codes, the Fortran and integer handle
-converters, the ten output-string functions.
+writes them: lifecycle, the callback registrations, spawn, buffer attach,
+`MPI_Pcontrol`, dynamic error codes, the Fortran and integer handle converters,
+the ten output-string functions. Two of the runtime pieces they need are
+already here and complete, because generated bodies needed them first:
+`keyvals.c`'s registry is what `MPI_*_create_keyval` fills, and `callbacks.c`'s
+pools are what the errhandler registrars draw from.

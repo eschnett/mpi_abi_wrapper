@@ -26,10 +26,14 @@ of NOTES.md #5.7 -- which turn out to be two mechanical tests, see
 stages_past_return() and emit_releases() -- and the six pure ABI-side status
 accessors.
 
-What is left is S3's second half: output-string buffers, keyvals, callbacks and
-MPI_T. Those are emitted as the stub decision 6 describes -- the slot stays
-present and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time -- and
-gen/report.txt names each with the class that blocks it.
+S3's second half completed the set: keyvals with their dynamic registry,
+output-string buffers with an explicit length, MPI_T's six handle classes and
+six enumerated families, MPI_T's rule that any OUT parameter may be null, and
+the obj_handle whose class comes from a query rather than from the signature.
+Nothing is deferred now. What is not generated is the ledger below, and the
+line between them is a matter of judgement rather than of effort: a callback
+installed on the way back into user code, a lifetime the wrapper has to track,
+a conversion that is per-function rather than per-argument.
 
 **The ledger.** Every one of the 688 entry points is generated, named in
 HAND_WRITTEN, or deferred with a reason. The generator fails if one is in none
@@ -70,9 +74,13 @@ FROZEN = {
     "handle classes": 11,
     "predefined handles": 103,
     "error classes": 80,
-    "generated": 518,
-    "hand-written": 118,
-    "deferred to S3": 52,
+    "generated": 569,
+    "hand-written": 119,
+    # S3b closed this out: every one of the 688 is now generated or in the
+    # ledger. The tally stays, so that a future apis.json or ABI header
+    # introducing a class the generator cannot place fails here instead of
+    # quietly emitting one more stub.
+    "deferred to S3": 0,
     # Where a staged temporary has to outlive the call that made it, which is
     # the property S3's exit check cannot see and the one a wrong body would
     # get wrong silently (NOTES.md #5.7, #6.3). Frozen so that a routine
@@ -142,6 +150,27 @@ _ledger(
     "MPI_Type_create_keyval", "MPI_Win_create_keyval", "MPI_Keyval_create",
     "MPI_Grequest_start", "MPI_Register_datarep", "MPI_Register_datarep_c",
     "MPI_T_event_register_callback", "MPI_T_event_set_dropped_handler",
+)
+# S3b settled where the callback boundary falls, because two of its deferred
+# entry points sat against this group and the split was a matter of memory. The
+# rule is **a callback-typed parameter**, not the word "callback" in a class
+# name:
+#
+#  - MPI_T_event_callback_get_info and _set_info take a CALLBACK_SAFETY, which
+#    is an enumerator naming a safety level, not a function. They convert an
+#    enum and a registration handle and nothing else, so S3b generates them.
+#  - MPI_T_event_handle_free takes an MPI_T_event_free_cb_function. Installing
+#    it means a trampoline that converts an implementation registration handle
+#    and cb_safety back to the ABI's on the way *in* to user code, which is
+#    #6.1's mechanism and #6.2's lifetime question -- the same judgement as the
+#    two registrars above, and so the same ledger entry rather than a generated
+#    body that would have to invent it.
+_ledger(
+    "callback registration: the free callback runs on the way back into user "
+    "code, so it needs the same trampoline as the two registrars beside it "
+    "(NOTES.md #6.1). Its `user_data` can carry the {user_fn, user_extra} "
+    "pair, so this one needs no pool.",
+    "MPI_T_event_handle_free",
 )
 _ledger("genuinely variadic", "MPI_Pcontrol")
 _ledger(
@@ -415,6 +444,23 @@ IN_PLACE_IGNORES = {
                  "Alltoallw_init_c", "Ialltoallw", "Ialltoallw_c")
 }
 
+# MPI_T_event_get_info's two arrays. apis.json gives their length as
+# `num_elements`, which is the one place that answer is a *pointer* rather than
+# an int: the parameter is INOUT, carrying the caller's capacity in and the
+# number the event type actually needs out, and MPI-5.0 15.3.8 lets a caller
+# pass a null pointer for it to say it wants neither array. So the capacity is
+# read before the call and clamped, and the converted count afterwards is the
+# smaller of what the implementation asked for and what there was room for --
+# converting past that would convert the uninitialized tail of our own
+# temporary.
+ARRAY_EXTENT[("MPI_T_event_get_info", "array_of_datatypes")] = Extent(
+    "nelements", conv="nelements_out",
+    pre=["int nelements = num_elements ? *num_elements : 0;",
+         "if (nelements < 0) nelements = 0;"],
+    post=["int nelements_out = num_elements ? *num_elements : 0;",
+          "if (nelements_out > nelements) nelements_out = nelements;",
+          "if (nelements_out < 0) nelements_out = 0;"])
+
 # The status arrays. The *all* forms fill one per request; the *some* forms
 # fill `outcount` of them and leave the rest untouched, and outcount is
 # MPI_UNDEFINED when no request was active -- hence the clamp rather than a
@@ -441,6 +487,117 @@ ARRAY_PASSTHROUGH = {
 }
 ARRAY_PASSTHROUGH[("MPI_Group_range_excl", "ranges")] = \
     ARRAY_PASSTHROUGH[("MPI_Group_range_incl", "ranges")]
+ARRAY_PASSTHROUGH[("MPI_Info_create_env", "argv")] = (
+    "an array of char*, and neither the pointers nor the strings mean "
+    "anything to MPI: apis.json calls the kind ARGUMENT_LIST because the "
+    "Fortran binding has to marshal it, and the C binding is main()'s own "
+    "argv. The implementation reads it and may write nothing an ABI type "
+    "appears in.")
+
+# ---------------------------------------------------------------------------
+# Output string buffers with an explicit length (S3b, NOTES.md #5.8)
+# ---------------------------------------------------------------------------
+
+# #5.8's ten *without* a length argument are in the ledger above: an
+# implementation whose MPI_MAX_* exceeds the ABI's would write past the
+# caller's array, so each needs a staged copy and a per-parameter
+# truncate-or-error judgement. The ones below are the other set. The caller
+# passes the buffer size, so the implementation cannot overflow it and there is
+# nothing to convert: a `char *` is a `char *` on both sides, and the length is
+# an ordinary passthrough int. The body hands both straight through.
+#
+# The table names the length parameter rather than deriving it, for one reason:
+# it is the *only* thing separating this class from the dangerous one, so
+# "which parameter bounds this buffer" has to be stated per site and checked
+# against the signature, not inferred from a spelling convention. A STRING out
+# parameter with no entry here stays deferred and says so.
+#
+# The MPI_T half is MPI-5.0 15.3.3's convention: a (buf, buf_len) pair, where
+# buf_len is IN as the buffer size and OUT as the string's length plus one, and
+# where a null buf or a zero buf_len asks for the length alone.
+STRING_OUT_LENGTH = {
+    ("MPI_Info_get", "value"): "valuelen",
+    ("MPI_Info_get_string", "value"): "buflen",
+    ("MPI_Session_get_nth_pset", "pset_name"): "pset_len",
+    ("MPI_T_category_get_info", "name"): "name_len",
+    ("MPI_T_category_get_info", "desc"): "desc_len",
+    ("MPI_T_cvar_get_info", "name"): "name_len",
+    ("MPI_T_cvar_get_info", "desc"): "desc_len",
+    ("MPI_T_enum_get_info", "name"): "name_len",
+    ("MPI_T_enum_get_item", "name"): "name_len",
+    ("MPI_T_event_get_info", "name"): "name_len",
+    ("MPI_T_event_get_info", "desc"): "desc_len",
+    ("MPI_T_pvar_get_info", "name"): "name_len",
+    ("MPI_T_pvar_get_info", "desc"): "desc_len",
+    ("MPI_T_source_get_info", "name"): "name_len",
+    ("MPI_T_source_get_info", "desc"): "desc_len",
+}
+
+# ---------------------------------------------------------------------------
+# OUT parameters a caller may legally leave null (S3b)
+# ---------------------------------------------------------------------------
+
+# The MPI_T query functions all say it, each in its own words and each in the
+# section named below: "if any OUT parameter is a NULL pointer, the
+# implementation will ignore the parameter and not return a value for it".
+# Nothing else in MPI works this way -- an ordinary OUT parameter must point at
+# storage -- so this is a property of these routines rather than a general rule,
+# and it is recorded per routine with the citation.
+#
+# What it costs a generated body: a converted OUT parameter is written through
+# a local and copied back afterwards, and both halves have to become
+# conditional. A parameter that merely passes through needs nothing, because a
+# null pointer forwarded to the implementation is exactly what the caller asked
+# for -- which is why this set is consulted only where a conversion happens.
+NULLABLE_OUT_ROUTINES = {
+    "MPI_T_cvar_get_info": "MPI-5.0 15.3.6",
+    "MPI_T_pvar_get_info": "MPI-5.0 15.3.7",
+    "MPI_T_event_get_info": "MPI-5.0 15.3.8",
+    "MPI_T_category_get_info": "MPI-5.0 15.3.9",
+    "MPI_T_source_get_info": "MPI-5.0 15.3.8",
+}
+
+# ---------------------------------------------------------------------------
+# MPI_T's obj_handle (S3b)
+# ---------------------------------------------------------------------------
+
+# The three MPI_T handle allocators take `void *obj_handle`, which MPI-5.0
+# 15.3.6 describes as "an address to a local variable that stores the object's
+# handle" -- so it points at an *ABI* handle whose class is not in the argument
+# list at all. The class is whatever a prior get_info call reported in `bind`,
+# and the wrapper has to ask the same question before it can convert anything.
+#
+# Hence one entry per routine naming the query, exactly as ARRAY_EXTENT names a
+# probe: the query differs per routine and is not derivable from the parameter.
+# The standard makes obj_handle ignored when bind is MPI_T_BIND_NO_OBJECT, and
+# permits a null pointer for every OUT parameter of these queries, which is what
+# lets src/mpiwrapper/toolobj.c ask for `bind` alone.
+TOOL_OBJ_BIND = {
+    "MPI_T_cvar_handle_alloc":
+        ("int tool_bind = 0;", "mpiwrapper_cvar_bind(cvar_index, &tool_bind)"),
+    "MPI_T_pvar_handle_alloc":
+        ("int tool_bind = 0;", "mpiwrapper_pvar_bind(pvar_index, &tool_bind)"),
+    "MPI_T_event_handle_alloc":
+        ("int tool_bind = 0;", "mpiwrapper_event_bind(event_index, &tool_bind)"),
+}
+
+# apis.json's BIND_TYPE enumerator -> the handle class it names. Generated into
+# constants.c as mpiwrapper_tool_obj_fromabi's switch, so that the guards it
+# needs are probed like every other (dev/probe_impl.py reads the generated
+# sources, not these).
+TOOL_OBJ_CLASSES = {
+    "MPI_T_BIND_MPI_COMM": "comm",
+    "MPI_T_BIND_MPI_DATATYPE": "datatype",
+    "MPI_T_BIND_MPI_ERRHANDLER": "errhandler",
+    "MPI_T_BIND_MPI_FILE": "file",
+    "MPI_T_BIND_MPI_GROUP": "group",
+    "MPI_T_BIND_MPI_INFO": "info",
+    "MPI_T_BIND_MPI_MESSAGE": "message",
+    "MPI_T_BIND_MPI_OP": "op",
+    "MPI_T_BIND_MPI_REQUEST": "request",
+    "MPI_T_BIND_MPI_SESSION": "session",
+    "MPI_T_BIND_MPI_WIN": "win",
+}
 
 # The six status accessors of NOTES.md #5.2 that are *pure ABI-side*: the ABI
 # status already holds its three named fields in the ABI's own encoding, put
@@ -504,9 +661,19 @@ FLOOR_VERSION = (3, 1)
 
 def guard(name):
     """The #ifdef a row carries, or None if it is emitted unconditionally."""
-    if OPTIONAL_PREDEF_RE.match(name) or name in OPTIONAL_CONSTANTS:
+    if (OPTIONAL_PREDEF_RE.match(name) or name in OPTIONAL_CONSTANTS
+            or name.startswith(("MPI_T_", "MPIABI_T_"))):
         return "MPIWRAPPER_HAVE_" + name
     return None
+
+
+def guard_reason(name):
+    """Why a guarded row is guarded, for the comment beside its #ifdef."""
+    if name in OPTIONAL_CONSTANTS:
+        return OPTIONAL_CONSTANTS[name]
+    if OPTIONAL_PREDEF_RE.match(name):
+        return "an optional sized Fortran type"
+    return "MPI_T is optional in full"
 
 # ---------------------------------------------------------------------------
 # Parsing the ABI header
@@ -699,6 +866,10 @@ PASSTHROUGH_KIND = {
     # above, an inout byte offset, which is representation and not spelling in
     # exactly the way its small form is (#5.7).
     "POLYLOCATION",
+    # MPI_Info_create_env's `argc`, which is main()'s: apis.json gives it a
+    # kind of its own because the Fortran binding has no argument vector to
+    # count, and in C it is an int the implementation reads.
+    "ARGUMENT_COUNT",
     "POLYNUM_BYTES", "POLYNUM_BYTES_NNI",
     "POLYNUM_PARAM_VALUES", "POLYRMA_DISPLACEMENT", "POLYXFER_NUM_ELEM",
     "POLYXFER_NUM_ELEM_NNI", "PROCESS_GRID_SIZE", "PROFILE_LEVEL",
@@ -726,6 +897,20 @@ SWITCH_KIND = {
     "TOPOLOGY_TYPE": "topology",
     "TYPECLASS": "typeclass",
     "UPDATE_MODE": "seek",
+    # S3b. A keyval is an int the implementation hands out, so unlike every
+    # family above it has a dynamic half as well as a predefined one; see
+    # SWITCH_DEFAULT.
+    "KEYVAL": "keyval",
+    # S3b: MPI_T's six enumerated families. Two of them -- cbsafety and
+    # sourceorder -- are spelled as enum *types* in the ABI header rather than
+    # as ints, which costs nothing here: the mappers take and return int, and C
+    # converts in both directions at the call site.
+    "BIND_TYPE": "tbind",
+    "CALLBACK_SAFETY": "tcbsafety",
+    "PVAR_CLASS": "tpvarclass",
+    "SOURCE_ORDERING": "tsourceorder",
+    "TOOL_VAR_VERBOSITY": "tverbosity",
+    "VARIABLE_SCOPE": "tscope",
 }
 
 SWITCH_FAMILY_MEMBERS = {
@@ -740,6 +925,82 @@ SWITCH_FAMILY_MEMBERS = {
     "topology": r"^MPI_(GRAPH|CART|DIST_GRAPH|UNDEFINED)$",
     "typeclass": r"^MPIX?_TYPECLASS_",
     "seek": r"^MPI_SEEK_",
+    # The ABI's own "Predefined Attribute Keys" enum, in full: the invalid
+    # marker, the seven communicator keys and the five window keys. Matched by
+    # name rather than by prefix because they share none.
+    "keyval": r"^MPI_(KEYVAL_INVALID|TAG_UB|IO|HOST|WTIME_IS_GLOBAL|APPNUM|"
+              r"LASTUSEDCODE|UNIVERSE_SIZE|WIN_BASE|WIN_DISP_UNIT|WIN_SIZE|"
+              r"WIN_CREATE_FLAVOR|WIN_MODEL)$",
+    "tbind": r"^MPI_T_BIND_",
+    "tcbsafety": r"^MPI_T_CB_REQUIRE_",
+    "tpvarclass": r"^MPI_T_PVAR_CLASS_",
+    "tsourceorder": r"^MPI_T_SOURCE_",
+    "tverbosity": r"^MPI_T_VERBOSITY_",
+    "tscope": r"^MPI_T_SCOPE_",
+}
+
+# Families whose default arm is not "pass the value through". Only keyvals:
+# every other family here is a closed set of predefined names, so a value that
+# matched no case is one the implementation will reject and passing it on is
+# the honest answer. A keyval is not -- the implementation hands out dynamic
+# ones at run time, and they can land anywhere, including on top of the ABI's
+# predefined 501-507 and 601-605 (NOTES.md #5.6). So the default arm asks the
+# registry that MPI_*_create_keyval fills instead.
+SWITCH_DEFAULT = {
+    "keyval": ("mpiwrapper_keyval_dynamic_fromabi(abi_keyval)",
+               "mpiwrapper_keyval_dynamic_toabi(keyval)"),
+}
+
+# ---------------------------------------------------------------------------
+# MPI_T's six handle classes (S3b)
+# ---------------------------------------------------------------------------
+
+# These are *not* the eleven handle classes of #5.1 and deliberately do not go
+# through their machinery. The eleven have up to 103 predefined values apiece,
+# spelled in the implementation as addresses that are not compile-time
+# constants, which is what the perfect-hash reverse map exists for. MPI_T's
+# have at most two apiece, so each direction is one or two compares -- the
+# sentinel shape of #5.3, not the map shape of #5.1. Keeping them out also
+# keeps "handle classes: 11" and "predefined handles: 103" the frozen tallies
+# they were.
+#
+# The sentinels do have to be translated, which is the whole reason this is not
+# a bit-cast: the ABI fixes MPI_T_PVAR_ALL_HANDLES at (MPI_T_pvar_handle)1,
+# Open MPI 5.0.6 spells it (MPI_T_pvar_handle)-1, and MPICH 4.3.1 makes it an
+# `extern ... * const` object whose value is not a compile-time constant at all
+# -- so it cannot be a case label anywhere and has to be a run-time compare, in
+# both directions.
+TOOL_HANDLE_KIND = {
+    "TOOLS_ENUM": "t_enum",
+    "CVAR": "t_cvar_handle",
+    "PVAR": "t_pvar_handle",
+    "PVAR_SESSION": "t_pvar_session",
+    "EVENT_REGISTRATION": "t_event_registration",
+    "EVENT_INSTANCE": "t_event_instance",
+}
+
+# family -> (implementation type, [sentinel constants], the ABI null used when
+# a call fails or is stubbed). The type name is also the guard: an
+# implementation without MPI_T events has no MPI_T_event_registration to
+# declare, and `sizeof (T)` is what dev/probe_impl.py asks the compiler.
+#
+# The last two carry no sentinel and no ABI-named null, because the ABI header
+# defines none: there is no MPI_T_EVENT_REGISTRATION_NULL. A cast zero is what
+# an out parameter gets on a path that produced no handle, which is the only
+# place the value is ever read.
+TOOL_HANDLE = {
+    "t_enum": ("MPI_T_enum", ["MPI_T_ENUM_NULL"], "MPIABI_T_ENUM_NULL"),
+    "t_cvar_handle": ("MPI_T_cvar_handle", ["MPI_T_CVAR_HANDLE_NULL"],
+                      "MPIABI_T_CVAR_HANDLE_NULL"),
+    "t_pvar_handle": ("MPI_T_pvar_handle",
+                      ["MPI_T_PVAR_HANDLE_NULL", "MPI_T_PVAR_ALL_HANDLES"],
+                      "MPIABI_T_PVAR_HANDLE_NULL"),
+    "t_pvar_session": ("MPI_T_pvar_session", ["MPI_T_PVAR_SESSION_NULL"],
+                       "MPIABI_T_PVAR_SESSION_NULL"),
+    "t_event_registration": ("MPI_T_event_registration", [],
+                            "(MPIABI_T_event_registration)0"),
+    "t_event_instance": ("MPI_T_event_instance", [],
+                         "(MPIABI_T_event_instance)0"),
 }
 
 # The two bitmask roles. One mapper round-trips on MPICH and is wrong on Open
@@ -830,6 +1091,12 @@ def classify(ep, p):
             return "array_convert_in"
         if direction == "inout" and kind in HANDLE_KIND:
             return "array_stage_inout"
+        if direction == "out" and kind == "STRING":
+            # A `char value[valuelen]`: an output string buffer that happens to
+            # be spelled as an array because apis.json records its length. Same
+            # class as the scalar-spelled ones below, same reason.
+            return ("string_out" if (ep.name, p.name) in STRING_OUT_LENGTH
+                    else "S3:output string buffer with no length argument")
         if direction == "out":
             # Handles differ in *size* between the ABI and the implementation
             # and statuses differ in layout, so both are staged. The integer
@@ -845,10 +1112,20 @@ def classify(ep, p):
     if kind in HANDLE_KIND:
         return {"in": "handle_in", "out": "handle_out",
                 "inout": "handle_inout"}[direction]
+    if kind in TOOL_HANDLE_KIND:
+        return {"in": "toolhandle_in", "out": "toolhandle_out",
+                "inout": "toolhandle_inout"}[direction]
+    if kind == "TOOL_MPI_OBJ":
+        return "tool_obj"
     if kind in PASSTHROUGH_KIND:
         return "passthrough"
     if kind in SWITCH_KIND:
-        return "switch_in" if direction == "in" else "switch_out"
+        # inout is its own case rather than a flavour of out: MPI_*_free_keyval
+        # passes a keyval *in* and gets MPI_KEYVAL_INVALID back through the
+        # same pointer, so a body that only wrote the result would hand the
+        # implementation an uninitialized local.
+        return {"in": "switch_in", "out": "switch_out",
+                "inout": "switch_inout"}[direction]
     if kind in BITMASK_KIND:
         return "bitmask_in" if direction == "in" else "bitmask_out"
     if kind in RANK_KIND:
@@ -860,7 +1137,17 @@ def classify(ep, p):
     if kind == "COLOR":
         return "color"
     if kind == "STRING":
-        return "string_in" if p.constant else "S3:output string buffer"
+        if p.constant:
+            return "string_in"
+        # NOTES.md #5.8's split, and the table is what decides it: with an
+        # explicit length argument the caller bounds the write and nothing
+        # converts, so the buffer and its length both pass through. Without
+        # one, an implementation whose MPI_MAX_* exceeds the ABI's writes past
+        # the caller's array, and truncate-or-error is a per-parameter
+        # judgement -- so those ten are in the ledger, and anything new that
+        # arrives without an entry here stays deferred saying so.
+        return ("string_out" if (ep.name, p.name) in STRING_OUT_LENGTH
+                else "S3:output string buffer with no length argument")
     if "BUFFER" in kind:
         return "buffer_inplace" if in_place_site(ep, p) else "buffer"
     if kind == "STATUS":
@@ -903,7 +1190,9 @@ def renamed(base):
 def local_type(p):
     """The implementation-side type of a local holding this parameter."""
     if p.suffix:                       # `const MPI_Aint x[]` -> `const MPI_Aint *`
-        return p.base + " *"
+        # `char *argv[]` decays to `char **`, with the stars together: the
+        # space belongs between the type and its pointers, not among them.
+        return p.base + ("*" if p.base.endswith("*") else " *")
     return p.base
 
 
@@ -1073,11 +1362,21 @@ class Staged:
     `mode` is the direction of the copying, not of the parameter: "in" fills
     the temporary before the call, "out" reads it after, "inout" does both, and
     "status" is "out" plus the MPI_STATUSES_IGNORE short circuit.
+
+    `skip` is the condition under which the caller wants no array back at all,
+    and `skip_arg` what the implementation is told instead. Two things arrive
+    at the same shape: MPI_STATUSES_IGNORE, and MPI_T's rule that a null OUT
+    pointer means "do not return this". Both must be tested *before* anything
+    is allocated, and both must suppress the copy back -- which for the null
+    case is not an optimization but the whole point, since the destination is
+    the null pointer.
     """
 
-    __slots__ = ("p", "name", "elem", "mode", "extent", "family", "ignored")
+    __slots__ = ("p", "name", "elem", "mode", "extent", "family", "ignored",
+                 "skip", "skip_arg")
 
-    def __init__(self, p, name, elem, mode, extent, family, ignored=False):
+    def __init__(self, p, name, elem, mode, extent, family, ignored=False,
+                 skip=None, skip_arg=None):
         self.p = p
         self.name = name
         self.elem = elem
@@ -1085,6 +1384,8 @@ class Staged:
         self.extent = extent
         self.family = family
         self.ignored = ignored   # MPI_IN_PLACE makes this argument ignored
+        self.skip = skip
+        self.skip_arg = skip_arg
 
     def fill(self, lead):
         """The conversion loop's assignment, `lead` being everything up to and
@@ -1111,8 +1412,37 @@ def emit_body(ep):
     decls, outs, post, args = [], [], [], []
     staged, checks, checked_lengths = [], [], set()
     probes, pre, rejects, extent_post, maps, releases = [], [], [], [], [], []
+    late_decls = []
     handle_out = False
     status_local = False
+
+    # MPI_T's query functions let a caller pass a null pointer for any OUT
+    # parameter to say it does not want that answer. Only a *converted* out
+    # parameter cares: one that passes through carries the null to the
+    # implementation, which is exactly what the caller asked for.
+    nullable = ep.name in NULLABLE_OUT_ROUTINES
+
+    def out_pointer(p, name, abi):
+        """What a nullable OUT parameter passes: the local's address, or the
+        null the caller asked for.
+
+        Declared rather than written inline as `abi_x ? &x : NULL`, because the
+        argument list of the implementation call must contain no ABI-typed
+        parameter at all -- that assertion is a grep over the emitted text and
+        it is the generator's load-bearing one, so it is worth a named local
+        rather than an exception (NOTES.md #3).
+        """
+        outs.append((p.pointee() + " *const", name + "_p",
+                     f"{abi} ? &{name} : NULL"))
+        return name + "_p"
+
+    def writeback(abi, statement):
+        """`*abi_x = ...;`, guarded by `if (abi_x)` where the caller may have
+        passed nothing to write to."""
+        if not nullable:
+            return (statement,)
+        one = f"if ({abi}) {statement}"
+        return (one,) if len(one) <= 79 - 6 else (f"if ({abi})", "  " + statement)
 
     def use(extent, elem, allocates=True):
         """Record what an Extent needs emitted before the call, once each.
@@ -1212,12 +1542,18 @@ def emit_body(ep):
                 args.append(name)
         elif cls == "handle_out":
             cl = HANDLE_KIND[p.kind]
-            outs.append((p.pointee(), name, None))
+            outs.append((p.pointee(), name,
+                         impl_null_handle(p.kind) if nullable else None))
             pad = " " * (len(f"*{abi} = ") + 4)
-            post.append((f"*{abi} = (ierror == MPI_SUCCESS)",
-                         f"{pad}? mpiwrapper_{cl}_toabi({name})",
-                         f"{pad}: {NULL_HANDLE[cl]};"))
-            args.append("&" + name)
+            group = (f"*{abi} = (ierror == MPI_SUCCESS)",
+                     f"{pad}? mpiwrapper_{cl}_toabi({name})",
+                     f"{pad}: {NULL_HANDLE[cl]};")
+            if nullable:
+                group = (f"if ({abi})",) + tuple("  " + ln for ln in group)
+                args.append(out_pointer(p, name, abi))
+            else:
+                args.append("&" + name)
+            post.append(group)
             handle_out = True
         elif cls == "handle_inout":
             cl = HANDLE_KIND[p.kind]
@@ -1233,9 +1569,79 @@ def emit_body(ep):
         elif cls in ("rank_out", "tag_out", "errorcode_out", "switch_out",
                      "bitmask_out"):
             fn = "mpiwrapper_" + scalar_family(p, cls)
-            outs.append((p.pointee(), name, None))
+            outs.append((p.pointee(), name, "0" if nullable else None))
+            post.append(writeback(abi, f"*{abi} = {fn}_toabi({name});"))
+            args.append(out_pointer(p, name, abi) if nullable else "&" + name)
+        elif cls == "switch_inout":
+            # The keyval of MPI_*_free_keyval, and nothing else so far: the
+            # implementation reads the value it is given and writes
+            # MPI_KEYVAL_INVALID back through the same pointer, so both halves
+            # of the conversion are needed and the local must start as the
+            # caller's value rather than as whatever the stack held.
+            fn = "mpiwrapper_" + scalar_family(p, cls)
+            decls.append((p.pointee(), name, f"{fn}_fromabi(*{abi})"))
             post.append((f"*{abi} = {fn}_toabi({name});",))
             args.append("&" + name)
+        elif cls == "toolhandle_in":
+            fam = TOOL_HANDLE_KIND[p.kind]
+            decls.append(("const " + p.base, name,
+                          f"mpiwrapper_{fam}_fromabi({abi})"))
+            args.append(name)
+        elif cls == "toolhandle_out":
+            fam = TOOL_HANDLE_KIND[p.kind]
+            sentinels = TOOL_HANDLE[fam][1]
+            outs.append((p.pointee(), name,
+                         (sentinels[0] if sentinels else "NULL")
+                         if nullable else None))
+            pad = " " * (len(f"*{abi} = ") + 4)
+            group = (f"*{abi} = (ierror == MPI_SUCCESS)",
+                     f"{pad}? mpiwrapper_{fam}_toabi({name})",
+                     f"{pad}: {TOOL_HANDLE[fam][2]};")
+            if nullable:
+                group = (f"if ({abi})",) + tuple("  " + ln for ln in group)
+                args.append(out_pointer(p, name, abi))
+            else:
+                args.append("&" + name)
+            post.append(group)
+            handle_out = True
+        elif cls == "toolhandle_inout":
+            fam = TOOL_HANDLE_KIND[p.kind]
+            decls.append((p.pointee(), name,
+                          f"mpiwrapper_{fam}_fromabi(*{abi})"))
+            post.append((f"*{abi} = mpiwrapper_{fam}_toabi({name});",))
+            args.append("&" + name)
+            handle_out = True
+        elif cls == "tool_obj":
+            # The class of the object this points at is not in the argument
+            # list; it is what a prior get_info reported in `bind`, so the
+            # wrapper asks the same question before it can convert anything.
+            # The query goes in `probes` so that a failure returns the
+            # implementation's own error before a handle has been produced,
+            # and the two locals go *after* it, since both read its answer.
+            probe = TOOL_OBJ_BIND[ep.name]
+            if probe not in probes:
+                probes.append(probe)
+            late_decls.append(("union mpiwrapper_tool_obj", "obj_storage",
+                               None))
+            late_decls.append(
+                ("void *const", name,
+                 f"mpiwrapper_tool_obj_fromabi(tool_bind, {abi}, "
+                 "&obj_storage)"))
+            args.append(name)
+        elif cls == "string_out":
+            # NOTES.md #5.8: the caller passed the buffer's size, so the
+            # implementation cannot overflow it and a char is a char on both
+            # sides. The length parameter is an ordinary passthrough int and
+            # is named here only so that the generator can check it is really
+            # in the signature.
+            length = STRING_OUT_LENGTH[(ep.name, p.name)]
+            if not any(q.name == length for q in ep.params):
+                raise SystemExit(
+                    f"{ep.name}: STRING_OUT_LENGTH names {length!r} as what "
+                    f"bounds {p.name!r}, and it is not a parameter")
+            decls.append(array_row(p, name, abi) if p.suffix
+                         else (local_type(p).rstrip() + "const", name, abi))
+            args.append(name)
         elif cls == "color":
             decls.append(("const " + p.base, name,
                           f"{abi} == MPIABI_UNDEFINED ? MPI_UNDEFINED : {abi}"))
@@ -1258,16 +1664,23 @@ def emit_body(ep):
                     "array_status_out": "status"}[cls]
             family = (scalar_family(p, "array_convert_in")
                       if cls != "array_status_out" else None)
-            staged.append(Staged(p, name, elem, mode, extent, family,
-                                 (ep.name, p.name) in IN_PLACE_IGNORES))
+            skip = skip_arg = None
             if cls == "array_status_out":
                 # NULL in the ABI, and the test has to come before we allocate
                 # room for statuses nobody wants (NOTES.md #5.7).
-                decls.append(("const int", "ignore",
+                skip, skip_arg = "ignore", "MPI_STATUSES_IGNORE"
+                decls.append(("const int", skip,
                               f"{abi} == MPIABI_STATUSES_IGNORE"))
-                args.append(f"ignore ? MPI_STATUSES_IGNORE : {name}")
-            else:
-                args.append(name)
+            elif nullable and mode == "out":
+                # MPI_T's null-means-do-not-return rule again. Here it is not
+                # merely an optimization: the copy back would write through the
+                # null pointer the caller passed.
+                skip, skip_arg = name + "_absent", "NULL"
+                decls.append(("const int", skip, f"{abi} == NULL"))
+            staged.append(Staged(p, name, elem, mode, extent, family,
+                                 (ep.name, p.name) in IN_PLACE_IGNORES,
+                                 skip, skip_arg))
+            args.append(f"{skip} ? {skip_arg} : {name}" if skip else name)
             # The out direction of a handle array can fail the same way a
             # scalar out handle can: a dynamic handle whose bits collide with
             # the ABI's predefined range (NOTES.md #5.1).
@@ -1306,7 +1719,7 @@ def emit_body(ep):
 
     return assemble(ep, decls, outs, post, args, staged, checks, handle_out,
                     status_local, probes, pre, rejects, extent_post, maps,
-                    releases)
+                    releases, late_decls)
 
 
 def length_type(ep, length):
@@ -1338,7 +1751,8 @@ def request_out(ep):
 
 
 def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
-             status_local, probes, pre, rejects, extent_post, maps, releases):
+             status_local, probes, pre, rejects, extent_post, maps, releases,
+             late_decls=()):
     if staged and any(s.mode == "in" for s in staged) and request_out(ep):
         return assemble_outliving(ep, decls, args, staged, checks, probes, pre,
                                   rejects)
@@ -1366,6 +1780,15 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
 
     body += emit_extent_queries(ep, probes, pre, rejects, ind)
 
+    if late_decls:
+        # Locals whose initializer reads a probe's answer, so they cannot sit
+        # in the declaration group above it. Aligned one at a time rather than
+        # as a group: the widest of them is a union type that would pad the
+        # rest past the margin for nothing.
+        for row in late_decls:
+            body += [ind + ln for ln in align([row], ind)]
+        body.append("")
+
     if staged:
         rows = []
         for s in staged:
@@ -1378,27 +1801,29 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         body += [ind + ln for ln in align(rows, ind)]
         body.append("")
         for s in staged:
-            # A status array the caller does not want is not allocated at all,
-            # which is the point of testing MPI_STATUSES_IGNORE this early.
-            guarded = s.mode == "status"
+            # An array the caller does not want is not allocated at all, which
+            # is the point of testing MPI_STATUSES_IGNORE -- or MPI_T's null
+            # OUT pointer -- this early.
+            guarded = s.skip is not None
             inner = ind + "  " if guarded else ind
             if guarded:
                 if body[-1] != "":
                     body.append("")
-                body.append(ind + "if (!ignore) {")
+                body.append(ind + f"if (!{s.skip}) {{")
             body += wrap(f"{s.name} = mpiwrapper_stage",
                          [f"{s.name}_stack", f"sizeof {s.name}_stack",
                           f"(size_t){s.extent.alloc}", f"sizeof *{s.name}"],
                          ";", inner,
                          len(inner) + len(s.name) + len(" = mpiwrapper_stage("))
             body.append(inner + f"if (!{s.name}) goto done;")
-            if guarded:
+            if s.mode == "status":
                 # Zeroed rather than left as stack garbage, so that a status
                 # the implementation does not fill converts reproducibly.
                 body += wrap("memset",
                              [s.name, "0", f"(size_t){s.extent.alloc} * "
                               f"sizeof *{s.name}"], ";", inner,
                              len(inner) + len("memset("))
+            if guarded:
                 body.append(ind + "}")
                 body.append("")
         if body[-1] != "":
@@ -1574,11 +1999,28 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
     return body
 
 
+def out_handle_nulls(ep):
+    """(ABI parameter, the ABI null handle) for every out handle parameter,
+    across both the eleven handle classes and MPI_T's six."""
+    out = []
+    for p in ep.params:
+        if p.cls == "handle_out":
+            out.append((f"abi_{p.name}", NULL_HANDLE[HANDLE_KIND[p.kind]]))
+        elif p.cls == "toolhandle_out":
+            out.append((f"abi_{p.name}", TOOL_HANDLE[TOOL_HANDLE_KIND[p.kind]][2]))
+    return out
+
+
 def null_out_handles(ep, ind):
     """What an early return owes the caller: a null handle in every out
-    parameter, so that nobody is handed an uninitialized one."""
-    return [ind + f"*abi_{p.name} = {NULL_HANDLE[HANDLE_KIND[p.kind]]};"
-            for p in ep.params if p.cls == "handle_out"]
+    parameter, so that nobody is handed an uninitialized one -- and nothing at
+    all where the caller passed no pointer to write to."""
+    nullable = ep.name in NULLABLE_OUT_ROUTINES
+    lines = []
+    for abi, null in out_handle_nulls(ep):
+        stmt = f"*{abi} = {null};"
+        lines.append(ind + (f"if ({abi}) {stmt}" if nullable else stmt))
+    return lines
 
 
 def emit_extent_queries(ep, probes, pre, rejects, ind):
@@ -1666,13 +2108,16 @@ def emit_writeback(staged, maps, extent_post, ind):
             body.append(ind + f"  abi_{s.p.name}[i] = "
                               f"mpiwrapper_request_toabi({s.name}[i]);")
         elif s.mode == "status":
-            body.append(ind + "if (!ignore)")
+            body.append(ind + f"if (!{s.skip})")
             body.append(ind + f"  for (int i = 0; i < {s.extent.conv}; ++i)")
             body.append(ind + f"    mpiwrapper_status_toabi(&{s.name}[i], "
                               f"&abi_{s.p.name}[i]);")
         elif s.mode == "out":
             fn = "mpiwrapper_" + s.family
-            body.append(ind + "if (ierror == MPI_SUCCESS)")
+            cond = "ierror == MPI_SUCCESS"
+            if s.skip:
+                cond = f"ierror == MPI_SUCCESS && !{s.skip}"
+            body.append(ind + f"if ({cond})")
             body.append(ind + f"  for ({s.extent.ctype} i = 0; "
                               f"i < {s.extent.conv}; ++i)")
             body.append(ind + f"    abi_{s.p.name}[i] = {fn}_toabi({s.name}[i]);")
@@ -1713,10 +2158,7 @@ def emit_stub(ep):
     for p in ep.params:
         if p.name != "...":
             body.append(f"    (void)abi_{p.name};")
-    for p in ep.params:
-        if p.cls == "handle_out":
-            body.append(
-                f"    *abi_{p.name} = {NULL_HANDLE[HANDLE_KIND[p.kind]]};")
+    body += null_out_handles(ep, "    ")
     if ep.ret == "int":
         body.append("    return MPIABI_ERR_UNSUPPORTED_OPERATION;")
     elif ep.ret == "double":
@@ -2002,9 +2444,8 @@ WRAPPERS_PREAMBLE = '''\
  * compiler about the implementation's own header. An entry point the implementation
  * does not have gets the stub of decision 6 instead: the slot stays present
  * and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time, so the ABI surface
- * never shrinks. The classes not yet generated -- output strings, keyvals,
- * callbacks, MPI_T -- get the same stub, and gen/report.txt names every one of
- * them.
+ * never shrinks. The hand-written entry points that have no body yet get the
+ * same stub, and gen/report.txt names every one of them.
  *
  * Six bodies carry no guard: the status accessors of NOTES.md #5.2 read and
  * write a named field of the caller's own ABI status and never reach the
@@ -2375,21 +2816,144 @@ def emit_constants_c(classes, handles, enums):
 
     # --- the remaining integer families -------------------------------------
     out.append(INTFAMILY_COMMENT)
+    deprecated = {n for n, (_, note) in enums.items() if "deprecated:" in note}
     for family in sorted(set(SWITCH_KIND.values())):
         members = [n for n in enums
                    if re.match(SWITCH_FAMILY_MEMBERS[family], n)]
         if not members:
             raise SystemExit(f"no enumerators matched the {family} family")
-        out.append(emit_switch_family(family, family, members, guard_all=True))
+        out.append(emit_switch_family(family, family, members, guard_all=True,
+                                      deprecated=deprecated))
 
     out.append(SENTINEL_BODIES)
+    out.append(emit_tool_handles())
+    out.append(emit_tool_obj())
     return "\n".join(out)
 
 
-def emit_switch_family(family, argname, members, guard_all):
-    """`mpiwrapper_<family>_fromabi`/`_toabi`, a switch each way."""
+TOOL_HANDLE_COMMENT = '''
+/* MPI_T's six handle classes.
+ *
+ * Not the eleven of NOTES.md #5.1 and deliberately not their machinery: those
+ * have up to 103 predefined values apiece, spelled in the implementation as
+ * addresses that are not compile-time constants, which is what the perfect-hash
+ * reverse map exists for. These have at most two apiece, so each direction is
+ * one or two compares -- #5.3's sentinel shape rather than #5.1's map shape.
+ *
+ * The sentinels genuinely differ, which is why this is not a bit-cast: the ABI
+ * fixes MPI_T_PVAR_ALL_HANDLES at 1, Open MPI 5.0.6 spells it -1, and MPICH
+ * 4.3.1 makes it an `extern ... * const` whose value is not a constant
+ * expression at all -- so it could not be a case label even if one were wanted,
+ * and both directions have to be run-time compares.
+ *
+ * A dynamic implementation handle whose bits land on 0 or 1 would be read back
+ * as a sentinel, so the toabi direction rejects it exactly as #5.1 does: the
+ * class's null handle plus the flag mpiwrapper_take_handle_error() reports. No
+ * implementation can produce one -- these are object addresses on both -- and
+ * the check is one compare on a path that allocates a tool handle.
+ */
+'''
+
+
+def emit_tool_handles():
+    rows = [TOOL_HANDLE_COMMENT]
+    for fam, (impl, sentinels, abinull) in TOOL_HANDLE.items():
+        abi = gh.rename(impl)
+        g = "MPIWRAPPER_HAVE_" + impl
+        body = [f"#ifdef {g}",
+                f"{impl} mpiwrapper_{fam}_fromabi({abi} abi)",
+                "{"]
+        for s in sentinels:
+            body.append(f"  if (abi == {gh.rename(s)}) return {s};")
+        body += [f"  return MPIWRAPPER_HANDLE({impl}, MPIWRAPPER_BITS(abi));",
+                 "}",
+                 "",
+                 f"{abi} mpiwrapper_{fam}_toabi({impl} h)",
+                 "{"]
+        for s in sentinels:
+            body.append(f"  if (h == {s}) return {gh.rename(s)};")
+        if sentinels:
+            # Only a class with a sentinel has a value to collide with; the
+            # two event classes name none, so every bit pattern is its own.
+            body += ["  if (MPIWRAPPER_BITS(h) <= MPIWRAPPER_TOOL_PREDEF_LAST) {",
+                     "    mpiwrapper_set_handle_error();",
+                     f"    return {abinull};",
+                     "  }"]
+        body += [f"  return MPIWRAPPER_HANDLE({abi}, MPIWRAPPER_BITS(h));",
+                 "}",
+                 "#endif"]
+        rows.append("\n".join(body) + "\n")
+    return "\n".join(rows)
+
+
+TOOL_OBJ_COMMENT = '''
+/* MPI_T's obj_handle: the one parameter whose *class* is not in the argument
+ * list. MPI-5.0 15.3.6 makes it "an address to a local variable that stores the
+ * object's handle", and which kind of handle that is comes from the `bind` a
+ * prior get_info reported -- so src/mpiwrapper/toolobj.c asks the
+ * implementation for `bind` first and this switch converts accordingly.
+ *
+ * `bind` here is the *implementation's* own value, straight from its own
+ * get_info, so the labels are its names and no conversion intervenes. A null
+ * obj_handle and MPI_T_BIND_NO_OBJECT both mean the same thing -- the argument
+ * is ignored -- and both produce a null pointer, which is what the
+ * implementation is then given.
+ */
+'''
+
+
+def emit_tool_obj():
+    rows = [TOOL_OBJ_COMMENT,
+            "void *mpiwrapper_tool_obj_fromabi(int bind, void *abi_obj,",
+            "                                  union mpiwrapper_tool_obj *out)",
+            "{",
+            "  if (!abi_obj) return NULL;",
+            "  switch (bind) {"]
+    for member, cls in TOOL_OBJ_CLASSES.items():
+        abitype = {"comm": "MPIABI_Comm", "datatype": "MPIABI_Datatype",
+                   "errhandler": "MPIABI_Errhandler", "file": "MPIABI_File",
+                   "group": "MPIABI_Group", "info": "MPIABI_Info",
+                   "message": "MPIABI_Message", "op": "MPIABI_Op",
+                   "request": "MPIABI_Request", "session": "MPIABI_Session",
+                   "win": "MPIABI_Win"}[cls]
+        # Two independent reasons a case can be absent: MPI_T may not name the
+        # binding, and the class itself may not exist (sessions are MPI-4.0).
+        guards = ["MPIWRAPPER_HAVE_" + member]
+        if cls == "session":
+            guards.append("MPIWRAPPER_HAVE_MPI_SESSION_NULL")
+        rows.append("#if " + " && ".join(f"defined({g})" for g in guards))
+        rows.append(f"  case {member}:")
+        rows.append(f"    out->{cls} = mpiwrapper_{cls}_fromabi("
+                    f"*({abitype} *)abi_obj);")
+        rows.append(f"    return &out->{cls};")
+        rows.append("#endif")
+    rows += ["  default: break;",
+             "  }",
+             "  return NULL;",
+             "}"]
+    return "\n".join(rows) + "\n"
+
+
+def emit_switch_family(family, argname, members, guard_all, deprecated=()):
+    """`mpiwrapper_<family>_fromabi`/`_toabi`, a switch each way.
+
+    A family with a deprecated member carries the same pragma pair the
+    deprecated *entry points* do. The ABI header marks MPI_HOST as deprecated
+    in MPI-4.1 and Open MPI main attaches an attribute to its own declaration
+    of it, which -Werror turns into a build failure for a table whose whole job
+    is to name it. Driven by the header's own `deprecated:` note rather than by
+    a list here, so the next one costs nothing.
+    """
     rows = []
-    for direction in ("fromabi", "toabi"):
+    stale = [m for m in members if m in deprecated]
+    if stale:
+        rows.append("/* " + ", ".join(stale) + ": deprecated, and an "
+                    "implementation may say so on its own")
+        rows.append(" * declaration. A conversion table still has to name it.")
+        rows.append(" */")
+        rows.append("#pragma GCC diagnostic push")
+        rows.append('#pragma GCC diagnostic ignored "-Wdeprecated-declarations"')
+    for i, direction in enumerate(("fromabi", "toabi")):
         arg = ("abi_" + argname) if direction == "fromabi" else argname
         rows.append(f"int mpiwrapper_{family}_{direction}(int {arg})")
         rows.append("{")
@@ -2400,13 +2964,17 @@ def emit_switch_family(family, argname, members, guard_all):
         for (src, dst), m in zip(labels, members):
             g = guard(m) if guard_all else None
             if g:
-                rows.append(f"#ifdef {g} /* {OPTIONAL_CONSTANTS[m]} */")
+                rows.append(f"#ifdef {g} /* {guard_reason(m)} */")
             rows.append(f"  case {(src + ':').ljust(width + 1)} return {dst};")
             if g:
                 rows.append("#endif")
-        rows.append(f"  default:{' ' * (width - 7)} return {arg};")
+        fallback = SWITCH_DEFAULT.get(family, (arg, arg))[i]
+        rows.append(f"  default:{' ' * (width - 7)} return {fallback};")
         rows.append("  }")
         rows.append("}")
+        rows.append("")
+    if stale:
+        rows.append("#pragma GCC diagnostic pop")
         rows.append("")
     return "\n".join(rows)
 
@@ -2781,10 +3349,20 @@ def emit_report(protos, tallies, handwritten_bodies):
     deferred = [e for e in mpi if e.status == "deferred"]
     w("Deferred to S3 (%d)" % len(deferred))
     w("-" * 40)
-    w("  The slot exists and reports MPI_ERR_UNSUPPORTED_OPERATION at run time")
-    w("  (decision 6). The class named is what S3's second half has to add;")
-    w("  its first half took the array and status classes.")
-    w("")
+    if not deferred:
+        w("  None: S3 is complete, and every one of the entry points above is")
+        w("  either generated or named in the ledger. The section stays, and")
+        w("  so does its frozen tally of zero, because that is what makes a")
+        w("  future apis.json or ABI header introducing an argument class the")
+        w("  generator cannot place fail here -- rather than quietly emitting")
+        w("  one more run-time-reporting stub.")
+        w("")
+    else:
+        w("  The slot exists and reports MPI_ERR_UNSUPPORTED_OPERATION at run "
+          "time")
+        w("  (decision 6), and the class named is what has to be added for it")
+        w("  to become a real body.")
+        w("")
     by_reason = {}
     for ep in deferred:
         by_reason.setdefault(ep.detail, []).append(ep.name)

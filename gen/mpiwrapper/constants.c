@@ -1244,6 +1244,53 @@ int mpiwrapper_distribute_toabi(int distribute)
   }
 }
 
+/* MPI_HOST: deprecated, and an implementation may say so on its own
+ * declaration. A conversion table still has to name it.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+int mpiwrapper_keyval_fromabi(int abi_keyval)
+{
+  switch (abi_keyval) {
+  case MPIABI_KEYVAL_INVALID:    return MPI_KEYVAL_INVALID;
+  case MPIABI_TAG_UB:            return MPI_TAG_UB;
+  case MPIABI_IO:                return MPI_IO;
+  case MPIABI_HOST:              return MPI_HOST;
+  case MPIABI_WTIME_IS_GLOBAL:   return MPI_WTIME_IS_GLOBAL;
+  case MPIABI_APPNUM:            return MPI_APPNUM;
+  case MPIABI_LASTUSEDCODE:      return MPI_LASTUSEDCODE;
+  case MPIABI_UNIVERSE_SIZE:     return MPI_UNIVERSE_SIZE;
+  case MPIABI_WIN_BASE:          return MPI_WIN_BASE;
+  case MPIABI_WIN_DISP_UNIT:     return MPI_WIN_DISP_UNIT;
+  case MPIABI_WIN_SIZE:          return MPI_WIN_SIZE;
+  case MPIABI_WIN_CREATE_FLAVOR: return MPI_WIN_CREATE_FLAVOR;
+  case MPIABI_WIN_MODEL:         return MPI_WIN_MODEL;
+  default:                  return mpiwrapper_keyval_dynamic_fromabi(abi_keyval);
+  }
+}
+
+int mpiwrapper_keyval_toabi(int keyval)
+{
+  switch (keyval) {
+  case MPI_KEYVAL_INVALID:    return MPIABI_KEYVAL_INVALID;
+  case MPI_TAG_UB:            return MPIABI_TAG_UB;
+  case MPI_IO:                return MPIABI_IO;
+  case MPI_HOST:              return MPIABI_HOST;
+  case MPI_WTIME_IS_GLOBAL:   return MPIABI_WTIME_IS_GLOBAL;
+  case MPI_APPNUM:            return MPIABI_APPNUM;
+  case MPI_LASTUSEDCODE:      return MPIABI_LASTUSEDCODE;
+  case MPI_UNIVERSE_SIZE:     return MPIABI_UNIVERSE_SIZE;
+  case MPI_WIN_BASE:          return MPIABI_WIN_BASE;
+  case MPI_WIN_DISP_UNIT:     return MPIABI_WIN_DISP_UNIT;
+  case MPI_WIN_SIZE:          return MPIABI_WIN_SIZE;
+  case MPI_WIN_CREATE_FLAVOR: return MPIABI_WIN_CREATE_FLAVOR;
+  case MPI_WIN_MODEL:         return MPIABI_WIN_MODEL;
+  default:               return mpiwrapper_keyval_dynamic_toabi(keyval);
+  }
+}
+
+#pragma GCC diagnostic pop
+
 int mpiwrapper_locktype_fromabi(int abi_locktype)
 {
   switch (abi_locktype) {
@@ -1334,6 +1381,130 @@ int mpiwrapper_splittype_toabi(int splittype)
   }
 }
 
+int mpiwrapper_tbind_fromabi(int abi_tbind)
+{
+  switch (abi_tbind) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_NO_OBJECT /* MPI_T is optional in full */
+  case MPIABI_T_BIND_NO_OBJECT:      return MPI_T_BIND_NO_OBJECT;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_COMM /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_COMM:       return MPI_T_BIND_MPI_COMM;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_DATATYPE /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_DATATYPE:   return MPI_T_BIND_MPI_DATATYPE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_ERRHANDLER /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_ERRHANDLER: return MPI_T_BIND_MPI_ERRHANDLER;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_FILE /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_FILE:       return MPI_T_BIND_MPI_FILE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_GROUP /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_GROUP:      return MPI_T_BIND_MPI_GROUP;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_OP /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_OP:         return MPI_T_BIND_MPI_OP;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_REQUEST /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_REQUEST:    return MPI_T_BIND_MPI_REQUEST;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_WIN /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_WIN:        return MPI_T_BIND_MPI_WIN;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_MESSAGE /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_MESSAGE:    return MPI_T_BIND_MPI_MESSAGE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_INFO /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_INFO:       return MPI_T_BIND_MPI_INFO;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_SESSION /* MPI_T is optional in full */
+  case MPIABI_T_BIND_MPI_SESSION:    return MPI_T_BIND_MPI_SESSION;
+#endif
+  default:                      return abi_tbind;
+  }
+}
+
+int mpiwrapper_tbind_toabi(int tbind)
+{
+  switch (tbind) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_NO_OBJECT /* MPI_T is optional in full */
+  case MPI_T_BIND_NO_OBJECT:      return MPIABI_T_BIND_NO_OBJECT;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_COMM /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_COMM:       return MPIABI_T_BIND_MPI_COMM;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_DATATYPE /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_DATATYPE:   return MPIABI_T_BIND_MPI_DATATYPE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_ERRHANDLER /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_ERRHANDLER: return MPIABI_T_BIND_MPI_ERRHANDLER;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_FILE /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_FILE:       return MPIABI_T_BIND_MPI_FILE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_GROUP /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_GROUP:      return MPIABI_T_BIND_MPI_GROUP;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_OP /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_OP:         return MPIABI_T_BIND_MPI_OP;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_REQUEST /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_REQUEST:    return MPIABI_T_BIND_MPI_REQUEST;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_WIN /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_WIN:        return MPIABI_T_BIND_MPI_WIN;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_MESSAGE /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_MESSAGE:    return MPIABI_T_BIND_MPI_MESSAGE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_INFO /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_INFO:       return MPIABI_T_BIND_MPI_INFO;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_BIND_MPI_SESSION /* MPI_T is optional in full */
+  case MPI_T_BIND_MPI_SESSION:    return MPIABI_T_BIND_MPI_SESSION;
+#endif
+  default:                   return tbind;
+  }
+}
+
+int mpiwrapper_tcbsafety_fromabi(int abi_tcbsafety)
+{
+  switch (abi_tcbsafety) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_NONE /* MPI_T is optional in full */
+  case MPIABI_T_CB_REQUIRE_NONE:              return MPI_T_CB_REQUIRE_NONE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_MPI_RESTRICTED /* MPI_T is optional in full */
+  case MPIABI_T_CB_REQUIRE_MPI_RESTRICTED:    return MPI_T_CB_REQUIRE_MPI_RESTRICTED;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_THREAD_SAFE /* MPI_T is optional in full */
+  case MPIABI_T_CB_REQUIRE_THREAD_SAFE:       return MPI_T_CB_REQUIRE_THREAD_SAFE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_ASYNC_SIGNAL_SAFE /* MPI_T is optional in full */
+  case MPIABI_T_CB_REQUIRE_ASYNC_SIGNAL_SAFE: return MPI_T_CB_REQUIRE_ASYNC_SIGNAL_SAFE;
+#endif
+  default:                               return abi_tcbsafety;
+  }
+}
+
+int mpiwrapper_tcbsafety_toabi(int tcbsafety)
+{
+  switch (tcbsafety) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_NONE /* MPI_T is optional in full */
+  case MPI_T_CB_REQUIRE_NONE:              return MPIABI_T_CB_REQUIRE_NONE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_MPI_RESTRICTED /* MPI_T is optional in full */
+  case MPI_T_CB_REQUIRE_MPI_RESTRICTED:    return MPIABI_T_CB_REQUIRE_MPI_RESTRICTED;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_THREAD_SAFE /* MPI_T is optional in full */
+  case MPI_T_CB_REQUIRE_THREAD_SAFE:       return MPIABI_T_CB_REQUIRE_THREAD_SAFE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_CB_REQUIRE_ASYNC_SIGNAL_SAFE /* MPI_T is optional in full */
+  case MPI_T_CB_REQUIRE_ASYNC_SIGNAL_SAFE: return MPIABI_T_CB_REQUIRE_ASYNC_SIGNAL_SAFE;
+#endif
+  default:                            return tcbsafety;
+  }
+}
+
 int mpiwrapper_threadlevel_fromabi(int abi_threadlevel)
 {
   switch (abi_threadlevel) {
@@ -1375,6 +1546,230 @@ int mpiwrapper_topology_toabi(int topology)
   case MPI_GRAPH:      return MPIABI_GRAPH;
   case MPI_DIST_GRAPH: return MPIABI_DIST_GRAPH;
   default:        return topology;
+  }
+}
+
+int mpiwrapper_tpvarclass_fromabi(int abi_tpvarclass)
+{
+  switch (abi_tpvarclass) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_STATE /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_STATE:         return MPI_T_PVAR_CLASS_STATE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_LEVEL /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_LEVEL:         return MPI_T_PVAR_CLASS_LEVEL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_SIZE /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_SIZE:          return MPI_T_PVAR_CLASS_SIZE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_PERCENTAGE /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_PERCENTAGE:    return MPI_T_PVAR_CLASS_PERCENTAGE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_HIGHWATERMARK /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_HIGHWATERMARK: return MPI_T_PVAR_CLASS_HIGHWATERMARK;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_LOWWATERMARK /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_LOWWATERMARK:  return MPI_T_PVAR_CLASS_LOWWATERMARK;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_COUNTER /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_COUNTER:       return MPI_T_PVAR_CLASS_COUNTER;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_AGGREGATE /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_AGGREGATE:     return MPI_T_PVAR_CLASS_AGGREGATE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_TIMER /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_TIMER:         return MPI_T_PVAR_CLASS_TIMER;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_GENERIC /* MPI_T is optional in full */
+  case MPIABI_T_PVAR_CLASS_GENERIC:       return MPI_T_PVAR_CLASS_GENERIC;
+#endif
+  default:                           return abi_tpvarclass;
+  }
+}
+
+int mpiwrapper_tpvarclass_toabi(int tpvarclass)
+{
+  switch (tpvarclass) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_STATE /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_STATE:         return MPIABI_T_PVAR_CLASS_STATE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_LEVEL /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_LEVEL:         return MPIABI_T_PVAR_CLASS_LEVEL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_SIZE /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_SIZE:          return MPIABI_T_PVAR_CLASS_SIZE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_PERCENTAGE /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_PERCENTAGE:    return MPIABI_T_PVAR_CLASS_PERCENTAGE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_HIGHWATERMARK /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_HIGHWATERMARK: return MPIABI_T_PVAR_CLASS_HIGHWATERMARK;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_LOWWATERMARK /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_LOWWATERMARK:  return MPIABI_T_PVAR_CLASS_LOWWATERMARK;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_COUNTER /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_COUNTER:       return MPIABI_T_PVAR_CLASS_COUNTER;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_AGGREGATE /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_AGGREGATE:     return MPIABI_T_PVAR_CLASS_AGGREGATE;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_TIMER /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_TIMER:         return MPIABI_T_PVAR_CLASS_TIMER;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_PVAR_CLASS_GENERIC /* MPI_T is optional in full */
+  case MPI_T_PVAR_CLASS_GENERIC:       return MPIABI_T_PVAR_CLASS_GENERIC;
+#endif
+  default:                        return tpvarclass;
+  }
+}
+
+int mpiwrapper_tscope_fromabi(int abi_tscope)
+{
+  switch (abi_tscope) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_CONSTANT /* MPI_T is optional in full */
+  case MPIABI_T_SCOPE_CONSTANT: return MPI_T_SCOPE_CONSTANT;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_READONLY /* MPI_T is optional in full */
+  case MPIABI_T_SCOPE_READONLY: return MPI_T_SCOPE_READONLY;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_LOCAL /* MPI_T is optional in full */
+  case MPIABI_T_SCOPE_LOCAL:    return MPI_T_SCOPE_LOCAL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_GROUP /* MPI_T is optional in full */
+  case MPIABI_T_SCOPE_GROUP:    return MPI_T_SCOPE_GROUP;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_GROUP_EQ /* MPI_T is optional in full */
+  case MPIABI_T_SCOPE_GROUP_EQ: return MPI_T_SCOPE_GROUP_EQ;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_ALL /* MPI_T is optional in full */
+  case MPIABI_T_SCOPE_ALL:      return MPI_T_SCOPE_ALL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_ALL_EQ /* MPI_T is optional in full */
+  case MPIABI_T_SCOPE_ALL_EQ:   return MPI_T_SCOPE_ALL_EQ;
+#endif
+  default:                 return abi_tscope;
+  }
+}
+
+int mpiwrapper_tscope_toabi(int tscope)
+{
+  switch (tscope) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_CONSTANT /* MPI_T is optional in full */
+  case MPI_T_SCOPE_CONSTANT: return MPIABI_T_SCOPE_CONSTANT;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_READONLY /* MPI_T is optional in full */
+  case MPI_T_SCOPE_READONLY: return MPIABI_T_SCOPE_READONLY;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_LOCAL /* MPI_T is optional in full */
+  case MPI_T_SCOPE_LOCAL:    return MPIABI_T_SCOPE_LOCAL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_GROUP /* MPI_T is optional in full */
+  case MPI_T_SCOPE_GROUP:    return MPIABI_T_SCOPE_GROUP;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_GROUP_EQ /* MPI_T is optional in full */
+  case MPI_T_SCOPE_GROUP_EQ: return MPIABI_T_SCOPE_GROUP_EQ;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_ALL /* MPI_T is optional in full */
+  case MPI_T_SCOPE_ALL:      return MPIABI_T_SCOPE_ALL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SCOPE_ALL_EQ /* MPI_T is optional in full */
+  case MPI_T_SCOPE_ALL_EQ:   return MPIABI_T_SCOPE_ALL_EQ;
+#endif
+  default:              return tscope;
+  }
+}
+
+int mpiwrapper_tsourceorder_fromabi(int abi_tsourceorder)
+{
+  switch (abi_tsourceorder) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_SOURCE_ORDERED /* MPI_T is optional in full */
+  case MPIABI_T_SOURCE_ORDERED:   return MPI_T_SOURCE_ORDERED;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SOURCE_UNORDERED /* MPI_T is optional in full */
+  case MPIABI_T_SOURCE_UNORDERED: return MPI_T_SOURCE_UNORDERED;
+#endif
+  default:                   return abi_tsourceorder;
+  }
+}
+
+int mpiwrapper_tsourceorder_toabi(int tsourceorder)
+{
+  switch (tsourceorder) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_SOURCE_ORDERED /* MPI_T is optional in full */
+  case MPI_T_SOURCE_ORDERED:   return MPIABI_T_SOURCE_ORDERED;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_SOURCE_UNORDERED /* MPI_T is optional in full */
+  case MPI_T_SOURCE_UNORDERED: return MPIABI_T_SOURCE_UNORDERED;
+#endif
+  default:                return tsourceorder;
+  }
+}
+
+int mpiwrapper_tverbosity_fromabi(int abi_tverbosity)
+{
+  switch (abi_tverbosity) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_USER_BASIC /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_USER_BASIC:    return MPI_T_VERBOSITY_USER_BASIC;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_USER_DETAIL /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_USER_DETAIL:   return MPI_T_VERBOSITY_USER_DETAIL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_USER_ALL /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_USER_ALL:      return MPI_T_VERBOSITY_USER_ALL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_TUNER_BASIC /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_TUNER_BASIC:   return MPI_T_VERBOSITY_TUNER_BASIC;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_TUNER_DETAIL /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_TUNER_DETAIL:  return MPI_T_VERBOSITY_TUNER_DETAIL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_TUNER_ALL /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_TUNER_ALL:     return MPI_T_VERBOSITY_TUNER_ALL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_MPIDEV_BASIC /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_MPIDEV_BASIC:  return MPI_T_VERBOSITY_MPIDEV_BASIC;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_MPIDEV_DETAIL /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_MPIDEV_DETAIL: return MPI_T_VERBOSITY_MPIDEV_DETAIL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_MPIDEV_ALL /* MPI_T is optional in full */
+  case MPIABI_T_VERBOSITY_MPIDEV_ALL:    return MPI_T_VERBOSITY_MPIDEV_ALL;
+#endif
+  default:                          return abi_tverbosity;
+  }
+}
+
+int mpiwrapper_tverbosity_toabi(int tverbosity)
+{
+  switch (tverbosity) {
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_USER_BASIC /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_USER_BASIC:    return MPIABI_T_VERBOSITY_USER_BASIC;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_USER_DETAIL /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_USER_DETAIL:   return MPIABI_T_VERBOSITY_USER_DETAIL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_USER_ALL /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_USER_ALL:      return MPIABI_T_VERBOSITY_USER_ALL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_TUNER_BASIC /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_TUNER_BASIC:   return MPIABI_T_VERBOSITY_TUNER_BASIC;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_TUNER_DETAIL /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_TUNER_DETAIL:  return MPIABI_T_VERBOSITY_TUNER_DETAIL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_TUNER_ALL /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_TUNER_ALL:     return MPIABI_T_VERBOSITY_TUNER_ALL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_MPIDEV_BASIC /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_MPIDEV_BASIC:  return MPIABI_T_VERBOSITY_MPIDEV_BASIC;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_MPIDEV_DETAIL /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_MPIDEV_DETAIL: return MPIABI_T_VERBOSITY_MPIDEV_DETAIL;
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_VERBOSITY_MPIDEV_ALL /* MPI_T is optional in full */
+  case MPI_T_VERBOSITY_MPIDEV_ALL:    return MPIABI_T_VERBOSITY_MPIDEV_ALL;
+#endif
+  default:                       return tverbosity;
   }
 }
 
@@ -1463,4 +1858,203 @@ int *mpiwrapper_weights_out_fromabi(int *abi_weights)
   if (abi_weights == MPIABI_UNWEIGHTED) return MPI_UNWEIGHTED;
   if (abi_weights == MPIABI_WEIGHTS_EMPTY) return MPI_WEIGHTS_EMPTY;
   return abi_weights;
+}
+
+
+/* MPI_T's six handle classes.
+ *
+ * Not the eleven of NOTES.md #5.1 and deliberately not their machinery: those
+ * have up to 103 predefined values apiece, spelled in the implementation as
+ * addresses that are not compile-time constants, which is what the perfect-hash
+ * reverse map exists for. These have at most two apiece, so each direction is
+ * one or two compares -- #5.3's sentinel shape rather than #5.1's map shape.
+ *
+ * The sentinels genuinely differ, which is why this is not a bit-cast: the ABI
+ * fixes MPI_T_PVAR_ALL_HANDLES at 1, Open MPI 5.0.6 spells it -1, and MPICH
+ * 4.3.1 makes it an `extern ... * const` whose value is not a constant
+ * expression at all -- so it could not be a case label even if one were wanted,
+ * and both directions have to be run-time compares.
+ *
+ * A dynamic implementation handle whose bits land on 0 or 1 would be read back
+ * as a sentinel, so the toabi direction rejects it exactly as #5.1 does: the
+ * class's null handle plus the flag mpiwrapper_take_handle_error() reports. No
+ * implementation can produce one -- these are object addresses on both -- and
+ * the check is one compare on a path that allocates a tool handle.
+ */
+
+#ifdef MPIWRAPPER_HAVE_MPI_T_enum
+MPI_T_enum mpiwrapper_t_enum_fromabi(MPIABI_T_enum abi)
+{
+  if (abi == MPIABI_T_ENUM_NULL) return MPI_T_ENUM_NULL;
+  return MPIWRAPPER_HANDLE(MPI_T_enum, MPIWRAPPER_BITS(abi));
+}
+
+MPIABI_T_enum mpiwrapper_t_enum_toabi(MPI_T_enum h)
+{
+  if (h == MPI_T_ENUM_NULL) return MPIABI_T_ENUM_NULL;
+  if (MPIWRAPPER_BITS(h) <= MPIWRAPPER_TOOL_PREDEF_LAST) {
+    mpiwrapper_set_handle_error();
+    return MPIABI_T_ENUM_NULL;
+  }
+  return MPIWRAPPER_HANDLE(MPIABI_T_enum, MPIWRAPPER_BITS(h));
+}
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_T_cvar_handle
+MPI_T_cvar_handle mpiwrapper_t_cvar_handle_fromabi(MPIABI_T_cvar_handle abi)
+{
+  if (abi == MPIABI_T_CVAR_HANDLE_NULL) return MPI_T_CVAR_HANDLE_NULL;
+  return MPIWRAPPER_HANDLE(MPI_T_cvar_handle, MPIWRAPPER_BITS(abi));
+}
+
+MPIABI_T_cvar_handle mpiwrapper_t_cvar_handle_toabi(MPI_T_cvar_handle h)
+{
+  if (h == MPI_T_CVAR_HANDLE_NULL) return MPIABI_T_CVAR_HANDLE_NULL;
+  if (MPIWRAPPER_BITS(h) <= MPIWRAPPER_TOOL_PREDEF_LAST) {
+    mpiwrapper_set_handle_error();
+    return MPIABI_T_CVAR_HANDLE_NULL;
+  }
+  return MPIWRAPPER_HANDLE(MPIABI_T_cvar_handle, MPIWRAPPER_BITS(h));
+}
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_handle
+MPI_T_pvar_handle mpiwrapper_t_pvar_handle_fromabi(MPIABI_T_pvar_handle abi)
+{
+  if (abi == MPIABI_T_PVAR_HANDLE_NULL) return MPI_T_PVAR_HANDLE_NULL;
+  if (abi == MPIABI_T_PVAR_ALL_HANDLES) return MPI_T_PVAR_ALL_HANDLES;
+  return MPIWRAPPER_HANDLE(MPI_T_pvar_handle, MPIWRAPPER_BITS(abi));
+}
+
+MPIABI_T_pvar_handle mpiwrapper_t_pvar_handle_toabi(MPI_T_pvar_handle h)
+{
+  if (h == MPI_T_PVAR_HANDLE_NULL) return MPIABI_T_PVAR_HANDLE_NULL;
+  if (h == MPI_T_PVAR_ALL_HANDLES) return MPIABI_T_PVAR_ALL_HANDLES;
+  if (MPIWRAPPER_BITS(h) <= MPIWRAPPER_TOOL_PREDEF_LAST) {
+    mpiwrapper_set_handle_error();
+    return MPIABI_T_PVAR_HANDLE_NULL;
+  }
+  return MPIWRAPPER_HANDLE(MPIABI_T_pvar_handle, MPIWRAPPER_BITS(h));
+}
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_session
+MPI_T_pvar_session mpiwrapper_t_pvar_session_fromabi(MPIABI_T_pvar_session abi)
+{
+  if (abi == MPIABI_T_PVAR_SESSION_NULL) return MPI_T_PVAR_SESSION_NULL;
+  return MPIWRAPPER_HANDLE(MPI_T_pvar_session, MPIWRAPPER_BITS(abi));
+}
+
+MPIABI_T_pvar_session mpiwrapper_t_pvar_session_toabi(MPI_T_pvar_session h)
+{
+  if (h == MPI_T_PVAR_SESSION_NULL) return MPIABI_T_PVAR_SESSION_NULL;
+  if (MPIWRAPPER_BITS(h) <= MPIWRAPPER_TOOL_PREDEF_LAST) {
+    mpiwrapper_set_handle_error();
+    return MPIABI_T_PVAR_SESSION_NULL;
+  }
+  return MPIWRAPPER_HANDLE(MPIABI_T_pvar_session, MPIWRAPPER_BITS(h));
+}
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_registration
+MPI_T_event_registration mpiwrapper_t_event_registration_fromabi(MPIABI_T_event_registration abi)
+{
+  return MPIWRAPPER_HANDLE(MPI_T_event_registration, MPIWRAPPER_BITS(abi));
+}
+
+MPIABI_T_event_registration mpiwrapper_t_event_registration_toabi(MPI_T_event_registration h)
+{
+  return MPIWRAPPER_HANDLE(MPIABI_T_event_registration, MPIWRAPPER_BITS(h));
+}
+#endif
+
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_instance
+MPI_T_event_instance mpiwrapper_t_event_instance_fromabi(MPIABI_T_event_instance abi)
+{
+  return MPIWRAPPER_HANDLE(MPI_T_event_instance, MPIWRAPPER_BITS(abi));
+}
+
+MPIABI_T_event_instance mpiwrapper_t_event_instance_toabi(MPI_T_event_instance h)
+{
+  return MPIWRAPPER_HANDLE(MPIABI_T_event_instance, MPIWRAPPER_BITS(h));
+}
+#endif
+
+
+/* MPI_T's obj_handle: the one parameter whose *class* is not in the argument
+ * list. MPI-5.0 15.3.6 makes it "an address to a local variable that stores the
+ * object's handle", and which kind of handle that is comes from the `bind` a
+ * prior get_info reported -- so src/mpiwrapper/toolobj.c asks the
+ * implementation for `bind` first and this switch converts accordingly.
+ *
+ * `bind` here is the *implementation's* own value, straight from its own
+ * get_info, so the labels are its names and no conversion intervenes. A null
+ * obj_handle and MPI_T_BIND_NO_OBJECT both mean the same thing -- the argument
+ * is ignored -- and both produce a null pointer, which is what the
+ * implementation is then given.
+ */
+
+void *mpiwrapper_tool_obj_fromabi(int bind, void *abi_obj,
+                                  union mpiwrapper_tool_obj *out)
+{
+  if (!abi_obj) return NULL;
+  switch (bind) {
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_COMM)
+  case MPI_T_BIND_MPI_COMM:
+    out->comm = mpiwrapper_comm_fromabi(*(MPIABI_Comm *)abi_obj);
+    return &out->comm;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_DATATYPE)
+  case MPI_T_BIND_MPI_DATATYPE:
+    out->datatype = mpiwrapper_datatype_fromabi(*(MPIABI_Datatype *)abi_obj);
+    return &out->datatype;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_ERRHANDLER)
+  case MPI_T_BIND_MPI_ERRHANDLER:
+    out->errhandler = mpiwrapper_errhandler_fromabi(*(MPIABI_Errhandler *)abi_obj);
+    return &out->errhandler;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_FILE)
+  case MPI_T_BIND_MPI_FILE:
+    out->file = mpiwrapper_file_fromabi(*(MPIABI_File *)abi_obj);
+    return &out->file;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_GROUP)
+  case MPI_T_BIND_MPI_GROUP:
+    out->group = mpiwrapper_group_fromabi(*(MPIABI_Group *)abi_obj);
+    return &out->group;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_INFO)
+  case MPI_T_BIND_MPI_INFO:
+    out->info = mpiwrapper_info_fromabi(*(MPIABI_Info *)abi_obj);
+    return &out->info;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_MESSAGE)
+  case MPI_T_BIND_MPI_MESSAGE:
+    out->message = mpiwrapper_message_fromabi(*(MPIABI_Message *)abi_obj);
+    return &out->message;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_OP)
+  case MPI_T_BIND_MPI_OP:
+    out->op = mpiwrapper_op_fromabi(*(MPIABI_Op *)abi_obj);
+    return &out->op;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_REQUEST)
+  case MPI_T_BIND_MPI_REQUEST:
+    out->request = mpiwrapper_request_fromabi(*(MPIABI_Request *)abi_obj);
+    return &out->request;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_SESSION) && defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL)
+  case MPI_T_BIND_MPI_SESSION:
+    out->session = mpiwrapper_session_fromabi(*(MPIABI_Session *)abi_obj);
+    return &out->session;
+#endif
+#if defined(MPIWRAPPER_HAVE_MPI_T_BIND_MPI_WIN)
+  case MPI_T_BIND_MPI_WIN:
+    out->win = mpiwrapper_win_fromabi(*(MPIABI_Win *)abi_obj);
+    return &out->win;
+#endif
+  default: break;
+  }
+  return NULL;
 }

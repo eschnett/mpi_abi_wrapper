@@ -91,6 +91,17 @@ int mpiwrapper_take_handle_error(void)
   return e;
 }
 
+/* The setter MPI_T's handle conversions use. They are generated into
+ * constants.c rather than written here, because the guards their classes need
+ * have to appear in a generated source for dev/probe_impl.py to ask about
+ * them -- but the flag stays owned by this file, so there is still exactly one
+ * definition of it and one rule for its lifetime.
+ */
+void mpiwrapper_set_handle_error(void)
+{
+  handle_error = 1;
+}
+
 #define MPIWRAPPER_TOABI(key, abitype, impltype, abinull)                      \
   abitype mpiwrapper_##key##_toabi(impltype h)                                 \
   {                                                                            \

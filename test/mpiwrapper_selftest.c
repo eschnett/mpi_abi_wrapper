@@ -358,6 +358,133 @@ static void test_staged_requests(void)
   CHECK(!mpiwrapper_staged_any(), "the table is empty after cycling");
 }
 
+/* ------------------------------------------------------ the keyval registry */
+
+/* The dynamic half of the keyval family (NOTES.md #5.6), which no black-box
+ * test can reach yet: the only way an application obtains a dynamic keyval is
+ * MPI_Comm_create_keyval, and that one is in the ledger for S4. Here the
+ * registry is called directly, which is the whole reason this test compiles
+ * the runtime in rather than loading it.
+ *
+ * Three properties, and the third is the one a plausible implementation gets
+ * wrong.
+ */
+static void test_keyvals(void)
+{
+  int abi_a = 0, abi_b = 0, abi_c = 0;
+
+  /* 1. The predefined half still goes through the generated switch, and the
+   * ABI's 501 is not the implementation's MPI_TAG_UB on either implementation
+   * tried.
+   */
+  CHECK(mpiwrapper_keyval_fromabi(MPIABI_TAG_UB) == MPI_TAG_UB,
+        "MPI_TAG_UB does not convert");
+  CHECK(mpiwrapper_keyval_toabi(MPI_TAG_UB) == MPIABI_TAG_UB,
+        "MPI_TAG_UB does not convert back");
+  CHECK(mpiwrapper_keyval_fromabi(MPIABI_WIN_SIZE) == MPI_WIN_SIZE,
+        "MPI_WIN_SIZE does not convert");
+  CHECK(mpiwrapper_keyval_toabi(MPI_KEYVAL_INVALID) == MPIABI_KEYVAL_INVALID,
+        "MPI_KEYVAL_INVALID does not convert back");
+
+  /* 2. A registered keyval round-trips, and the ABI-side value it is given
+   * lands outside every predefined key -- which is what keeps the two halves
+   * of the family from colliding by construction rather than by luck. 501 is
+   * used deliberately: it is MPI_TAG_UB's ABI value, so an implementation
+   * that handed out 501 as a dynamic keyval is exactly the collision #5.6
+   * describes.
+   */
+  CHECK(mpiwrapper_keyval_add(501, &abi_a), "the keyval table refused an add");
+  CHECK(abi_a > MPIABI_WIN_MODEL,
+        "a dynamic keyval was issued as %d, inside the predefined range",
+        abi_a);
+  CHECK(mpiwrapper_keyval_fromabi(abi_a) == 501,
+        "a registered keyval does not convert back to the implementation's");
+  CHECK(mpiwrapper_keyval_toabi(501) == abi_a,
+        "a registered keyval does not convert to the ABI value issued for it");
+  /* And the predefined side is unmoved by it: the ABI's 501 is still
+   * MPI_TAG_UB, not the dynamic keyval that happens to have that value on the
+   * implementation's side.
+   */
+  CHECK(mpiwrapper_keyval_fromabi(MPIABI_TAG_UB) == MPI_TAG_UB,
+        "registering a dynamic keyval disturbed a predefined one");
+
+  CHECK(mpiwrapper_keyval_add(7001, &abi_b), "the keyval table refused an add");
+  CHECK(abi_b != abi_a, "two keyvals were issued the same ABI value");
+  CHECK(mpiwrapper_keyval_fromabi(abi_b) == 7001, "the second keyval");
+
+  /* 3. Recycling. An implementation is free to hand out the number of a
+   * keyval that has been freed, and when it does, the entry that matters is
+   * the most recent registration -- so the reverse direction has to answer
+   * with the new ABI value, not the stale one. A registry that searched
+   * forwards would return abi_b here and resolve a live key to one the
+   * application no longer holds.
+   */
+  CHECK(mpiwrapper_keyval_add(7001, &abi_c), "the keyval table refused an add");
+  CHECK(abi_c != abi_b, "a re-registered keyval reused its ABI value");
+  CHECK(mpiwrapper_keyval_toabi(7001) == abi_c,
+        "a recycled implementation keyval resolves to the stale registration");
+  CHECK(mpiwrapper_keyval_fromabi(abi_b) == 7001,
+        "the stale ABI keyval stopped converting");
+
+  /* Anything this library never issued is not translatable, in either
+   * direction, and says so rather than passing a number through.
+   */
+  CHECK(mpiwrapper_keyval_fromabi(abi_c + 1000) == MPI_KEYVAL_INVALID,
+        "an ABI keyval we never issued was translated anyway");
+  CHECK(mpiwrapper_keyval_toabi(123456) == MPIABI_KEYVAL_INVALID,
+        "an implementation keyval we never registered was translated anyway");
+}
+
+/* ------------------------------------------------- MPI_T's handle classes */
+
+/* Six classes with at most two predefined values each, so the sentinel shape
+ * of #5.3 rather than the perfect-hash shape of #5.1. What is under test is
+ * that the sentinels are *translated* and not bit-cast, which is where the ABI
+ * and both implementations genuinely disagree: MPI_T_PVAR_ALL_HANDLES is 1 in
+ * the ABI, -1 in Open MPI, and an extern object in MPICH.
+ */
+static void test_tool_handles(void)
+{
+#ifdef MPIWRAPPER_HAVE_MPI_T_enum
+  CHECK(mpiwrapper_t_enum_fromabi(MPIABI_T_ENUM_NULL) == MPI_T_ENUM_NULL,
+        "MPI_T_ENUM_NULL does not convert");
+  CHECK(mpiwrapper_t_enum_toabi(MPI_T_ENUM_NULL) == MPIABI_T_ENUM_NULL,
+        "MPI_T_ENUM_NULL does not convert back");
+#endif
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_handle
+  CHECK(mpiwrapper_t_pvar_handle_fromabi(MPIABI_T_PVAR_HANDLE_NULL) ==
+            MPI_T_PVAR_HANDLE_NULL,
+        "MPI_T_PVAR_HANDLE_NULL does not convert");
+  CHECK(mpiwrapper_t_pvar_handle_fromabi(MPIABI_T_PVAR_ALL_HANDLES) ==
+            MPI_T_PVAR_ALL_HANDLES,
+        "MPI_T_PVAR_ALL_HANDLES does not convert");
+  CHECK(mpiwrapper_t_pvar_handle_toabi(MPI_T_PVAR_ALL_HANDLES) ==
+            MPIABI_T_PVAR_ALL_HANDLES,
+        "MPI_T_PVAR_ALL_HANDLES does not convert back");
+  /* The bits are what makes this worth asserting rather than assuming: if the
+   * two spellings had the same value the round trip above would pass with no
+   * conversion at all, and the test would be vacuous. It is not vacuous on
+   * either implementation tried, and this records which.
+   */
+  if (MPIWRAPPER_BITS(MPI_T_PVAR_ALL_HANDLES) ==
+      MPIWRAPPER_BITS(MPIABI_T_PVAR_ALL_HANDLES))
+    printf("note: this implementation spells MPI_T_PVAR_ALL_HANDLES as the "
+           "ABI does, so its translation is untested here\n");
+
+  /* An ordinary handle keeps its bits, and one that would come back out as a
+   * sentinel is refused rather than silently becoming MPI_T_PVAR_ALL_HANDLES.
+   */
+  {
+    const MPI_T_pvar_handle fake = MPIWRAPPER_HANDLE(MPI_T_pvar_handle,
+                                                     0x40001000u);
+    CHECK(MPIWRAPPER_BITS(mpiwrapper_t_pvar_handle_toabi(fake)) == 0x40001000u,
+          "a dynamic MPI_T handle did not keep its bits");
+    CHECK(!mpiwrapper_take_handle_error(),
+          "a dynamic MPI_T handle outside the sentinel range set the flag");
+  }
+#endif
+}
+
 int main(int argc, char **argv)
 {
   const char *diagnostic = "none";
@@ -374,6 +501,8 @@ int main(int argc, char **argv)
     test_staging();
     test_dynamic_handles();
     test_staged_requests();
+    test_keyvals();
+    test_tool_handles();
   }
 
   PMPI_Finalize();

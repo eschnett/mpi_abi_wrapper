@@ -37,7 +37,14 @@ probe per line, compiled `-fsyntax-only` -- not one configure test per name.
 A name that is a macro answers `#ifdef`. Anything else has to be declared for
 its probe to compile, and the probe differs by what the name is: `sizeof &name`
 for an entry point, which is a function, and `sizeof(name)` for a constant,
-which may be an enumerator whose address cannot be taken. If the compile fails,
+which may be an enumerator whose address cannot be taken.
+
+The constant form answers for a *type* as well, and that is used rather than
+merely tolerated: `sizeof (MPI_T_event_registration)` is valid C exactly when
+the typedef exists, so a handle class with no constant to test -- the ABI names
+no MPI_T_EVENT_REGISTRATION_NULL -- is probed by its type name. Open MPI 5.0.6
+is why it matters: it has cvars, pvars and enums and declares neither event
+type, so the guard cannot be MPI_T-as-a-whole. If the compile fails,
 the diagnostics' *line numbers* -- never their wording -- say which probes are
 bad; those are dropped and the file is compiled again, so the answer is always
 confirmed by a compile that succeeded. Measured at 0.3-0.6 s for ~600 names

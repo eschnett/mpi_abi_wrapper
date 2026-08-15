@@ -20,9 +20,8 @@
  * compiler about the implementation's own header. An entry point the implementation
  * does not have gets the stub of decision 6 instead: the slot stays present
  * and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time, so the ABI surface
- * never shrinks. The classes not yet generated -- output strings, keyvals,
- * callbacks, MPI_T -- get the same stub, and gen/report.txt names every one of
- * them.
+ * never shrinks. The hand-written entry points that have no body yet get the
+ * same stub, and gen/report.txt names every one of them.
  *
  * Six bodies carry no guard: the status accessors of NOTES.md #5.2 read and
  * write a named field of the caller's own ABI status and never reach the
@@ -1851,13 +1850,23 @@ static int w_PMPI_Alltoallw_init_c(const void *abi_sendbuf,
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-/* S3: KEYVAL (keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Attr_delete
+#define BODY_MPI_Attr_delete(TARGET)                                           \
+  {                                                                            \
+    const MPI_Comm comm   = mpiwrapper_comm_fromabi(abi_comm);                 \
+    const int      keyval = mpiwrapper_keyval_fromabi(abi_keyval);             \
+                                                                               \
+    const int ierror = TARGET(comm, keyval);                                   \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Attr_delete(TARGET)                                           \
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_keyval;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Attr_delete(MPIABI_Comm abi_comm, int abi_keyval)
     BODY_MPI_Attr_delete(MPI_Attr_delete)
@@ -1869,7 +1878,18 @@ static int w_PMPI_Attr_delete(MPIABI_Comm abi_comm, int abi_keyval)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-/* S3: KEYVAL (keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Attr_get
+#define BODY_MPI_Attr_get(TARGET)                                              \
+  {                                                                            \
+    const MPI_Comm comm          = mpiwrapper_comm_fromabi(abi_comm);          \
+    const int      keyval        = mpiwrapper_keyval_fromabi(abi_keyval);      \
+    void *const    attribute_val = abi_attribute_val;                          \
+    int *const     flag          = abi_flag;                                   \
+                                                                               \
+    const int ierror = TARGET(comm, keyval, attribute_val, flag);              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Attr_get(TARGET)                                              \
   {                                                                            \
     (void)abi_comm;                                                            \
@@ -1878,6 +1898,7 @@ static int w_PMPI_Attr_delete(MPIABI_Comm abi_comm, int abi_keyval)
     (void)abi_flag;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Attr_get(MPIABI_Comm abi_comm, int abi_keyval,
                           void *abi_attribute_val, int *abi_flag)
@@ -1891,7 +1912,17 @@ static int w_PMPI_Attr_get(MPIABI_Comm abi_comm, int abi_keyval,
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-/* S3: KEYVAL (keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Attr_put
+#define BODY_MPI_Attr_put(TARGET)                                              \
+  {                                                                            \
+    const MPI_Comm comm          = mpiwrapper_comm_fromabi(abi_comm);          \
+    const int      keyval        = mpiwrapper_keyval_fromabi(abi_keyval);      \
+    void *const    attribute_val = abi_attribute_val;                          \
+                                                                               \
+    const int ierror = TARGET(comm, keyval, attribute_val);                    \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Attr_put(TARGET)                                              \
   {                                                                            \
     (void)abi_comm;                                                            \
@@ -1899,6 +1930,7 @@ static int w_PMPI_Attr_get(MPIABI_Comm abi_comm, int abi_keyval,
     (void)abi_attribute_val;                                                   \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Attr_put(MPIABI_Comm abi_comm, int abi_keyval,
                           void *abi_attribute_val)
@@ -3051,13 +3083,23 @@ static int w_PMPI_Comm_create_keyval(
 
 /* --------------------------------------------------- MPI_Comm_delete_attr */
 
-/* S3: KEYVAL (comm_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Comm_delete_attr
+#define BODY_MPI_Comm_delete_attr(TARGET)                                      \
+  {                                                                            \
+    const MPI_Comm comm        = mpiwrapper_comm_fromabi(abi_comm);            \
+    const int      comm_keyval = mpiwrapper_keyval_fromabi(abi_comm_keyval);   \
+                                                                               \
+    const int ierror = TARGET(comm, comm_keyval);                              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Comm_delete_attr(TARGET)                                      \
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_comm_keyval;                                                     \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Comm_delete_attr(MPIABI_Comm abi_comm, int abi_comm_keyval)
     BODY_MPI_Comm_delete_attr(MPI_Comm_delete_attr)
@@ -3248,12 +3290,22 @@ static int w_PMPI_Comm_free(MPIABI_Comm *abi_comm)
 
 /* --------------------------------------------------- MPI_Comm_free_keyval */
 
-/* S3: KEYVAL (comm_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Comm_free_keyval
+#define BODY_MPI_Comm_free_keyval(TARGET)                                      \
+  {                                                                            \
+    int comm_keyval = mpiwrapper_keyval_fromabi(*abi_comm_keyval);             \
+                                                                               \
+    const int ierror = TARGET(&comm_keyval);                                   \
+    *abi_comm_keyval = mpiwrapper_keyval_toabi(comm_keyval);                   \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Comm_free_keyval(TARGET)                                      \
   {                                                                            \
     (void)abi_comm_keyval;                                                     \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Comm_free_keyval(int *abi_comm_keyval)
     BODY_MPI_Comm_free_keyval(MPI_Comm_free_keyval)
@@ -3262,7 +3314,18 @@ static int w_PMPI_Comm_free_keyval(int *abi_comm_keyval)
 
 /* ------------------------------------------------------ MPI_Comm_get_attr */
 
-/* S3: KEYVAL (comm_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Comm_get_attr
+#define BODY_MPI_Comm_get_attr(TARGET)                                         \
+  {                                                                            \
+    const MPI_Comm comm          = mpiwrapper_comm_fromabi(abi_comm);          \
+    const int      comm_keyval   = mpiwrapper_keyval_fromabi(abi_comm_keyval); \
+    void *const    attribute_val = abi_attribute_val;                          \
+    int *const     flag          = abi_flag;                                   \
+                                                                               \
+    const int ierror = TARGET(comm, comm_keyval, attribute_val, flag);         \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Comm_get_attr(TARGET)                                         \
   {                                                                            \
     (void)abi_comm;                                                            \
@@ -3271,6 +3334,7 @@ static int w_PMPI_Comm_free_keyval(int *abi_comm_keyval)
     (void)abi_flag;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Comm_get_attr(MPIABI_Comm abi_comm, int abi_comm_keyval,
                                void *abi_attribute_val, int *abi_flag)
@@ -3659,7 +3723,17 @@ static int w_PMPI_Comm_remote_size(MPIABI_Comm abi_comm, int *abi_size)
 
 /* ------------------------------------------------------ MPI_Comm_set_attr */
 
-/* S3: KEYVAL (comm_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Comm_set_attr
+#define BODY_MPI_Comm_set_attr(TARGET)                                         \
+  {                                                                            \
+    const MPI_Comm comm          = mpiwrapper_comm_fromabi(abi_comm);          \
+    const int      comm_keyval   = mpiwrapper_keyval_fromabi(abi_comm_keyval); \
+    void *const    attribute_val = abi_attribute_val;                          \
+                                                                               \
+    const int ierror = TARGET(comm, comm_keyval, attribute_val);               \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Comm_set_attr(TARGET)                                         \
   {                                                                            \
     (void)abi_comm;                                                            \
@@ -3667,6 +3741,7 @@ static int w_PMPI_Comm_remote_size(MPIABI_Comm abi_comm, int *abi_size)
     (void)abi_attribute_val;                                                   \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Comm_set_attr(MPIABI_Comm abi_comm, int abi_comm_keyval,
                                void *abi_attribute_val)
@@ -11786,7 +11861,22 @@ static int w_PMPI_Info_create(MPIABI_Info *abi_info)
 
 /* ---------------------------------------------------- MPI_Info_create_env */
 
-/* S3: ARGUMENT_COUNT (argc); inout array of ARGUMENT_LIST (argv) */
+#ifdef MPIWRAPPER_HAVE_MPI_Info_create_env
+#define BODY_MPI_Info_create_env(TARGET)                                       \
+  {                                                                            \
+    const int    argc = abi_argc;                                              \
+    char **const argv = abi_argv;                                              \
+                                                                               \
+    MPI_Info  info;                                                            \
+    const int ierror = TARGET(argc, argv, &info);                              \
+                                                                               \
+    *abi_info = (ierror == MPI_SUCCESS)                                        \
+                    ? mpiwrapper_info_toabi(info)                              \
+                    : MPIABI_INFO_NULL;                                        \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Info_create_env(TARGET)                                       \
   {                                                                            \
     (void)abi_argc;                                                            \
@@ -11795,6 +11885,7 @@ static int w_PMPI_Info_create(MPIABI_Info *abi_info)
     *abi_info = MPIABI_INFO_NULL;                                              \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Info_create_env(int abi_argc, char *abi_argv[],
                                  MPIABI_Info *abi_info)
@@ -11888,7 +11979,19 @@ static int w_PMPI_Info_free(MPIABI_Info *abi_info)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-/* S3: out array of STRING (value) */
+#ifdef MPIWRAPPER_HAVE_MPI_Info_get
+#define BODY_MPI_Info_get(TARGET)                                              \
+  {                                                                            \
+    const MPI_Info    info     = mpiwrapper_info_fromabi(abi_info);            \
+    const char *const key      = abi_key;                                      \
+    const int         valuelen = abi_valuelen;                                 \
+    char *const       value    = abi_value;                                    \
+    int *const        flag     = abi_flag;                                     \
+                                                                               \
+    const int ierror = TARGET(info, key, valuelen, value, flag);               \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Info_get(TARGET)                                              \
   {                                                                            \
     (void)abi_info;                                                            \
@@ -11898,6 +12001,7 @@ static int w_PMPI_Info_free(MPIABI_Info *abi_info)
     (void)abi_flag;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Info_get(MPIABI_Info abi_info, const char *abi_key,
                           int abi_valuelen, char *abi_value, int *abi_flag)
@@ -11954,7 +12058,19 @@ static int w_PMPI_Info_get_nthkey(MPIABI_Info abi_info, int abi_n,
 
 /* ---------------------------------------------------- MPI_Info_get_string */
 
-/* S3: output string buffer (value) */
+#ifdef MPIWRAPPER_HAVE_MPI_Info_get_string
+#define BODY_MPI_Info_get_string(TARGET)                                       \
+  {                                                                            \
+    const MPI_Info    info   = mpiwrapper_info_fromabi(abi_info);              \
+    const char *const key    = abi_key;                                        \
+    int *const        buflen = abi_buflen;                                     \
+    char *const       value  = abi_value;                                      \
+    int *const        flag   = abi_flag;                                       \
+                                                                               \
+    const int ierror = TARGET(info, key, buflen, value, flag);                 \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Info_get_string(TARGET)                                       \
   {                                                                            \
     (void)abi_info;                                                            \
@@ -11964,6 +12080,7 @@ static int w_PMPI_Info_get_nthkey(MPIABI_Info abi_info, int abi_n,
     (void)abi_flag;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Info_get_string(MPIABI_Info abi_info, const char *abi_key,
                                  int *abi_buflen, char *abi_value,
@@ -13577,12 +13694,22 @@ static int w_PMPI_Keyval_create(MPIABI_Copy_function *abi_copy_fn,
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
-/* S3: KEYVAL (keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Keyval_free
+#define BODY_MPI_Keyval_free(TARGET)                                           \
+  {                                                                            \
+    int keyval = mpiwrapper_keyval_fromabi(*abi_keyval);                       \
+                                                                               \
+    const int ierror = TARGET(&keyval);                                        \
+    *abi_keyval = mpiwrapper_keyval_toabi(keyval);                             \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Keyval_free(TARGET)                                           \
   {                                                                            \
     (void)abi_keyval;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Keyval_free(int *abi_keyval)
     BODY_MPI_Keyval_free(MPI_Keyval_free)
@@ -19059,7 +19186,19 @@ static int w_PMPI_Session_get_info(MPIABI_Session abi_session,
 
 /* ----------------------------------------------- MPI_Session_get_nth_pset */
 
-/* S3: output string buffer (pset_name) */
+#ifdef MPIWRAPPER_HAVE_MPI_Session_get_nth_pset
+#define BODY_MPI_Session_get_nth_pset(TARGET)                                  \
+  {                                                                            \
+    const MPI_Session session   = mpiwrapper_session_fromabi(abi_session);     \
+    const MPI_Info    info      = mpiwrapper_info_fromabi(abi_info);           \
+    const int         n         = abi_n;                                       \
+    int *const        pset_len  = abi_pset_len;                                \
+    char *const       pset_name = abi_pset_name;                               \
+                                                                               \
+    const int ierror = TARGET(session, info, n, pset_len, pset_name);          \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Session_get_nth_pset(TARGET)                                  \
   {                                                                            \
     (void)abi_session;                                                         \
@@ -19069,6 +19208,7 @@ static int w_PMPI_Session_get_info(MPIABI_Session abi_session,
     (void)abi_pset_name;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Session_get_nth_pset(MPIABI_Session abi_session,
                                       MPIABI_Info abi_info, int abi_n,
@@ -21066,13 +21206,24 @@ static int w_PMPI_Type_create_subarray_c(int abi_ndims,
 
 /* --------------------------------------------------- MPI_Type_delete_attr */
 
-/* S3: KEYVAL (type_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Type_delete_attr
+#define BODY_MPI_Type_delete_attr(TARGET)                                      \
+  {                                                                            \
+    const MPI_Datatype datatype    = mpiwrapper_datatype_fromabi(abi_datatype);\
+    const int          type_keyval =                                           \
+        mpiwrapper_keyval_fromabi(abi_type_keyval);                            \
+                                                                               \
+    const int ierror = TARGET(datatype, type_keyval);                          \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Type_delete_attr(TARGET)                                      \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_type_keyval;                                                     \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Type_delete_attr(MPIABI_Datatype abi_datatype,
                                   int abi_type_keyval)
@@ -21141,12 +21292,22 @@ static int w_PMPI_Type_free(MPIABI_Datatype *abi_datatype)
 
 /* --------------------------------------------------- MPI_Type_free_keyval */
 
-/* S3: KEYVAL (type_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Type_free_keyval
+#define BODY_MPI_Type_free_keyval(TARGET)                                      \
+  {                                                                            \
+    int type_keyval = mpiwrapper_keyval_fromabi(*abi_type_keyval);             \
+                                                                               \
+    const int ierror = TARGET(&type_keyval);                                   \
+    *abi_type_keyval = mpiwrapper_keyval_toabi(type_keyval);                   \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Type_free_keyval(TARGET)                                      \
   {                                                                            \
     (void)abi_type_keyval;                                                     \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Type_free_keyval(int *abi_type_keyval)
     BODY_MPI_Type_free_keyval(MPI_Type_free_keyval)
@@ -21155,7 +21316,20 @@ static int w_PMPI_Type_free_keyval(int *abi_type_keyval)
 
 /* ------------------------------------------------------ MPI_Type_get_attr */
 
-/* S3: KEYVAL (type_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Type_get_attr
+#define BODY_MPI_Type_get_attr(TARGET)                                         \
+  {                                                                            \
+    const MPI_Datatype datatype      =                                         \
+        mpiwrapper_datatype_fromabi(abi_datatype);                             \
+    const int          type_keyval   =                                         \
+        mpiwrapper_keyval_fromabi(abi_type_keyval);                            \
+    void *const        attribute_val = abi_attribute_val;                      \
+    int *const         flag          = abi_flag;                               \
+                                                                               \
+    const int ierror = TARGET(datatype, type_keyval, attribute_val, flag);     \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Type_get_attr(TARGET)                                         \
   {                                                                            \
     (void)abi_datatype;                                                        \
@@ -21164,6 +21338,7 @@ static int w_PMPI_Type_free_keyval(int *abi_type_keyval)
     (void)abi_flag;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Type_get_attr(MPIABI_Datatype abi_datatype,
                                int abi_type_keyval, void *abi_attribute_val,
@@ -21803,7 +21978,19 @@ static int w_PMPI_Type_match_size(int abi_typeclass, int abi_size,
 
 /* ------------------------------------------------------ MPI_Type_set_attr */
 
-/* S3: KEYVAL (type_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Type_set_attr
+#define BODY_MPI_Type_set_attr(TARGET)                                         \
+  {                                                                            \
+    const MPI_Datatype datatype      =                                         \
+        mpiwrapper_datatype_fromabi(abi_datatype);                             \
+    const int          type_keyval   =                                         \
+        mpiwrapper_keyval_fromabi(abi_type_keyval);                            \
+    void *const        attribute_val = abi_attribute_val;                      \
+                                                                               \
+    const int ierror = TARGET(datatype, type_keyval, attribute_val);           \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Type_set_attr(TARGET)                                         \
   {                                                                            \
     (void)abi_datatype;                                                        \
@@ -21811,6 +21998,7 @@ static int w_PMPI_Type_match_size(int abi_typeclass, int abi_size,
     (void)abi_attribute_val;                                                   \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Type_set_attr(MPIABI_Datatype abi_datatype,
                                int abi_type_keyval, void *abi_attribute_val)
@@ -22911,13 +23099,23 @@ static int w_PMPI_Win_create_keyval(
 
 /* ---------------------------------------------------- MPI_Win_delete_attr */
 
-/* S3: KEYVAL (win_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Win_delete_attr
+#define BODY_MPI_Win_delete_attr(TARGET)                                       \
+  {                                                                            \
+    const MPI_Win win        = mpiwrapper_win_fromabi(abi_win);                \
+    const int     win_keyval = mpiwrapper_keyval_fromabi(abi_win_keyval);      \
+                                                                               \
+    const int ierror = TARGET(win, win_keyval);                                \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Win_delete_attr(TARGET)                                       \
   {                                                                            \
     (void)abi_win;                                                             \
     (void)abi_win_keyval;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Win_delete_attr(MPIABI_Win abi_win, int abi_win_keyval)
     BODY_MPI_Win_delete_attr(MPI_Win_delete_attr)
@@ -23096,12 +23294,22 @@ static int w_PMPI_Win_free(MPIABI_Win *abi_win)
 
 /* ---------------------------------------------------- MPI_Win_free_keyval */
 
-/* S3: KEYVAL (win_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Win_free_keyval
+#define BODY_MPI_Win_free_keyval(TARGET)                                       \
+  {                                                                            \
+    int win_keyval = mpiwrapper_keyval_fromabi(*abi_win_keyval);               \
+                                                                               \
+    const int ierror = TARGET(&win_keyval);                                    \
+    *abi_win_keyval = mpiwrapper_keyval_toabi(win_keyval);                     \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Win_free_keyval(TARGET)                                       \
   {                                                                            \
     (void)abi_win_keyval;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Win_free_keyval(int *abi_win_keyval)
     BODY_MPI_Win_free_keyval(MPI_Win_free_keyval)
@@ -23110,7 +23318,18 @@ static int w_PMPI_Win_free_keyval(int *abi_win_keyval)
 
 /* ------------------------------------------------------- MPI_Win_get_attr */
 
-/* S3: KEYVAL (win_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Win_get_attr
+#define BODY_MPI_Win_get_attr(TARGET)                                          \
+  {                                                                            \
+    const MPI_Win win           = mpiwrapper_win_fromabi(abi_win);             \
+    const int     win_keyval    = mpiwrapper_keyval_fromabi(abi_win_keyval);   \
+    void *const   attribute_val = abi_attribute_val;                           \
+    int *const    flag          = abi_flag;                                    \
+                                                                               \
+    const int ierror = TARGET(win, win_keyval, attribute_val, flag);           \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Win_get_attr(TARGET)                                          \
   {                                                                            \
     (void)abi_win;                                                             \
@@ -23119,6 +23338,7 @@ static int w_PMPI_Win_free_keyval(int *abi_win_keyval)
     (void)abi_flag;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Win_get_attr(MPIABI_Win abi_win, int abi_win_keyval,
                               void *abi_attribute_val, int *abi_flag)
@@ -23325,7 +23545,17 @@ static int w_PMPI_Win_post(MPIABI_Group abi_group, int abi_assert,
 
 /* ------------------------------------------------------- MPI_Win_set_attr */
 
-/* S3: KEYVAL (win_keyval) */
+#ifdef MPIWRAPPER_HAVE_MPI_Win_set_attr
+#define BODY_MPI_Win_set_attr(TARGET)                                          \
+  {                                                                            \
+    const MPI_Win win           = mpiwrapper_win_fromabi(abi_win);             \
+    const int     win_keyval    = mpiwrapper_keyval_fromabi(abi_win_keyval);   \
+    void *const   attribute_val = abi_attribute_val;                           \
+                                                                               \
+    const int ierror = TARGET(win, win_keyval, attribute_val);                 \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_Win_set_attr(TARGET)                                          \
   {                                                                            \
     (void)abi_win;                                                             \
@@ -23333,6 +23563,7 @@ static int w_PMPI_Win_post(MPIABI_Group abi_group, int abi_assert,
     (void)abi_attribute_val;                                                   \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_Win_set_attr(MPIABI_Win abi_win, int abi_win_keyval,
                               void *abi_attribute_val)
@@ -24163,7 +24394,24 @@ static int w_PMPI_T_category_get_index(const char *abi_name,
 
 /* ------------------------------------------------ MPI_T_category_get_info */
 
-/* S3: output string buffer (desc); output string buffer (name) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_category_get_info
+#define BODY_MPI_T_category_get_info(TARGET)                                   \
+  {                                                                            \
+    const int   cat_index      = abi_cat_index;                                \
+    char *const name           = abi_name;                                     \
+    int *const  name_len       = abi_name_len;                                 \
+    char *const desc           = abi_desc;                                     \
+    int *const  desc_len       = abi_desc_len;                                 \
+    int *const  num_cvars      = abi_num_cvars;                                \
+    int *const  num_pvars      = abi_num_pvars;                                \
+    int *const  num_categories = abi_num_categories;                           \
+                                                                               \
+    const int ierror =                                                         \
+        TARGET(cat_index, name, name_len, desc, desc_len, num_cvars, num_pvars,\
+               num_categories);                                                \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_category_get_info(TARGET)                                   \
   {                                                                            \
     (void)abi_cat_index;                                                       \
@@ -24176,6 +24424,7 @@ static int w_PMPI_T_category_get_index(const char *abi_name,
     (void)abi_num_categories;                                                  \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_category_get_info(int abi_cat_index, char *abi_name,
                                      int *abi_name_len, char *abi_desc,
@@ -24296,10 +24545,45 @@ static int w_PMPI_T_cvar_get_index(const char *abi_name, int *abi_cvar_index)
 
 /* ---------------------------------------------------- MPI_T_cvar_get_info */
 
-/* S3: BIND_TYPE (bind); TOOLS_ENUM (enumtype); TOOL_VAR_VERBOSITY
- * (verbosity); VARIABLE_SCOPE (scope); output string buffer (desc); output
- * string buffer (name)
- */
+#ifdef MPIWRAPPER_HAVE_MPI_T_cvar_get_info
+#define BODY_MPI_T_cvar_get_info(TARGET)                                       \
+  {                                                                            \
+    const int   cvar_index = abi_cvar_index;                                   \
+    char *const name       = abi_name;                                         \
+    int *const  name_len   = abi_name_len;                                     \
+    char *const desc       = abi_desc;                                         \
+    int *const  desc_len   = abi_desc_len;                                     \
+                                                                               \
+    int                 verbosity   = 0;                                       \
+    int *const          verbosity_p = abi_verbosity ? &verbosity : NULL;       \
+    MPI_Datatype        datatype    = MPI_DATATYPE_NULL;                       \
+    MPI_Datatype *const datatype_p  = abi_datatype ? &datatype : NULL;         \
+    MPI_T_enum          enumtype    = MPI_T_ENUM_NULL;                         \
+    MPI_T_enum *const   enumtype_p  = abi_enumtype ? &enumtype : NULL;         \
+    int                 bind        = 0;                                       \
+    int *const          bind_p      = abi_bind ? &bind : NULL;                 \
+    int                 scope       = 0;                                       \
+    int *const          scope_p     = abi_scope ? &scope : NULL;               \
+    const int           ierror =                                               \
+        TARGET(cvar_index, name, name_len, verbosity_p, datatype_p, enumtype_p,\
+               desc, desc_len, bind_p, scope_p);                               \
+                                                                               \
+    if (abi_verbosity)                                                         \
+      *abi_verbosity = mpiwrapper_tverbosity_toabi(verbosity);                 \
+    if (abi_datatype)                                                          \
+      *abi_datatype = (ierror == MPI_SUCCESS)                                  \
+                          ? mpiwrapper_datatype_toabi(datatype)                \
+                          : MPIABI_DATATYPE_NULL;                              \
+    if (abi_enumtype)                                                          \
+      *abi_enumtype = (ierror == MPI_SUCCESS)                                  \
+                          ? mpiwrapper_t_enum_toabi(enumtype)                  \
+                          : MPIABI_T_ENUM_NULL;                                \
+    if (abi_bind) *abi_bind = mpiwrapper_tbind_toabi(bind);                    \
+    if (abi_scope) *abi_scope = mpiwrapper_tscope_toabi(scope);                \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_cvar_get_info(TARGET)                                       \
   {                                                                            \
     (void)abi_cvar_index;                                                      \
@@ -24312,9 +24596,11 @@ static int w_PMPI_T_cvar_get_index(const char *abi_name, int *abi_cvar_index)
     (void)abi_desc_len;                                                        \
     (void)abi_bind;                                                            \
     (void)abi_scope;                                                           \
-    *abi_datatype = MPIABI_DATATYPE_NULL;                                      \
+    if (abi_datatype) *abi_datatype = MPIABI_DATATYPE_NULL;                    \
+    if (abi_enumtype) *abi_enumtype = MPIABI_T_ENUM_NULL;                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_cvar_get_info(int abi_cvar_index, char *abi_name,
                                  int *abi_name_len, int *abi_verbosity,
@@ -24356,15 +24642,45 @@ static int w_PMPI_T_cvar_get_num(int *abi_num_cvar)
 
 /* ------------------------------------------------ MPI_T_cvar_handle_alloc */
 
-/* S3: CVAR (handle); TOOL_MPI_OBJ (obj_handle) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_cvar_handle_alloc
+#define BODY_MPI_T_cvar_handle_alloc(TARGET)                                   \
+  {                                                                            \
+    const int  cvar_index = abi_cvar_index;                                    \
+    int *const count      = abi_count;                                         \
+                                                                               \
+    int tool_bind = 0;                                                         \
+    {                                                                          \
+      const int ierror = mpiwrapper_cvar_bind(cvar_index, &tool_bind);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_handle = MPIABI_T_CVAR_HANDLE_NULL;                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    union mpiwrapper_tool_obj obj_storage;                                     \
+    void *const obj_handle =                                                   \
+        mpiwrapper_tool_obj_fromabi(tool_bind, abi_obj_handle, &obj_storage);  \
+                                                                               \
+    MPI_T_cvar_handle handle;                                                  \
+    const int         ierror = TARGET(cvar_index, obj_handle, &handle, count); \
+                                                                               \
+    *abi_handle = (ierror == MPI_SUCCESS)                                      \
+                      ? mpiwrapper_t_cvar_handle_toabi(handle)                 \
+                      : MPIABI_T_CVAR_HANDLE_NULL;                             \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_cvar_handle_alloc(TARGET)                                   \
   {                                                                            \
     (void)abi_cvar_index;                                                      \
     (void)abi_obj_handle;                                                      \
     (void)abi_handle;                                                          \
     (void)abi_count;                                                           \
+    *abi_handle = MPIABI_T_CVAR_HANDLE_NULL;                                   \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_cvar_handle_alloc(int abi_cvar_index, void *abi_obj_handle,
                                      MPIABI_T_cvar_handle *abi_handle,
@@ -24377,12 +24693,23 @@ static int w_PMPI_T_cvar_handle_alloc(int abi_cvar_index, void *abi_obj_handle,
 
 /* ------------------------------------------------- MPI_T_cvar_handle_free */
 
-/* S3: CVAR (handle) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_cvar_handle_free
+#define BODY_MPI_T_cvar_handle_free(TARGET)                                    \
+  {                                                                            \
+    MPI_T_cvar_handle handle = mpiwrapper_t_cvar_handle_fromabi(*abi_handle);  \
+                                                                               \
+    const int ierror = TARGET(&handle);                                        \
+    *abi_handle = mpiwrapper_t_cvar_handle_toabi(handle);                      \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_cvar_handle_free(TARGET)                                    \
   {                                                                            \
     (void)abi_handle;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_cvar_handle_free(MPIABI_T_cvar_handle *abi_handle)
     BODY_MPI_T_cvar_handle_free(MPI_T_cvar_handle_free)
@@ -24391,13 +24718,24 @@ static int w_PMPI_T_cvar_handle_free(MPIABI_T_cvar_handle *abi_handle)
 
 /* -------------------------------------------------------- MPI_T_cvar_read */
 
-/* S3: CVAR (handle) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_cvar_read
+#define BODY_MPI_T_cvar_read(TARGET)                                           \
+  {                                                                            \
+    const MPI_T_cvar_handle handle =                                           \
+        mpiwrapper_t_cvar_handle_fromabi(abi_handle);                          \
+    void *const             buf    = mpiwrapper_recvbuf_fromabi(abi_buf);      \
+                                                                               \
+    const int ierror = TARGET(handle, buf);                                    \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_cvar_read(TARGET)                                           \
   {                                                                            \
     (void)abi_handle;                                                          \
     (void)abi_buf;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_cvar_read(MPIABI_T_cvar_handle abi_handle, void *abi_buf)
     BODY_MPI_T_cvar_read(MPI_T_cvar_read)
@@ -24406,13 +24744,24 @@ static int w_PMPI_T_cvar_read(MPIABI_T_cvar_handle abi_handle, void *abi_buf)
 
 /* ------------------------------------------------------- MPI_T_cvar_write */
 
-/* S3: CVAR (handle) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_cvar_write
+#define BODY_MPI_T_cvar_write(TARGET)                                          \
+  {                                                                            \
+    const MPI_T_cvar_handle handle =                                           \
+        mpiwrapper_t_cvar_handle_fromabi(abi_handle);                          \
+    const void *const       buf    = mpiwrapper_sendbuf_fromabi(abi_buf);      \
+                                                                               \
+    const int ierror = TARGET(handle, buf);                                    \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_cvar_write(TARGET)                                          \
   {                                                                            \
     (void)abi_handle;                                                          \
     (void)abi_buf;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_cvar_write(MPIABI_T_cvar_handle abi_handle,
                               const void *abi_buf)
@@ -24423,7 +24772,18 @@ static int w_PMPI_T_cvar_write(MPIABI_T_cvar_handle abi_handle,
 
 /* ---------------------------------------------------- MPI_T_enum_get_info */
 
-/* S3: TOOLS_ENUM (enumtype); output string buffer (name) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_enum_get_info
+#define BODY_MPI_T_enum_get_info(TARGET)                                       \
+  {                                                                            \
+    const MPI_T_enum enumtype = mpiwrapper_t_enum_fromabi(abi_enumtype);       \
+    int *const       num      = abi_num;                                       \
+    char *const      name     = abi_name;                                      \
+    int *const       name_len = abi_name_len;                                  \
+                                                                               \
+    const int ierror = TARGET(enumtype, num, name, name_len);                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_enum_get_info(TARGET)                                       \
   {                                                                            \
     (void)abi_enumtype;                                                        \
@@ -24432,6 +24792,7 @@ static int w_PMPI_T_cvar_write(MPIABI_T_cvar_handle abi_handle,
     (void)abi_name_len;                                                        \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_enum_get_info(MPIABI_T_enum abi_enumtype, int *abi_num,
                                  char *abi_name, int *abi_name_len)
@@ -24442,7 +24803,19 @@ static int w_PMPI_T_enum_get_info(MPIABI_T_enum abi_enumtype, int *abi_num,
 
 /* ---------------------------------------------------- MPI_T_enum_get_item */
 
-/* S3: TOOLS_ENUM (enumtype); output string buffer (name) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_enum_get_item
+#define BODY_MPI_T_enum_get_item(TARGET)                                       \
+  {                                                                            \
+    const MPI_T_enum enumtype = mpiwrapper_t_enum_fromabi(abi_enumtype);       \
+    const int        indx     = abi_indx;                                      \
+    int *const       value    = abi_value;                                     \
+    char *const      name     = abi_name;                                      \
+    int *const       name_len = abi_name_len;                                  \
+                                                                               \
+    const int ierror = TARGET(enumtype, indx, value, name, name_len);          \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_enum_get_item(TARGET)                                       \
   {                                                                            \
     (void)abi_enumtype;                                                        \
@@ -24452,6 +24825,7 @@ static int w_PMPI_T_enum_get_info(MPIABI_T_enum abi_enumtype, int *abi_num,
     (void)abi_name_len;                                                        \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_enum_get_item(MPIABI_T_enum abi_enumtype, int abi_indx,
                                  int *abi_value, char *abi_name,
@@ -24464,7 +24838,24 @@ static int w_PMPI_T_enum_get_item(MPIABI_T_enum abi_enumtype, int abi_indx,
 
 /* ------------------------------------------ MPI_T_event_callback_get_info */
 
-/* S3: CALLBACK_SAFETY (cb_safety); EVENT_REGISTRATION (event_registration) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_callback_get_info
+#define BODY_MPI_T_event_callback_get_info(TARGET)                             \
+  {                                                                            \
+    const MPI_T_event_registration event_registration =                        \
+        mpiwrapper_t_event_registration_fromabi(abi_event_registration);       \
+    const MPI_T_cb_safety          cb_safety          =                        \
+        mpiwrapper_tcbsafety_fromabi(abi_cb_safety);                           \
+                                                                               \
+    MPI_Info  info_used;                                                       \
+    const int ierror = TARGET(event_registration, cb_safety, &info_used);      \
+                                                                               \
+    *abi_info_used = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_info_toabi(info_used)                    \
+                         : MPIABI_INFO_NULL;                                   \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_callback_get_info(TARGET)                             \
   {                                                                            \
     (void)abi_event_registration;                                              \
@@ -24473,6 +24864,7 @@ static int w_PMPI_T_enum_get_item(MPIABI_T_enum abi_enumtype, int abi_indx,
     *abi_info_used = MPIABI_INFO_NULL;                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_callback_get_info(
     MPIABI_T_event_registration abi_event_registration,
@@ -24485,7 +24877,20 @@ static int w_PMPI_T_event_callback_get_info(
 
 /* ------------------------------------------ MPI_T_event_callback_set_info */
 
-/* S3: CALLBACK_SAFETY (cb_safety); EVENT_REGISTRATION (event_registration) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_callback_set_info
+#define BODY_MPI_T_event_callback_set_info(TARGET)                             \
+  {                                                                            \
+    const MPI_T_event_registration event_registration =                        \
+        mpiwrapper_t_event_registration_fromabi(abi_event_registration);       \
+    const MPI_T_cb_safety          cb_safety          =                        \
+        mpiwrapper_tcbsafety_fromabi(abi_cb_safety);                           \
+    const MPI_Info                 info               =                        \
+        mpiwrapper_info_fromabi(abi_info);                                     \
+                                                                               \
+    const int ierror = TARGET(event_registration, cb_safety, info);            \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_callback_set_info(TARGET)                             \
   {                                                                            \
     (void)abi_event_registration;                                              \
@@ -24493,6 +24898,7 @@ static int w_PMPI_T_event_callback_get_info(
     (void)abi_info;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_callback_set_info(
     MPIABI_T_event_registration abi_event_registration,
@@ -24505,13 +24911,25 @@ static int w_PMPI_T_event_callback_set_info(
 
 /* ------------------------------------------------------- MPI_T_event_copy */
 
-/* S3: EVENT_INSTANCE (event_instance) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_copy
+#define BODY_MPI_T_event_copy(TARGET)                                          \
+  {                                                                            \
+    const MPI_T_event_instance event_instance =                                \
+        mpiwrapper_t_event_instance_fromabi(abi_event_instance);               \
+    void *const                buffer         =                                \
+        mpiwrapper_recvbuf_fromabi(abi_buffer);                                \
+                                                                               \
+    const int ierror = TARGET(event_instance, buffer);                         \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_copy(TARGET)                                          \
   {                                                                            \
     (void)abi_event_instance;                                                  \
     (void)abi_buffer;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_copy(MPIABI_T_event_instance abi_event_instance,
                               void *abi_buffer)
@@ -24547,9 +24965,72 @@ static int w_PMPI_T_event_get_index(const char *abi_name, int *abi_event_index)
 
 /* --------------------------------------------------- MPI_T_event_get_info */
 
-/* S3: BIND_TYPE (bind); TOOLS_ENUM (enumtype); TOOL_VAR_VERBOSITY
- * (verbosity); output string buffer (desc); output string buffer (name)
- */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_get_info
+#define BODY_MPI_T_event_get_info(TARGET)                                      \
+  {                                                                            \
+    const int       event_index      = abi_event_index;                        \
+    char *const     name             = abi_name;                               \
+    int *const      name_len         = abi_name_len;                           \
+    const int       datatypes_absent = abi_array_of_datatypes == NULL;         \
+    MPI_Aint *const displacements    = (MPI_Aint *)abi_array_of_displacements; \
+    int *const      num_elements     = abi_num_elements;                       \
+    char *const     desc             = abi_desc;                               \
+    int *const      desc_len         = abi_desc_len;                           \
+                                                                               \
+    int nelements = num_elements ? *num_elements : 0;                          \
+    if (nelements < 0) nelements = 0;                                          \
+                                                                               \
+    MPI_Datatype  datatypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
+    MPI_Datatype *datatypes  = NULL;                                           \
+    int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    if (!datatypes_absent) {                                                   \
+      datatypes = mpiwrapper_stage(datatypes_stack, sizeof datatypes_stack,    \
+                                   (size_t)nelements, sizeof *datatypes);      \
+      if (!datatypes) goto done;                                               \
+    }                                                                          \
+                                                                               \
+    {                                                                          \
+      int               verbosity   = 0;                                       \
+      int *const        verbosity_p = abi_verbosity ? &verbosity : NULL;       \
+      MPI_T_enum        enumtype    = MPI_T_ENUM_NULL;                         \
+      MPI_T_enum *const enumtype_p  = abi_enumtype ? &enumtype : NULL;         \
+      MPI_Info          info        = MPI_INFO_NULL;                           \
+      MPI_Info *const   info_p      = abi_info ? &info : NULL;                 \
+      int               bind        = 0;                                       \
+      int *const        bind_p      = abi_bind ? &bind : NULL;                 \
+      const int         ierror =                                               \
+          TARGET(event_index, name, name_len, verbosity_p,                     \
+                 datatypes_absent ? NULL : datatypes, displacements,           \
+                 num_elements, enumtype_p, info_p, desc, desc_len, bind_p);    \
+                                                                               \
+      if (abi_verbosity)                                                       \
+        *abi_verbosity = mpiwrapper_tverbosity_toabi(verbosity);               \
+      if (abi_enumtype)                                                        \
+        *abi_enumtype = (ierror == MPI_SUCCESS)                                \
+                            ? mpiwrapper_t_enum_toabi(enumtype)                \
+                            : MPIABI_T_ENUM_NULL;                              \
+      if (abi_info)                                                            \
+        *abi_info = (ierror == MPI_SUCCESS)                                    \
+                        ? mpiwrapper_info_toabi(info)                          \
+                        : MPIABI_INFO_NULL;                                    \
+      if (abi_bind) *abi_bind = mpiwrapper_tbind_toabi(bind);                  \
+                                                                               \
+      int nelements_out = num_elements ? *num_elements : 0;                    \
+      if (nelements_out > nelements) nelements_out = nelements;                \
+      if (nelements_out < 0) nelements_out = 0;                                \
+      if (ierror == MPI_SUCCESS && !datatypes_absent)                          \
+        for (int i = 0; i < nelements_out; ++i)                                \
+          abi_array_of_datatypes[i] = mpiwrapper_datatype_toabi(datatypes[i]); \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(datatypes, datatypes_stack);                            \
+    return abi_ierror;                                                         \
+  }
+#else
 #define BODY_MPI_T_event_get_info(TARGET)                                      \
   {                                                                            \
     (void)abi_event_index;                                                     \
@@ -24564,9 +25045,11 @@ static int w_PMPI_T_event_get_index(const char *abi_name, int *abi_event_index)
     (void)abi_desc;                                                            \
     (void)abi_desc_len;                                                        \
     (void)abi_bind;                                                            \
-    *abi_info = MPIABI_INFO_NULL;                                              \
+    if (abi_enumtype) *abi_enumtype = MPIABI_T_ENUM_NULL;                      \
+    if (abi_info) *abi_info = MPIABI_INFO_NULL;                                \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_get_info(int abi_event_index, char *abi_name,
                                   int *abi_name_len, int *abi_verbosity,
@@ -24612,13 +25095,24 @@ static int w_PMPI_T_event_get_num(int *abi_num_events)
 
 /* ------------------------------------------------- MPI_T_event_get_source */
 
-/* S3: EVENT_INSTANCE (event_instance) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_get_source
+#define BODY_MPI_T_event_get_source(TARGET)                                    \
+  {                                                                            \
+    const MPI_T_event_instance event_instance =                                \
+        mpiwrapper_t_event_instance_fromabi(abi_event_instance);               \
+    int *const                 source_index   = abi_source_index;              \
+                                                                               \
+    const int ierror = TARGET(event_instance, source_index);                   \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_get_source(TARGET)                                    \
   {                                                                            \
     (void)abi_event_instance;                                                  \
     (void)abi_source_index;                                                    \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_get_source(MPIABI_T_event_instance abi_event_instance,
     int *abi_source_index) BODY_MPI_T_event_get_source(MPI_T_event_get_source)
@@ -24628,13 +25122,25 @@ static int w_PMPI_T_event_get_source(
 
 /* ---------------------------------------------- MPI_T_event_get_timestamp */
 
-/* S3: EVENT_INSTANCE (event_instance) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_get_timestamp
+#define BODY_MPI_T_event_get_timestamp(TARGET)                                 \
+  {                                                                            \
+    const MPI_T_event_instance event_instance  =                               \
+        mpiwrapper_t_event_instance_fromabi(abi_event_instance);               \
+    MPI_Count *const           event_timestamp =                               \
+        (MPI_Count *)abi_event_timestamp;                                      \
+                                                                               \
+    const int ierror = TARGET(event_instance, event_timestamp);                \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_get_timestamp(TARGET)                                 \
   {                                                                            \
     (void)abi_event_instance;                                                  \
     (void)abi_event_timestamp;                                                 \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_get_timestamp(
     MPIABI_T_event_instance abi_event_instance,
@@ -24647,15 +25153,46 @@ static int w_PMPI_T_event_get_timestamp(
 
 /* ----------------------------------------------- MPI_T_event_handle_alloc */
 
-/* S3: EVENT_REGISTRATION (event_registration); TOOL_MPI_OBJ (obj_handle) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_handle_alloc
+#define BODY_MPI_T_event_handle_alloc(TARGET)                                  \
+  {                                                                            \
+    const int      event_index = abi_event_index;                              \
+    const MPI_Info info        = mpiwrapper_info_fromabi(abi_info);            \
+                                                                               \
+    int tool_bind = 0;                                                         \
+    {                                                                          \
+      const int ierror = mpiwrapper_event_bind(event_index, &tool_bind);       \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_event_registration = (MPIABI_T_event_registration)0;              \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    union mpiwrapper_tool_obj obj_storage;                                     \
+    void *const obj_handle =                                                   \
+        mpiwrapper_tool_obj_fromabi(tool_bind, abi_obj_handle, &obj_storage);  \
+                                                                               \
+    MPI_T_event_registration event_registration;                               \
+    const int                ierror =                                          \
+        TARGET(event_index, obj_handle, info, &event_registration);            \
+                                                                               \
+    *abi_event_registration = (ierror == MPI_SUCCESS)                          \
+                                  ? mpiwrapper_t_event_registration_toabi(event_registration) \
+                                  : (MPIABI_T_event_registration)0;            \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_handle_alloc(TARGET)                                  \
   {                                                                            \
     (void)abi_event_index;                                                     \
     (void)abi_obj_handle;                                                      \
     (void)abi_info;                                                            \
     (void)abi_event_registration;                                              \
+    *abi_event_registration = (MPIABI_T_event_registration)0;                  \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_handle_alloc(int abi_event_index,
     void *abi_obj_handle, MPIABI_Info abi_info,
@@ -24668,8 +25205,10 @@ static int w_PMPI_T_event_handle_alloc(int abi_event_index,
 
 /* ------------------------------------------------ MPI_T_event_handle_free */
 
-/* S3: EVENT_FREE_CB_FUNCTION (free_cb_function); EVENT_REGISTRATION
- * (event_registration)
+/* callback registration: the free callback runs on the way back into user
+ * code, so it needs the same trampoline as the two registrars beside it
+ * (NOTES.md #6.1). Its `user_data` can carry the {user_fn, user_extra}
+ * pair, so this one needs no pool.; no body yet (S4)
  */
 #define BODY_MPI_T_event_handle_free(TARGET)                                   \
   {                                                                            \
@@ -24690,7 +25229,22 @@ static int w_PMPI_T_event_handle_free(
 
 /* -------------------------------------------- MPI_T_event_handle_get_info */
 
-/* S3: EVENT_REGISTRATION (event_registration) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_handle_get_info
+#define BODY_MPI_T_event_handle_get_info(TARGET)                               \
+  {                                                                            \
+    const MPI_T_event_registration event_registration =                        \
+        mpiwrapper_t_event_registration_fromabi(abi_event_registration);       \
+                                                                               \
+    MPI_Info  info_used;                                                       \
+    const int ierror = TARGET(event_registration, &info_used);                 \
+                                                                               \
+    *abi_info_used = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_info_toabi(info_used)                    \
+                         : MPIABI_INFO_NULL;                                   \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_handle_get_info(TARGET)                               \
   {                                                                            \
     (void)abi_event_registration;                                              \
@@ -24698,6 +25252,7 @@ static int w_PMPI_T_event_handle_free(
     *abi_info_used = MPIABI_INFO_NULL;                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_handle_get_info(
     MPIABI_T_event_registration abi_event_registration,
@@ -24710,13 +25265,25 @@ static int w_PMPI_T_event_handle_get_info(
 
 /* -------------------------------------------- MPI_T_event_handle_set_info */
 
-/* S3: EVENT_REGISTRATION (event_registration) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_handle_set_info
+#define BODY_MPI_T_event_handle_set_info(TARGET)                               \
+  {                                                                            \
+    const MPI_T_event_registration event_registration =                        \
+        mpiwrapper_t_event_registration_fromabi(abi_event_registration);       \
+    const MPI_Info                 info               =                        \
+        mpiwrapper_info_fromabi(abi_info);                                     \
+                                                                               \
+    const int ierror = TARGET(event_registration, info);                       \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_handle_set_info(TARGET)                               \
   {                                                                            \
     (void)abi_event_registration;                                              \
     (void)abi_info;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_handle_set_info(
     MPIABI_T_event_registration abi_event_registration, MPIABI_Info abi_info)
@@ -24727,7 +25294,19 @@ static int w_PMPI_T_event_handle_set_info(
 
 /* ------------------------------------------------------- MPI_T_event_read */
 
-/* S3: EVENT_INSTANCE (event_instance) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_event_read
+#define BODY_MPI_T_event_read(TARGET)                                          \
+  {                                                                            \
+    const MPI_T_event_instance event_instance =                                \
+        mpiwrapper_t_event_instance_fromabi(abi_event_instance);               \
+    const int                  element_index  = abi_element_index;             \
+    void *const                buffer         =                                \
+        mpiwrapper_recvbuf_fromabi(abi_buffer);                                \
+                                                                               \
+    const int ierror = TARGET(event_instance, element_index, buffer);          \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_event_read(TARGET)                                          \
   {                                                                            \
     (void)abi_event_instance;                                                  \
@@ -24735,6 +25314,7 @@ static int w_PMPI_T_event_handle_set_info(
     (void)abi_buffer;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_event_read(MPIABI_T_event_instance abi_event_instance,
                               int abi_element_index, void *abi_buffer)
@@ -24837,7 +25417,18 @@ static int w_PMPI_T_init_thread(int abi_required, int *abi_provided)
 
 /* --------------------------------------------------- MPI_T_pvar_get_index */
 
-/* S3: PVAR_CLASS (var_class) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_get_index
+#define BODY_MPI_T_pvar_get_index(TARGET)                                      \
+  {                                                                            \
+    const char *const name       = abi_name;                                   \
+    const int         var_class  =                                             \
+        mpiwrapper_tpvarclass_fromabi(abi_var_class);                          \
+    int *const        pvar_index = abi_pvar_index;                             \
+                                                                               \
+    const int ierror = TARGET(name, var_class, pvar_index);                    \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_get_index(TARGET)                                      \
   {                                                                            \
     (void)abi_name;                                                            \
@@ -24845,6 +25436,7 @@ static int w_PMPI_T_init_thread(int abi_required, int *abi_provided)
     (void)abi_pvar_index;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_get_index(const char *abi_name, int abi_var_class,
                                   int *abi_pvar_index)
@@ -24855,10 +25447,50 @@ static int w_PMPI_T_pvar_get_index(const char *abi_name, int abi_var_class,
 
 /* ---------------------------------------------------- MPI_T_pvar_get_info */
 
-/* S3: BIND_TYPE (bind); PVAR_CLASS (var_class); TOOLS_ENUM (enumtype);
- * TOOL_VAR_VERBOSITY (verbosity); output string buffer (desc); output
- * string buffer (name)
- */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_get_info
+#define BODY_MPI_T_pvar_get_info(TARGET)                                       \
+  {                                                                            \
+    const int   pvar_index = abi_pvar_index;                                   \
+    char *const name       = abi_name;                                         \
+    int *const  name_len   = abi_name_len;                                     \
+    char *const desc       = abi_desc;                                         \
+    int *const  desc_len   = abi_desc_len;                                     \
+    int *const  readonly   = abi_readonly;                                     \
+    int *const  continuous = abi_continuous;                                   \
+    int *const  atomic     = abi_atomic;                                       \
+                                                                               \
+    int                 verbosity   = 0;                                       \
+    int *const          verbosity_p = abi_verbosity ? &verbosity : NULL;       \
+    int                 var_class   = 0;                                       \
+    int *const          var_class_p = abi_var_class ? &var_class : NULL;       \
+    MPI_Datatype        datatype    = MPI_DATATYPE_NULL;                       \
+    MPI_Datatype *const datatype_p  = abi_datatype ? &datatype : NULL;         \
+    MPI_T_enum          enumtype    = MPI_T_ENUM_NULL;                         \
+    MPI_T_enum *const   enumtype_p  = abi_enumtype ? &enumtype : NULL;         \
+    int                 bind        = 0;                                       \
+    int *const          bind_p      = abi_bind ? &bind : NULL;                 \
+    const int           ierror =                                               \
+        TARGET(pvar_index, name, name_len, verbosity_p, var_class_p,           \
+               datatype_p, enumtype_p, desc, desc_len, bind_p, readonly,       \
+               continuous, atomic);                                            \
+                                                                               \
+    if (abi_verbosity)                                                         \
+      *abi_verbosity = mpiwrapper_tverbosity_toabi(verbosity);                 \
+    if (abi_var_class)                                                         \
+      *abi_var_class = mpiwrapper_tpvarclass_toabi(var_class);                 \
+    if (abi_datatype)                                                          \
+      *abi_datatype = (ierror == MPI_SUCCESS)                                  \
+                          ? mpiwrapper_datatype_toabi(datatype)                \
+                          : MPIABI_DATATYPE_NULL;                              \
+    if (abi_enumtype)                                                          \
+      *abi_enumtype = (ierror == MPI_SUCCESS)                                  \
+                          ? mpiwrapper_t_enum_toabi(enumtype)                  \
+                          : MPIABI_T_ENUM_NULL;                                \
+    if (abi_bind) *abi_bind = mpiwrapper_tbind_toabi(bind);                    \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_get_info(TARGET)                                       \
   {                                                                            \
     (void)abi_pvar_index;                                                      \
@@ -24874,9 +25506,11 @@ static int w_PMPI_T_pvar_get_index(const char *abi_name, int abi_var_class,
     (void)abi_readonly;                                                        \
     (void)abi_continuous;                                                      \
     (void)abi_atomic;                                                          \
-    *abi_datatype = MPIABI_DATATYPE_NULL;                                      \
+    if (abi_datatype) *abi_datatype = MPIABI_DATATYPE_NULL;                    \
+    if (abi_enumtype) *abi_enumtype = MPIABI_T_ENUM_NULL;                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_get_info(int abi_pvar_index, char *abi_name,
                                  int *abi_name_len, int *abi_verbosity,
@@ -24922,7 +25556,38 @@ static int w_PMPI_T_pvar_get_num(int *abi_num_pvar)
 
 /* ------------------------------------------------ MPI_T_pvar_handle_alloc */
 
-/* S3: PVAR (handle); PVAR_SESSION (session); TOOL_MPI_OBJ (obj_handle) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_handle_alloc
+#define BODY_MPI_T_pvar_handle_alloc(TARGET)                                   \
+  {                                                                            \
+    const MPI_T_pvar_session session    =                                      \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    const int                pvar_index = abi_pvar_index;                      \
+    int *const               count      = abi_count;                           \
+                                                                               \
+    int tool_bind = 0;                                                         \
+    {                                                                          \
+      const int ierror = mpiwrapper_pvar_bind(pvar_index, &tool_bind);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_handle = MPIABI_T_PVAR_HANDLE_NULL;                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    union mpiwrapper_tool_obj obj_storage;                                     \
+    void *const obj_handle =                                                   \
+        mpiwrapper_tool_obj_fromabi(tool_bind, abi_obj_handle, &obj_storage);  \
+                                                                               \
+    MPI_T_pvar_handle handle;                                                  \
+    const int         ierror =                                                 \
+        TARGET(session, pvar_index, obj_handle, &handle, count);               \
+                                                                               \
+    *abi_handle = (ierror == MPI_SUCCESS)                                      \
+                      ? mpiwrapper_t_pvar_handle_toabi(handle)                 \
+                      : MPIABI_T_PVAR_HANDLE_NULL;                             \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_handle_alloc(TARGET)                                   \
   {                                                                            \
     (void)abi_session;                                                         \
@@ -24930,8 +25595,10 @@ static int w_PMPI_T_pvar_get_num(int *abi_num_pvar)
     (void)abi_obj_handle;                                                      \
     (void)abi_handle;                                                          \
     (void)abi_count;                                                           \
+    *abi_handle = MPIABI_T_PVAR_HANDLE_NULL;                                   \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_handle_alloc(MPIABI_T_pvar_session abi_session,
                                      int abi_pvar_index, void *abi_obj_handle,
@@ -24946,13 +25613,27 @@ static int w_PMPI_T_pvar_handle_alloc(MPIABI_T_pvar_session abi_session,
 
 /* ------------------------------------------------- MPI_T_pvar_handle_free */
 
-/* S3: PVAR (handle); PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_handle_free
+#define BODY_MPI_T_pvar_handle_free(TARGET)                                    \
+  {                                                                            \
+    const MPI_T_pvar_session session =                                         \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    MPI_T_pvar_handle        handle  =                                         \
+        mpiwrapper_t_pvar_handle_fromabi(*abi_handle);                         \
+                                                                               \
+    const int ierror = TARGET(session, &handle);                               \
+    *abi_handle = mpiwrapper_t_pvar_handle_toabi(handle);                      \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_handle_free(TARGET)                                    \
   {                                                                            \
     (void)abi_session;                                                         \
     (void)abi_handle;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_handle_free(MPIABI_T_pvar_session abi_session,
                                     MPIABI_T_pvar_handle *abi_handle)
@@ -24963,7 +25644,19 @@ static int w_PMPI_T_pvar_handle_free(MPIABI_T_pvar_session abi_session,
 
 /* -------------------------------------------------------- MPI_T_pvar_read */
 
-/* S3: PVAR (handle); PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_read
+#define BODY_MPI_T_pvar_read(TARGET)                                           \
+  {                                                                            \
+    const MPI_T_pvar_session session =                                         \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    const MPI_T_pvar_handle  handle  =                                         \
+        mpiwrapper_t_pvar_handle_fromabi(abi_handle);                          \
+    void *const              buf     = mpiwrapper_recvbuf_fromabi(abi_buf);    \
+                                                                               \
+    const int ierror = TARGET(session, handle, buf);                           \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_read(TARGET)                                           \
   {                                                                            \
     (void)abi_session;                                                         \
@@ -24971,6 +25664,7 @@ static int w_PMPI_T_pvar_handle_free(MPIABI_T_pvar_session abi_session,
     (void)abi_buf;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_read(MPIABI_T_pvar_session abi_session,
                              MPIABI_T_pvar_handle abi_handle, void *abi_buf)
@@ -24981,7 +25675,19 @@ static int w_PMPI_T_pvar_read(MPIABI_T_pvar_session abi_session,
 
 /* --------------------------------------------------- MPI_T_pvar_readreset */
 
-/* S3: PVAR (handle); PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_readreset
+#define BODY_MPI_T_pvar_readreset(TARGET)                                      \
+  {                                                                            \
+    const MPI_T_pvar_session session =                                         \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    const MPI_T_pvar_handle  handle  =                                         \
+        mpiwrapper_t_pvar_handle_fromabi(abi_handle);                          \
+    void *const              buf     = mpiwrapper_recvbuf_fromabi(abi_buf);    \
+                                                                               \
+    const int ierror = TARGET(session, handle, buf);                           \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_readreset(TARGET)                                      \
   {                                                                            \
     (void)abi_session;                                                         \
@@ -24989,6 +25695,7 @@ static int w_PMPI_T_pvar_read(MPIABI_T_pvar_session abi_session,
     (void)abi_buf;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_readreset(MPIABI_T_pvar_session abi_session,
                                   MPIABI_T_pvar_handle abi_handle,
@@ -25001,13 +25708,25 @@ static int w_PMPI_T_pvar_readreset(MPIABI_T_pvar_session abi_session,
 
 /* ------------------------------------------------------- MPI_T_pvar_reset */
 
-/* S3: PVAR (handle); PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_reset
+#define BODY_MPI_T_pvar_reset(TARGET)                                          \
+  {                                                                            \
+    const MPI_T_pvar_session session =                                         \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    const MPI_T_pvar_handle  handle  =                                         \
+        mpiwrapper_t_pvar_handle_fromabi(abi_handle);                          \
+                                                                               \
+    const int ierror = TARGET(session, handle);                                \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_reset(TARGET)                                          \
   {                                                                            \
     (void)abi_session;                                                         \
     (void)abi_handle;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_reset(MPIABI_T_pvar_session abi_session,
                               MPIABI_T_pvar_handle abi_handle)
@@ -25018,12 +25737,26 @@ static int w_PMPI_T_pvar_reset(MPIABI_T_pvar_session abi_session,
 
 /* ---------------------------------------------- MPI_T_pvar_session_create */
 
-/* S3: PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_session_create
+#define BODY_MPI_T_pvar_session_create(TARGET)                                 \
+  {                                                                            \
+    MPI_T_pvar_session session;                                                \
+    const int          ierror = TARGET(&session);                              \
+                                                                               \
+    *abi_session = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_t_pvar_session_toabi(session)              \
+                       : MPIABI_T_PVAR_SESSION_NULL;                           \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_session_create(TARGET)                                 \
   {                                                                            \
     (void)abi_session;                                                         \
+    *abi_session = MPIABI_T_PVAR_SESSION_NULL;                                 \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_session_create(MPIABI_T_pvar_session *abi_session)
     BODY_MPI_T_pvar_session_create(MPI_T_pvar_session_create)
@@ -25032,12 +25765,24 @@ static int w_PMPI_T_pvar_session_create(MPIABI_T_pvar_session *abi_session)
 
 /* ------------------------------------------------ MPI_T_pvar_session_free */
 
-/* S3: PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_session_free
+#define BODY_MPI_T_pvar_session_free(TARGET)                                   \
+  {                                                                            \
+    MPI_T_pvar_session session =                                               \
+        mpiwrapper_t_pvar_session_fromabi(*abi_session);                       \
+                                                                               \
+    const int ierror = TARGET(&session);                                       \
+    *abi_session = mpiwrapper_t_pvar_session_toabi(session);                   \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_session_free(TARGET)                                   \
   {                                                                            \
     (void)abi_session;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_session_free(MPIABI_T_pvar_session *abi_session)
     BODY_MPI_T_pvar_session_free(MPI_T_pvar_session_free)
@@ -25046,13 +25791,25 @@ static int w_PMPI_T_pvar_session_free(MPIABI_T_pvar_session *abi_session)
 
 /* ------------------------------------------------------- MPI_T_pvar_start */
 
-/* S3: PVAR (handle); PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_start
+#define BODY_MPI_T_pvar_start(TARGET)                                          \
+  {                                                                            \
+    const MPI_T_pvar_session session =                                         \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    const MPI_T_pvar_handle  handle  =                                         \
+        mpiwrapper_t_pvar_handle_fromabi(abi_handle);                          \
+                                                                               \
+    const int ierror = TARGET(session, handle);                                \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_start(TARGET)                                          \
   {                                                                            \
     (void)abi_session;                                                         \
     (void)abi_handle;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_start(MPIABI_T_pvar_session abi_session,
                               MPIABI_T_pvar_handle abi_handle)
@@ -25063,13 +25820,25 @@ static int w_PMPI_T_pvar_start(MPIABI_T_pvar_session abi_session,
 
 /* -------------------------------------------------------- MPI_T_pvar_stop */
 
-/* S3: PVAR (handle); PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_stop
+#define BODY_MPI_T_pvar_stop(TARGET)                                           \
+  {                                                                            \
+    const MPI_T_pvar_session session =                                         \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    const MPI_T_pvar_handle  handle  =                                         \
+        mpiwrapper_t_pvar_handle_fromabi(abi_handle);                          \
+                                                                               \
+    const int ierror = TARGET(session, handle);                                \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_stop(TARGET)                                           \
   {                                                                            \
     (void)abi_session;                                                         \
     (void)abi_handle;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_stop(MPIABI_T_pvar_session abi_session,
                              MPIABI_T_pvar_handle abi_handle)
@@ -25080,7 +25849,19 @@ static int w_PMPI_T_pvar_stop(MPIABI_T_pvar_session abi_session,
 
 /* ------------------------------------------------------- MPI_T_pvar_write */
 
-/* S3: PVAR (handle); PVAR_SESSION (session) */
+#ifdef MPIWRAPPER_HAVE_MPI_T_pvar_write
+#define BODY_MPI_T_pvar_write(TARGET)                                          \
+  {                                                                            \
+    const MPI_T_pvar_session session =                                         \
+        mpiwrapper_t_pvar_session_fromabi(abi_session);                        \
+    const MPI_T_pvar_handle  handle  =                                         \
+        mpiwrapper_t_pvar_handle_fromabi(abi_handle);                          \
+    const void *const        buf     = mpiwrapper_sendbuf_fromabi(abi_buf);    \
+                                                                               \
+    const int ierror = TARGET(session, handle, buf);                           \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_pvar_write(TARGET)                                          \
   {                                                                            \
     (void)abi_session;                                                         \
@@ -25088,6 +25869,7 @@ static int w_PMPI_T_pvar_stop(MPIABI_T_pvar_session abi_session,
     (void)abi_buf;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_pvar_write(MPIABI_T_pvar_session abi_session,
                               MPIABI_T_pvar_handle abi_handle,
@@ -25100,9 +25882,35 @@ static int w_PMPI_T_pvar_write(MPIABI_T_pvar_session abi_session,
 
 /* -------------------------------------------------- MPI_T_source_get_info */
 
-/* S3: SOURCE_ORDERING (ordering); output string buffer (desc); output
- * string buffer (name)
- */
+#ifdef MPIWRAPPER_HAVE_MPI_T_source_get_info
+#define BODY_MPI_T_source_get_info(TARGET)                                     \
+  {                                                                            \
+    const int        source_index     = abi_source_index;                      \
+    char *const      name             = abi_name;                              \
+    int *const       name_len         = abi_name_len;                          \
+    char *const      desc             = abi_desc;                              \
+    int *const       desc_len         = abi_desc_len;                          \
+    MPI_Count *const ticks_per_second = (MPI_Count *)abi_ticks_per_second;     \
+    MPI_Count *const max_ticks        = (MPI_Count *)abi_max_ticks;            \
+                                                                               \
+    MPI_T_source_order        ordering   = 0;                                  \
+    MPI_T_source_order *const ordering_p = abi_ordering ? &ordering : NULL;    \
+    MPI_Info                  info       = MPI_INFO_NULL;                      \
+    MPI_Info *const           info_p     = abi_info ? &info : NULL;            \
+    const int                 ierror =                                         \
+        TARGET(source_index, name, name_len, desc, desc_len, ordering_p,       \
+               ticks_per_second, max_ticks, info_p);                           \
+                                                                               \
+    if (abi_ordering)                                                          \
+      *abi_ordering = mpiwrapper_tsourceorder_toabi(ordering);                 \
+    if (abi_info)                                                              \
+      *abi_info = (ierror == MPI_SUCCESS)                                      \
+                      ? mpiwrapper_info_toabi(info)                            \
+                      : MPIABI_INFO_NULL;                                      \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
+#else
 #define BODY_MPI_T_source_get_info(TARGET)                                     \
   {                                                                            \
     (void)abi_source_index;                                                    \
@@ -25114,9 +25922,10 @@ static int w_PMPI_T_pvar_write(MPIABI_T_pvar_session abi_session,
     (void)abi_ticks_per_second;                                                \
     (void)abi_max_ticks;                                                       \
     (void)abi_info;                                                            \
-    *abi_info = MPIABI_INFO_NULL;                                              \
+    if (abi_info) *abi_info = MPIABI_INFO_NULL;                                \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
+#endif
 
 static int w_MPI_T_source_get_info(int abi_source_index, char *abi_name,
                                    int *abi_name_len, char *abi_desc,
