@@ -1,0 +1,7 @@
+# ld64 -exported_symbols_list for libmpi_abi -- the macOS half of NOTES.md
+# #9's "a version script on ELF and -exported_symbols_list on macOS"; see
+# cmake/mpi_abi.version for the ELF side and why this restricts rather than
+# merely documents the export set. Mach-O C symbols carry a leading
+# underscore that the ABI header's own names do not.
+_MPI_*
+_PMPI_*

@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+# The second of the three consumption routes NOTES.md #9 requires: an
+# imported target so `find_package(mpi_abi)` + `target_link_libraries(app
+# PRIVATE mpi_abi::mpi_abi)` works with nothing else to know. Unlike mpif's
+# equivalent, which attaches an MPI ABI library found elsewhere to an
+# already-built target, this package *is* the ABI library: mpi_abiTargets.cmake
+# (written by install(EXPORT ...)) carries the imported location and the
+# installed include directory as usage requirements, so there is nothing left
+# for this file to wire up.
+include("${CMAKE_CURRENT_LIST_DIR}/mpi_abiTargets.cmake")
+
+check_required_components(mpi_abi)

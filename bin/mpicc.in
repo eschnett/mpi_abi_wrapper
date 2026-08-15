@@ -1,0 +1,85 @@
+#!/bin/sh
+
+# mpi_abi_wrapper's compiler wrapper, one of the three consumption routes
+# NOTES.md #9 requires (decision 19). Unlike a real MPI's mpicc, this one is
+# never tied to a particular MPI: it always names *this prefix's* mpi.h and
+# libmpi_abi, and which MPI actually runs a linked program is decided later, at
+# MPI_Init, by whichever libmpiwrapper MPI_ABI_WRAPPER_LIB names -- or, absent
+# that, by the absolute path baked into libmpi_abi at build time (decision 5;
+# src/mpi_abi/bootstrap.c). So there is exactly one mpicc per prefix, not one
+# per wrapped MPI, and nothing here ever needs to know which implementation
+# the resulting binary will run against.
+#
+# cmake/mpi_abi.pc.in publishes the same inventory as pkg-config metadata, and
+# for the same reason mpif's bin/mpifort.in gives: every *value* both bake in
+# comes from one CMake variable, but the shape of the two link lines is
+# written out twice, so ci-scripts/check-install.sh compares what they
+# actually produce rather than trusting that they agree.
+
+MPI_ABI_CC=${MPI_ABI_CC:-@CMAKE_C_COMPILER@}
+# @MPIABI_MPICC_SYSROOT_FLAG@ is empty except on macOS, where it is
+# -isysroot @CMAKE_OSX_SYSROOT@: CMake passes that to every compile of its
+# own targets (CMAKE_OSX_SYSROOT, usually the Xcode command-line tools'
+# auto-detected SDK), and invoking the same @CMAKE_C_COMPILER@ path directly
+# without it fails outright -- "'stdio.h' file not found" -- because that
+# path is the toolchain's compiler binary itself, not the /usr/bin/cc shim
+# that finds an SDK on its own. Measured while writing this file: identical
+# invocation, only the sysroot flag differing.
+MPI_ABI_CFLAGS=${MPI_ABI_CFLAGS:-@CMAKE_C_FLAGS@ @MPIABI_MPICC_SYSROOT_FLAG@}
+MPI_ABI_INCDIR=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+MPI_ABI_LIBDIR=@CMAKE_INSTALL_FULL_LIBDIR@
+# -rpath rather than -Wl,-rpath,-Wl,: both linkers this project supports (ld64
+# and GNU/gold/lld via -Wl,) accept the single-flag spelling, and the ABI
+# library's own rpath handling (see CMakeLists.txt) uses the same spelling, so
+# this is one convention rather than a per-platform branch.
+MPI_ABI_LIBS=${MPI_ABI_LIBS:--L$MPI_ABI_LIBDIR -Wl,-rpath,$MPI_ABI_LIBDIR -lmpi_abi}
+
+case "$1" in
+    -showme:command|-show:command)
+        echo "$MPI_ABI_CC"
+        exit 0
+        ;;
+    -showme:compile|-showme|-compile_info)
+        echo "$MPI_ABI_CFLAGS -I$MPI_ABI_INCDIR"
+        exit 0
+        ;;
+    -showme:link|-link_info)
+        echo "$MPI_ABI_CFLAGS $MPI_ABI_LIBS"
+        exit 0
+        ;;
+    -showme:incdirs)
+        echo "$MPI_ABI_INCDIR"
+        exit 0
+        ;;
+    -showme:libdirs)
+        echo "$MPI_ABI_LIBDIR"
+        exit 0
+        ;;
+    -showme:libs)
+        echo "$MPI_ABI_LIBS"
+        exit 0
+        ;;
+    -showme:version|-show:version)
+        echo "@PROJECT_NAME@ @PROJECT_VERSION@"
+        exit 0
+        ;;
+    -show*)
+        echo "$MPI_ABI_CC $MPI_ABI_CFLAGS -I$MPI_ABI_INCDIR $MPI_ABI_LIBS"
+        exit 0
+        ;;
+esac
+
+# Are we linking? (-E/-c/-S all stop before the link step.)
+linking=true
+for arg in "$@"; do
+    if [ "$arg" = "-E" ] || [ "$arg" = "-c" ] || [ "$arg" = "-S" ]; then
+        linking=false
+        break
+    fi
+done
+
+if [ $linking != true ]; then
+    exec $MPI_ABI_CC $MPI_ABI_CFLAGS -I$MPI_ABI_INCDIR "$@"
+else
+    exec $MPI_ABI_CC $MPI_ABI_CFLAGS -I$MPI_ABI_INCDIR "$@" $MPI_ABI_LIBS
+fi

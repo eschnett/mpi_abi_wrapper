@@ -382,7 +382,7 @@ purpose makes it fail — checked directly, not asserted.
 `INTENT` lists) didn't carry over as directly as expected — a flat C prototype
 needed its own self-check and its own exemption shapes rather than a port.
 
-### S6 — Build, packaging, CI matrix *(floats; needs only S1)*
+### S6 — Build, packaging, CI matrix *(done: all three routes build and run, five legs in `check-install.sh`)*
 
 `mpicc`/`mpicxx`, CMake package files plus the `FindMPI` shim, pkg-config,
 `ci-scripts/` for pinned MPI source builds, the variant matrix. Respect the
@@ -394,6 +394,76 @@ confirms `libmpi_abi` is the executable's only MPI dependency, per §20.2.1. The
 prefix is exclusive — installing into the wrapped MPI's prefix collides on `mpi.h`,
 `mpicc` and `libmpi_abi` (§9), so the install test must use a prefix of its own and
 should assert that the MPI's own `mpi.h` is not in it.
+
+`ci-scripts/check-install.sh` is that install test, and it runs five legs
+rather than three: `bin/mpicc`, `find_package(mpi_abi)`, `find_package(MPI)`
+through the `FindMPI` shim, and `pkg-config`, plus the prefix-exclusivity
+assertion itself. All five pass on macOS against a distro Open MPI, and
+**on Linux against MPICH 4.3.1 and Open MPI 5.0.6 built from source by this
+stage's own `install-mpich.sh`/`install-openmpi.sh`** — the whole chain,
+download through a running program with the loader's search path cleared,
+run end to end rather than inferred from the scripts' own logic reading
+right, the same way S1's exit check was.
+
+**What the session found that this plan did not name.** Decision 5's
+"falling back to a build-time path" had never been implemented: before this
+stage, `mpi_abi`'s only fallback was a bare filename
+(`libmpiwrapper.so`/`.dylib`), which depends on the loader's default search
+path finding a same-named library — true in the build tree by accident, false
+in an installed, exclusive prefix. `mpi_abi` now bakes in the absolute
+installed path (`CMAKE_INSTALL_FULL_LIBDIR`), so a program built through any
+of the three routes runs with no environment variable at all; `MPI_ABI_WRAPPER_LIB`
+still overrides it, which is what the cross test needs.
+
+**A platform-specific finding, `NOTES.md` #9 now has a note on:** `bin/mpicc`
+invokes `CMAKE_C_COMPILER` directly rather than through CMake, and on macOS
+that path resolved to the Xcode toolchain's own compiler binary rather than
+the `/usr/bin/cc` shim — which fails outright, `'stdio.h' file not found`,
+without an explicit `-isysroot`. CMake passes that flag to every compile of
+its own targets from `CMAKE_OSX_SYSROOT`; `bin/mpicc`/`bin/mpicxx` now do too.
+Measured directly: identical invocation, only the flag differing.
+
+**The `FindMPI` shim is two mechanisms, not one.** CMake's own bundled
+`FindMPI` already has a path that finds this project unassisted — its
+compiler-wrapper interrogation runs `-show`-style flags against whatever
+`mpicc` it locates, which `bin/mpicc.in` answers the way a real one would —
+and that needs nothing installed to work. What the shipped
+`cmake/FindMPI.cmake` adds is the case interrogation cannot reach: a consumer
+that names neither `mpi_abi` nor a specific compiler, only `find_package(MPI)`
+with `CMAKE_MODULE_PATH` pointed at the installed `Modules/` directory. Both
+were exercised (`check-install.sh`'s routes 2 and 2b).
+
+**`ci-scripts/install-mpich.sh`/`install-openmpi.sh` are far shorter than
+mpif's equivalents**, and deliberately: mpif needs an MPI that already
+implements the standard ABI, hence its pinned commit from MPICH `main`, its
+header substitution and its pruning of everything the ABI does not define.
+This project wraps *any* MPI-3.0+ implementation through its own conversion
+layer, so a stock `configure && make && make install` against a released
+tarball is the whole of what CI needs to provision (`NOTES.md` #9). Verified
+end to end on Linux: both scripts' primary rows — MPICH 4.3.1 and Open MPI
+5.0.6 — built from a downloaded tarball and then taken straight through
+`check-install.sh`'s five legs.
+
+**The MPI-3.0 floor row cost a real attempt, not just a citation.** Building
+MPICH 3.1.4 first surfaced a genuine coupling bug: `--disable-fortran` (added
+to save build time) silently drops the *implementations* of
+`MPI_Type_create_f90_{real,complex,integer}` — plain C entry points MPI-5.0
+requires and this release's `mpi.h` declares unconditionally — so
+`dev/probe_impl.py`'s compile-only probe reports them available and only the
+wrapper's link step fails. Both installers now run a stock configure with no
+Fortran-disabling flag. What remains after that fix is the release's own
+limitation, already named in `NOTES.md` #9: 3.1.4's configure itself rejects
+any Fortran compiler modern enough to warn rather than error on a
+mismatched-argument call, gcc 11's and gcc 13's gfortran both included, so
+this row was not re-verified end to end here and needs a pinned older
+toolchain when someone next picks it up.
+
+**The variant matrix itself is not this stage's job to populate**, only to
+leave room for: `NOTES.md` #10's matrix (toolchains, platforms, 32-bit,
+MVAPICH) is behavioural coverage that belongs to S7's suite and S9's
+sanitizer/thread/32-bit rows, which do not exist yet. What S6 owes the matrix
+is a `check-install.sh` that takes any `mpicc` — distro, pinned tarball, or
+another implementation entirely — as its one argument, which it does.
 
 **Model: Sonnet.** Much of it is transposable from mpif's `ci-scripts/`.
 

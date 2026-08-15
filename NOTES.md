@@ -2487,6 +2487,14 @@ has not been delivered:
   produced executable starts without help. It must *not* name `libmpiwrapper`:
   MPI-5.0 §20.2.1 requires `mpi_abi` to be the sole direct MPI dependency of the
   application binary, and the wrapper is reached by `dlopen`.
+
+  **A macOS-specific finding from S6:** the wrapper invokes `CMAKE_C_COMPILER`
+  directly, and on this platform that variable can resolve to the Xcode
+  toolchain's own compiler binary rather than the `/usr/bin/cc` shim —
+  identical invocation, but the former fails outright, `'stdio.h' file not
+  found`, without an explicit `-isysroot`. CMake passes that flag to every
+  compile of its own targets, derived from `CMAKE_OSX_SYSROOT`; `bin/mpicc`
+  and `bin/mpicxx` now bake in the same flag for the same reason.
 - **CMake package files** — `mpi_abiConfig.cmake` exporting an imported target so
   `find_package(mpi_abi)` works, plus enough of a `FindMPI` shim that a consumer
   written against `find_package(MPI)` — HDF5, PETSc, nearly everyone — works
@@ -2503,6 +2511,22 @@ version script on ELF and `-exported_symbols_list` on macOS. `libmpi_abi` export
 only `MPI_*`/`PMPI_*`; `libmpiwrapper` only `mpiwrapper_get_vtable`. Worth doing
 deliberately because `RTLD_GLOBAL` puts `libmpi`'s own `MPI_Send` into the global
 namespace — unavoidable, but our internals should not join it.
+
+**S6 found the visibility-preset half of this was not the whole story.**
+`-fvisibility`/`C_VISIBILITY_PRESET` reach every symbol this project writes,
+but not the handful the linker inserts into every shared object regardless
+(`_init`, `_fini`, `_edata`, `_end`, `__bss_start` on ELF) — measured on Linux,
+where they showed up as extern and defined in `libmpi_abi.so` under plain
+`nm --defined-only --extern-only`, with no visibility attribute able to touch
+them. `cmake/mpi_abi.version`'s `local: *;` catch-all (a `global: MPI_*;
+PMPI_*;` allowlist, GNU ld/gold/lld) and `cmake/mpi_abi.exported_symbols`
+(ld64's `-exported_symbols_list`, same two patterns with the Mach-O leading
+underscore) are what actually remove them from the exported set, on both
+formats — not merely tolerate them by name, which is what
+`test/check_exports.cmake` did before S6. The version script's own version
+node (`MPIABI_1`) is the one name that legitimately remains outside the
+`MPI_*`/`PMPI_*` pattern; it is an absolute symbol identifying the node
+itself; ELF only.
 
 **Shared only in v1.** Static linking would require splitting `entrypoints.c` into
 688 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI

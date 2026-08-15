@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-project(mpi_abi_wrapper C)
+project(mpi_abi_wrapper
+  VERSION 0.1.0
+  DESCRIPTION "An MPI-5.0 standard-ABI shim over any MPI-3.0+ implementation"
+  HOMEPAGE_URL "https://github.com/eschnett/mpi_abi_wrapper"
+  LANGUAGES C)
 
 # S0 built the two headers, S1 the prototype; S2 replaces the four S1 stand-ins
 # with generated output -- all 688 entry points and 1376 slots (STAGES.md).
@@ -8,6 +12,18 @@ project(mpi_abi_wrapper C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_VISIBILITY_PRESET hidden)
+
+# mpicxx (NOTES.md #9's "mpicc and friends") is the only reason this project
+# ever touches C++: nothing under src/ or gen/ is compiled as C++, and
+# gen/include/mpi.h wraps its own declarations in extern "C" already. OPTIONAL
+# so that a host with no C++ compiler still configures and builds everything
+# else -- bin/mpicxx (and its FindMPI-shim COMPONENT CXX) then simply do not
+# exist, which ci-scripts/check-install.sh treats as a skip rather than a
+# failure.
+enable_language(CXX OPTIONAL)
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
@@ -25,6 +41,14 @@ set(MPIABI_CHECK_C_BINDINGS_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check-c-bindings.py)
 # and (from S6) compiler wrapper and package files, without having to know that
 # one half does not need MPI (NOTES.md #9).
 option(MPI_ABI_BUILD_WRAPPER "Build libmpiwrapper (requires an MPI)" ON)
+
+# Needed before the mpi_abi target below, which bakes an absolute path to
+# libmpiwrapper's installed name into itself (decision 5, NOTES.md #9).
+if(APPLE)
+  set(MPIABI_WRAPPER_SUFFIX .dylib)
+else()
+  set(MPIABI_WRAPPER_SUFFIX .so)
+endif()
 
 set(MPIABI_WARNINGS -Wall -Wextra -Wpedantic -Werror)
 
@@ -111,14 +135,119 @@ target_compile_options(mpi_abi PRIVATE ${MPIABI_WARNINGS})
 target_link_libraries(mpi_abi PRIVATE ${CMAKE_DL_LIBS})
 # Every MPI_*/PMPI_* entry point is exported and nothing else is: the ABI
 # functions carry default visibility from the ABI header, and the one internal
-# global is marked hidden in bootstrap.c.
+# global is marked hidden in bootstrap.c. Visibility attributes stop there,
+# though -- they cannot touch the handful of symbols the linker itself inserts
+# into every shared object (_init, _fini, _edata, _end, __bss_start on ELF),
+# which is what the version script / exported-symbols list below is for
+# (NOTES.md #9; test/check_exports.cmake used to carry an explicit exemption
+# for exactly these names).
 set_target_properties(mpi_abi PROPERTIES C_VISIBILITY_PRESET default)
-
 if(APPLE)
-  set(MPIABI_WRAPPER_SUFFIX .dylib)
+  target_link_options(mpi_abi PRIVATE
+    "-Wl,-exported_symbols_list,${CMAKE_SOURCE_DIR}/cmake/mpi_abi.exported_symbols")
+  set_target_properties(mpi_abi PROPERTIES
+    LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpi_abi.exported_symbols)
 else()
-  set(MPIABI_WRAPPER_SUFFIX .so)
+  target_link_options(mpi_abi PRIVATE
+    "-Wl,--version-script=${CMAKE_SOURCE_DIR}/cmake/mpi_abi.version")
+  set_target_properties(mpi_abi PROPERTIES
+    LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpi_abi.version)
 endif()
+
+# Decision 5's "falling back to a build-time path": libmpi_abi finds
+# libmpiwrapper from MPI_ABI_WRAPPER_LIB in the environment, and absent that,
+# from this -- the absolute path this same prefix installs libmpiwrapper to.
+# Without it, a program built the ordinary way (bin/mpicc, find_package or
+# pkg-config, none of which mention libmpiwrapper -- MPI-5.0 20.2.1) would
+# only start with MPI_ABI_WRAPPER_LIB set by hand, which is not "run and it
+# works". src/mpi_abi/bootstrap.c's own fallback (a bare filename) is what
+# runs when this is left unset, e.g. the developer build of libmpi_abi alone;
+# it depends on the loader's default search path finding a same-named library,
+# which an installed, exclusive prefix does not guarantee.
+target_compile_definitions(mpi_abi PRIVATE
+  "MPI_ABI_WRAPPER_LIB_DEFAULT=\"${CMAKE_INSTALL_FULL_LIBDIR}/libmpiwrapper${MPIABI_WRAPPER_SUFFIX}\"")
+
+install(TARGETS mpi_abi
+  EXPORT mpi_abiTargets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# The three headers together, unconditionally: mpi.h is what an application
+# includes, but mpiabi.h and mpiwrapper_vtable.h have to travel with it even
+# in the MPI_ABI_BUILD_WRAPPER=OFF developer build, because
+# mpiwrapper_vtable.h is check 2's self-wrap marker (CMakeLists.txt further
+# down) -- a *later* wrapper build configured against this prefix has to see
+# it to refuse to wrap itself, whether or not this build produced a wrapper of
+# its own.
+install(FILES
+  ${MPIABI_GEN_INCLUDE_DIR}/mpi.h
+  ${MPIABI_GEN_INCLUDE_DIR}/mpiabi.h
+  ${MPIABI_GEN_INCLUDE_DIR}/mpiwrapper_vtable.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# ------------------------------------------------------------ mpicc / mpicxx
+
+# The first of the three consumption routes (NOTES.md #9, decision 19):
+# compiler wrappers naming this prefix's mpi.h and libmpi_abi, with the rpath
+# set so a program they produce starts with no help. Generated once, at this
+# project's own configure time, not per-MPI -- see bin/mpicc.in's comment for
+# why there is exactly one.
+if(APPLE AND CMAKE_OSX_SYSROOT)
+  set(MPIABI_MPICC_SYSROOT_FLAG "-isysroot ${CMAKE_OSX_SYSROOT}")
+else()
+  set(MPIABI_MPICC_SYSROOT_FLAG "")
+endif()
+configure_file(bin/mpicc.in ${CMAKE_CURRENT_BINARY_DIR}/bin/mpicc @ONLY)
+install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/bin/mpicc
+  DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+if(CMAKE_CXX_COMPILER)
+  configure_file(bin/mpicxx.in ${CMAKE_CURRENT_BINARY_DIR}/bin/mpicxx @ONLY)
+  install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/bin/mpicxx
+    DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+# ------------------------------------------------------- CMake package files
+
+# The second consumption route: find_package(mpi_abi) plus, from
+# cmake/FindMPI.cmake, plain find_package(MPI) too. mpi_abiTargets.cmake
+# (written by install(EXPORT) below) carries the imported location and the
+# INCLUDES DESTINATION above as usage requirements, so mpi_abiConfig.cmake.in
+# itself has nothing left to compute.
+set(MPIABI_PACKAGE_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/mpi_abi)
+
+configure_package_config_file(
+  cmake/mpi_abiConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/mpi_abiConfig.cmake
+  INSTALL_DESTINATION ${MPIABI_PACKAGE_CMAKE_DIR})
+
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/mpi_abiConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion)
+
+install(FILES
+  ${CMAKE_CURRENT_BINARY_DIR}/mpi_abiConfig.cmake
+  ${CMAKE_CURRENT_BINARY_DIR}/mpi_abiConfigVersion.cmake
+  DESTINATION ${MPIABI_PACKAGE_CMAKE_DIR})
+
+install(EXPORT mpi_abiTargets
+  FILE mpi_abiTargets.cmake
+  NAMESPACE mpi_abi::
+  DESTINATION ${MPIABI_PACKAGE_CMAKE_DIR})
+
+# cmake/FindMPI.cmake's own comment explains why this is a second route to the
+# same answer rather than a duplicate of it: it works even when a consumer
+# never names mpi_abi, only find_package(MPI), by outranking CMake's bundled
+# module of the same name once this directory leads CMAKE_MODULE_PATH.
+install(FILES cmake/FindMPI.cmake
+  DESTINATION ${MPIABI_PACKAGE_CMAKE_DIR}/Modules)
+
+# ------------------------------------------------------------- pkg-config
+
+configure_file(cmake/mpi_abi.pc.in ${CMAKE_CURRENT_BINARY_DIR}/mpi_abi.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mpi_abi.pc
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
 # --------------------------------------------------------------- libmpiwrapper
 
@@ -310,6 +439,19 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # Exactly one exported symbol, enforced by -fvisibility=hidden plus the
   # explicit attribute in mpiwrapper_vtable.h, and checked by the nm test below.
   set_target_properties(mpiwrapper PROPERTIES C_VISIBILITY_PRESET hidden)
+  # This library is never linked, only dlopen'd (MPI-5.0 20.2.1), so nothing
+  # ever asks the loader to resolve *it* by rpath -- but it still has to
+  # resolve its own MPI_C_LIBRARIES at the moment it is dlopen'd, and once
+  # installed into a prefix of its own, well away from the MPI it wraps
+  # (NOTES.md #9's "the prefix is exclusive"), the build tree's rpath no
+  # longer applies. INSTALL_RPATH_USE_LINK_PATH bakes an absolute rpath to
+  # every linked library's own directory -- here, just the MPI found above --
+  # into the installed .so/.dylib, so LD_LIBRARY_PATH/DYLD_LIBRARY_PATH need
+  # not name it either.
+  set_target_properties(mpiwrapper PROPERTIES
+    BUILD_WITH_INSTALL_RPATH FALSE
+    INSTALL_RPATH_USE_LINK_PATH TRUE)
+  install(TARGETS mpiwrapper LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
   # The wrapper the tests load, unless MPI_ABI_WRAPPER_LIB says otherwise.
   set(MPIABI_WRAPPER_PATH $<TARGET_FILE:mpiwrapper>)

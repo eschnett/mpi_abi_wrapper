@@ -1,0 +1,18 @@
+# GNU ld/gold/lld version script for libmpi_abi (NOTES.md #9's "a version
+# script on ELF"; cmake/mpi_abi.exported_symbols is the macOS equivalent).
+#
+# -fvisibility and C_VISIBILITY_PRESET (CMakeLists.txt) already keep every
+# symbol this project writes itself out of the dynamic table except
+# MPI_*/PMPI_*, but they cannot touch the handful the linker inserts into
+# every shared object regardless of visibility -- _init, _fini, _edata,
+# _end, __bss_start. test/check_exports.cmake used to name those explicitly
+# as an exemption because nothing suppressed them; this makes them local
+# instead, so the exemption list in that test is gone along with the symbols
+# it was for.
+MPIABI_1 {
+  global:
+    MPI_*;
+    PMPI_*;
+  local:
+    *;
+};

@@ -1,0 +1,65 @@
+#!/bin/sh
+
+# mpi_abi_wrapper's C++ compiler wrapper. Same shape and same reasoning as
+# bin/mpicc.in -- see that file's comment block -- with a C++ compiler in
+# place of the C one. gen/include/mpi.h itself is not a C++ header in any
+# special sense (it wraps its declarations in extern "C" as needed), so this
+# wrapper only exists because MPI-5.0's ecosystem expects an mpicxx alongside
+# mpicc; it adds no C++-specific flags of its own.
+
+MPI_ABI_CXX=${MPI_ABI_CXX:-@CMAKE_CXX_COMPILER@}
+# See bin/mpicc.in for why @MPIABI_MPICC_SYSROOT_FLAG@ (shared between the two
+# wrappers) is needed at all.
+MPI_ABI_CXXFLAGS=${MPI_ABI_CXXFLAGS:-@CMAKE_CXX_FLAGS@ @MPIABI_MPICC_SYSROOT_FLAG@}
+MPI_ABI_INCDIR=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+MPI_ABI_LIBDIR=@CMAKE_INSTALL_FULL_LIBDIR@
+MPI_ABI_LIBS=${MPI_ABI_LIBS:--L$MPI_ABI_LIBDIR -Wl,-rpath,$MPI_ABI_LIBDIR -lmpi_abi}
+
+case "$1" in
+    -showme:command|-show:command)
+        echo "$MPI_ABI_CXX"
+        exit 0
+        ;;
+    -showme:compile|-showme|-compile_info)
+        echo "$MPI_ABI_CXXFLAGS -I$MPI_ABI_INCDIR"
+        exit 0
+        ;;
+    -showme:link|-link_info)
+        echo "$MPI_ABI_CXXFLAGS $MPI_ABI_LIBS"
+        exit 0
+        ;;
+    -showme:incdirs)
+        echo "$MPI_ABI_INCDIR"
+        exit 0
+        ;;
+    -showme:libdirs)
+        echo "$MPI_ABI_LIBDIR"
+        exit 0
+        ;;
+    -showme:libs)
+        echo "$MPI_ABI_LIBS"
+        exit 0
+        ;;
+    -showme:version|-show:version)
+        echo "@PROJECT_NAME@ @PROJECT_VERSION@"
+        exit 0
+        ;;
+    -show*)
+        echo "$MPI_ABI_CXX $MPI_ABI_CXXFLAGS -I$MPI_ABI_INCDIR $MPI_ABI_LIBS"
+        exit 0
+        ;;
+esac
+
+linking=true
+for arg in "$@"; do
+    if [ "$arg" = "-E" ] || [ "$arg" = "-c" ] || [ "$arg" = "-S" ]; then
+        linking=false
+        break
+    fi
+done
+
+if [ $linking != true ]; then
+    exec $MPI_ABI_CXX $MPI_ABI_CXXFLAGS -I$MPI_ABI_INCDIR "$@"
+else
+    exec $MPI_ABI_CXX $MPI_ABI_CXXFLAGS -I$MPI_ABI_INCDIR "$@" $MPI_ABI_LIBS
+fi

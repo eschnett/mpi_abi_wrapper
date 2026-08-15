@@ -11,6 +11,12 @@
 #
 # Invoked as:
 #   cmake -DABI_LIB=... -DWRAPPER_LIB=... -DTEST_BIN=... -DENTRYPOINTS=... -P this
+#
+# -P script mode does not inherit the main configure's policy scope, so
+# IN_LIST below needs its own cmake_minimum_required -- found the hard way, by
+# adding cmake/mpi_abi.version (S6) and hitting "Unknown arguments specified"
+# on a version of CMake this had never been run against before.
+cmake_minimum_required(VERSION 3.20)
 
 if(APPLE)
   set(NM_ARGS -gU)          # defined, external
@@ -54,11 +60,16 @@ endif()
 
 # --- libmpi_abi: MPI_*/PMPI_* only -----------------------------------------
 exported_symbols(abi_syms ${ABI_LIB})
-# Symbols the ELF linker itself defines in every shared object. They are not
-# ours and cannot be suppressed without a version script, which is S6's job;
-# until then they are named rather than pattern-matched away, so that a real
-# leak cannot hide behind a loose pattern.
-set(LINKER_PROVIDED _init _fini _edata _end __bss_start)
+# cmake/mpi_abi.version (S6) makes _init/_fini/_edata/_end/__bss_start local
+# instead of naming them here as an exemption -- the linker's own symbols do
+# not survive to be seen at all now, on any ELF linker or toolchain, rather
+# than being tolerated by a list this test has to keep in sync with whichever
+# ones a given libc/binutils happens to emit.
+#
+# MPIABI_1 is the one name a version script itself always adds: an absolute
+# symbol for its own version node, not a leak of anything this project wrote.
+# It does not appear on macOS, which has no version scripts.
+set(LINKER_PROVIDED MPIABI_1)
 
 file(STRINGS ${ENTRYPOINTS} bases)
 set(expected)

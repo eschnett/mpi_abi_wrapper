@@ -8,14 +8,26 @@ must hash these scripts and must *not* hash the suite's expected-failure list,
 or every edit to a reason rebuilds MPI on every variant (a mistake mpif's own
 `ci-scripts/README.md` records getting wrong twice).
 
-Most of this arrives with S6 (build, packaging, CI matrix). What exists now is
-the Linux runner, added in S1 because the developers' machines are macOS and the
-two platforms do not fail the same way.
+S6 (build, packaging, CI matrix) added the rest: the two pinned-tarball
+installers and the install-consumption check. The Linux runner is older,
+added in S1 because the developers' machines are macOS and the two platforms
+do not fail the same way.
 
 | script | runs | what it does |
 |---|---|---|
 | `linux-test.sh mpich\|openmpi` | inside Linux | installs packages (if root), reports the MPI version and its `MPI_`/`PMPI_` symbol binding, configures, builds, and runs `ctest` |
 | `run-linux-docker.sh [mpi...]` | on the host | runs the above in a container, for one MPI or both |
+| `install-mpich.sh <prefix> [<version>]` | anywhere | downloads, configures (stock, no patches), builds and installs a pinned MPICH release |
+| `install-openmpi.sh <prefix> [<version>]` | anywhere | the same for Open MPI |
+| `check-install.sh mpich\|openmpi\|/path/to/mpicc` | anywhere | S6's exit check: configure, build and install this project into a prefix of its own, then build and run a program through each of the three consumption routes (NOTES.md #9) with the loader's search path cleared |
+
+Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, these two are a stock
+`configure && make && make install` with nothing carried: mpif needs an MPI
+that already implements the standard ABI, hence its pinned commit from
+MPICH's `main`, its header substitution and its pruning of everything the ABI
+does not define (NOTES.md #9, "Provisioning MPI in CI"). This project wraps
+*any* MPI-3.0+ implementation through its own conversion layer, so a released
+tarball, unmodified, is the whole of what CI needs to provision.
 
 ```sh
 ci-scripts/run-linux-docker.sh                 # mpich and openmpi
