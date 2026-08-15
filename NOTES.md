@@ -1515,7 +1515,8 @@ clearing the block, and the releaser would free the new owner's block.
 14. **`MPI_MAX_*` mismatches are handled at run time, not asserted.** §5.8.
 15. **Static-assert only where a runtime check would cost something hot.** §5.9.
 16. **Shared libraries only in v1.** §9.
-17. **Prototype fifteen entry points before writing the generator.** §11.
+17. **Prototype before writing the generator.** Planned at fifteen entry points;
+    S1 delivered 29, because the original list was not testable on its own. §11.
 
 ---
 

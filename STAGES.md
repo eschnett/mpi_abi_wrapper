@@ -26,7 +26,7 @@ is blocked. **S4** can overlap S3 once the ledger exists.
 
 ## The stages
 
-### S0 — Repository skeleton and header generation
+### S0 — Repository skeleton and header generation *(done)*
 
 Vendor the mpi-abi-stubs `mpi.h` and `apis.json`; apply `doc/mpi.h.patch`; generate
 `gen/include/mpi.h` and `gen/include/mpiabi.h` (the `MPIABI_` view, renaming typedef,
@@ -40,15 +40,16 @@ asymmetry, committed as the first frozen tally.
 **Model: Sonnet.** Fiddly text transformation with an exact numeric oracle — the
 counts either match or they don't.
 
-### S1 — The prototype: 15 entry points, end to end
+### S1 — The prototype, end to end *(done: 29 entry points)*
 
 The whole vertical slice by hand: `src/mpi_abi/` bootstrap (dlopen with per-platform
 isolation, the version/subversion/layout handshake, the outward-resolution check),
 `src/mpiwrapper/` conversion runtime (perfect-hash reverse map, status blob, rank/tag,
 error codes, bitmask, staging, op trampoline pool), a hand-written vtable header for
-those slots, and the 15 functions of §11.
+those slots, and the functions of §11. **S1 delivered 29 rather than the 15 planned**:
+the original list was not testable on its own, and the isolation probe added one more.
 
-**Exit check.** All 15 pass against **both** MPICH and Open MPI;
+**Exit check.** All 29 pass against **both** MPICH and Open MPI;
 `mpiwrapper_selftest` passes including the dynamic-handle collision probe;
 `dev/dlopen-probe`'s conclusions hold in the real library.
 

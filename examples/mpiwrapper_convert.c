@@ -612,17 +612,20 @@ mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
   static atomic_int initialized;
 
   /* The ABI header carries both MPI_ABI_VERSION and MPI_ABI_SUBVERSION, so check
-   * both. A differing major version is incompatible outright. A differing
+   * both -- against MPIABI_ABI_VERSION, *not* MPIABI_VERSION, which is the MPI
+   * standard level (5) rather than the ABI protocol version (1). Comparing against
+   * the wrong one rejects every valid pairing and still compiles, since both macros
+   * exist. A differing major version is incompatible outright. A differing
    * subversion is not necessarily fatal -- subversions are meant to be additive --
    * but the two halves must agree on which one they were generated from, and the
    * layout hash below would not catch a subversion that added no slot.
    */
-  if (abi_version != MPIABI_VERSION) {
+  if (abi_version != MPIABI_ABI_VERSION) {
     *diagnostic = "MPI ABI major version mismatch between libmpi_abi and "
                   "libmpiwrapper";
     return NULL;
   }
-  if (abi_subversion != MPIABI_SUBVERSION) {
+  if (abi_subversion != MPIABI_ABI_SUBVERSION) {
     *diagnostic = "MPI ABI subversion mismatch between libmpi_abi and "
                   "libmpiwrapper";
     return NULL;
