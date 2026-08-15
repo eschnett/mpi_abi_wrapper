@@ -1,8 +1,11 @@
 # MPI ABI wrapper — design
 
 The authoritative design document for this project. Self-contained: it does not
-depend on any other document in this repository. `STAGES.md` sequences the work into
-sessions and is the only other document that should exist.
+depend on any other document in this repository. `STAGES.md` sequences the work
+into sessions. Those two are the durable pair; `REVIEW-BRIEF.md` and `TODO.md`
+are working notes that should be folded back into these and deleted, and every
+`README.md` under a directory describes only what is in that directory. Anything
+else is a document that will rot.
 
 Every numeric claim about the ABI or about MPICH and Open MPI was read out of the
 actual headers; see "Sources" at the end for the paths, so any of it can be
@@ -37,7 +40,14 @@ variant instead of `MPI_Count count`.
   a twin, with no exceptions in either direction.
 - Of those: **611 core**, **51 `MPI_T_*`**, **26 Fortran converters** (22 handle
   converters for 11 handle types, plus 4 status converters).
-- 31 are marked deprecated in the header. Deprecated still means provided.
+- **12** are marked deprecated in the header — `MPI_Attr_delete`/`_get`/`_put`,
+  `MPI_Keyval_create`/`_free`, `MPI_Info_get`, `MPI_Info_get_valuelen`,
+  `MPI_Get_elements_x`, `MPI_Status_set_elements_x`, `MPI_Type_get_extent_x`,
+  `MPI_Type_get_true_extent_x`, `MPI_Type_size_x`. (An earlier draft said 31,
+  which is not what the header says: `grep '; /\* deprecated' gen/include/mpi.h`
+  finds 12 prototypes, plus the two deprecated callback typedefs
+  `MPI_Copy_function` and `MPI_Delete_function`. The markers sit on the `MPI_`
+  prototypes only, not on their `PMPI_` twins.) Deprecated still means provided.
 - So: **1376 vtable slots** (§2 explains why `PMPI` is not folded onto the `MPI`
   slots) and **1376 exported symbols** in `libmpi_abi`.
 
@@ -236,22 +246,29 @@ implementation that really lacked the shifted names now fails to link with an
 undefined symbol naming one, which is the outcome §5.9 asks for.
 
 **The wrapper's own internal MPI calls use `PMPI_*` unconditionally** — in the
-hand-written ~50, where `MPI_Init` needs a rank or the error-code registry needs a
+hand-written set of §8, where `MPI_Init` needs a rank or the error-code registry needs a
 class. An internal call is not application traffic and must not be counted as such
 by an interposed tool. Same discipline implementations follow inside themselves, and
 independent of the slot question.
 
 **Locating the wrapper.** An environment variable, falling back to a path baked in
 at build time. One `libmpi_abi` binary can therefore be pointed at any wrapper,
-which is the practical payoff of the split. The wrapper's installed name encodes
-its MPI (`libmpiwrapper-mpich-4.3.so`) so several coexist in one prefix.
+which is the practical payoff of the split. The installed name is plain
+(`libmpiwrapper.so`); an earlier draft encoded the MPI in it
+(`libmpiwrapper-mpich-4.3.so`) so that several could share one prefix, and §9
+records why that was dropped in favour of one prefix per MPI installation
+(decision 5).
 
-**Bootstrap.** A library constructor in `libmpi_abi`, plus an idempotent
-acquire-load guard on the vtable pointer so that a plugin `dlopen`ed before the
-constructor runs still works. The guard is needed regardless of the constructor
-because `MPI_Initialized`, `MPI_Get_version` and the `MPI_T_*` calls are legal
-before `MPI_Init`, so the load cannot hang off `MPI_Init`. One predictable branch
-per call.
+**Bootstrap.** A library constructor in `libmpi_abi` sets a plain pointer, read
+with no atomic and no NULL check outside debug builds (decision 8). The load
+cannot hang off `MPI_Init`, because `MPI_Initialized`, `MPI_Get_version` and the
+`MPI_T_*` calls are legal before it — hence a constructor. It needs no
+lazy-init guard beside it: anything that can call an entry point must link
+`libmpi_abi`, hence depends on it, hence its own constructors run after ours,
+and a plugin `dlopen`ed later is no exception because loading it loads
+`libmpi_abi` first. An earlier draft called for an idempotent acquire-load guard
+"so that a plugin `dlopen`ed before the constructor runs still works"; there is
+no such window, and the next section measures what the guard would have cost.
 
 (`MPI_Wtime` was on that list in an earlier draft and does not belong there:
 MPICH 4.3.1 answers a pre-`MPI_Init` `MPI_Wtime` with "Attempting to use an MPI
@@ -338,7 +355,13 @@ resolve. **Isolation is mandatory, not an optimization.**
 Calling `PMPI_*` internally does not save the implementation: we export those too,
 so both names are captured.
 
-**Measured, not reasoned.** `dev/dlopen-probe/` is a mock-up of the three-library
+**Measured, not reasoned.** The table below says what the *loader* does, not
+which configurations are usable: the mock has no MPI in it and therefore
+`dlopen`s no components, which is exactly what makes its `dlmopen` row not
+generalize — see "`dlmopen` does not survive contact with a real MPI" below, and
+`dev/dlopen-probe/README.md`'s scope section.
+
+`dev/dlopen-probe/` is a mock-up of the three-library
 structure with no MPI in it, run on Linux (glibc 2.36, aarch64 and arm32v7) and
 macOS (arm64). Three tests: the wrapper's own `MPI_Send` call (T1), the
 *implementation's internal* `MPI_Send` call (T2, modelling ROMIO), and a
@@ -370,23 +393,30 @@ Four things the probe settled that reasoning had left open:
 3. **macOS is safe *because of* the two-level namespace**, confirmed by forcing
    `-flat_namespace` and watching T1 capture. So the assumption is load-bearing:
    a macOS build must never acquire `-flat_namespace` by accident.
-4. **The load-time isolation check works** — it reported failure on the
-   flat-namespace build before any call was made, and `dladdr` still resolves across
-   a `dlmopen` namespace boundary on this glibc, so the check survives that mode too.
+4. **The load-time isolation check works on the mock** — it reported failure on
+   the flat-namespace build before any call was made, and `dladdr` still resolves
+   across a `dlmopen` namespace boundary on this glibc, so the check survives that
+   mode too. That is a statement about the mock: against a real MPI the `dladdr`
+   check turned out to answer a different question than the one that matters, which
+   is what the behavioural probe below was added for, and even the probe is
+   incomplete.
 
 **Per platform, as measured:**
 
 | | how | why |
 |---|---|---|
 | macOS | `RTLD_LOCAL` | the two-level namespace binds `libmpiwrapper`'s `MPI_Send` to `libmpi` at link time, so there is nothing to capture |
-| Linux | `RTLD_LOCAL \| RTLD_DEEPBIND` by default, `dlmopen(LM_ID_NEWLM)` selectable | both measured sufficient; `DEEPBIND` is simpler and has no namespace limit |
+| Linux | `RTLD_LOCAL \| RTLD_DEEPBIND` by default, `dlmopen(LM_ID_NEWLM)` selectable | both isolate the mock; `DEEPBIND` is simpler, has no namespace limit, and is the only one that works with a real MPI (below) |
 | FreeBSD | `RTLD_LOCAL \| RTLD_DEEPBIND` | `dlmopen` does not exist |
 
 Keep both Linux modes selectable at run time, as MPItrampoline does, because each
 has known costs: `dlmopen` is semi-abandoned, caps namespaces at glibc's `DL_NNS`
 (16), and gives the wrapper a separate libc; `RTLD_DEEPBIND` interferes with
-`malloc` interposition and with sanitizers — which makes the sanitizer CI jobs the
-concrete reason `dlmopen` has to stay available. Remember the namespace id from the
+`malloc` interposition and with sanitizers. That last cost used to be the concrete
+reason `dlmopen` had to stay available, and it no longer is — `dlmopen` does not
+work with a real MPI at all (below), so the sanitizer jobs need one of the other
+answers S9 has. Keeping the mode selectable is now cheap insurance rather than a
+plan. Remember the namespace id from the
 first load and reuse it, so the wrapper and its dependencies stay in one namespace.
 
 **`dlmopen` does not survive contact with a real MPI, and that is worth knowing
@@ -450,22 +480,27 @@ S1, all of it measured on macOS 26 / arm64 unless stated:
 | FreeBSD | `RTLD_DEEPBIND` | unverified |
 | Windows | — | open (§13) |
 
-What makes the two macOS rows work is that both implementations define their
-`MPI_*` **strongly**, so dyld's weak coalescing never gets a say and the two-level
-namespace does the isolation on its own:
+What makes the first two macOS rows work is that both implementations define
+their `MPI_*` **strongly**, so dyld's weak coalescing never gets a say and the
+two-level namespace does the isolation on its own:
 
-| library | `MPI_*` | `PMPI_*` |
-|---|---|---|
-| MPICH 4.3.1 `libmpi.dylib` / `libpmpi.dylib` | 674 strong, 0 weak | 78 + 672 strong |
-| Open MPI 5.0.6 `libmpi.dylib` | 472 strong, 0 weak | 468 strong |
-| Open MPI 6.1.0a1 built `--enable-standard-abi` | **0 strong, 683 weak** | 683 strong |
+| library | `MPI_*` | `PMPI_*` | wrapping it |
+|---|---|---|---|
+| MPICH 4.3.1 `libmpi.dylib` / `libpmpi.dylib` | 674 strong, 0 weak | 78 + 672 strong | works |
+| Open MPI 5.0.6 `libmpi.dylib` | 472 strong, 0 weak | 468 strong | works |
+| Open MPI 6.1.0a1 built natively | **0 strong, 698 weak** | 698 strong | **works anyway** |
+| Open MPI 6.1.0a1 built `--enable-standard-abi` | **0 strong, 683 weak** | 683 strong | **refused at load** |
 
-Only the third row is dangerous, and it is not an MPI anyone would wrap for its own
-sake — it is oracle 5. If a *native* macOS build ever appeared with weak `MPI_*`,
-the wrapper would refuse it rather than run it wrong, and the fix available then
-would be to route the wrapper's calls through `PMPI_*`, which is strong everywhere;
-the cost is decision 7's implementation-level interposition, so it would have to be
-opt-in and loud rather than a silent fallback.
+Strong `MPI_*` is therefore *sufficient* and not necessary, which the last two
+rows make plain: they differ only in a configure flag, both are all-weak, and
+only one of them captures. The deciding factor is narrower than symbol binding
+and we have not pinned it down — see "Weak `MPI_*` alone does not predict
+capture" below. The dangerous row is not an MPI anyone would wrap for its own
+sake — it is oracle 5. Where capture does occur the wrapper refuses rather than
+running wrong, and the fix available then would be to route the wrapper's calls
+through `PMPI_*`, which is strong everywhere; the cost is decision 7's
+implementation-level interposition, so it would have to be opt-in and loud
+rather than a silent fallback.
 
 The reliability property this all adds up to is worth stating plainly, because it
 is weaker than "it always works" and stronger than "it usually works": **either the
@@ -548,6 +583,21 @@ would narrow the gap and not close it; closing it would need the loader to answe
 `size` is `sizeof(struct mpiwrapper_vtable)` as the *caller* understands it. A
 wrapper may accept a smaller size than its own and serve the common prefix; it must
 refuse a larger one, since the caller would read past the end.
+
+**But nothing can currently reach the prefix case, and that is worth deciding
+rather than leaving as it is.** The three checks in front of the size check each
+demand exact equality — `abi_version`, `abi_subversion`, and a `layout_hash`
+taken over the *whole* slot list — so a caller built from a shorter slot list is
+rejected before `size` is looked at. `size` is therefore a live guard against
+exactly one thing (a larger caller struct, which cannot happen either) and dead
+weight otherwise. Two coherent resolutions, and v1 takes the first:
+**(a)** keep `size` as belt-and-braces and say so, treating "serve the prefix"
+as documentation of a future subversion policy rather than of current behaviour;
+**(b)** make additive growth real by hashing only the slots up to `size` and
+letting a newer wrapper serve an older `libmpi_abi`, which is what the getter's
+shape was originally chosen for. (b) is the only one that makes
+`MPI_ABI_SUBVERSION` mean anything at run time, and it can be adopted later
+without changing the signature — so nothing is lost by starting at (a).
 
 **Naming, and the renaming rules for `mpiabi.h`.** `MPIABI_` uniformly
 (`MPIABI_Comm`, `MPIABI_COMM_WORLD`). Not `MPI_ABI_`, because the stub header
@@ -665,9 +715,11 @@ requires:
 
 ## 3. The generator
 
-**688 entry points are written by a generator, in Python, with a named set of
-roughly 50 written by hand.** Roughly 640 are mechanical translation; the rest
-involve per-function judgement and are listed in §8.
+**All 688 entry points are accounted for by a generator, in Python, with a named
+set written by hand.** Roughly 600 are mechanical translation; the remaining ~90
+involve per-function judgement and are listed in §8 — which is where that number
+is derived, since an earlier draft said "roughly 50" here and in §8 while §8's
+own list named about twice that.
 
 ### Why a generator
 
@@ -866,8 +918,12 @@ An ABI handle is **pointer-sized**: 64 bits on LP64/LLP64, **32 bits on ILP32**.
 Not a 64-bit integer. Consequence: any scheme relying on spare high bits is
 unavailable on 32-bit targets, which is why the design below does not use one.
 
-Predefined handle constants occupy `0x00000020`..`0x000002eb` — 104 values, all
-< 748.
+Predefined handle constants occupy `0x00000020`..`0x000002eb` — **103** values,
+all < 748. (Counted out of `gen/include/mpi.h`, and equal to the number of
+`PREDEF(...)` rows in `src/mpiwrapper/constants.c`: 71 datatypes, 15 ops, 4
+errhandlers, 3 comms, 2 each of group/info/message, 1 each of
+file/request/session/win. Earlier drafts said 104 in this section and in §10
+while §5.1 and §11 said 103; 103 is the checkable number.)
 
 ### 4.2 Status layouts
 
@@ -1305,7 +1361,9 @@ is observable, fail the build when it is not.
 
 ### 6.1 Which need trampoline pools
 
-Seven typedef families, 16 registration functions. The ones with an extra-state
+Seven typedef families, **15** registration functions — the table below sums to
+15, and an earlier draft said 16 here and in §6.2 without the extra one ever
+being named. The ones with an extra-state
 argument can carry a heap-allocated `{user_fn, user_extra}` pair; the ones without
 need a pool of generated static trampolines, each knowing its own index.
 
@@ -1350,7 +1408,7 @@ MPI activity (see Section 2.9) that involves this object will complete normally;
 the object will be deallocated afterwards."
 
 **So a free call is not a reclamation point.** Checked against the standard for all
-16:
+15:
 
 | registrar | safe reclamation point |
 |---|---|
@@ -1478,7 +1536,9 @@ clearing the block, and the releaser would free the new owner's block.
 2. **Status: blob only** — no validity marker, no synthesis fallback. §5.2.
 3. **The ABI surface is complete MPI-5.0**; functions the implementation lacks are
    reported at run time, never omitted. The implementation is *expected* to provide
-   the MPI-4.0 API, which is what makes the mapping 1:1. §1.
+   the MPI-4.0 API, which is what makes the mapping 1:1 — an expectation, warned
+   about at configure time and not enforced, since no released Open MPI meets it.
+   The enforced floor is **MPI-3.0**, verified with MPICH 3.1.4. §1, §9.
 4. **`mpiwrapper` exports exactly one symbol**, a getter carrying
    `MPI_ABI_VERSION` and a generated layout hash. §2.
 5. **`mpi_abi` finds the wrapper from an environment variable**, falling back to a
@@ -1488,15 +1548,18 @@ clearing the block, and the releaser would free the new owner's block.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them.
 7. **PMPI gets its own vtable slots** (1376, not 688), calling the
-   implementation's shifted names directly — no probe and no fallback, since
-   `PMPI_*` are the strong definitions and `MPI_*` weak aliases in both
-   implementations. The wrapper's internal MPI calls use `PMPI_*` unconditionally.
-   §2.
+   implementation's shifted names directly — no probe and no fallback, since both
+   names always exist and reach the same code when nothing is interposed. (Which
+   of the two is the strong definition varies by implementation and platform and
+   does not matter to us. §2.) The wrapper's internal MPI calls use `PMPI_*`
+   unconditionally. §2.
 8. **Bootstrap by constructor into a plain pointer** — no atomic, no lazy-init
    branch, no NULL check outside debug builds. The wrapper is loaded `RTLD_LOCAL`
-   and *isolated* — `RTLD_DEEPBIND` or `dlmopen` on Linux, the two-level namespace
-   on macOS — never `RTLD_GLOBAL`, and `RTLD_LAZY` by default. The wrapper then
-   proves at load that its `MPI_*` calls resolved outward. §2, §2a.
+   and *isolated* — `RTLD_DEEPBIND` on Linux (`dlmopen` selectable but unusable
+   with any MPI that `dlopen`s components), the two-level namespace on macOS —
+   never `RTLD_GLOBAL`, and `RTLD_LAZY` by default. The wrapper then proves at
+   load that its `MPI_*` calls resolved outward, by address *and* behaviourally.
+   §2.
 9. **Naming: `MPIABI_` uniformly** for the renamed view. §2.
 10. **Staged temporaries outliving a call** go in a request-keyed hash behind a
     global atomic count. §6.3.
@@ -1504,47 +1567,73 @@ clearing the block, and the releaser would free the new owner's block.
     process-lifetime; only generalized-request and `MPI_T`-event state is
     reclaimed. §6.2, §6.3.
 12. **One generated file per artifact**, seven in all. §3.
+13. **No in-place argument conversion**, except same-size OUT arrays needing only
+    value mapping. §5.7.
+14. **`MPI_MAX_*` mismatches are handled at run time, not asserted.** §5.8.
+15. **Static-assert only where a runtime check would cost something hot.** §5.9.
+16. **Shared libraries only in v1.** §9.
+17. **Prototype before writing the generator.** Planned at sixteen entry points;
+    S1 delivered 29, because the original list was not testable on its own. §11.
 18. **The predefined-handle reverse map is a perfect hash**, built at
     initialization, failing loudly there rather than degrading to a probe loop.
     Sorted arrays are slower, and interpolation search is far slower on the real key
     distribution. §5.1.
 19. **Ship `mpicc`, CMake package files (including a `FindMPI` shim) and
     pkg-config**, each exercised by CI rather than merely parsed. §9.
-13. **No in-place argument conversion**, except same-size OUT arrays needing only
-    value mapping. §5.7.
-14. **`MPI_MAX_*` mismatches are handled at run time, not asserted.** §5.8.
-15. **Static-assert only where a runtime check would cost something hot.** §5.9.
-16. **Shared libraries only in v1.** §9.
-17. **Prototype before writing the generator.** Planned at fifteen entry points;
-    S1 delivered 29, because the original list was not testable on its own. §11.
 
 ---
 
 ## 8. The hand-written set
 
-Roughly 50 functions where per-function judgement is needed. The generator's
-`HAND_WRITTEN` ledger names them and fails if the two sets do not together cover
-all 688.
+Functions where per-function judgement is needed. The generator's `HAND_WRITTEN`
+ledger names them and fails if the two sets do not together cover all 688.
 
-- **Bootstrap and lifecycle:** `MPI_Init`, `MPI_Init_thread`, `MPI_Finalize`,
+**The count in this section was "roughly 50" and the list does not support it.**
+Adding the bullets up gives ~100 entry points, and the gap is not decorative: it
+is what S4 is sized against, and §3's "roughly 640 are mechanical" is its
+complement. Two of the bullets are what makes the difference, and each is a real
+question rather than a counting slip:
+
+- **Buffers are 18 entry points, not four** — `MPI_Buffer_attach`/`_detach`/
+  `_flush`/`_iflush`, the `MPI_Comm_` and `MPI_Session_` variants of each, and
+  the `_c` forms. Only the attach/detach forms need judgement
+  (`MPI_BUFFER_AUTOMATIC`, and the buffer's ownership); the six flush forms are
+  mechanical and belong to the generator.
+- **The staged-temporary forms are claimed by two stages at once.** This section
+  lists them as hand-written (S4) while §3's argument-class table, §5.7's
+  lifetime rules and STAGES.md's S3 all treat staging as a *generated* class.
+  S1 hand-wrote `MPI_Ialltoallw` because the generator did not exist yet, which
+  is not an argument for hand-writing the other seven. The set is exactly eight:
+  `MPI_Ialltoallw`, `_c`, `MPI_Ineighbor_alltoallw`, `_c`,
+  `MPI_Alltoallw_init`, `_c`, `MPI_Neighbor_alltoallw_init`, `_c` — small
+  enough, and uniform enough, that generating them is the better answer.
+  **Resolution: they are S3's, generated, and this section keeps only the shape
+  S1 wrote as the template.**
+
+With those two settled the list below is what remains, and it adds up to **89**,
+not ~50. The honest summary is "roughly 90 hand-written, roughly 600
+mechanical"; the
+generator's frozen tally is the authority once S2 exists, and this prose should
+be replaced by a pointer to it rather than re-estimated.
+
+- **Bootstrap and lifecycle** (8): `MPI_Init`, `MPI_Init_thread`, `MPI_Finalize`,
   `MPI_Abort`, `MPI_Initialized`, `MPI_Finalized`, `MPI_Session_init`/`_finalize`.
-- **No error code to map:** `MPI_Wtime`, `MPI_Wtick` return `double`.
+- **No error code to map** (2): `MPI_Wtime`, `MPI_Wtick` return `double`.
 - **The ten status-consuming functions** of §5.2, plus the four Fortran status
-  converters.
-- **Callback registration** — the 16 of §6.1, each installing a trampoline or a
+  converters (14).
+- **Callback registration** — the 15 of §6.1, each installing a trampoline or a
   pair.
-- **Genuinely variadic:** `MPI_Pcontrol`.
-- **Dynamic error codes:** `MPI_Add_error_class`, `_code`, `_string`.
-- **Spawn:** `MPI_Comm_spawn`, `_multiple` (`argv`, `array_of_argv`,
+- **Genuinely variadic** (1): `MPI_Pcontrol`.
+- **Dynamic error codes** (3): `MPI_Add_error_class`, `_code`, `_string`.
+- **Spawn** (2): `MPI_Comm_spawn`, `_multiple` (`argv`, `array_of_argv`,
   `array_of_errcodes`).
-- **Buffers:** `MPI_Buffer_attach`, `_detach`, and the `MPI_Comm_`/`Session_`
-  variants, including `MPI_BUFFER_AUTOMATIC` under an MPI-4.0 minimum.
-- **Staged temporaries outliving the call:** the `MPI_Ialltoallw` family and the
-  persistent `_init` forms.
+- **Buffer attach/detach** (12): `MPI_Buffer_attach`/`_detach`, the
+  `MPI_Comm_`/`Session_` variants and the `_c` forms, including
+  `MPI_BUFFER_AUTOMATIC` where the implementation has it.
 - **The 22 Fortran handle converters**, which are the reason mpif can run over any
   MPI.
 - **`MPI_File_get_view`** (`datarep` truncation) and the other nine output-string
-  functions of §5.8.
+  functions of §5.8 (10).
 
 ---
 
@@ -1555,9 +1644,12 @@ all 688.
 ```
 dev/               the Python generator and dev-time cross-checks
                      apis.json (vendored), check-c-bindings.py (Appendix A.2)
+                     and the five probes whose results this file cites
 gen/               committed generated output, never hand-edited
+src/include/       mpiwrapper_vtable.h until S2's generator emits it
 src/mpi_abi/       hand-written: bootstrap, dlopen, vtable acquisition
-src/mpiwrapper/    hand-written: the ~50, trampolines, maps, status conversion
+src/mpiwrapper/    hand-written: the ~90, trampolines, maps, status conversion
+examples/          narrated excerpts of each shape; src/ is the reference (§3)
 test/              our own tests
 ci-scripts/        MPI install and build-shape checks
 ci-scripts/suite/  MPICH C suite runner, xfail list, mpiexec filter
@@ -1673,8 +1765,19 @@ hence its MPICH-from-`main` builds, its substitution of the Forum's `mpi.h` over
 the implementation's own, and its pruning of everything the ABI does not define.
 None of that applies here: stock configure, no pruning, no header substitution.
 
-One constraint on version choice: **Open MPI 4.1 fails the MPI-4.0 minimum** (no
-`_c` variants), so distro LTS packages do not serve. MPICH >= 4.0, Open MPI >= 5.0.
+**Version choice, restated after S1.** An earlier draft said "Open MPI 4.1 fails
+the MPI-4.0 minimum (no `_c` variants), so distro LTS packages do not serve".
+That reason no longer holds: released Open MPI 5.0.x has no `_c` entry points
+either (§1), so no Open MPI version clears the MPI-4.0 *expectation* and none is
+excluded by it — the floor is MPI-3.0 and it is a hard error, everything above
+it is a warning. What the versions are now chosen for is coverage, not
+admissibility:
+
+| | why this version |
+|---|---|
+| MPICH >= 4.0 | the only implementation that actually provides the `_c` surface, so the large-count half of the ABI is exercised at all |
+| Open MPI >= 5.0 | sessions, and the current component architecture; 4.1 is *wrappable* and is one of the rows S1 ran on Linux, so it is a legitimate extra row rather than an excluded one |
+| MPICH 3.1.4 | the MPI-3.0 floor itself, verified rather than declared (§9's check 1) |
 
 ---
 
@@ -1725,8 +1828,10 @@ One constraint on version choice: **Open MPI 4.1 fails the MPI-4.0 minimum** (no
 
 ### Behavioural tests, in increasing cost
 
-- **`mpiwrapper_selftest`** — in-process, single rank, no launcher: every constant
-  map round-trip, all 104 predefined handles in both directions (mpif's
+- **`mpiwrapper_selftest`** — in-process, single rank; it calls `PMPI_Init`
+  directly, so CMake runs it under `mpiexec -n 1` by default and
+  `-DMPI_ABI_TEST_USE_LAUNCHER=OFF` makes it a singleton. Every constant
+  map round-trip, all 103 predefined handles in both directions (mpif's
   `test/predefined_types_c.c` is the model), and the **dynamic-handle collision
   probe** — create many objects of each class and assert none bit-casts into
   `[0x20, 0x2ec)`. That probe is specifically the runtime replacement for the
@@ -1751,7 +1856,10 @@ One constraint on version choice: **Open MPI 4.1 fails the MPI-4.0 minimum** (no
 
 ### Matrix
 
-MPICH >= 4.0 and Open MPI >= 5.0; gcc and clang; Linux and macOS required, FreeBSD
+MPICH >= 4.0 and Open MPI >= 5.0 as the primary rows, plus MPICH 3.1.4 as the
+MPI-3.0 floor row and Open MPI 4.1 where a distro provides it (both were run in
+S1; see the version table in §9 for why neither is excluded); gcc and clang;
+Linux and macOS required, FreeBSD
 via a VM on a Linux runner (mpif's precedent), Windows/mingw later.
 
 **32-bit is load-bearing, not routine coverage.** ABI handles are pointer-sized, so
@@ -1787,11 +1895,15 @@ should be run before releases.
 
 ## 11. Sequencing
 
-**Prototype before generator.** Hand-write fifteen representative entry points
+**Prototype before generator.** Hand-write a representative set of entry points
 end-to-end, all crossing the vtable boundary, and get them passing against one MPI.
-Only then write the generator, and require it to reproduce those fifteen.
+Only then write the generator, and require it to reproduce them.
 Designing the generator before the shape of its output is known is the main way
 this goes wrong.
+
+The table below is the plan as written, and it names **sixteen** functions rather
+than the "fifteen" the prose used to claim — `MPI_Comm_create_errhandler` and
+`MPI_Comm_set_errhandler` share a row. What S1 delivered is below it.
 
 | function | what it forces |
 |---|---|
@@ -1809,17 +1921,20 @@ this goes wrong.
 | `MPI_Ialltoallw` | staged temporaries outliving the call |
 | `MPI_File_open` | bitmask arguments, second handle class |
 
-**What S1 actually built**, since S2 is measured against it. Twenty-eight entry
-points, not fifteen: the table above needs a few more to be *testable* at all —
-`MPI_Isend`/`MPI_Irecv` to have requests for `MPI_Waitall`, `MPI_Comm_rank`,
-`MPI_Type_commit`/`_free`, `MPI_Comm_free`, `MPI_Op_free`, `MPI_File_close`,
-`MPI_Comm_f2c`, `MPI_Wtime`, and `MPI_Type_create_struct_c` for the `_c` pairing.
-Fifty-six slots. Nine of the twenty-eight are hand-written
+**What S1 actually built**, since S2 is measured against it. **Twenty-nine** entry
+points, **58 slots** — count them in `src/include/mpiwrapper_vtable.h`, which is
+the authority, and in `STAGES.md`'s S1 line. The sixteen above need thirteen more
+to be *testable* at all: `MPI_Isend`/`MPI_Irecv` to have requests for
+`MPI_Waitall`, `MPI_Comm_rank`, `MPI_Type_commit`/`_free`, `MPI_Comm_free`,
+`MPI_Op_create` (which the `MPI_Allreduce` row assumes but does not name) and
+`MPI_Op_free`, `MPI_File_close`, `MPI_Comm_f2c`, `MPI_Wtime`,
+`MPI_Type_create_struct_c` for the `_c` pairing, and `MPI_Get_version` for the
+bootstrap's behavioural probe. Nine of the twenty-nine are hand-written
 (`src/mpiwrapper/handwritten.c`, and its header is the S1 `HAND_WRITTEN` ledger);
-the other nineteen are in `src/mpiwrapper/wrappers.c`, written the way a generator
+the other **twenty** are in `src/mpiwrapper/wrappers.c`, written the way a generator
 would write them — one `const` local per parameter, in parameter order, named after
 the parameter with `abi_` dropped, and one body macro instantiated twice. Those
-nineteen are what S2 must reproduce.
+twenty are what S2 must reproduce.
 
 **What it was tested against.** MPICH 4.3.1 at two ranks, and Open MPI 5.0.6
 (built from source) as a singleton — no Open MPI 5.0.x launcher works on macOS 26,
@@ -1831,11 +1946,13 @@ the boundary twice; it is not enough for the two-rank message-passing paths, and
 The two implementations disagree about 13 predefined handles (98 mapped against
 85), which is the kind of difference the maps exist for.
 
-Three files are S1 stand-ins for generated output and disappear in S2:
-`src/include/mpiwrapper_vtable.h`, `src/mpi_abi/entrypoints.c` and
-`src/mpiwrapper/{wrappers,constants}.c`. `constants.c` was produced mechanically
+Four files are S1 stand-ins for generated output and disappear in S2:
+`src/include/mpiwrapper_vtable.h`, `src/mpi_abi/entrypoints.c`,
+`src/mpiwrapper/wrappers.c` and `src/mpiwrapper/constants.c`. `constants.c` was produced mechanically
 from `gen/include/mpiabi.h` rather than typed, because 103 predefined handles and
-81 error classes is exactly where a typo survives review; the throwaway script that
+80 error classes (62 `MPI_ERR_*` plus 18 `MPI_T_ERR_*`; the header's 63rd
+`MPI_ERR_*` is `MPI_ERR_LASTCODE`, a bound rather than a class) is exactly where
+a typo survives review; the throwaway script that
 emitted it is not committed, since S2's generator supersedes it. Everything else in
 `src/` is permanent.
 

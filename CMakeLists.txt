@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.20)
 project(mpi_abi_wrapper C)
 
 # S0 built the two headers; S1 adds the prototype -- libmpi_abi, libmpiwrapper
-# and the tests for 28 entry points (STAGES.md). The dev/ generator core is S2,
-# packaging is S6.
+# and the tests for 29 entry points, 58 slots (STAGES.md). The dev/ generator
+# core is S2, packaging is S6.
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

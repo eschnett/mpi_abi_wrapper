@@ -15,7 +15,7 @@ the stages where a session can leave plausible-looking damage behind.
 S0 headers+skeleton
  ├─→ S1 prototype ──→ S2 generator core ──→ S3 remaining classes ─┐
  │        │                   │                                    ├─→ S7 MPICH suite ──→ S8 consumers
- │        │                   └─→ S4 the hand-written ~50 ─────────┘
+ │        │                   └─→ S4 the hand-written ~90 ─────────┘
  │        └─→ S6 packaging                                         └─→ S9 sanitizers/threads/32-bit
  └─→ S5 Appendix A.2 cross-check
 ```
@@ -40,18 +40,23 @@ asymmetry, committed as the first frozen tally.
 **Model: Sonnet.** Fiddly text transformation with an exact numeric oracle — the
 counts either match or they don't.
 
-### S1 — The prototype, end to end *(done: 29 entry points)*
+### S1 — The prototype, end to end *(done: 29 entry points, 58 slots)*
 
 The whole vertical slice by hand: `src/mpi_abi/` bootstrap (dlopen with per-platform
-isolation, the version/subversion/layout handshake, the outward-resolution check),
-`src/mpiwrapper/` conversion runtime (perfect-hash reverse map, status blob, rank/tag,
-error codes, bitmask, staging, op trampoline pool), a hand-written vtable header for
-those slots, and the functions of §11. **S1 delivered 29 rather than the 15 planned**:
-the original list was not testable on its own, and the isolation probe added one more.
+isolation, the version/subversion/layout handshake, the outward-resolution check and
+the behavioural probe), `src/mpiwrapper/` conversion runtime (perfect-hash reverse
+map, status blob, rank/tag, error codes, bitmask, staging, op trampoline pool), a
+hand-written vtable header for those slots, and the functions of §11. **S1 delivered
+29 rather than the 16 planned**: the original list was not testable on its own, and
+the isolation probe added `MPI_Get_version`. Nine are hand-written, twenty are in the
+generator-shaped `wrappers.c`, and those twenty are what S2 must reproduce.
 
-**Exit check.** All 29 pass against **both** MPICH and Open MPI;
-`mpiwrapper_selftest` passes including the dynamic-handle collision probe;
-`dev/dlopen-probe`'s conclusions hold in the real library.
+**Exit check.** All 29 pass against **both** MPICH and Open MPI — MPICH 4.3.1 at
+two ranks, Open MPI 5.0.6 as a singleton, since no Open MPI 5.0.x launcher works
+on macOS 26 (`NOTES.md` §11 and `test/README.md` say so rather than leaving it to
+be inferred from a green run); `mpiwrapper_selftest` passes including the
+dynamic-handle collision probe; `dev/dlopen-probe`'s conclusions hold in the real
+library.
 
 **Model: Opus.** The highest-judgement stage in the project and the one every later
 stage is measured against. `NOTES.md` §11 explains why it comes before the generator:
@@ -75,7 +80,12 @@ its shape.
 ### S3 — The remaining argument classes
 
 Arrays and staging with the three lifetime rules, status arrays, bitmasks, keyvals,
-output-string buffers, sentinels, callbacks and trampoline pools, `MPI_T`.
+output-string buffers, sentinels, callbacks and trampoline pools, `MPI_T`. Staging
+includes the eight `*alltoallw*` forms whose temporaries outlive the call, which
+§8 used to list as hand-written; `MPI_Ialltoallw` in `handwritten.c` is their
+template, and S3 generates all eight and deletes it. Also S3's, and a ledger item
+rather than a matter of memory: *every* completion entry point must call
+`mpiwrapper_staged_release`, not just the ones S1 wrote (`NOTES.md` §6.3).
 
 **Exit check.** Every one of the 688 is generated or in `HAND_WRITTEN`; frozen tallies
 per class; the "no ABI-typed parameter reaches the implementation call" assertion
@@ -84,10 +94,13 @@ passes over the emitted text; the whole thing compiles against both MPIs.
 **Model: Opus.** Likely **two sessions** — split at arrays/status versus
 callbacks/`MPI_T` if so.
 
-### S4 — The hand-written ~50
+### S4 — The hand-written set (~90, not the "~50" earlier drafts claimed)
 
-Lifecycle, the callback registration functions, spawn, buffer attach, `MPI_Pcontrol`,
-dynamic error codes, the 26 Fortran converters, the ten output-string functions.
+Lifecycle, the 15 callback registration functions, spawn, the 12 buffer
+attach/detach forms, `MPI_Pcontrol`, dynamic error codes, the 26 Fortran
+converters, the ten status-consuming functions and the ten output-string
+functions. `NOTES.md` §8 adds these up; the total is about 90, which is why this
+stage is sized for two sessions rather than one.
 
 **Exit check.** `HAND_WRITTEN` fully implemented; `MPI_ERR_UNSUPPORTED_OPERATION`
 returned only for genuine implementation gaps, and `gen/report.txt` lists exactly
@@ -147,8 +160,15 @@ the work is diagnosis rather than construction.
 
 ASan/UBSan with a suppression file documenting the by-design leaks (op slots,
 errhandler slots, keyval pairs, datarep state); an `MPI_THREAD_MULTIPLE` stress test
-over the pools and maps; the 32-bit row. Settle whether `RTLD_DEEPBIND` survives ASan
-or whether the sanitizer jobs must select `dlmopen` (§13).
+over the pools and maps; the 32-bit row.
+
+Settle whether `RTLD_DEEPBIND` survives ASan (`NOTES.md` §12 lists it as an open
+risk). **`dlmopen` is not the fallback it was planned to be** — it segfaults in
+`MPI_Init` with any MPI that `dlopen`s components, which is every current one
+(`NOTES.md` §2). The options that remain are: measure whether `RTLD_DEEPBIND`
+really does disturb the sanitizers, build the MPI under test with its components
+static, or accept that the sanitizer jobs cover `libmpi_abi` and the conversion
+layer rather than the loaded configuration.
 
 **Exit check.** Sanitizer jobs green with every suppression entry explained; the
 thread stress test passes repeatedly; the 32-bit variant passes the same gates.

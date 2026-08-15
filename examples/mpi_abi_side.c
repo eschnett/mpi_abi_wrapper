@@ -108,8 +108,12 @@ static void vt_fail(const char *what, const char *detail)
  * Hence, per platform:
  *   macOS    RTLD_LOCAL is enough -- the two-level namespace binds libmpiwrapper's
  *            MPI_Send to libmpi at link time, so there is nothing to capture.
- *   Linux    dlmopen into a fresh namespace (correct by construction: no shared
- *            global scope at all), or dlopen with RTLD_LOCAL | RTLD_DEEPBIND.
+ *   Linux    dlopen with RTLD_LOCAL | RTLD_DEEPBIND. dlmopen into a fresh
+ *            namespace isolates just as well and is kept selectable, but it is
+ *            *not* the default and nothing may be planned on it: any MPI that
+ *            dlopen's its components with RTLD_GLOBAL -- every current one --
+ *            segfaults inside glibc's loader during MPI_Init, because a
+ *            dlmopen'ed namespace has no main map to add to (NOTES.md #2).
  *   FreeBSD  RTLD_LOCAL | RTLD_DEEPBIND; dlmopen does not exist.
  *
  * Binding mode defaults to RTLD_LAZY rather than RTLD_NOW: RTLD_NOW forces every
@@ -123,14 +127,14 @@ static void *vt_dlopen(const char *path)
 #if defined(__APPLE__)
   return dlopen(path, binding | RTLD_LOCAL);
 #elif defined(__linux__)
-  /* One namespace for every wrapper-side load, and glibc caps namespaces at
-   * DL_NNS (16), so the id is remembered and reused rather than requesting
-   * LM_ID_NEWLM again.
-   */
-  static Lmid_t lmid;
-  static int    have_lmid;
-  const char   *mode = getenv("MPI_ABI_WRAPPER_DLOPEN_MODE");
-  if (!mode || strcmp(mode, "dlmopen") == 0) {
+  const char *mode = getenv("MPI_ABI_WRAPPER_DLOPEN_MODE");
+  if (mode && strcmp(mode, "dlmopen") == 0) {
+    /* Selectable, never the default. One namespace for every wrapper-side load,
+     * and glibc caps namespaces at DL_NNS (16), so the id is remembered and
+     * reused rather than requesting LM_ID_NEWLM again.
+     */
+    static Lmid_t lmid;
+    static int    have_lmid;
     void *h = dlmopen(have_lmid ? lmid : LM_ID_NEWLM, path, binding);
     if (h && !have_lmid && dlinfo(h, RTLD_DI_LMID, &lmid) == 0) have_lmid = 1;
     return h;

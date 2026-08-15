@@ -22,6 +22,6 @@ S1 stand-ins for generated files, which S2 replaces:
 | `constants.c` | `gen/mpiwrapper/constants.c` |
 | `wrappers.c` | `gen/mpiwrapper/wrappers.c` |
 
-S4 completes the hand-written ~50 (lifecycle, the remaining callback
+S4 completes the hand-written set (~90; NOTES.md §8): lifecycle, the remaining callback
 registrations, spawn, buffer attach, `MPI_Pcontrol`, dynamic error codes, the 26
 Fortran converters, the ten output-string functions).

@@ -4,7 +4,8 @@
 
 **Hand-written, and the one S1 file that does not survive S2**: the real one is
 `gen/include/mpiwrapper_vtable.h`, emitted by the generator from the 1376-slot
-list. This is the 56-slot prototype of it, written first so that the generator is
+list. This is the 58-slot prototype of it (29 entry points x {`MPI_`, `PMPI_`}),
+written first so that the generator is
 designed against a known output shape rather than the other way round (NOTES.md
 §11, decision 17).
 

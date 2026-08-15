@@ -7,12 +7,26 @@ compiler is a guess.
 
 **Since S1 these are narrated excerpts, not the reference.** The reference is
 `src/`, which compiles against two implementations and passes tests; a shape that
-exists in both places is a second source of truth, and the tested one wins. Three
-things here were wrong until S1 ran the real version — the reverse-map tables were
-`static`, which does not compile against an implementation whose handles are
-addresses; the bitmask mapper needed splitting by role; and the `dlopen` narration
-predated the `RTLD_LOCAL`-plus-isolation correction — and all three are corrected
-below.
+exists in both places is a second source of truth, and the tested one wins.
+
+Everything found wrong here so far, as a warning about how this file drifts —
+three of the five were invisible to `check.sh`, because compiling proves nothing
+about agreement:
+
+1. the reverse-map tables were `static`, which does not compile against an
+   implementation whose handles are addresses;
+2. the bitmask mapper needed splitting by role (`filemode` vs `winassert`);
+3. the `dlopen` narration predated the `RTLD_LOCAL`-plus-isolation correction;
+4. `mpiwrapper_convert.c` compared the ABI protocol version against
+   `MPIABI_VERSION` (the MPI standard level, 5) instead of `MPIABI_ABI_VERSION`
+   (the handshake version, 1) — it rejected every valid pairing and compiled
+   cleanly, because both macros exist;
+5. `mpi_abi_side.c` still *defaulted* to `dlmopen` on Linux, which `src/` never
+   did and which is now known not to work with a real MPI at all.
+
+All five are corrected. What is still deliberately absent here is the
+behavioural probe (`src/mpi_abi/bootstrap.c`'s decoy vtable): the `dladdr` check
+narrated below is necessary and not sufficient, and `NOTES.md` §2 explains why.
 
 | file | corresponds to | written by |
 |---|---|---|
@@ -22,7 +36,7 @@ below.
 | `mpiwrapper_wrappers.c` | `gen/mpiwrapper/wrappers.c` | generator |
 | `mpiwrapper_convert.c` | `src/mpiwrapper/*.c` | hand |
 
-The headers are excerpts: six vtable slots of 688, and only the types and constants
+The headers are excerpts: nine vtable slots of 1376, and only the types and constants
 the examples reference.
 
 ## Checking them

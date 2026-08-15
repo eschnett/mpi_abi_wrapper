@@ -22,7 +22,7 @@
  * The bodies are `static`: only mpiwrapper_get_vtable is exported, and `static`
  * enforces that in the language rather than relying on the linker script.
  *
- * Note that the wrapper's own *internal* MPI calls -- in the hand-written ~50, where
+ * Note that the wrapper's own *internal* MPI calls -- in the hand-written set, where
  * MPI_Init needs a rank or the error-code registry needs a class -- must use the
  * implementation's PMPI_* names. An internal call is not application traffic and
  * must not be counted as such by an interposed tool. This is the same discipline
@@ -101,17 +101,14 @@ static int w_MPI_Send(const void *abi_buf, int abi_count,
  * bypasses a tool interposed between this library and the implementation. Routing
  * both ABI names to one slot would bypass only the ABI-level profiling layer.
  *
- * No configure probe guards this, and deliberately so. In both MPICH and Open MPI
- * the PMPI_* names are the *strong* definitions and the MPI_* names are weak
- * aliases at the same address:
- *
- *   MPICH   libmpich.so   0x159d40 W MPI_Send   0x159d40 T PMPI_Send
- *   OpenMPI libmpi.so     0x08d690 W MPI_Send   0x08d690 T PMPI_Send
- *
- * That is how the profiling interface works at all -- a tool's strong MPI_Send
- * overrides the weak alias while PMPI_Send stays reachable -- so both names are
- * unconditionally present in whatever library is already linked, with no separate
- * profiling library involved. MPICH ships none.
+ * No configure probe guards this, and deliberately so. Both names are always
+ * present, though the shape varies by implementation and platform -- weak alias
+ * pairs on MPICH 3.1.4, two strong definitions at one address on Ubuntu MPICH and
+ * Open MPI, a separate libpmpi.dylib on macOS MPICH, two distinct functions on
+ * macOS Open MPI 5.0.10. The invariant this needs is only that both names exist
+ * and reach the same code when nothing is interposed, which is what makes the
+ * profiling interface work at all. It does mean the wrapper must link what mpicc
+ * links rather than a library it names itself. NOTES.md #2 has the measurements.
  *
  * An earlier draft guarded this with a probe that fell back to the unshifted body.
  * That would have been worse than nothing: it would silently reintroduce the very

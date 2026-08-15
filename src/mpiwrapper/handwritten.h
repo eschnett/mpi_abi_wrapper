@@ -6,7 +6,7 @@
  * MPI_ and PMPI_ separately. If the two sets ever disagree the initializer
  * fails to compile, which is the cheapest possible version of the ledger check.
  *
- * S1 covers nine entry points (eighteen slots); S4 completes the ~50.
+ * S1 covers nine entry points (eighteen slots); S4 completes the set (~90; NOTES.md #8).
  */
 
 #ifndef MPIWRAPPER_HANDWRITTEN_H

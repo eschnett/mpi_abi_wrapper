@@ -117,7 +117,10 @@ static void vt_fail(const char *what, const char *detail)
  *   macOS    RTLD_LOCAL is enough -- the two-level namespace binds
  *            libmpiwrapper's MPI_Send to libmpi at link time.
  *   Linux    RTLD_LOCAL | RTLD_DEEPBIND by default, dlmopen(LM_ID_NEWLM)
- *            selectable (the sanitizers dislike DEEPBIND).
+ *            selectable -- but dlmopen segfaults inside glibc's loader during
+ *            MPI_Init with any MPI that dlopen's its components with
+ *            RTLD_GLOBAL, which is every current one, so it is kept only
+ *            against the day that changes (NOTES.md #2).
  *   other    RTLD_LOCAL | RTLD_DEEPBIND; dlmopen is glibc-only.
  *
  * Binding mode defaults to RTLD_LAZY rather than RTLD_NOW: RTLD_NOW forces
@@ -153,7 +156,7 @@ static void *vt_dlopen(const char *path, const char **how)
 #  endif
   /* MPI_ABI_WRAPPER_DLOPEN_MODE=capture exists for the tests only: it is the
    * unisolated load, which dev/dlopen-probe shows recurses until the stack is
-   * exhausted. test/isolation_test.c uses it to prove that the outward-
+   * exhausted. test/check_isolation.cmake uses it to prove that the outward-
    * resolution check below actually fires rather than being decorative.
    */
   if (mode && strcmp(mode, "capture") == 0) {
@@ -183,12 +186,12 @@ static void *vt_dlopen(const char *path, const char **how)
  * initialization, whatever NOTES.md #2 assumed.
  *
  * The trick that keeps it out of the generated code is the decoy. If the call
- * *is* captured, it re-enters this library's exported MPI_Wtime, which does
- * nothing but call through mpi_abi_vt -- so pointing mpi_abi_vt at a table
- * whose MPI_Wtime records the capture and returns both detects the re-entry and
- * stops the recursion, without any generated forwarder needing to know that a
- * probe exists. This runs once, in the constructor, before any thread but this
- * one can be inside an MPI call.
+ * *is* captured, it re-enters one of this library's own exported entry points,
+ * which does nothing but call through mpi_abi_vt -- so pointing mpi_abi_vt at a
+ * table whose every slot records the capture and returns both detects the
+ * re-entry and stops the recursion, without any generated forwarder needing to
+ * know that a probe exists. This runs once, in the constructor, before any
+ * thread but this one can be inside an MPI call.
  */
 static int probe_reentered;
 

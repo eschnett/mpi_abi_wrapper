@@ -6,7 +6,7 @@
  * by *version*, and MPIWRAPPER_LAYOUT_HASH is what turns that into a clean
  * failure instead of a call through a shifted slot.
  *
- * The real file has 1376 slots. Seven are shown.
+ * The real file has 1376 slots. Nine are shown.
  */
 
 #ifndef MPIWRAPPER_VTABLE_H
@@ -41,10 +41,16 @@
  * 1:1 rather than 2:1, so "each entry point has exactly one slot and one body" is a
  * uniform invariant with no special case.
  *
- * Both names are always available to link against: in MPICH and Open MPI alike the
- * PMPI_* names are the strong definitions and the MPI_* names are weak aliases at
- * the same address, which is how the profiling interface works in the first place.
- * No separate profiling library exists and no configure probe is needed.
+ * Both names are always available to link against, though not in one uniform
+ * shape: on Ubuntu/aarch64 MPICH and Open MPI both define MPI_Send and PMPI_Send
+ * *strongly* at one address, MPICH 3.1.4 has the weak-alias shape an earlier draft
+ * recorded, macOS conda-forge MPICH keeps every PMPI_* in a separate libpmpi.dylib,
+ * and macOS Open MPI 5.0.10 compiles two distinct functions. What holds everywhere
+ * -- and all this argument needs -- is that both names exist and reach the same
+ * code when nothing is interposed. Hence no configure probe and no fallback: an
+ * implementation that really lacked PMPI_Send fails to link, naming it. The wrapper
+ * must link what mpicc links rather than a library it names itself, or the macOS
+ * MPICH row leaves every PMPI_* undefined. See NOTES.md #2.
  */
 struct mpiwrapper_vtable {
   int    (*MPI_Send)(const void *, int, MPIABI_Datatype, int, int, MPIABI_Comm);
@@ -58,7 +64,7 @@ struct mpiwrapper_vtable {
   int    (*MPI_Error_string)(int, char *, int *);
   double (*MPI_Wtime)(void);
   double (*PMPI_Wtime)(void);
-  /* ... 1374 more ... */
+  /* ... 1367 more ... */
 };
 
 /* The only symbol libmpiwrapper exports.
@@ -71,7 +77,10 @@ struct mpiwrapper_vtable {
  *
  * `size` is sizeof(struct mpiwrapper_vtable) as the *caller* understands it. A
  * wrapper may accept a smaller size than its own and serve the common prefix; it
- * must refuse a larger one, since the caller would read past the end.
+ * must refuse a larger one, since the caller would read past the end. Note that
+ * nothing currently reaches the prefix case: the layout hash is taken over the
+ * whole slot list, so a caller built from a shorter one is already rejected.
+ * NOTES.md #2 records the two ways out of that.
  *
  * Both `abi_version` and `abi_subversion` are checked, against the header's
  * MPI_ABI_VERSION and MPI_ABI_SUBVERSION. The layout hash alone is not enough: a

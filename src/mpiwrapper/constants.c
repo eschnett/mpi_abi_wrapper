@@ -2,7 +2,7 @@
  *
  * S1 STATUS: hand-committed stand-in for gen/mpiwrapper/constants.c. Its
  * content was produced mechanically from gen/include/mpiabi.h rather than
- * transcribed, because 104 predefined handles and 80 error classes is exactly
+ * transcribed, because 103 predefined handles and 80 error classes is exactly
  * the kind of table where a typo survives review; S2's generator emits the real
  * one from the same header plus apis.json and must reproduce this.
  *

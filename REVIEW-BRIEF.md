@@ -1,69 +1,117 @@
-# Brief for the consistency review
+# Consistency review — brief, and outcome
 
 Written at the end of the design session that produced `NOTES.md`, after S0 and S1
-had run. Its purpose is to hand over the one thing that dies with that session's
-context: **which claims were superseded, and when.** A reader coming to `NOTES.md`
-fresh sees a coherent document and has no way to tell a current statement from a
-fossil that survived an update.
+had run, to hand over the one thing that dies with that session's context: **which
+claims were superseded, and when.** The review it asked for has now run, in a fresh
+session; this file records what it found so that the next reader does not repeat it.
 
-Do the review in a **fresh session**. The author of a document is its worst
-proofreader, and that is sharpened here: the design session wrote every superseded
-version too, so on hitting a stale sentence it auto-corrects to what it believes
-rather than noticing the contradiction.
+**This file is a working note, not a durable document.** `NOTES.md` and `STAGES.md`
+are the pair that survives. Once the "still open" list below is empty, delete this.
 
-## Known fault lines
+---
 
-Four conclusions were overturned by S1. Every place that touches one is a candidate
-fossil.
+## Outcome of the review
 
-| overturned | by | old claim still findable? |
-|---|---|---|
-| `dlmopen` is a usable Linux mode | `9c844c2` — segfaults in `MPI_Init` with any MPI that `dlopen`s components | **yes, see below** |
-| the `dladdr` isolation check is sufficient | `14ec73d` — dyld coalesces weak definitions; needed a behavioural probe, which is itself incomplete (`bf8c387`) | **yes, see below** |
-| the floor is MPI-4.0 | `928b938` — verified MPI-3.0 with MPICH 3.1.4 | partly; §1 and decision 3 still frame MPI-4.0 as the expectation |
-| `MPI_ABI_VERSION` renames to `MPIABI_VERSION` | `21be31d` — plain prefix-strip gives `MPIABI_ABI_VERSION` | fixed in `mpiabi.h`; **had left a live defect in `mpiwrapper_convert.c`**, corrected here |
+### Fixed in `NOTES.md` / `STAGES.md`
 
-## Confirmed inconsistencies, not yet fixed
+*Contradictions — two statements in the design that cannot both be acted on:*
 
-Left for the review because fixing them well needs S1's context, not this session's.
+- **§2 "Bootstrap" required an atomic acquire-load guard** on the vtable pointer,
+  which the *next* subsection, decision 8 and `src/mpi_abi/bootstrap.c` all reject.
+  Rewritten to the constructor-only shape that is implemented, with the reason the
+  guard is unnecessary.
+- **§2 "Locating the wrapper" still name-tagged the wrapper** (`libmpiwrapper-mpich-4.3.so`)
+  against §9 and decision 5, which drop it. Rewritten.
+- **§8 listed the staged-temporary forms as hand-written (S4)** while §3, §5.7 and
+  S3 treat staging as a generated argument class. Resolved in favour of S3: the set
+  is exactly eight `*alltoallw*` forms, generated, with S1's `MPI_Ialltoallw` as
+  the template.
+- **§9's "Open MPI 4.1 fails the MPI-4.0 minimum, so distro LTS does not serve"**
+  was the pre-S1 rationale; §1 now records that no *released* Open MPI has `_c`
+  entry points, so the reason had stopped applying while the conclusion stayed.
+  Replaced with a table of what each version row is actually for.
+- **`STAGES.md` S9 still planned `dlmopen` as the sanitizer fallback**, which §2
+  had already killed, and cited §13 for a risk that lives in §12.
 
-1. **`NOTES.md` §2 contradicts itself about `dlmopen`.** The probe-results table
-   (~line 352) and the per-platform table (~line 382, "both measured sufficient …
-   `dlmopen(LM_ID_NEWLM)` selectable") are followed at ~line 392 by "`dlmopen` does
-   not survive contact with a real MPI". The later text supersedes, but a reader
-   meets the tables first and they read as current guidance. The tables are accurate
-   *about the mock* — so the fix is scoping, not deletion.
-2. **`NOTES.md` ~line 375 still credits the `dladdr` check** ("the check survives
-   that mode too") while §2's later section (~486–546) establishes that it cannot
-   see a capture where the sampled call binds outward.
-3. **`NOTES.md` ~line 386–389** gives "the sanitizer CI jobs are the concrete reason
-   `dlmopen` has to stay available", which S9 can no longer rely on. `928b938` gives
-   the replacement: an MPI configured with its components built in.
+*Counts, each checked against the artifact that decides it:*
 
-## Fixed here
+| claim | was | is | authority |
+|---|---|---|---|
+| deprecated entry points | 31 | **12** | `grep '; /\* deprecated' gen/include/mpi.h` |
+| predefined handles (§4.1, §10) | 104 | **103** | the header; `PREDEF(...)` rows in `constants.c` |
+| error classes (§11) | 81 | **80** | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
+| callback registration functions (§6.1, §6.2) | 16 | **15** | the section's own table |
+| hand-written set (§3, §8, S4) | ~50 | **~90** | §8's own list, added up |
+| S1 prototype (§11) | 28 entry points, 56 slots, 19 generated-shape | **29 / 58 / 20** | `src/include/mpiwrapper_vtable.h`, `dev/layout_hash.py` |
+| S1 stand-in files (§11) | "three" | **four** | they are named on the same line |
+| planned prototype size (§11, decision 17) | fifteen | **sixteen** | the table has sixteen functions in thirteen rows |
 
-- `examples/mpiwrapper_convert.c` compared the ABI protocol version against
-  `MPIABI_VERSION` (= 5, the MPI *standard* level) instead of `MPIABI_ABI_VERSION`
-  (= 1). It rejected every valid pairing, and compiled cleanly because both macros
-  exist, so `examples/check.sh` could not catch it. This is the fossil class in its
-  purest form: a rename landed in the definition and not in the consumer.
-- `STAGES.md` S0/S1 marked done; the prototype size corrected from 15 to 29 in
-  `STAGES.md` and in `NOTES.md` decision 17.
-- `dev/dlopen-probe/README.md` gained a scope section recording that its `dlmopen`
-  row does not generalise, and why the mock could not have seen it.
+The §11 additions list also omitted `MPI_Op_create` and `MPI_Get_version`, which is
+where the 28 came from.
 
-## What to check that nobody has
+*Fossils the brief predicted, now scoped rather than deleted:*
 
-- **`examples/` against `src/`.** Since S1 the examples are narrated excerpts and
-  `src/` is the reference. `check.sh` proves they compile, not that they still agree
-  with the tested implementation. Three divergences were already found by S1 this
-  way; the version-macro defect above was a fourth, found only by reading.
-- **Every numeric claim in `NOTES.md`** against `dev/entrypoints.txt` and the frozen
-  tallies. Counts drifted twice in this design's history (688 vs 664, 26 vs 28
-  converters).
-- **The decision list against the sections.** Decisions were edited in place as
-  things changed; a decision whose §-reference no longer says the same thing is the
-  most likely remaining fossil.
-- **Anything asserted rather than measured.** `dev/` holds five probes now. A claim
-  about loader behaviour, performance, or an implementation's internals that has no
+- the `dev/dlopen-probe` results table and the per-platform table now say they are
+  statements about the mock's loader behaviour, with the real-MPI `dlmopen` failure
+  named where a reader meets them;
+- "the check survives that mode too" is qualified: the `dladdr` check was later
+  found to answer a different question, and even the behavioural probe is
+  incomplete;
+- "the sanitizer CI jobs are the concrete reason `dlmopen` has to stay available"
+  is marked as superseded, with S9's actual options.
+
+*One claim that was contradicted by a later measurement in the same section:* §2
+said that if a native macOS build with weak `MPI_*` ever appeared the wrapper would
+refuse it — and native Open MPI 6.1.0a1 is exactly that and wraps correctly. The
+symbol table now carries both 6.1.0a1 builds and says plainly that strong `MPI_*`
+is sufficient, not necessary.
+
+### Fixed elsewhere
+
+- `CMakeLists.txt`, `src/include/README.md`, `src/mpi_abi/README.md`,
+  `src/mpiwrapper/README.md`, `src/mpiwrapper/handwritten.h`,
+  `src/mpiwrapper/constants.c`: the 28/56/104/~50 counts above.
+- `src/mpi_abi/bootstrap.c` comments: the decoy narration still described
+  `MPI_Wtime` as the probe (it is `MPI_Get_version`, and *every* decoy slot points
+  at the recorder); it named `test/isolation_test.c`, which does not exist
+  (`test/check_isolation.cmake`); and it repeated the sanitizer/`dlmopen` claim.
+- `examples/`, which the brief asked to be read against `src/`:
+  - `mpi_abi_side.c` **defaulted to `dlmopen` on Linux** — a fifth divergence, and
+    the sharpest, since `src/` defaults to `RTLD_DEEPBIND` and `dlmopen` is now
+    known not to work with a real MPI at all;
+  - `mpiwrapper_vtable.h` and `mpiwrapper_wrappers.c` still asserted the
+    weak-alias/no-separate-profiling-library shape that S1 disproved on macOS;
+  - `mpiwrapper_convert.c`'s 104s;
+  - the header excerpt said seven slots of 688 and "1374 more" where it shows nine
+    of 1376.
+  - `examples/README.md` now lists all five divergences found so far, since the
+    pattern — *compiles, therefore unchecked* — is the point.
+
+## Still open, deliberately not changed here
+
+1. **The vtable's `size` parameter is unreachable.** Version, subversion and a
+   layout hash over the *whole* slot list each demand exact equality, so no caller
+   can present a shorter struct and reach the "serve the common prefix" path.
+   §2 now states this and offers two resolutions; **someone has to pick one**, and
+   the choice decides whether `MPI_ABI_SUBVERSION` means anything at run time.
+2. **`mpiwrapper_get_vtable`'s init is not fully serialized.** The CAS around
+   `mpiwrapper_init_reverse_maps` means a *second* concurrent caller returns the
+   vtable while the first is still building the maps, and a failed build leaves
+   `initialized` set so a retry succeeds with unbuilt maps. Harmless today — the
+   only caller is a constructor, running single-threaded — but the comment above it
+   claims "the maps are complete before any slot can be reached", which is what the
+   getter exists for. Worth an S2 or S4 fix, not a doc change.
+3. **`getvtable.c`'s capture diagnostic tells the user to load the wrapper with
+   `dlmopen` or `RTLD_DEEPBIND`.** Half of that advice now leads into a segfault
+   during `MPI_Init`. It is a user-visible string, so it was left for whoever
+   touches that file next.
+## What is worth re-checking next time
+
+- **Anything asserted rather than measured.** `dev/` holds five probes. A claim
+  about loader behaviour, performance, or an implementation's internals with no
   probe behind it is where the next S1-style surprise will come from.
+- **The decision list against the sections.** It was edited in place as things
+  changed; this pass found decisions 3, 7, 8 and 17 out of step with their own
+  §-references, and the numbering itself out of order.
+- **Every count, against the artifact rather than against another sentence.**
+  Eight of them were wrong, and each was one `grep` from being right.

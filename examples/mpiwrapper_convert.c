@@ -81,8 +81,8 @@ MPI_Request mpiwrapper_request_fromabi(MPIABI_Request abi)
  * objects -- so this map cannot be a switch and cannot be built at compile time.
  * It is built once, inside mpiwrapper_get_vtable, before any slot can be called.
  *
- * A linear scan over the 104 predefined handles would be far too slow: this runs
- * on every out-handle and inside every user-op trampoline, and about 60 of the 104
+ * A linear scan over the 103 predefined handles would be far too slow: this runs
+ * on every out-handle and inside every user-op trampoline, and 71 of the 103
  * are datatypes, which is the hot case.
  *
  * One table per class, so that an implementation handle value shared across
