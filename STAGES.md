@@ -127,9 +127,12 @@ named exemption; breaking one signature on purpose makes it fail.
 `ci-scripts/` for pinned MPI source builds, the variant matrix. Respect the
 `ci-scripts/` versus `ci-scripts/suite/` cache-key split (§9).
 
-**Exit check.** Each of the three consumption routes **builds and runs** a program,
-with `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared; `nm` confirms `libmpi_abi` is the
-executable's only MPI dependency, per §20.2.1.
+**Exit check.** Each of the three consumption routes **builds and runs** a program
+from an installed prefix, with `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared; `nm`
+confirms `libmpi_abi` is the executable's only MPI dependency, per §20.2.1. The
+prefix is exclusive — installing into the wrapped MPI's prefix collides on `mpi.h`,
+`mpicc` and `libmpi_abi` (§9), so the install test must use a prefix of its own and
+should assert that the MPI's own `mpi.h` is not in it.
 
 **Model: Sonnet.** Much of it is transposable from mpif's `ci-scripts/`.
 

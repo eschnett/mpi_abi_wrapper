@@ -1548,7 +1548,9 @@ clearing the block, and the releaser would free the new owner's block.
 5. **`mpi_abi` finds the wrapper from an environment variable**, falling back to a
    build-time path. §2. **Both libraries are built together into one prefix per MPI
    installation**, and the split is not user-visible; wrapper libraries are *not*
-   name-tagged by MPI. §9.
+   name-tagged by MPI. **That prefix is exclusive** — no second wrapper, no other
+   MPI, and never the wrapped MPI's own prefix, since we install `mpi.h`,
+   `mpicc` and `libmpi_abi` under names it already uses. §9.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them.
 7. **PMPI gets its own vtable slots** (1376, not 688), calling the
@@ -1681,11 +1683,32 @@ cross test possible (§10) and what lets one `libmpi_abi` be pointed at another
 wrapper — but it is exposed only as a developer option
 (`-DMPI_ABI_BUILD_WRAPPER=OFF`), not as part of the normal flow.
 
-**One prefix per MPI installation.** Install each build into its own prefix, ideally
-beside the MPI it wraps, so the paths baked into it and the module environment that
-produced it stay together. An earlier draft proposed encoding the MPI in the
+**One prefix per MPI installation, and the prefix is exclusive.** Everything a
+build produces — `mpi.h`, `libmpi_abi`, `libmpiwrapper`, `mpicc` and the package
+files — goes into one prefix, and that prefix holds **nothing else**: not a
+second wrapper, not another MPI implementation, and in particular **not the MPI
+this build wraps**.
+
+The reason is file names, and it is not a matter of taste. Everything in that
+list is a name the wrapped MPI also installs: `mpi.h` against `mpi.h`, `mpicc`
+against `mpicc`, and — because MPI-5.0 §20.2.1 requires a library implementing
+the standard ABI to be named `mpi_abi` — `libmpi_abi` against `libmpi_abi`. So
+installing beside the MPI does not merely risk a clash, it *is* one, on the two
+files that decide which MPI a consumer compiles against. An earlier draft said
+"ideally beside the MPI it wraps, so the paths baked into it and the module
+environment that produced it stay together"; that reads well and is wrong.
+Colocation buys nothing the baked-in wrapper path and the module environment do
+not already give, and it costs the two headline files.
+
+It also breaks the build that produced it: §9's no-self-wrapping check refuses to
+configure when `find_package(MPI)` lands on a prefix containing our
+`mpiwrapper_vtable.h`, so an installation made into the MPI's own prefix turns
+that MPI into one this project can no longer be built against. The failure
+arrives at the *next* configure, on someone else's machine.
+
+An earlier draft also proposed encoding the MPI in the
 library's *name* (`libmpiwrapper-mpich-4.3.so`) so several could share a prefix; that
-is dropped. On real HPC systems the things that make two wrappers incompatible are
+is dropped, and the exclusive-prefix rule is what replaces it. On real HPC systems the things that make two wrappers incompatible are
 mostly not in the name — loaded modules, compiler and its runtime, fabric libraries,
 MPI build options — so the name would give a false sense of safety while adding
 complexity, and would catch few real errors. The version-and-layout handshake in
