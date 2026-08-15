@@ -828,7 +828,7 @@ Returns MPI_ERR_UNSUPPORTED_OPERATION at run time
 ----------------------------------------
   ...for every entry point above that is deferred or hand-written
   without a body yet, and -- per implementation, decided by
-  dev/probe_entrypoints.py at configure time -- for every generated one
+  dev/probe_impl.py at configure time -- for every generated one
   the implementation does not define. The second set is a property of
   the build, not of the generator, so it is not listed here.
 

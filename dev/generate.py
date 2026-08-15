@@ -234,34 +234,22 @@ IN_PLACE_SEND = {
 }
 IN_PLACE_RECV = {"scatter", "scatterv"}
 
-# Predefined handles an implementation may legitimately not define, so that
-# their table rows carry an #ifdef and everything else is a compile error
-# rather than a wrong number (the rule constants.c states, applied):
+# Constants a conforming implementation may legitimately not have. Everything
+# else is emitted unguarded, so that an implementation missing one fails the
+# build naming it rather than silently dropping a mapping (NOTES.md #5.9).
+# That is the whole of the judgement; the rest is derived.
 #
 #  - the optional sized Fortran types, matched by name because that is what
 #    makes them optional in the standard rather than anything in the header;
-#  - MPI_ERRORS_ABORT, added in MPI-4.0, which the header does not mark
-#    because it carries `added:` notes on error classes alone.
+#  - the predefined handles and enumerators the ABI gained after the MPI-3.0
+#    floor, which the header marks with `added:` for error classes and does not
+#    mark at all elsewhere -- so those are named;
+#  - MPI_T's error classes, since the whole tool interface is optional;
+#  - MPIX_TYPECLASS_LOGICAL, which is not a standard name at all.
 OPTIONAL_PREDEF_RE = re.compile(r"^MPI_(LOGICAL|INTEGER|REAL|COMPLEX)\d+$")
-OPTIONAL_PREDEF_NAMES = {"MPI_ERRORS_ABORT": "added in MPI-4.0"}
-
-# The enforced floor is MPI-3.0 (decision 3), so a constant the header marks as
-# added after MPI-3.1 may be absent from a conforming implementation.
-FLOOR_VERSION = (3, 1)
-
-# Members of the integer families below that a conforming implementation may
-# not have. Everything else in those families is MPI-3.0 or older and is
-# emitted unguarded, so that an implementation missing one is a compile error
-# rather than a silently dropped mapping (NOTES.md #5.9).
-#
-# These cannot be guarded with `#ifdef <the implementation's own name>` the way
-# the predefined handles are: MPICH spells MPI_COMBINER_* and MPI_CART as
-# *enumerators* and Open MPI spells MPI_THREAD_SINGLE, MPI_COMM_TYPE_SHARED and
-# MPI_IDENT that way, and `#ifdef` on an enumerator is quietly false -- which
-# would drop the case and pass an unmapped value through. So they go through
-# dev/probe_entrypoints.py, which asks the compiler rather than the
-# preprocessor.
 OPTIONAL_CONSTANTS = {
+    "MPI_ERRORS_ABORT": "added in MPI-4.0",
+    "MPI_SESSION_NULL": "added in MPI-4.0, and with it the whole class",
     "MPIX_TYPECLASS_LOGICAL":
         "a legacy alias the ABI header carries; not a standard name",
     "MPI_COMM_TYPE_HW_UNGUIDED": "added in MPI-4.0",
@@ -269,6 +257,33 @@ OPTIONAL_CONSTANTS = {
     "MPI_COMM_TYPE_RESOURCE_GUIDED": "added in MPI-4.1",
     "MPI_COMBINER_VALUE_INDEX": "added in MPI-4.1",
 }
+
+# The enforced floor is MPI-3.0 (decision 3), so a constant the header marks as
+# added after MPI-3.1 may be absent from a conforming implementation.
+FLOOR_VERSION = (3, 1)
+
+# **Every one of those guards is `#ifdef MPIWRAPPER_HAVE_<name>`, from
+# dev/probe_impl.py, and never `#ifdef <the implementation's own name>.**
+#
+# The second spelling is the obvious one and it is quietly wrong. `#ifdef` sees
+# macros; it does not see enumerators, and implementations use both. MPICH
+# spells MPI_COMBINER_* and MPI_CART as enumerators, Open MPI spells
+# MPI_THREAD_SINGLE, MPI_COMM_TYPE_SHARED and MPI_IDENT that way, and either
+# way the `#ifdef` answers *no* for a constant that is right there -- so the
+# case drops out, the default arm passes an unmapped value through, and nothing
+# fails. It is not hypothetical: MPICH 4.3.1 has MPI_COMBINER_VALUE_INDEX as
+# `= 20` in an enum, and an S2 draft that used `#ifdef` on it silently stopped
+# translating that combiner.
+#
+# The probe asks the compiler instead, which sees both, and asks about every
+# name in one translation unit rather than one configure test per constant.
+
+
+def guard(name):
+    """The #ifdef a row carries, or None if it is emitted unconditionally."""
+    if OPTIONAL_PREDEF_RE.match(name) or name in OPTIONAL_CONSTANTS:
+        return "MPIWRAPPER_HAVE_" + name
+    return None
 
 # ---------------------------------------------------------------------------
 # Parsing the ABI header
@@ -1271,9 +1286,9 @@ WRAPPERS_PREAMBLE = '''\
  * grep, and a missing conversion is a hard stop at generation time rather than
  * a wrong answer at 4096 ranks.
  *
- * Every body is guarded by MPIWRAPPER_HAVE_<name>, which
- * dev/probe_entrypoints.py writes into mpiwrapper_impl_config.h at configure
- * time from the implementation's own header. An entry point the implementation
+ * Every body is guarded by MPIWRAPPER_HAVE_<name>, which dev/probe_impl.py
+ * writes into mpiwrapper_impl_config.h at configure time by asking the
+ * compiler about the implementation's own header. An entry point the implementation
  * does not have gets the stub of decision 6 instead: the slot stays present
  * and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time, so the ABI surface
  * never shrinks. The classes this stage does not yet generate -- out and inout
@@ -1286,21 +1301,11 @@ WRAPPERS_PREAMBLE = '''\
 
 #include "handwritten.h"
 #include "internal.h"
-#include "mpiwrapper_impl_config.h"
 
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
-/* mpiwrapper_impl_config.h is generated per build tree, against the
- * implementation this wrapper is being built for. Without it every body below
- * would take its #else branch and the library would be a complete set of
- * stubs -- which links, loads, and answers MPI_ERR_UNSUPPORTED_OPERATION to
- * everything. A missing probe has to be a build failure, not that.
- */
-#ifndef MPIWRAPPER_IMPL_PROBED
-#  error "mpiwrapper_impl_config.h did not come from dev/probe_entrypoints.py"
-#endif
 '''
 
 WRAPPERS_VTABLE_HEAD = '''
@@ -1407,12 +1412,25 @@ CONSTANTS_PREAMBLE = '''\
  *    further down are plain enumerators and are switched by name.
  *
  *  - Every implementation-side value is named by the implementation's own
- *    macro, never written out. A macro that does not exist is then a compile
- *    error rather than a wrong number -- which is why only the entries the
- *    standard makes optional carry an #ifdef: the sized Fortran types, the
- *    predefined handles and error classes newer than the MPI-3.0 floor, and
- *    MPI_T. The integer families at the end of the file are the exception and
- *    say why there.
+ *    macro or enumerator, never written out. A name that does not exist is
+ *    then a compile error rather than a wrong number -- which is why only the
+ *    entries the standard makes optional are guarded at all: the sized Fortran
+ *    types, the predefined handles and enumerators newer than the MPI-3.0
+ *    floor, and MPI_T.
+ *
+ *  - Those guards test MPIWRAPPER_HAVE_<name>, from dev/probe_impl.py, and
+ *    never `#ifdef <the implementation's own name>`. `#ifdef` sees macros and
+ *    not enumerators, and implementations use both: MPICH spells MPI_COMBINER_*
+ *    and MPI_CART as enumerators, Open MPI spells MPI_THREAD_SINGLE,
+ *    MPI_COMM_TYPE_SHARED and MPI_IDENT that way. An `#ifdef` on one of those
+ *    answers *no* for a constant that is right there, and the case then drops
+ *    out of the switch, reaches the default arm and passes an unmapped value
+ *    through -- silently, which is the one failure mode these tables exist to
+ *    prevent. Measured, not hypothetical: MPICH 4.3.1 has
+ *    MPI_COMBINER_VALUE_INDEX as `= 20` in an enum, and an S2 draft that used
+ *    `#ifdef` on it stopped translating that combiner without failing
+ *    anything. The probe asks the compiler, which sees both, and asks about
+ *    every name in one translation unit rather than one test per constant.
  *
  * The fromabi default deserves a word. A value inside the ABI's predefined
  * range that reached the default arm is a predefined handle *this*
@@ -1425,17 +1443,8 @@ CONSTANTS_PREAMBLE = '''\
  */
 
 #include "internal.h"
-#include "mpiwrapper_impl_config.h"
 
 #include <string.h>
-
-/* The five guarded cases at the end of this file need the probe. Without it
- * they would drop out silently, which is the one failure mode the tables here
- * exist to prevent.
- */
-#ifndef MPIWRAPPER_IMPL_PROBED
-#  error "mpiwrapper_impl_config.h did not come from dev/probe_entrypoints.py"
-#endif
 
 '''
 
@@ -1458,37 +1467,30 @@ PREDEF_MACRO = '''
 '''
 
 
-def guard_predef(macro):
-    """The #ifdef a predefined-handle row carries, or None."""
-    if OPTIONAL_PREDEF_RE.match(macro):
-        return macro
-    if macro in OPTIONAL_PREDEF_NAMES:
-        return macro
-    return None
-
-
 def emit_constants_c(classes, handles, enums):
     out = [CONSTANTS_PREAMBLE]
 
     def class_guard(cls):
         # MPI_Session is MPI-4.0 and an implementation may simply not have the
-        # type; an #ifdef cannot test for a type, so the test is the class's
-        # null handle, exactly as internal.h does it.
-        return "MPI_SESSION_NULL" if cls == "Session" else None
+        # *type*; nothing can test for a type, so the test is the class's null
+        # handle, exactly as internal.h does it.
+        return guard("MPI_SESSION_NULL") if cls == "Session" else None
 
     # --- ABI -> implementation ---------------------------------------------
     for cls in classes:
         low = cls.lower()
-        guard = class_guard(cls)
+        cguard = class_guard(cls)
         rows = []
-        if guard:
-            rows.append(f"#ifdef {guard}")
+        if cguard:
+            rows.append(f"#ifdef {cguard}")
         rows.append(f"MPI_{cls} mpiwrapper_{low}_fromabi(MPIABI_{cls} abi)")
         rows.append("{")
         rows.append("  switch ((uint64_t)(uintptr_t)abi) {")
         null_macro = handles[cls][0][0]
         for macro, value in handles[cls]:
-            g = guard_predef(macro)
+            g = guard(macro)
+            if g == cguard:
+                g = None  # the whole class already carries this guard
             if g:
                 rows.append(f"#ifdef {g}")
             rows.append(f"  case {value:#010x}: return {macro};"
@@ -1501,7 +1503,7 @@ def emit_constants_c(classes, handles, enums):
                     f" return {null_macro};")
         rows.append(f"  return MPIWRAPPER_HANDLE(MPI_{cls}, abi);")
         rows.append("}")
-        if guard:
+        if cguard:
             rows.append("#endif")
         out.append("\n".join(rows) + "\n")
 
@@ -1509,16 +1511,18 @@ def emit_constants_c(classes, handles, enums):
     out.append(PREDEF_MACRO)
     for cls in classes:
         low = cls.lower()
-        guard = class_guard(cls)
+        cguard = class_guard(cls)
         rows = []
-        if guard:
-            rows.append(f"#ifdef {guard}")
+        if cguard:
+            rows.append(f"#ifdef {cguard}")
         rows.append(f"static size_t predef_{low}(struct mpiwrapper_predef *out,"
                     f" size_t max)")
         rows.append("{")
         rows.append("  size_t n = 0;")
         for macro, value in handles[cls]:
-            g = guard_predef(macro)
+            g = guard(macro)
+            if g == cguard:
+                g = None  # the whole class already carries this guard
             if g:
                 rows.append(f"#ifdef {g}")
             rows.append(f"  PREDEF({gh.rename(macro)}, {value:#010x}, {macro});")
@@ -1526,7 +1530,7 @@ def emit_constants_c(classes, handles, enums):
                 rows.append("#endif")
         rows.append("  return n;")
         rows.append("}")
-        if guard:
+        if cguard:
             rows.append("#endif")
         out.append("\n".join(rows) + "\n")
 
@@ -1537,10 +1541,10 @@ def emit_constants_c(classes, handles, enums):
 """)
     for cls in classes:
         low = cls.lower()
-        guard = class_guard(cls)
+        cguard = class_guard(cls)
         rows = []
-        if guard:
-            rows.append(f"#ifdef {guard}")
+        if cguard:
+            rows.append(f"#ifdef {cguard}")
         rows += [
             f"static uint64_t toabi_bits_{low}(uint64_t impl_bits)",
             "{",
@@ -1554,7 +1558,7 @@ def emit_constants_c(classes, handles, enums):
             f"MPIWRAPPER_HANDLE(MPIABI_{cls}, abi_bits)));",
             "}",
         ]
-        if guard:
+        if cguard:
             rows.append("#endif")
         out.append("\n".join(rows) + "\n")
 
@@ -1570,12 +1574,12 @@ def emit_constants_c(classes, handles, enums):
  */""")
     rows, inits, entries = [], [], []
     for cls in classes:
-        low, guard = cls.lower(), class_guard(cls)
+        low, cguard = cls.lower(), class_guard(cls)
         nslots = max(8, 1 << (8 * len(handles[cls]) - 1).bit_length())
-        if guard:
-            rows.append(f"#ifdef {guard}")
-            inits.append(f"#ifdef {guard}")
-            entries.append(f"#ifdef {guard}")
+        if cguard:
+            rows.append(f"#ifdef {cguard}")
+            inits.append(f"#ifdef {cguard}")
+            entries.append(f"#ifdef {cguard}")
         rows.append(f"static struct mpiwrapper_rmap_entry "
                     f"rmap_slots_{low}[{nslots}];")
         inits.append(f"struct mpiwrapper_rmap mpiwrapper_rmap_{low} = "
@@ -1583,7 +1587,7 @@ def emit_constants_c(classes, handles, enums):
         entries.append(f'    {{"{low}", predef_{low}, toabi_bits_{low}, '
                        f"fromabi_bits_{low},")
         entries.append(f"     &mpiwrapper_rmap_{low}}},")
-        if guard:
+        if cguard:
             rows.append("#endif")
             inits.append("#endif")
             entries.append("#endif")
@@ -1613,14 +1617,17 @@ def emit_constants_c(classes, handles, enums):
             rows.append("  if (abi_ierror == MPIABI_SUCCESS) return MPI_SUCCESS;")
             rows.append("  switch (abi_ierror) {")
         for name, value, note in classes_err:
-            guard = name if (name.startswith("MPI_T_") or
-                             added_after_floor(note)) else None
-            if guard:
-                rows.append(f"#ifdef {guard}")
+            # MPI_T is optional in full, and the ABI's own `added:` note is
+            # what says an error class postdates the floor.
+            g = ("MPIWRAPPER_HAVE_" + name
+                 if name.startswith("MPI_T_") or added_after_floor(note)
+                 else None)
+            if g:
+                rows.append(f"#ifdef {g}")
             src, dst = ((name, gh.rename(name)) if direction == "toabi"
                         else (gh.rename(name), name))
             rows.append(f"  case {src}: return {dst};")
-            if guard:
+            if g:
                 rows.append("#endif")
         rows.append(f"  default: return "
                     f"{'MPIABI_ERR_OTHER' if direction == 'toabi' else 'MPI_ERR_OTHER'};")
@@ -1663,12 +1670,11 @@ def emit_switch_family(family, argname, members, guard_all):
                   for m in members]
         width = max(len(src) for src, _ in labels)
         for (src, dst), m in zip(labels, members):
-            guard = guard_all and m in OPTIONAL_CONSTANTS
-            if guard:
-                rows.append(f"#ifdef MPIWRAPPER_HAVE_{m}"
-                            f" /* {OPTIONAL_CONSTANTS[m]} */")
+            g = guard(m) if guard_all else None
+            if g:
+                rows.append(f"#ifdef {g} /* {OPTIONAL_CONSTANTS[m]} */")
             rows.append(f"  case {(src + ':').ljust(width + 1)} return {dst};")
-            if guard:
+            if g:
                 rows.append("#endif")
         rows.append(f"  default:{' ' * (width - 7)} return {arg};")
         rows.append("  }")
@@ -1771,14 +1777,11 @@ INTFAMILY_COMMENT = '''
  * numeric-label rule applies to handles, where the ABI's spelling is a cast to
  * a pointer type.
  *
- * Only the members a conforming implementation may genuinely lack are guarded,
- * and they are guarded on the *probe* rather than on `#ifdef <the
- * implementation\'s name>`: MPICH spells MPI_COMBINER_* and MPI_CART as
- * enumerators and Open MPI spells MPI_THREAD_SINGLE, MPI_COMM_TYPE_SHARED and
- * MPI_IDENT the same way, and `#ifdef` on an enumerator is quietly false --
- * it would drop the case, reach the default arm, and pass an unmapped value
- * straight through. Everything else here is MPI-3.0 or older and is unguarded,
- * so an implementation that really lacks one fails the build naming it.
+ * Only the members a conforming implementation may genuinely lack are guarded.
+ * Everything else here is MPI-3.0 or older, so an implementation that really
+ * lacks one fails the build naming it -- which is where these families would
+ * otherwise be at their most dangerous, since a dropped case reaches the
+ * default arm and passes an unmapped value through.
  */'''
 
 SENTINEL_BODIES = '''
@@ -2019,7 +2022,7 @@ def emit_report(protos, tallies, handwritten_bodies):
     w("-" * 40)
     w("  ...for every entry point above that is deferred or hand-written")
     w("  without a body yet, and -- per implementation, decided by")
-    w("  dev/probe_entrypoints.py at configure time -- for every generated one")
+    w("  dev/probe_impl.py at configure time -- for every generated one")
     w("  the implementation does not define. The second set is a property of")
     w("  the build, not of the generator, so it is not listed here.")
     w("")

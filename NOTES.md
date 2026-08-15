@@ -919,47 +919,57 @@ S2 wrote the generator and the mechanical classes. Six things it had to decide
 that this section did not already answer, each recorded here because the code
 alone would not say why.
 
-**How a generated body knows the implementation has the function.** Decision 6
-says "generated `#ifdef` stubs" without saying what the `#ifdef` tests, and the
-obvious answer is wrong in both directions. `#if MPI_VERSION >= 4` under-reports
-— Open MPI 5.0.10 announces MPI-3.1 and has sessions and partitioned
-communication — and the gap it would have to cover is not small: the ABI is
-MPI-5.0 and the enforced floor is MPI-3.0, so a version test would stub a couple
-of hundred entry points that are there. `nm` over the implementation's library
-over-reports the absences instead, because it cannot see what the header
-provides as a macro, which is how Open MPI provides `MPI_Aint_add`.
+**How a generated body knows what the implementation has.** Decision 6 says
+"generated `#ifdef` stubs" without saying what the `#ifdef` tests, and every
+answer that does not involve a configure test is wrong.
 
-So `dev/probe_entrypoints.py` asks the compiler, at configure time, using the
+- **A version test under-reports.** Open MPI 5.0.10 announces MPI-3.1 and has
+  sessions and partitioned communication. And the gap is not small: the ABI is
+  MPI-5.0 and the enforced floor is MPI-3.0, so `#if MPI_VERSION >= 4` would
+  stub a couple of hundred entry points that are there.
+- **`nm` over-reports.** It cannot see what the header provides as a macro,
+  which is how Open MPI provides `MPI_Aint_add`.
+- **`#ifdef` on the implementation's own name for a *constant* is worse than
+  either, because it fails silently.** `#ifdef` sees macros and does not see
+  enumerators, and implementations use both: MPICH spells `MPI_COMBINER_*` and
+  `MPI_CART` as enumerators, Open MPI spells `MPI_THREAD_SINGLE`,
+  `MPI_COMM_TYPE_SHARED` and `MPI_IDENT` that way. An `#ifdef` on one of those
+  answers *no* for a constant that is right there — and then the case drops out
+  of the conversion table, the default arm passes the ABI value through
+  unmapped, and nothing fails. **Measured rather than argued:** MPICH 4.3.1 has
+  `MPI_COMBINER_VALUE_INDEX` as `= 20` in an enum, and an S2 draft that guarded
+  it with `#ifdef` stopped translating that combiner without failing anything.
+
+So `dev/probe_impl.py` asks the compiler, at configure time, using the
 implementation's own header — the same header the wrapper bodies are compiled
-against. It writes `mpiwrapper_impl_config.h` with one
-`MPIWRAPPER_HAVE_<name>` per available entry point, and `wrappers.c` `#error`s
-if that file did not come from the probe, because a *missing* probe would
-otherwise turn the whole library into stubs, which links, loads, and answers
-`MPI_ERR_UNSUPPORTED_OPERATION` to everything.
+against, and the only thing in the build that sees macros and enumerators
+alike. It writes `mpiwrapper_impl_config.h` with one `MPIWRAPPER_HAVE_<name>`
+per available entry point *and per available optional constant*, and every
+guard in the generated sources tests one of those and nothing else. `internal.h`
+`#error`s if that file did not come from the probe, because a *missing* probe
+would otherwise turn the whole library into stubs, which links, loads, and
+answers `MPI_ERR_UNSUPPORTED_OPERATION` to everything.
 
-The probe is one translation unit with one line per name, compiled
-`-fsyntax-only`; a name that is a macro answers `#ifdef` and anything else has
-to be declared for `sizeof &name` to compile. When it fails it reads the
+**It is one configure test, not one per name.** All the questions go into a
+single translation unit, one probe per line, compiled `-fsyntax-only`. A name
+that is a macro answers `#ifdef`; anything else has to be declared for its
+probe to compile, and the probe differs by what the name is — `sizeof &name`
+for an entry point, which is a function, and `sizeof(name)` for a constant,
+whose address may not be takeable. When the compile fails it reads the
 diagnostics' *line numbers* — never their wording — drops those probes and
 compiles again, so the answer is always confirmed by a compile that succeeded.
-Measured: **0.3–0.6 s for 478 names**, against MPICH 4.3.1 (28 absent: the six
-`MPI_Abi_*` and the 22 `_toint`/`_fromint` converters, all MPI-5.0) and Open
-MPI 5.0.10 (231 absent, mostly the `_c` forms). Both agree exactly with `nm`
-where `nm` can answer. Everything about it is compile-only, so cross-compiling
-still works (§9).
+Measured: **0.3–0.6 s for 521 names**, against MPICH 4.3.1 (7 absent: the five
+sized Fortran logicals, `MPI_ERR_ABI`, `MPIX_TYPECLASS_LOGICAL` — plus the 28
+entry points it lacks) and Open MPI 5.0.10 (166 absent, mostly the `_c` forms).
+Both agree exactly with `nm` where `nm` can answer. Everything about it is
+compile-only, so cross-compiling still works (§9).
 
-**The integer families cannot be guarded with `#ifdef`.** The predefined
-handles and error classes are macros in every implementation seen, which is
-what makes `constants.c`'s narrow rule sound — guard only what the standard
-makes optional, so a missing macro is a compile error rather than a wrong
-number. That does *not* extend to `MPI_COMBINER_*`, `MPI_THREAD_*`,
-`MPI_COMM_TYPE_*`, `MPI_IDENT`, `MPI_CART`: **MPICH spells the first two
-families as enumerators and Open MPI spells the others that way**, and `#ifdef`
-on an enumerator is quietly false. It would have dropped the case, reached the
-default arm, and passed an unmapped value through — silently, which is the one
-failure mode these tables exist to prevent. The five members a conforming
-implementation may genuinely lack go through the same probe; everything else in
-those families is MPI-3.0 or older and is emitted unguarded.
+What is guarded at all stays narrow, and that part is unchanged from S1's rule:
+only what the standard makes optional — the sized Fortran types, the predefined
+handles and enumerators added after the MPI-3.0 floor, `MPI_T`. Everything else
+is emitted unguarded, so an implementation that really lacks `MPI_INT` or
+`MPI_COMBINER_NAMED` fails the build naming it rather than quietly dropping a
+mapping.
 
 **One implementation declaration disagrees with the standard.** Open MPI 5.0.x
 declares `MPI_Pready_list(int length, int partition_list[], MPI_Request)` where
@@ -1011,6 +1021,14 @@ does not write S1's per-function prose, so a byte comparison would fail on
 formatting and say nothing about the code. In practice the simple bodies *are*
 byte-identical, alignment included, because the emitter reproduces
 `clang-format`'s two alignment rules directly.
+
+The one declared rewrite is the guard mechanism: S1 wrote
+`#ifdef <the implementation's own name>` around an optional constant, S2 asks
+the probe instead, and the reference's guards are rewritten to the probe's
+spelling before comparing. Declaring it once is narrower than exempting the
+dozen table functions it touches, since an exemption stops checking an item
+altogether — which cases are guarded, and what each maps to, is still compared
+exactly.
 
 The four exemptions:
 
@@ -1688,7 +1706,7 @@ clearing the block, and the releaser would free the new owner's block.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
    from generated `#ifdef` stubs, and the generator reports them. What the
    `#ifdef` tests is `MPIWRAPPER_HAVE_<name>`, written at configure time by
-   `dev/probe_entrypoints.py` from the implementation's own header. Not a
+   `dev/probe_impl.py` from the implementation's own header. Not a
    version test: Open MPI 5.0.10 reports MPI-3.1 and has sessions. §3.
 7. **PMPI gets its own vtable slots** (1376, not 688), calling the
    implementation's shifted names directly — no probe and no fallback, since both
@@ -1804,7 +1822,7 @@ leave again in S3.
 ```
 dev/               the Python generator and dev-time cross-checks
                      generate.py (the generator), generate_headers.py (the S0
-                     step it imports), layout_hash.py, probe_entrypoints.py
+                     step it imports), layout_hash.py, probe_impl.py
                      (the configure-time availability probe), check_prototype.py
                      apis.json (vendored), check-c-bindings.py (Appendix A.2)
                      and the five probes whose results this file cites
@@ -2132,7 +2150,7 @@ the parameter with `abi_` dropped, and one body macro instantiated twice. Those
 twenty are what S2 must reproduce.
 
 **What S2 delivered.** The generator (`dev/generate.py`), the availability probe
-(`dev/probe_entrypoints.py`) and the reproduction check
+(`dev/probe_impl.py`) and the reproduction check
 (`dev/check_prototype.py`). All 688 entry points and all 1376 slots exist:
 **473 generated, 120 in the ledger (ten with bodies), 95 deferred to S3**, and
 `gen/report.txt` names every one. Of S1's 194 comparable items, **190 are

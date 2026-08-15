@@ -14,7 +14,7 @@ find_package(Python3 COMPONENTS Interpreter REQUIRED)
 set(MPIABI_GEN_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/gen/include)
 set(MPIABI_GENERATE_HEADERS_SCRIPT ${CMAKE_SOURCE_DIR}/dev/generate_headers.py)
 set(MPIABI_GENERATE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/generate.py)
-set(MPIABI_PROBE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/probe_entrypoints.py)
+set(MPIABI_PROBE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/probe_impl.py)
 set(MPIABI_LAYOUT_HASH_SCRIPT ${CMAKE_SOURCE_DIR}/dev/layout_hash.py)
 set(MPIABI_CHECK_PROTOTYPE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check_prototype.py)
 
@@ -211,12 +211,16 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       COMMENT "Staging ${hdr} where no mpi.h can shadow the implementation's")
   endforeach()
 
-  # Decision 6's #ifdef stubs need something to test, and the only exact answer
-  # comes from the implementation's own header: MPI_VERSION is a proxy that
+  # Every guard in the generated sources tests one of this file's
+  # MPIWRAPPER_HAVE_<name>, and the only exact answer comes from asking the
+  # compiler about the implementation's own header. MPI_VERSION is a proxy that
   # both over- and under-reports (Open MPI 5.0.10 says MPI-3.1 and has
-  # sessions), and nm misses what the header provides as a macro. The probe is
-  # compile-only, so this stays cross-compilable, and it costs well under a
-  # second because all 478 questions go into one translation unit.
+  # sessions); nm misses what the header provides as a macro; and `#ifdef` on
+  # the implementation's own name misses what it provides as an *enumerator*,
+  # which is how MPICH provides MPI_COMBINER_* and Open MPI MPI_THREAD_*. The
+  # probe is compile-only, so this stays cross-compilable, and it costs well
+  # under a second because all ~600 questions go into one translation unit --
+  # not one configure test per name.
   set(MPIABI_IMPL_CONFIG ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_impl_config.h)
   set(MPIABI_PROBE_FLAGS)
   foreach(dir ${MPI_C_INCLUDE_DIRS})

@@ -15,9 +15,9 @@
  * grep, and a missing conversion is a hard stop at generation time rather than
  * a wrong answer at 4096 ranks.
  *
- * Every body is guarded by MPIWRAPPER_HAVE_<name>, which
- * dev/probe_entrypoints.py writes into mpiwrapper_impl_config.h at configure
- * time from the implementation's own header. An entry point the implementation
+ * Every body is guarded by MPIWRAPPER_HAVE_<name>, which dev/probe_impl.py
+ * writes into mpiwrapper_impl_config.h at configure time by asking the
+ * compiler about the implementation's own header. An entry point the implementation
  * does not have gets the stub of decision 6 instead: the slot stays present
  * and reports MPIABI_ERR_UNSUPPORTED_OPERATION at run time, so the ABI surface
  * never shrinks. The classes this stage does not yet generate -- out and inout
@@ -30,21 +30,11 @@
 
 #include "handwritten.h"
 #include "internal.h"
-#include "mpiwrapper_impl_config.h"
 
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
-/* mpiwrapper_impl_config.h is generated per build tree, against the
- * implementation this wrapper is being built for. Without it every body below
- * would take its #else branch and the library would be a complete set of
- * stubs -- which links, loads, and answers MPI_ERR_UNSUPPORTED_OPERATION to
- * everything. A missing probe has to be a build failure, not that.
- */
-#ifndef MPIWRAPPER_IMPL_PROBED
-#  error "mpiwrapper_impl_config.h did not come from dev/probe_entrypoints.py"
-#endif
 
 /* ------------------------------------------- MPI_Abi_get_fortran_booleans */
 

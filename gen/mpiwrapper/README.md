@@ -15,8 +15,11 @@ Written by `dev/generate.py`. As of S2, of the 688 entry points:
 `gen/report.txt` names every one of them, and the generator fails if an entry
 point is in none of the three.
 
-Every generated body is guarded on `MPIWRAPPER_HAVE_<name>`, which
-`dev/probe_entrypoints.py` writes at configure time from the implementation's
-own header; one the implementation does not have gets decision 6's stub, so
-the ABI surface never shrinks and what is missing is discoverable at run time.
-The deferred entry points get the same stub.
+Every generated body is guarded on `MPIWRAPPER_HAVE_<name>`, and so is every
+optional constant in `constants.c`. `dev/probe_impl.py` writes those at
+configure time by asking the compiler about the implementation's own header —
+never `#ifdef <the implementation's own name>`, which sees macros and not
+enumerators and is therefore quietly false for `MPI_COMBINER_*` on MPICH and
+`MPI_THREAD_*` on Open MPI. An entry point the implementation does not have
+gets decision 6's stub, so the ABI surface never shrinks and what is missing is
+discoverable at run time; the deferred entry points get the same stub.

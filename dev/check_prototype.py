@@ -7,6 +7,10 @@ what `dev/generate.py` now emits, item by item -- slot by slot, function by
 function, body macro by body macro -- and requires every S1 item to be present
 and identical, or to be named in EXEMPT below with the reason it is not.
 
+REWRITES is the third possibility, for a change of *mechanism* S2 made
+everywhere: the reference is rewritten and then compared exactly. There is one,
+and it is narrower than exempting the dozen items it touches would be.
+
 Comparison is over *normalized* text: comments removed, macro line
 continuations joined, whitespace collapsed. The generator does not run
 clang-format and does not write S1's per-function prose, so a byte comparison
@@ -58,7 +62,7 @@ EXEMPT = {
         "The same staging-buffer name as its small form. The guard around the "
         "body also changed and this comparison does not see it: S1 wrote "
         "`#if MPI_VERSION >= 4`, and every generated body is now guarded on "
-        "MPIWRAPPER_HAVE_<name> from dev/probe_entrypoints.py instead. That is "
+        "MPIWRAPPER_HAVE_<name> from dev/probe_impl.py instead. That is "
         "decision 6's `#ifdef` made exact -- Open MPI 5.0.10 reports MPI-3.1 "
         "and has sessions, so the version test both over- and under-reports.",
     ("wrapper body", "MPI_Waitall"):
@@ -68,6 +72,22 @@ EXEMPT = {
         "HAND_WRITTEN ledger with that reason, so the slot is filled and the "
         "test that exercises it still passes. S3 deletes both.",
 }
+
+
+# Rewrites applied to the *reference* before comparing, each a change of
+# mechanism that S2 made everywhere rather than a change to any one item.
+# Declaring one here is much narrower than exempting the dozen items it touches:
+# an exemption stops checking an item entirely, so a second, unintended change
+# to the same table would ride along unnoticed.
+REWRITES = [
+    (re.compile(r"#ifdef (MPI[A-Z_]*_[A-Za-z0-9_]+)"),
+     r"#ifdef MPIWRAPPER_HAVE_\1",
+     "S1 guarded an optional constant on the implementation's own spelling of "
+     "it. `#ifdef` sees macros and not enumerators, and implementations use "
+     "both, so S2 moved every such guard onto dev/probe_impl.py's "
+     "MPIWRAPPER_HAVE_<name>. Which cases are guarded, and what each maps to, "
+     "is still compared exactly."),
+]
 
 
 def strip_comments(text):
@@ -144,7 +164,10 @@ def main():
     failures, checked, exempt_fired = [], 0, set()
 
     for kind, ref_path, gen_path in PAIRS:
-        ref = items(kind, ref_path.read_text())
+        reference = ref_path.read_text()
+        for pattern, replacement, _ in REWRITES:
+            reference = pattern.sub(replacement, reference)
+        ref = items(kind, reference)
         gen = items(kind, gen_path.read_text())
         if not ref:
             raise SystemExit(f"{ref_path}: nothing extracted -- the reference "
@@ -175,7 +198,8 @@ def main():
                          "that no exemption covers")
 
     print(f"OK: {checked} S1 items, {checked - len(exempt_fired)} reproduced "
-          f"exactly, {len(exempt_fired)} exempted with a reason")
+          f"exactly, {len(exempt_fired)} exempted with a reason, "
+          f"{len(REWRITES)} declared rewrite(s) of the reference")
 
 
 if __name__ == "__main__":

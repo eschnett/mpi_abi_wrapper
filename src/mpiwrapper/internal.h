@@ -47,6 +47,23 @@ MPIWRAPPER_WRAP_ABI_IMPL if you really are wrapping an ABI-implementing MPI."
 #include "mpiabi.h"
 #include "mpiwrapper_vtable.h"
 
+/* What this implementation actually has, written per build tree by
+ * dev/probe_impl.py: one MPIWRAPPER_HAVE_<name> per entry point it declares
+ * and per optional constant it defines. Every guard in the generated sources
+ * tests one of those and nothing else -- never `#ifdef <the implementation's
+ * own name>`, which sees macros and not enumerators and is therefore quietly
+ * false for MPI_COMBINER_* on MPICH and MPI_THREAD_* on Open MPI.
+ *
+ * Without the probe every generated body would take its #else branch and the
+ * library would be a complete set of stubs -- which links, loads, and answers
+ * MPI_ERR_UNSUPPORTED_OPERATION to everything. A missing probe has to be a
+ * build failure, not that.
+ */
+#include "mpiwrapper_impl_config.h"
+#ifndef MPIWRAPPER_IMPL_PROBED
+#  error "mpiwrapper_impl_config.h did not come from dev/probe_impl.py"
+#endif
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -139,12 +156,13 @@ MPI_Message    mpiwrapper_message_fromabi(MPIABI_Message abi);
 MPI_Op         mpiwrapper_op_fromabi(MPIABI_Op abi);
 MPI_Request    mpiwrapper_request_fromabi(MPIABI_Request abi);
 /* MPI_Session is MPI-4.0, and an implementation may simply not have it: Ubuntu's
- * Open MPI 4.1 does not. An #ifdef cannot test for a *type*, so the test is the
- * class's null handle, which is a macro in every implementation we know and whose
- * absence is the same evidence. Testing MPI_VERSION >= 4 instead would be wrong --
- * Open MPI 5.0 reports MPI-3.1 and does have sessions.
+ * Open MPI 4.1 does not. Nothing can test for a *type*, so the test is the
+ * class's null handle -- asked of the compiler by dev/probe_impl.py, not of the
+ * preprocessor, since an implementation is free to spell it as an enumerator.
+ * Testing MPI_VERSION >= 4 instead would be wrong -- Open MPI 5.0 reports
+ * MPI-3.1 and does have sessions.
  */
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 MPI_Session    mpiwrapper_session_fromabi(MPIABI_Session abi);
 #endif
 MPI_Win        mpiwrapper_win_fromabi(MPIABI_Win abi);
@@ -170,7 +188,7 @@ MPIABI_Info       mpiwrapper_info_toabi(MPI_Info h);
 MPIABI_Message    mpiwrapper_message_toabi(MPI_Message h);
 MPIABI_Op         mpiwrapper_op_toabi(MPI_Op h);
 MPIABI_Request    mpiwrapper_request_toabi(MPI_Request h);
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 MPIABI_Session    mpiwrapper_session_toabi(MPI_Session h);
 #endif
 MPIABI_Win        mpiwrapper_win_toabi(MPI_Win h);
@@ -265,7 +283,7 @@ extern struct mpiwrapper_rmap mpiwrapper_rmap_info;
 extern struct mpiwrapper_rmap mpiwrapper_rmap_message;
 extern struct mpiwrapper_rmap mpiwrapper_rmap_op;
 extern struct mpiwrapper_rmap mpiwrapper_rmap_request;
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 extern struct mpiwrapper_rmap mpiwrapper_rmap_session;
 #endif
 extern struct mpiwrapper_rmap mpiwrapper_rmap_win;

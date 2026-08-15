@@ -79,8 +79,11 @@ What it does **not** touch is anything with a lifetime question: out and inout
 arrays, status arrays, and temporaries outliving their call.
 
 Two things S2 had to build that this plan did not name, both in `NOTES.md` §3:
-**`dev/probe_entrypoints.py`**, because decision 6's `#ifdef` stubs need
-something to test and neither a version test nor `nm` answers correctly; and
+**`dev/probe_impl.py`**, because decision 6's `#ifdef` stubs need
+something to test and nothing available at build time answers correctly — a
+version test under-reports, `nm` over-reports, and `#ifdef` on a constant's own
+name is *silently* false wherever an implementation spells it as an enumerator,
+which both of them do; and
 **`dev/check_prototype.py`** over a frozen `dev/s1-reference/`, so that the exit
 check keeps running instead of having been asserted once.
 

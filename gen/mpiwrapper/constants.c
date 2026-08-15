@@ -14,12 +14,25 @@
  *    further down are plain enumerators and are switched by name.
  *
  *  - Every implementation-side value is named by the implementation's own
- *    macro, never written out. A macro that does not exist is then a compile
- *    error rather than a wrong number -- which is why only the entries the
- *    standard makes optional carry an #ifdef: the sized Fortran types, the
- *    predefined handles and error classes newer than the MPI-3.0 floor, and
- *    MPI_T. The integer families at the end of the file are the exception and
- *    say why there.
+ *    macro or enumerator, never written out. A name that does not exist is
+ *    then a compile error rather than a wrong number -- which is why only the
+ *    entries the standard makes optional are guarded at all: the sized Fortran
+ *    types, the predefined handles and enumerators newer than the MPI-3.0
+ *    floor, and MPI_T.
+ *
+ *  - Those guards test MPIWRAPPER_HAVE_<name>, from dev/probe_impl.py, and
+ *    never `#ifdef <the implementation's own name>`. `#ifdef` sees macros and
+ *    not enumerators, and implementations use both: MPICH spells MPI_COMBINER_*
+ *    and MPI_CART as enumerators, Open MPI spells MPI_THREAD_SINGLE,
+ *    MPI_COMM_TYPE_SHARED and MPI_IDENT that way. An `#ifdef` on one of those
+ *    answers *no* for a constant that is right there, and the case then drops
+ *    out of the switch, reaches the default arm and passes an unmapped value
+ *    through -- silently, which is the one failure mode these tables exist to
+ *    prevent. Measured, not hypothetical: MPICH 4.3.1 has
+ *    MPI_COMBINER_VALUE_INDEX as `= 20` in an enum, and an S2 draft that used
+ *    `#ifdef` on it stopped translating that combiner without failing
+ *    anything. The probe asks the compiler, which sees both, and asks about
+ *    every name in one translation unit rather than one test per constant.
  *
  * The fromabi default deserves a word. A value inside the ABI's predefined
  * range that reached the default arm is a predefined handle *this*
@@ -32,17 +45,8 @@
  */
 
 #include "internal.h"
-#include "mpiwrapper_impl_config.h"
 
 #include <string.h>
-
-/* The five guarded cases at the end of this file need the probe. Without it
- * they would drop out silently, which is the one failure mode the tables here
- * exist to prevent.
- */
-#ifndef MPIWRAPPER_IMPL_PROBED
-#  error "mpiwrapper_impl_config.h did not come from dev/probe_entrypoints.py"
-#endif
 
 
 MPI_Op mpiwrapper_op_fromabi(MPIABI_Op abi)
@@ -112,7 +116,7 @@ MPI_File mpiwrapper_file_fromabi(MPIABI_File abi)
   return MPIWRAPPER_HANDLE(MPI_File, abi);
 }
 
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 MPI_Session mpiwrapper_session_fromabi(MPIABI_Session abi)
 {
   switch ((uint64_t)(uintptr_t)abi) {
@@ -151,7 +155,7 @@ MPI_Errhandler mpiwrapper_errhandler_fromabi(MPIABI_Errhandler abi)
   switch ((uint64_t)(uintptr_t)abi) {
   case 0x00000140: return MPI_ERRHANDLER_NULL; /* MPIABI_ERRHANDLER_NULL */
   case 0x00000141: return MPI_ERRORS_ARE_FATAL; /* MPIABI_ERRORS_ARE_FATAL */
-#ifdef MPI_ERRORS_ABORT
+#ifdef MPIWRAPPER_HAVE_MPI_ERRORS_ABORT
   case 0x00000142: return MPI_ERRORS_ABORT; /* MPIABI_ERRORS_ABORT */
 #endif
   case 0x00000143: return MPI_ERRORS_RETURN; /* MPIABI_ERRORS_RETURN */
@@ -227,58 +231,58 @@ MPI_Datatype mpiwrapper_datatype_fromabi(MPIABI_Datatype abi)
   case 0x00000251: return MPI_UINT32_T; /* MPIABI_UINT32_T */
   case 0x00000258: return MPI_INT64_T; /* MPIABI_INT64_T */
   case 0x00000259: return MPI_UINT64_T; /* MPIABI_UINT64_T */
-#ifdef MPI_LOGICAL1
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL1
   case 0x000002c0: return MPI_LOGICAL1; /* MPIABI_LOGICAL1 */
 #endif
-#ifdef MPI_INTEGER1
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER1
   case 0x000002c1: return MPI_INTEGER1; /* MPIABI_INTEGER1 */
 #endif
-#ifdef MPI_LOGICAL2
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL2
   case 0x000002c8: return MPI_LOGICAL2; /* MPIABI_LOGICAL2 */
 #endif
-#ifdef MPI_INTEGER2
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER2
   case 0x000002c9: return MPI_INTEGER2; /* MPIABI_INTEGER2 */
 #endif
-#ifdef MPI_REAL2
+#ifdef MPIWRAPPER_HAVE_MPI_REAL2
   case 0x000002ca: return MPI_REAL2; /* MPIABI_REAL2 */
 #endif
-#ifdef MPI_LOGICAL4
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL4
   case 0x000002d0: return MPI_LOGICAL4; /* MPIABI_LOGICAL4 */
 #endif
-#ifdef MPI_INTEGER4
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER4
   case 0x000002d1: return MPI_INTEGER4; /* MPIABI_INTEGER4 */
 #endif
-#ifdef MPI_REAL4
+#ifdef MPIWRAPPER_HAVE_MPI_REAL4
   case 0x000002d2: return MPI_REAL4; /* MPIABI_REAL4 */
 #endif
-#ifdef MPI_COMPLEX4
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX4
   case 0x000002d3: return MPI_COMPLEX4; /* MPIABI_COMPLEX4 */
 #endif
-#ifdef MPI_LOGICAL8
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL8
   case 0x000002d8: return MPI_LOGICAL8; /* MPIABI_LOGICAL8 */
 #endif
-#ifdef MPI_INTEGER8
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER8
   case 0x000002d9: return MPI_INTEGER8; /* MPIABI_INTEGER8 */
 #endif
-#ifdef MPI_REAL8
+#ifdef MPIWRAPPER_HAVE_MPI_REAL8
   case 0x000002da: return MPI_REAL8; /* MPIABI_REAL8 */
 #endif
-#ifdef MPI_COMPLEX8
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX8
   case 0x000002db: return MPI_COMPLEX8; /* MPIABI_COMPLEX8 */
 #endif
-#ifdef MPI_LOGICAL16
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL16
   case 0x000002e0: return MPI_LOGICAL16; /* MPIABI_LOGICAL16 */
 #endif
-#ifdef MPI_INTEGER16
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER16
   case 0x000002e1: return MPI_INTEGER16; /* MPIABI_INTEGER16 */
 #endif
-#ifdef MPI_REAL16
+#ifdef MPIWRAPPER_HAVE_MPI_REAL16
   case 0x000002e2: return MPI_REAL16; /* MPIABI_REAL16 */
 #endif
-#ifdef MPI_COMPLEX16
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX16
   case 0x000002e3: return MPI_COMPLEX16; /* MPIABI_COMPLEX16 */
 #endif
-#ifdef MPI_COMPLEX32
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX32
   case 0x000002eb: return MPI_COMPLEX32; /* MPIABI_COMPLEX32 */
 #endif
   default: break;
@@ -356,7 +360,7 @@ static size_t predef_file(struct mpiwrapper_predef *out, size_t max)
   return n;
 }
 
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 static size_t predef_session(struct mpiwrapper_predef *out, size_t max)
 {
   size_t n = 0;
@@ -386,7 +390,7 @@ static size_t predef_errhandler(struct mpiwrapper_predef *out, size_t max)
   size_t n = 0;
   PREDEF(MPIABI_ERRHANDLER_NULL, 0x00000140, MPI_ERRHANDLER_NULL);
   PREDEF(MPIABI_ERRORS_ARE_FATAL, 0x00000141, MPI_ERRORS_ARE_FATAL);
-#ifdef MPI_ERRORS_ABORT
+#ifdef MPIWRAPPER_HAVE_MPI_ERRORS_ABORT
   PREDEF(MPIABI_ERRORS_ABORT, 0x00000142, MPI_ERRORS_ABORT);
 #endif
   PREDEF(MPIABI_ERRORS_RETURN, 0x00000143, MPI_ERRORS_RETURN);
@@ -456,58 +460,58 @@ static size_t predef_datatype(struct mpiwrapper_predef *out, size_t max)
   PREDEF(MPIABI_UINT32_T, 0x00000251, MPI_UINT32_T);
   PREDEF(MPIABI_INT64_T, 0x00000258, MPI_INT64_T);
   PREDEF(MPIABI_UINT64_T, 0x00000259, MPI_UINT64_T);
-#ifdef MPI_LOGICAL1
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL1
   PREDEF(MPIABI_LOGICAL1, 0x000002c0, MPI_LOGICAL1);
 #endif
-#ifdef MPI_INTEGER1
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER1
   PREDEF(MPIABI_INTEGER1, 0x000002c1, MPI_INTEGER1);
 #endif
-#ifdef MPI_LOGICAL2
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL2
   PREDEF(MPIABI_LOGICAL2, 0x000002c8, MPI_LOGICAL2);
 #endif
-#ifdef MPI_INTEGER2
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER2
   PREDEF(MPIABI_INTEGER2, 0x000002c9, MPI_INTEGER2);
 #endif
-#ifdef MPI_REAL2
+#ifdef MPIWRAPPER_HAVE_MPI_REAL2
   PREDEF(MPIABI_REAL2, 0x000002ca, MPI_REAL2);
 #endif
-#ifdef MPI_LOGICAL4
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL4
   PREDEF(MPIABI_LOGICAL4, 0x000002d0, MPI_LOGICAL4);
 #endif
-#ifdef MPI_INTEGER4
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER4
   PREDEF(MPIABI_INTEGER4, 0x000002d1, MPI_INTEGER4);
 #endif
-#ifdef MPI_REAL4
+#ifdef MPIWRAPPER_HAVE_MPI_REAL4
   PREDEF(MPIABI_REAL4, 0x000002d2, MPI_REAL4);
 #endif
-#ifdef MPI_COMPLEX4
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX4
   PREDEF(MPIABI_COMPLEX4, 0x000002d3, MPI_COMPLEX4);
 #endif
-#ifdef MPI_LOGICAL8
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL8
   PREDEF(MPIABI_LOGICAL8, 0x000002d8, MPI_LOGICAL8);
 #endif
-#ifdef MPI_INTEGER8
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER8
   PREDEF(MPIABI_INTEGER8, 0x000002d9, MPI_INTEGER8);
 #endif
-#ifdef MPI_REAL8
+#ifdef MPIWRAPPER_HAVE_MPI_REAL8
   PREDEF(MPIABI_REAL8, 0x000002da, MPI_REAL8);
 #endif
-#ifdef MPI_COMPLEX8
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX8
   PREDEF(MPIABI_COMPLEX8, 0x000002db, MPI_COMPLEX8);
 #endif
-#ifdef MPI_LOGICAL16
+#ifdef MPIWRAPPER_HAVE_MPI_LOGICAL16
   PREDEF(MPIABI_LOGICAL16, 0x000002e0, MPI_LOGICAL16);
 #endif
-#ifdef MPI_INTEGER16
+#ifdef MPIWRAPPER_HAVE_MPI_INTEGER16
   PREDEF(MPIABI_INTEGER16, 0x000002e1, MPI_INTEGER16);
 #endif
-#ifdef MPI_REAL16
+#ifdef MPIWRAPPER_HAVE_MPI_REAL16
   PREDEF(MPIABI_REAL16, 0x000002e2, MPI_REAL16);
 #endif
-#ifdef MPI_COMPLEX16
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX16
   PREDEF(MPIABI_COMPLEX16, 0x000002e3, MPI_COMPLEX16);
 #endif
-#ifdef MPI_COMPLEX32
+#ifdef MPIWRAPPER_HAVE_MPI_COMPLEX32
   PREDEF(MPIABI_COMPLEX32, 0x000002eb, MPI_COMPLEX32);
 #endif
   return n;
@@ -567,7 +571,7 @@ static uint64_t fromabi_bits_file(uint64_t abi_bits)
   return MPIWRAPPER_BITS(mpiwrapper_file_fromabi(MPIWRAPPER_HANDLE(MPIABI_File, abi_bits)));
 }
 
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 static uint64_t toabi_bits_session(uint64_t impl_bits)
 {
   return MPIWRAPPER_BITS(mpiwrapper_session_toabi(MPIWRAPPER_HANDLE(MPI_Session, impl_bits)));
@@ -643,7 +647,7 @@ static struct mpiwrapper_rmap_entry rmap_slots_comm[32];
 static struct mpiwrapper_rmap_entry rmap_slots_group[16];
 static struct mpiwrapper_rmap_entry rmap_slots_win[8];
 static struct mpiwrapper_rmap_entry rmap_slots_file[8];
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 static struct mpiwrapper_rmap_entry rmap_slots_session[8];
 #endif
 static struct mpiwrapper_rmap_entry rmap_slots_message[16];
@@ -657,7 +661,7 @@ struct mpiwrapper_rmap mpiwrapper_rmap_comm = {rmap_slots_comm, 32, 0, 0, 0};
 struct mpiwrapper_rmap mpiwrapper_rmap_group = {rmap_slots_group, 16, 0, 0, 0};
 struct mpiwrapper_rmap mpiwrapper_rmap_win = {rmap_slots_win, 8, 0, 0, 0};
 struct mpiwrapper_rmap mpiwrapper_rmap_file = {rmap_slots_file, 8, 0, 0, 0};
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
 struct mpiwrapper_rmap mpiwrapper_rmap_session = {rmap_slots_session, 8, 0, 0, 0};
 #endif
 struct mpiwrapper_rmap mpiwrapper_rmap_message = {rmap_slots_message, 16, 0, 0, 0};
@@ -678,7 +682,7 @@ const struct mpiwrapper_predef_class mpiwrapper_predef_classes[] = {
      &mpiwrapper_rmap_win},
     {"file", predef_file, toabi_bits_file, fromabi_bits_file,
      &mpiwrapper_rmap_file},
-#ifdef MPI_SESSION_NULL
+#ifdef MPIWRAPPER_HAVE_MPI_SESSION_NULL
     {"session", predef_session, toabi_bits_session, fromabi_bits_session,
      &mpiwrapper_rmap_session},
 #endif
@@ -788,73 +792,73 @@ int mpiwrapper_errorcode_toabi(int ierror)
   case MPI_ERR_UNSUPPORTED_OPERATION: return MPIABI_ERR_UNSUPPORTED_OPERATION;
   case MPI_ERR_WIN: return MPIABI_ERR_WIN;
   case MPI_ERR_RMA_FLAVOR: return MPIABI_ERR_RMA_FLAVOR;
-#ifdef MPI_ERR_PROC_ABORTED
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_PROC_ABORTED
   case MPI_ERR_PROC_ABORTED: return MPIABI_ERR_PROC_ABORTED;
 #endif
-#ifdef MPI_ERR_VALUE_TOO_LARGE
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_VALUE_TOO_LARGE
   case MPI_ERR_VALUE_TOO_LARGE: return MPIABI_ERR_VALUE_TOO_LARGE;
 #endif
-#ifdef MPI_ERR_SESSION
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_SESSION
   case MPI_ERR_SESSION: return MPIABI_ERR_SESSION;
 #endif
-#ifdef MPI_ERR_ERRHANDLER
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_ERRHANDLER
   case MPI_ERR_ERRHANDLER: return MPIABI_ERR_ERRHANDLER;
 #endif
-#ifdef MPI_ERR_ABI
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_ABI
   case MPI_ERR_ABI: return MPIABI_ERR_ABI;
 #endif
-#ifdef MPI_T_ERR_CANNOT_INIT
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_CANNOT_INIT
   case MPI_T_ERR_CANNOT_INIT: return MPIABI_T_ERR_CANNOT_INIT;
 #endif
-#ifdef MPI_T_ERR_NOT_ACCESSIBLE
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_NOT_ACCESSIBLE
   case MPI_T_ERR_NOT_ACCESSIBLE: return MPIABI_T_ERR_NOT_ACCESSIBLE;
 #endif
-#ifdef MPI_T_ERR_NOT_INITIALIZED
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_NOT_INITIALIZED
   case MPI_T_ERR_NOT_INITIALIZED: return MPIABI_T_ERR_NOT_INITIALIZED;
 #endif
-#ifdef MPI_T_ERR_NOT_SUPPORTED
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_NOT_SUPPORTED
   case MPI_T_ERR_NOT_SUPPORTED: return MPIABI_T_ERR_NOT_SUPPORTED;
 #endif
-#ifdef MPI_T_ERR_MEMORY
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_MEMORY
   case MPI_T_ERR_MEMORY: return MPIABI_T_ERR_MEMORY;
 #endif
-#ifdef MPI_T_ERR_INVALID
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID
   case MPI_T_ERR_INVALID: return MPIABI_T_ERR_INVALID;
 #endif
-#ifdef MPI_T_ERR_INVALID_INDEX
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_INDEX
   case MPI_T_ERR_INVALID_INDEX: return MPIABI_T_ERR_INVALID_INDEX;
 #endif
-#ifdef MPI_T_ERR_INVALID_ITEM
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_ITEM
   case MPI_T_ERR_INVALID_ITEM: return MPIABI_T_ERR_INVALID_ITEM;
 #endif
-#ifdef MPI_T_ERR_INVALID_SESSION
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_SESSION
   case MPI_T_ERR_INVALID_SESSION: return MPIABI_T_ERR_INVALID_SESSION;
 #endif
-#ifdef MPI_T_ERR_INVALID_HANDLE
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_HANDLE
   case MPI_T_ERR_INVALID_HANDLE: return MPIABI_T_ERR_INVALID_HANDLE;
 #endif
-#ifdef MPI_T_ERR_INVALID_NAME
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_NAME
   case MPI_T_ERR_INVALID_NAME: return MPIABI_T_ERR_INVALID_NAME;
 #endif
-#ifdef MPI_T_ERR_OUT_OF_HANDLES
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_OUT_OF_HANDLES
   case MPI_T_ERR_OUT_OF_HANDLES: return MPIABI_T_ERR_OUT_OF_HANDLES;
 #endif
-#ifdef MPI_T_ERR_OUT_OF_SESSIONS
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_OUT_OF_SESSIONS
   case MPI_T_ERR_OUT_OF_SESSIONS: return MPIABI_T_ERR_OUT_OF_SESSIONS;
 #endif
-#ifdef MPI_T_ERR_CVAR_SET_NOT_NOW
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_CVAR_SET_NOT_NOW
   case MPI_T_ERR_CVAR_SET_NOT_NOW: return MPIABI_T_ERR_CVAR_SET_NOT_NOW;
 #endif
-#ifdef MPI_T_ERR_CVAR_SET_NEVER
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_CVAR_SET_NEVER
   case MPI_T_ERR_CVAR_SET_NEVER: return MPIABI_T_ERR_CVAR_SET_NEVER;
 #endif
-#ifdef MPI_T_ERR_PVAR_NO_WRITE
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_WRITE
   case MPI_T_ERR_PVAR_NO_WRITE: return MPIABI_T_ERR_PVAR_NO_WRITE;
 #endif
-#ifdef MPI_T_ERR_PVAR_NO_STARTSTOP
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_STARTSTOP
   case MPI_T_ERR_PVAR_NO_STARTSTOP: return MPIABI_T_ERR_PVAR_NO_STARTSTOP;
 #endif
-#ifdef MPI_T_ERR_PVAR_NO_ATOMIC
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_ATOMIC
   case MPI_T_ERR_PVAR_NO_ATOMIC: return MPIABI_T_ERR_PVAR_NO_ATOMIC;
 #endif
   default: return MPIABI_ERR_OTHER;
@@ -922,73 +926,73 @@ int mpiwrapper_errorcode_fromabi(int abi_ierror)
   case MPIABI_ERR_UNSUPPORTED_OPERATION: return MPI_ERR_UNSUPPORTED_OPERATION;
   case MPIABI_ERR_WIN: return MPI_ERR_WIN;
   case MPIABI_ERR_RMA_FLAVOR: return MPI_ERR_RMA_FLAVOR;
-#ifdef MPI_ERR_PROC_ABORTED
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_PROC_ABORTED
   case MPIABI_ERR_PROC_ABORTED: return MPI_ERR_PROC_ABORTED;
 #endif
-#ifdef MPI_ERR_VALUE_TOO_LARGE
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_VALUE_TOO_LARGE
   case MPIABI_ERR_VALUE_TOO_LARGE: return MPI_ERR_VALUE_TOO_LARGE;
 #endif
-#ifdef MPI_ERR_SESSION
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_SESSION
   case MPIABI_ERR_SESSION: return MPI_ERR_SESSION;
 #endif
-#ifdef MPI_ERR_ERRHANDLER
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_ERRHANDLER
   case MPIABI_ERR_ERRHANDLER: return MPI_ERR_ERRHANDLER;
 #endif
-#ifdef MPI_ERR_ABI
+#ifdef MPIWRAPPER_HAVE_MPI_ERR_ABI
   case MPIABI_ERR_ABI: return MPI_ERR_ABI;
 #endif
-#ifdef MPI_T_ERR_CANNOT_INIT
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_CANNOT_INIT
   case MPIABI_T_ERR_CANNOT_INIT: return MPI_T_ERR_CANNOT_INIT;
 #endif
-#ifdef MPI_T_ERR_NOT_ACCESSIBLE
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_NOT_ACCESSIBLE
   case MPIABI_T_ERR_NOT_ACCESSIBLE: return MPI_T_ERR_NOT_ACCESSIBLE;
 #endif
-#ifdef MPI_T_ERR_NOT_INITIALIZED
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_NOT_INITIALIZED
   case MPIABI_T_ERR_NOT_INITIALIZED: return MPI_T_ERR_NOT_INITIALIZED;
 #endif
-#ifdef MPI_T_ERR_NOT_SUPPORTED
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_NOT_SUPPORTED
   case MPIABI_T_ERR_NOT_SUPPORTED: return MPI_T_ERR_NOT_SUPPORTED;
 #endif
-#ifdef MPI_T_ERR_MEMORY
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_MEMORY
   case MPIABI_T_ERR_MEMORY: return MPI_T_ERR_MEMORY;
 #endif
-#ifdef MPI_T_ERR_INVALID
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID
   case MPIABI_T_ERR_INVALID: return MPI_T_ERR_INVALID;
 #endif
-#ifdef MPI_T_ERR_INVALID_INDEX
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_INDEX
   case MPIABI_T_ERR_INVALID_INDEX: return MPI_T_ERR_INVALID_INDEX;
 #endif
-#ifdef MPI_T_ERR_INVALID_ITEM
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_ITEM
   case MPIABI_T_ERR_INVALID_ITEM: return MPI_T_ERR_INVALID_ITEM;
 #endif
-#ifdef MPI_T_ERR_INVALID_SESSION
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_SESSION
   case MPIABI_T_ERR_INVALID_SESSION: return MPI_T_ERR_INVALID_SESSION;
 #endif
-#ifdef MPI_T_ERR_INVALID_HANDLE
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_HANDLE
   case MPIABI_T_ERR_INVALID_HANDLE: return MPI_T_ERR_INVALID_HANDLE;
 #endif
-#ifdef MPI_T_ERR_INVALID_NAME
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_INVALID_NAME
   case MPIABI_T_ERR_INVALID_NAME: return MPI_T_ERR_INVALID_NAME;
 #endif
-#ifdef MPI_T_ERR_OUT_OF_HANDLES
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_OUT_OF_HANDLES
   case MPIABI_T_ERR_OUT_OF_HANDLES: return MPI_T_ERR_OUT_OF_HANDLES;
 #endif
-#ifdef MPI_T_ERR_OUT_OF_SESSIONS
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_OUT_OF_SESSIONS
   case MPIABI_T_ERR_OUT_OF_SESSIONS: return MPI_T_ERR_OUT_OF_SESSIONS;
 #endif
-#ifdef MPI_T_ERR_CVAR_SET_NOT_NOW
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_CVAR_SET_NOT_NOW
   case MPIABI_T_ERR_CVAR_SET_NOT_NOW: return MPI_T_ERR_CVAR_SET_NOT_NOW;
 #endif
-#ifdef MPI_T_ERR_CVAR_SET_NEVER
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_CVAR_SET_NEVER
   case MPIABI_T_ERR_CVAR_SET_NEVER: return MPI_T_ERR_CVAR_SET_NEVER;
 #endif
-#ifdef MPI_T_ERR_PVAR_NO_WRITE
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_WRITE
   case MPIABI_T_ERR_PVAR_NO_WRITE: return MPI_T_ERR_PVAR_NO_WRITE;
 #endif
-#ifdef MPI_T_ERR_PVAR_NO_STARTSTOP
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_STARTSTOP
   case MPIABI_T_ERR_PVAR_NO_STARTSTOP: return MPI_T_ERR_PVAR_NO_STARTSTOP;
 #endif
-#ifdef MPI_T_ERR_PVAR_NO_ATOMIC
+#ifdef MPIWRAPPER_HAVE_MPI_T_ERR_PVAR_NO_ATOMIC
   case MPIABI_T_ERR_PVAR_NO_ATOMIC: return MPI_T_ERR_PVAR_NO_ATOMIC;
 #endif
   default: return MPI_ERR_OTHER;
@@ -1124,14 +1128,11 @@ int mpiwrapper_winassert_toabi(int mode)
  * numeric-label rule applies to handles, where the ABI's spelling is a cast to
  * a pointer type.
  *
- * Only the members a conforming implementation may genuinely lack are guarded,
- * and they are guarded on the *probe* rather than on `#ifdef <the
- * implementation's name>`: MPICH spells MPI_COMBINER_* and MPI_CART as
- * enumerators and Open MPI spells MPI_THREAD_SINGLE, MPI_COMM_TYPE_SHARED and
- * MPI_IDENT the same way, and `#ifdef` on an enumerator is quietly false --
- * it would drop the case, reach the default arm, and pass an unmapped value
- * straight through. Everything else here is MPI-3.0 or older and is unguarded,
- * so an implementation that really lacks one fails the build naming it.
+ * Only the members a conforming implementation may genuinely lack are guarded.
+ * Everything else here is MPI-3.0 or older, so an implementation that really
+ * lacks one fails the build naming it -- which is where these families would
+ * otherwise be at their most dangerous, since a dropped case reaches the
+ * default arm and passes an unmapped value through.
  */
 int mpiwrapper_combiner_fromabi(int abi_combiner)
 {
