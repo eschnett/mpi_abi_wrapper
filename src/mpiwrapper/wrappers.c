@@ -416,43 +416,41 @@ static int w_PMPI_Comm_set_errhandler(MPIABI_Comm       abi_comm,
  * outright: an application's `static const MPI_Datatype types[3]` lives in
  * .rodata and writing to it crashes a legal program.
  *
- * The displacement array is staged too, and that is a finding of S1 rather than
- * something NOTES.md #5.7 anticipated: `const MPI_Aint[]` is *not* a
- * passthrough. The ABI's MPI_Aint is intptr_t and MPICH's is long; those are
- * the same size, which the _Static_assert in internal.h checks, but they are
- * distinct *types*, so passing the ABI array straight through is a constraint
- * violation wherever they differ (`long` vs `long long` on LLP64, for one).
- * Element-wise staging costs nothing on a datatype-construction path and makes
- * the rule uniform: stage any array whose element type is not identical on both
- * sides, even when the elements need no value mapping.
+ * The *displacement* array is a different matter and is passed straight
+ * through. An earlier version of this body staged it too, on the grounds that
+ * the ABI's MPI_Aint and the implementation's may be distinct types. They may
+ * be -- on glibc the ABI's MPI_Count is `long` where MPICH's is `long long`,
+ * because int64_t is long there -- but distinct *spellings* are not the
+ * question. This project implements a system ABI, and what an ABI fixes is
+ * representation: dev/type-identity measures size and signedness identical in
+ * every implementation and platform tried, and the cast reading correctly at
+ * -O3 -fstrict-aliasing even in the single-translation-unit worst case. The
+ * _Static_asserts in internal.h are what license the cast, and would fail the
+ * build if a target ever disagreed.
  */
 #define BODY_MPI_Type_create_struct(TARGET)                                    \
   {                                                                            \
     const int count = abi_count;                                               \
     if (count < 0) return MPIABI_ERR_COUNT;                                    \
                                                                                \
-    MPI_Aint     dispstack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Aint)];         \
-    MPI_Datatype typestack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];     \
-    MPI_Aint    *displacements = NULL;                                         \
-    MPI_Datatype *types        = NULL;                                         \
-    int           abi_ierror   = MPIABI_ERR_INTERN;                            \
+    const int *const      blocklengths  = abi_array_of_blocklengths;           \
+    const MPI_Aint *const displacements =                                      \
+        (const MPI_Aint *)abi_array_of_displacements;                          \
                                                                                \
-    displacements = mpiwrapper_stage(dispstack, sizeof dispstack,              \
-                                     (size_t)count, sizeof *displacements);    \
-    if (!displacements) goto done;                                             \
+    MPI_Datatype  typestack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];    \
+    MPI_Datatype *types      = NULL;                                           \
+    int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
     types = mpiwrapper_stage(typestack, sizeof typestack, (size_t)count,       \
                              sizeof *types);                                   \
     if (!types) goto done;                                                     \
                                                                                \
-    for (int i = 0; i < count; ++i) {                                          \
-      displacements[i] = abi_array_of_displacements[i];                        \
+    for (int i = 0; i < count; ++i)                                            \
       types[i] = mpiwrapper_datatype_fromabi(abi_array_of_types[i]);           \
-    }                                                                          \
                                                                                \
     {                                                                          \
-      const int *const blocklengths = abi_array_of_blocklengths;               \
-      MPI_Datatype     newtype;                                                \
-      const int        ierror =                                                \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
           TARGET(count, blocklengths, displacements, types, &newtype);         \
                                                                                \
       *abi_newtype = (ierror == MPI_SUCCESS)                                   \
@@ -464,7 +462,6 @@ static int w_PMPI_Comm_set_errhandler(MPIABI_Comm       abi_comm,
                                                                                \
   done:                                                                        \
     mpiwrapper_unstage(types, typestack);                                      \
-    mpiwrapper_unstage(displacements, dispstack);                              \
     return abi_ierror;                                                         \
   }
 
@@ -499,29 +496,22 @@ static int w_PMPI_Type_create_struct(int abi_count,
       if ((uint64_t)count > SIZE_MAX / sizeof(MPI_Datatype))                   \
         return MPIABI_ERR_COUNT;                                               \
                                                                                \
-      MPI_Count    blockstack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Count)];     \
-      MPI_Count    dispstack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Count)];      \
-      MPI_Datatype typestack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];   \
-      MPI_Count   *blocklengths  = NULL;                                       \
-      MPI_Count   *displacements = NULL;                                       \
-      MPI_Datatype *types        = NULL;                                       \
-      int           abi_ierror   = MPIABI_ERR_INTERN;                          \
+      /* Passed through, not staged: same representation, no value mapping. */ \
+      const MPI_Count *const blocklengths =                                    \
+          (const MPI_Count *)abi_array_of_blocklengths;                        \
+      const MPI_Count *const displacements =                                   \
+          (const MPI_Count *)abi_array_of_displacements;                       \
                                                                                \
-      blocklengths = mpiwrapper_stage(blockstack, sizeof blockstack,           \
-                                      (size_t)count, sizeof *blocklengths);    \
-      if (!blocklengths) goto done;                                            \
-      displacements = mpiwrapper_stage(dispstack, sizeof dispstack,            \
-                                       (size_t)count, sizeof *displacements);  \
-      if (!displacements) goto done;                                           \
+      MPI_Datatype  typestack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];  \
+      MPI_Datatype *types      = NULL;                                         \
+      int           abi_ierror = MPIABI_ERR_INTERN;                            \
+                                                                               \
       types = mpiwrapper_stage(typestack, sizeof typestack, (size_t)count,     \
                                sizeof *types);                                 \
       if (!types) goto done;                                                   \
                                                                                \
-      for (MPI_Count i = 0; i < count; ++i) {                                  \
-        blocklengths[i]  = abi_array_of_blocklengths[i];                       \
-        displacements[i] = abi_array_of_displacements[i];                      \
+      for (MPI_Count i = 0; i < count; ++i)                                    \
         types[i] = mpiwrapper_datatype_fromabi(abi_array_of_types[i]);         \
-      }                                                                        \
                                                                                \
       {                                                                        \
         MPI_Datatype newtype;                                                  \
@@ -537,8 +527,6 @@ static int w_PMPI_Type_create_struct(int abi_count,
                                                                                \
     done:                                                                      \
       mpiwrapper_unstage(types, typestack);                                    \
-      mpiwrapper_unstage(displacements, dispstack);                            \
-      mpiwrapper_unstage(blocklengths, blockstack);                            \
       return abi_ierror;                                                       \
     }
 #else

@@ -1173,18 +1173,27 @@ Four independent reasons, each sufficient:
   the request-map entry needs a flag.
 - **`MPI_STATUSES_IGNORE`** (NULL in the ABI) must short-circuit before any
   temporary is allocated.
-- **Stage any array whose element type is not *identical* on both sides, even when
-  no value mapping is needed.** S1's addition, and it is not a subtlety the list
-  above anticipated: `const MPI_Aint array_of_displacements[]` looks like a
-  passthrough, but the ABI's `MPI_Aint` is `intptr_t` while MPICH's is `long`.
-  Those are the same size — `internal.h` static-asserts it — and still distinct
-  types, so passing the caller's array straight through is a constraint violation
-  wherever the spellings differ (`long` against `long long` on LLP64 is the case
-  that will actually bite). The same applies to `MPI_Count` arrays in the `_c`
-  forms. Element-wise staging costs nothing on the datatype-construction paths
-  where these appear, and keeps the rule statable: *the implementation call sees
-  only locals of the implementation's own types*, which is the same invariant the
-  no-ABI-typed-parameter assertion enforces for scalars.
+- **Stage for value mapping or for representation, never for spelling.** An
+  earlier version of this list said to stage any array whose element type was not
+  *identical* on both sides, on the grounds that the ABI's `MPI_Aint` and an
+  implementation's may be distinct C types. That reasons from the language, and
+  this project implements a **system ABI**: what an ABI fixes is representation.
+  `dev/type-identity/` measures it — size and signedness are identical for
+  `MPI_Aint`, `MPI_Count`, `MPI_Offset` and `MPI_Fint` in every implementation
+  and platform tried, and where the *spellings* differ (glibc's `int64_t` is
+  `long` while both MPIs spell `MPI_Count` as `long long`) the cost is a cast and
+  nothing else. The cast reads correctly at `-O0`, `-O2` and `-O3` with
+  `-fstrict-aliasing` even in the single-translation-unit worst case, where the
+  optimizer can see the stores and the loads together and apply TBAA; in the real
+  system the implementation is a separate shared library that cannot see our
+  stores at all. `MPI_Aint` is `long` on both sides everywhere, so the example
+  that prompted the original rule does not even arise.
+
+  What licenses the cast is the `_Static_assert` battery in `internal.h`: a
+  target whose representations genuinely differed would fail the build rather
+  than reach this argument. So `array_of_displacements` and the `_c` forms'
+  count arrays are passed straight through, and only the datatype arrays beside
+  them are staged.
 
 The set needing staging is small: datatype arrays, request arrays, status arrays,
 and the out-direction errcode/rank arrays — roughly 35-40 of the 688.
