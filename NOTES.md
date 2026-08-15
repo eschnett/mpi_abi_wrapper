@@ -1199,8 +1199,70 @@ liberty and avoids a real leak: `MPI_T_EVENT_GET_INFO` is *required* to return
 a newly created info object when one is asked for, so asking would leak one per
 handle allocation. The switch from `bind` onto a handle class is generated into
 `constants.c` rather than hand-written, so that the `MPIWRAPPER_HAVE_` guards
-its cases need are probed like every other — `dev/probe_impl.py` reads the
-generated sources, not `src/`.
+its cases need are probed like every other — at the time, `dev/probe_impl.py`
+read the generated sources and not `src/`, which S4a changed; the reason to
+generate the switch stands, since it is a switch over handle classes and those
+are the generator's.
+
+### What S4a settled
+
+S4a wrote 70 of the ledger's 110 remaining bodies — the converter face — and
+five things it settled were not in the plan.
+
+**`_toint`/`_fromint` are not `_c2f`/`_f2c` with a different integer type, and
+the difference decides the implementation.** MPI-5.0 §20.4 puts the C-Fortran
+converters *outside* the ABI ("the functions defined in Section 19.3.4 and
+Section 19.3.5 … are not part of this ABI", because they depend on `MPI_Fint`),
+so nothing pins what a Fortran handle value must be and forwarding to the
+implementation's own converter — S1's choice for `MPI_Comm`, now the rule for
+all eleven classes — is free. §20.4.5's serialization functions *are* part of
+the ABI and pin it exactly: "for all predefined handles, the integer value must
+be the same as the values listed in Section A", which is the ABI's own table.
+So these 22 never call the implementation at all. Forwarding them would be
+wrong even where an implementation has them.
+
+**Hence `src/mpiwrapper/serialize.c`.** A dynamic ABI handle is the
+implementation's own handle bits, and on Open MPI that is a 64-bit object
+address that no cast to `int` can recover — the standard's own rationale names
+the remedy, "using a lookup table or hash function". The table is an
+append-only intern table with the shape of `keyvals.c`: predefined handles are
+answered by a cast (the requirement above), every dynamic handle is interned
+from a base far above the predefined range, and a repeat of the same bits
+reuses its entry. Dynamic handles are interned **even on MPICH, where they
+would survive a cast**, so that one code path is exercised on both
+implementations rather than the interesting one running only where it is
+needed — §5.8's discipline. A full table answers 0, which no `_fromint`
+accepts, because these functions return a handle and have nowhere to report an
+error.
+
+**The four status converters are pure ABI-side, and §4.4 said so without quite
+saying it.** The ABI's Fortran status is the ABI's C status — eight ints,
+named fields at indices 0, 1 and 2, which §20.4.3 fixes and `MPIABI_F08_Status`
+is a typedef of — so all four are a 32-byte copy with four `_Static_assert`s
+behind them. Forwarding to the implementation's `MPI_Status_c2f` would be
+actively wrong rather than merely roundabout: MPICH's Fortran status puts the
+named fields at indices 2, 3 and 4, so a caller reading `status(MPI_F_SOURCE)`
+out of the result would read a private byte. What makes the copy sound is that
+the ABI status's 20 scratch bytes carry the implementation's own private bytes,
+so a status that has been to Fortran and back still answers `MPI_Get_count` —
+which is what `test/abi_converters_test.c` asks it.
+
+**`dev/probe_impl.py` now reads `src/mpiwrapper/` as well as `gen/`.** It used
+to read only the generated sources, on the reasoning that the generator decides
+what needs asking. That stopped being true the moment a hand-written body
+carried a `MPIWRAPPER_HAVE_` guard: the guard was silently false, and decision
+6's stub would have reported `MPI_ERR_UNSUPPORTED_OPERATION` for an entry point
+the implementation has. The rule it replaces the old one with is the one that
+was actually meant — **whatever guards, gets probed** — and `CMakeLists.txt`
+names the two source lists once so the probe's dependencies cannot drift from
+the library's.
+
+**Measured, not assumed: Open MPI 5.0.6's `MPI_Get_library_version` reports a
+`resultlen` one larger than the string.** 119 for a 118-character string,
+confirmed against it natively rather than through the wrapper. So §5.8's
+contract is "the string terminates at the length reported", not "the length
+reported is `strlen`" — the wrapper passes the implementation's own count
+through, and the test asserts the former.
 
 ### The five entry points MPI-3.0 deleted, and why they are not slots
 
@@ -1398,9 +1460,17 @@ property of those two, not of the ABI.
 8 ints = 32 bytes = exactly the ABI C status, with the named fields at the same
 indices. **The ABI Fortran status is the ABI C status**, which is what
 `doc/mpi.h.patch`'s `typedef MPI_Status MPI_F08_Status` assumes. Against MPICH it
-is not: the named fields move. So the four status converters are real conversions
-and go through the C status as intermediary. 8 >= 5 and 8 >= 6, so an mpif status
+is not: the named fields move. 8 >= 5 and 8 >= 6, so an mpif status
 buffer sized by the ABI constant is never too small.
+
+**S4a resolved what that makes the four converters do**, since the sentence
+above admits two readings and only one of them is right. They do *not* forward
+to the implementation's own `MPI_Status_c2f`: that produces a valid status in
+MPICH's layout, where `MPI_F_SOURCE` — an ABI constant, fixed at 0 by MPI-5.0
+§20.4.3 — indexes a private byte. They are a 32-byte copy between two spellings
+of the same thing, and the implementation is not involved. The 20 scratch bytes
+carry its private status bytes through the copy, so the result still answers
+`MPI_Get_count`; §3's "What S4a settled" has the rest.
 
 ---
 
@@ -1780,6 +1850,15 @@ implementation's limit is *smaller* than the ABI's (Open MPI's `MPI_MAX_INFO_KEY
 is 36 against the ABI's 256), a long key is rejected by the implementation with
 `MPI_ERR_INFO_KEY`, which we map and return.
 
+**What `*resultlen` means, measured.** "Set `*resultlen` to what was actually
+copied" above is the contract, and the tempting stronger reading —
+`strlen(string) == *resultlen` — is not one implementations honour: Open MPI
+5.0.6's `MPI_Get_library_version` reports **119 for a 118-character string**,
+confirmed against it natively rather than through this wrapper. So the property
+to hold and to test is `string[*resultlen] == '\0'`, with the implementation's
+own count passed through unchanged; asserting the equality would fail on a
+correct wrapper over a real MPI.
+
 ### 5.9 When to assert at compile time
 
 **Static-assert where a runtime check would cost something on a hot path; handle at
@@ -2110,6 +2189,17 @@ kept here as S1's stand-ins for the two array classes it could not yet
 generate, so the ledger is **118**. Both are generated now, with every other
 member of their families, and `src/mpiwrapper/handwritten.c` is down to S1's
 eight.
+
+**S4a wrote 70 of them**, so the ledger's **118 entries hold 78 bodies and 40
+stubs**. The 70 are the converter face: the 44 handle converters and the four
+status converters (`src/mpiwrapper/hw_converters.c`, with `serialize.c` behind
+`_toint`/`_fromint`), the ten status-consuming functions (`hw_status.c`), the
+ten output-string buffers with no length argument (`hw_strings.c`) and the six
+`MPI_Abi_*` calls (`hw_abi.c`). Four of S1's eight moved into those files with
+their families; what stays in `handwritten.c` is what S4b finishes. Two of the
+bullets below were decided rather than merely implemented, and §3's "What S4a
+settled" has both: `_toint`/`_fromint` are ABI-side and not converters, and the
+four status converters are a copy and not a forward.
 
 **S3's second half added `MPI_T_event_handle_free`** and took
 `MPI_Keyval_create` away again, so the ledger is **118**. Nothing is deferred

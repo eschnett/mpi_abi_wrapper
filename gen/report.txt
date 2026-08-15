@@ -589,23 +589,26 @@ Generated (565)
 
 Hand-written (118)
 ----------------------------------------
-  A body in src/mpiwrapper/handwritten.c is marked [done]; the rest are
-  stubs until S4 writes them, and the slot reports
-  MPI_ERR_UNSUPPORTED_OPERATION until then.
+  An entry point with a body in src/mpiwrapper/ is marked [done]; the
+  rest are stubs until S4b writes them, and the slot reports
+  MPI_ERR_UNSUPPORTED_OPERATION until then. S4a wrote the converter
+  face -- the handle and status converters, the status-consuming
+  functions, the output-string buffers and MPI_Abi_* -- so the 40 left
+  are the ones needing state the wrapper does not yet own.
 
   ABI introspection: answers about this library, not about the wrapped MPI
-         - MPI_Abi_get_fortran_booleans
-         - MPI_Abi_get_fortran_info
-         - MPI_Abi_get_info
-         - MPI_Abi_get_version
-         - MPI_Abi_set_fortran_booleans
-         - MPI_Abi_set_fortran_info
+    [done] MPI_Abi_get_fortran_booleans
+    [done] MPI_Abi_get_fortran_info
+    [done] MPI_Abi_get_info
+    [done] MPI_Abi_get_version
+    [done] MPI_Abi_set_fortran_booleans
+    [done] MPI_Abi_set_fortran_info
 
   Fortran status converter: memcpy-shaped, not argument-shaped
-         - MPI_Status_c2f
-         - MPI_Status_c2f08
-         - MPI_Status_f082c
-         - MPI_Status_f2c
+    [done] MPI_Status_c2f
+    [done] MPI_Status_c2f08
+    [done] MPI_Status_f082c
+    [done] MPI_Status_f2c
 
   buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership
          - MPI_Buffer_attach
@@ -642,15 +645,15 @@ Hand-written (118)
 
   consumes a status in the *in* direction (NOTES.md #5.2)
     [done] MPI_Get_count
-         - MPI_Get_count_c
-         - MPI_Get_elements
-         - MPI_Get_elements_c
-         - MPI_Get_elements_x
-         - MPI_Status_set_cancelled
-         - MPI_Status_set_elements
-         - MPI_Status_set_elements_c
-         - MPI_Status_set_elements_x
-         - MPI_Test_cancelled
+    [done] MPI_Get_count_c
+    [done] MPI_Get_elements
+    [done] MPI_Get_elements_c
+    [done] MPI_Get_elements_x
+    [done] MPI_Status_set_cancelled
+    [done] MPI_Status_set_elements
+    [done] MPI_Status_set_elements_c
+    [done] MPI_Status_set_elements_x
+    [done] MPI_Test_cancelled
 
   dynamic error codes: renumbered into the ABI's range rather than passed through (NOTES.md #5.6)
          - MPI_Add_error_class
@@ -666,48 +669,48 @@ Hand-written (118)
   handle converter: the reason mpif can run over any MPI
     [done] MPI_Comm_c2f
     [done] MPI_Comm_f2c
-         - MPI_Comm_fromint
-         - MPI_Comm_toint
-         - MPI_Errhandler_c2f
-         - MPI_Errhandler_f2c
-         - MPI_Errhandler_fromint
-         - MPI_Errhandler_toint
-         - MPI_File_c2f
-         - MPI_File_f2c
-         - MPI_File_fromint
-         - MPI_File_toint
-         - MPI_Group_c2f
-         - MPI_Group_f2c
-         - MPI_Group_fromint
-         - MPI_Group_toint
-         - MPI_Info_c2f
-         - MPI_Info_f2c
-         - MPI_Info_fromint
-         - MPI_Info_toint
-         - MPI_Message_c2f
-         - MPI_Message_f2c
-         - MPI_Message_fromint
-         - MPI_Message_toint
-         - MPI_Op_c2f
-         - MPI_Op_f2c
-         - MPI_Op_fromint
-         - MPI_Op_toint
-         - MPI_Request_c2f
-         - MPI_Request_f2c
-         - MPI_Request_fromint
-         - MPI_Request_toint
-         - MPI_Session_c2f
-         - MPI_Session_f2c
-         - MPI_Session_fromint
-         - MPI_Session_toint
-         - MPI_Type_c2f
-         - MPI_Type_f2c
-         - MPI_Type_fromint
-         - MPI_Type_toint
-         - MPI_Win_c2f
-         - MPI_Win_f2c
-         - MPI_Win_fromint
-         - MPI_Win_toint
+    [done] MPI_Comm_fromint
+    [done] MPI_Comm_toint
+    [done] MPI_Errhandler_c2f
+    [done] MPI_Errhandler_f2c
+    [done] MPI_Errhandler_fromint
+    [done] MPI_Errhandler_toint
+    [done] MPI_File_c2f
+    [done] MPI_File_f2c
+    [done] MPI_File_fromint
+    [done] MPI_File_toint
+    [done] MPI_Group_c2f
+    [done] MPI_Group_f2c
+    [done] MPI_Group_fromint
+    [done] MPI_Group_toint
+    [done] MPI_Info_c2f
+    [done] MPI_Info_f2c
+    [done] MPI_Info_fromint
+    [done] MPI_Info_toint
+    [done] MPI_Message_c2f
+    [done] MPI_Message_f2c
+    [done] MPI_Message_fromint
+    [done] MPI_Message_toint
+    [done] MPI_Op_c2f
+    [done] MPI_Op_f2c
+    [done] MPI_Op_fromint
+    [done] MPI_Op_toint
+    [done] MPI_Request_c2f
+    [done] MPI_Request_f2c
+    [done] MPI_Request_fromint
+    [done] MPI_Request_toint
+    [done] MPI_Session_c2f
+    [done] MPI_Session_f2c
+    [done] MPI_Session_fromint
+    [done] MPI_Session_toint
+    [done] MPI_Type_c2f
+    [done] MPI_Type_f2c
+    [done] MPI_Type_fromint
+    [done] MPI_Type_toint
+    [done] MPI_Win_c2f
+    [done] MPI_Win_f2c
+    [done] MPI_Win_fromint
+    [done] MPI_Win_toint
 
   lifecycle: initialization state the wrapper itself has to track
          - MPI_Abort
@@ -720,16 +723,16 @@ Hand-written (118)
          - MPI_Session_init
 
   output string buffer with no length argument: truncate or error is a per-parameter judgement (NOTES.md #5.8)
-         - MPI_Comm_get_name
+    [done] MPI_Comm_get_name
     [done] MPI_Error_string
-         - MPI_File_get_view
-         - MPI_Get_library_version
-         - MPI_Get_processor_name
-         - MPI_Info_get_nthkey
-         - MPI_Lookup_name
-         - MPI_Open_port
-         - MPI_Type_get_name
-         - MPI_Win_get_name
+    [done] MPI_File_get_view
+    [done] MPI_Get_library_version
+    [done] MPI_Get_processor_name
+    [done] MPI_Info_get_nthkey
+    [done] MPI_Lookup_name
+    [done] MPI_Open_port
+    [done] MPI_Type_get_name
+    [done] MPI_Win_get_name
 
   spawn: argv, array_of_argv and array_of_errcodes together
          - MPI_Comm_spawn

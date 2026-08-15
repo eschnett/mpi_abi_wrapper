@@ -3484,9 +3484,12 @@ def emit_report(protos, tallies, handwritten_bodies):
 
     w("Hand-written (%d)" % sum(1 for e in mpi if e.status == "hand-written"))
     w("-" * 40)
-    w("  A body in src/mpiwrapper/handwritten.c is marked [done]; the rest are")
-    w("  stubs until S4 writes them, and the slot reports")
-    w("  MPI_ERR_UNSUPPORTED_OPERATION until then.")
+    w("  An entry point with a body in src/mpiwrapper/ is marked [done]; the")
+    w("  rest are stubs until S4b writes them, and the slot reports")
+    w("  MPI_ERR_UNSUPPORTED_OPERATION until then. S4a wrote the converter")
+    w("  face -- the handle and status converters, the status-consuming")
+    w("  functions, the output-string buffers and MPI_Abi_* -- so the 40 left")
+    w("  are the ones needing state the wrapper does not yet own.")
     w("")
     for reason in sorted(set(HAND_WRITTEN.values())):
         w(f"  {reason}")

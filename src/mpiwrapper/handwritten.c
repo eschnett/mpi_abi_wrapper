@@ -12,6 +12,13 @@
  *   MPI_Error_string           output string buffer with no length argument
  *   MPI_Comm_c2f, MPI_Comm_f2c Fortran converters
  *
+ * Four of those eight belong to families S4a completed, and each family got a
+ * file of its own -- hw_converters.c (the two MPI_Comm converters),
+ * hw_status.c (MPI_Get_count), hw_strings.c (MPI_Error_string) -- so those
+ * four bodies moved there rather than being left behind as the odd one out of
+ * a set of ten. What stays here is what S4b will finish: lifecycle, and the
+ * two callback registrars.
+ *
  * Every body appears twice, once per name, from one macro. The MPI_ instance
  * calls the implementation's MPI_ name and the PMPI_ instance its PMPI_ name,
  * so that an application calling PMPI_Get_count to bypass profiling bypasses a
@@ -24,8 +31,6 @@
  */
 
 #include "internal.h"
-
-#include <string.h>
 
 /* ------------------------------------------------------------- MPI_Init ---- */
 
@@ -55,40 +60,6 @@ int mpiwrapper_w_PMPI_Init(int *abi_argc, char ***abi_argv) BODY_MPI_Init(PMPI_I
 
 int mpiwrapper_w_MPI_Finalize(void) BODY_MPI_Finalize(MPI_Finalize)
 int mpiwrapper_w_PMPI_Finalize(void) BODY_MPI_Finalize(PMPI_Finalize)
-
-/* -------------------------------------------------------- MPI_Get_count ---- */
-
-/* One of the ten functions that need an implementation status built *from* an
- * ABI status (NOTES.md #5.2). The blob in MPI_internal is the implementation's
- * own private bytes, put there by whichever call filled the status, so this is
- * a restore rather than a synthesis -- there is no validity marker and no
- * fallback, deliberately.
- */
-#define BODY_MPI_Get_count(TARGET)                                             \
-  {                                                                            \
-    MPI_Status status;                                                         \
-    mpiwrapper_status_fromabi(abi_status, &status);                            \
-    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
-                                                                               \
-    int       count  = 0;                                                      \
-    const int ierror = TARGET(&status, datatype, &count);                      \
-                                                                               \
-    /* The count is MPI_UNDEFINED when the datatype does not divide the         \
-     * message evenly, which is a mapped integer rather than a plain one --     \
-     * identical in all three today, and written out because that is a          \
-     * property of these implementations and not of the ABI.                    \
-     */                                                                        \
-    if (ierror == MPI_SUCCESS)                                                 \
-      *abi_count = (count == MPI_UNDEFINED) ? MPIABI_UNDEFINED : count;        \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-
-int mpiwrapper_w_MPI_Get_count(const MPIABI_Status *abi_status,
-                           MPIABI_Datatype abi_datatype, int *abi_count)
-    BODY_MPI_Get_count(MPI_Get_count)
-int mpiwrapper_w_PMPI_Get_count(const MPIABI_Status *abi_status,
-                            MPIABI_Datatype abi_datatype, int *abi_count)
-    BODY_MPI_Get_count(PMPI_Get_count)
 
 /* -------------------------------------------------------- MPI_Op_create ---- */
 
@@ -157,84 +128,8 @@ mpiwrapper_w_PMPI_Comm_create_errhandler(MPIABI_Comm_errhandler_function *abi_co
                               MPIABI_Errhandler *abi_errhandler)
     BODY_MPI_Comm_create_errhandler(PMPI_Comm_create_errhandler)
 
-/* ------------------------------------------------------ MPI_Error_string ---- */
-
-/* One of the ten output-string buffers with no length argument (NOTES.md #5.8).
- * The caller sized abi_string with the *ABI's* MPI_MAX_ERROR_STRING and the
- * implementation writes up to its own, which is 512 against 512 for MPICH and
- * 512 against 256 for Open MPI -- so today the copy could go straight into the
- * caller's array. Staging is emitted unconditionally anyway, precisely so this
- * path is exercised on every run instead of being dead code that the first
- * implementation with a larger limit gets to try out in production.
- *
- * An error string is prose, so truncation is the right answer here; an
- * identifier that will be handed back to MPI is not, and MPI_Open_port,
- * MPI_Lookup_name, MPI_Info_get_nthkey and MPI_File_get_view's datarep return
- * MPIABI_ERR_INTERN instead. That choice is per-parameter and lives in the
- * generator's named (routine, parameter) table.
- */
-#define BODY_MPI_Error_string(TARGET)                                          \
-  {                                                                            \
-    const int errorcode = mpiwrapper_errorcode_fromabi(abi_errorcode);         \
-                                                                               \
-    char buf[MPI_MAX_ERROR_STRING]; /* the implementation's maximum */         \
-    int  resultlen = 0;                                                        \
-                                                                               \
-    const int ierror = TARGET(errorcode, buf, &resultlen);                     \
-    if (ierror == MPI_SUCCESS) {                                               \
-      int n = resultlen;                                                       \
-      if (n < 0) n = 0;                                                        \
-      if (n > MPIABI_MAX_ERROR_STRING - 1) n = MPIABI_MAX_ERROR_STRING - 1;    \
-      memcpy(abi_string, buf, (size_t)n);                                      \
-      abi_string[n]  = '\0';                                                   \
-      *abi_resultlen = n; /* so abi_string[*abi_resultlen] == '\0' holds */    \
-    }                                                                          \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-
-int mpiwrapper_w_MPI_Error_string(int abi_errorcode, char *abi_string,
-                              int *abi_resultlen)
-    BODY_MPI_Error_string(MPI_Error_string)
-int mpiwrapper_w_PMPI_Error_string(int abi_errorcode, char *abi_string,
-                               int *abi_resultlen)
-    BODY_MPI_Error_string(PMPI_Error_string)
-
-/* ------------------------------------------------ MPI_Comm_c2f / _f2c ---- */
-
-/* The Fortran converters, and the reason mpif can run over any MPI. Note what
- * they do *not* return: an error code. So the handle-collision flag that every
- * other object-producing conversion turns into MPIABI_ERR_INTERN has nowhere to
- * go here, and is cleared rather than left set for the next call to blame. A
- * comm whose bits collide with the ABI's predefined range converts to
- * MPIABI_COMM_NULL, which the caller will find invalid soon enough.
- */
-#define BODY_MPI_Comm_c2f(TARGET)                                              \
-  {                                                                            \
-    const MPI_Comm comm = mpiwrapper_comm_fromabi(abi_comm);                   \
-    return (MPIABI_Fint)TARGET(comm);                                          \
-  }
-
-MPIABI_Fint mpiwrapper_w_MPI_Comm_c2f(MPIABI_Comm abi_comm)
-    BODY_MPI_Comm_c2f(MPI_Comm_c2f)
-MPIABI_Fint mpiwrapper_w_PMPI_Comm_c2f(MPIABI_Comm abi_comm)
-    BODY_MPI_Comm_c2f(PMPI_Comm_c2f)
-
-#define BODY_MPI_Comm_f2c(TARGET)                                              \
-  {                                                                            \
-    const MPI_Fint comm = abi_comm;                                            \
-                                                                               \
-    const MPIABI_Comm abi_result = mpiwrapper_comm_toabi(TARGET(comm));        \
-    (void)mpiwrapper_take_handle_error();                                      \
-    return abi_result;                                                         \
-  }
-
-MPIABI_Comm mpiwrapper_w_MPI_Comm_f2c(MPIABI_Fint abi_comm)
-    BODY_MPI_Comm_f2c(MPI_Comm_f2c)
-MPIABI_Comm mpiwrapper_w_PMPI_Comm_f2c(MPIABI_Fint abi_comm)
-    BODY_MPI_Comm_f2c(PMPI_Comm_f2c)
-
 /* Declared in handwritten.h, which the generated wrappers.c includes to fill
- * these sixteen slots. Not static, therefore -- but hidden by
+ * its slots. Not static, therefore -- but hidden by
  * -fvisibility=hidden and absent from the export list, so libmpiwrapper still
  * exports exactly one symbol, which oracle 2 checks with nm.
  */

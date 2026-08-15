@@ -143,6 +143,9 @@ static inline int mpiwrapper_in_predef_range(uint64_t bits)
 #ifndef MPIWRAPPER_STAGED_REQUEST_SLOTS
 #  define MPIWRAPPER_STAGED_REQUEST_SLOTS 1024
 #endif
+#ifndef MPIWRAPPER_SERIAL_SLOTS
+#  define MPIWRAPPER_SERIAL_SLOTS 4096
+#endif
 /* Staging threshold in *bytes*, not elements, so that a 32-byte-per-element
  * status array cannot blow a budget tuned for 8-byte handles.
  */
@@ -506,6 +509,48 @@ int mpiwrapper_keyval_dynamic_toabi(int keyval);
  * rather than by luck.
  */
 int mpiwrapper_keyval_add(int keyval, int *abi_keyval);
+
+/* ------------------------------------------------- handle serialization ---- */
+
+/* MPI-5.0 20.4.5's MPI_<class>_toint / _fromint, which are the ABI's own
+ * replacement for the c2f/f2c pair and, unlike it, are part of the ABI. Two
+ * requirements, and they are why this cannot be a cast:
+ *
+ *  - "For all predefined handles, the integer value must be the same as the
+ *    values listed in Section A" -- the ABI's own predefined values, i.e. the
+ *    0x20..0x2eb this file already knows.
+ *  - "For user-defined handles, the implementation must return the same
+ *    integer for every call with the same handle, which does not conflict with
+ *    the reserved range for predefined handles."
+ *
+ * A dynamic ABI handle is the implementation's own handle bits (NOTES.md
+ * #5.1), and on Open MPI those are an object address: 64 bits, which does not
+ * fit in an int and cannot be recovered from a truncation. So dynamic handles
+ * are *interned* -- the ABI-side integer is an index into an append-only table
+ * drawn from a base far above the predefined range, exactly as keyvals.c draws
+ * the dynamic half of its family (NOTES.md #5.6). Predefined handles are not
+ * interned, because the first requirement fixes their value.
+ *
+ * These take and return raw bits rather than a handle type, so one table
+ * serves all eleven classes. That is not a shortcut: the integer identifies
+ * the *bits*, and the class comes from which _fromint the caller reached for,
+ * so an int handed to the wrong class's _fromint is the caller's error and not
+ * an ambiguity here.
+ *
+ * Nothing is ever removed, for the same reason as everywhere else in this
+ * library: MPI-5.0 20.4.5 makes an integer whose handle has been freed
+ * erroneous to use, but a *re*-created object may reuse the implementation's
+ * handle value, and the entry then still describes it correctly.
+ */
+
+/* 0 when the table is full -- never a valid serialized handle, since the
+ * predefined range starts at 0x20, so the matching _fromint fails and the
+ * caller gets the class's null handle rather than a fabricated one.
+ */
+int mpiwrapper_handle_toint(uint64_t abi_bits);
+
+/* 0 when the integer is one this library never issued. */
+int mpiwrapper_handle_fromint(int value, uint64_t *abi_bits);
 
 /* --------------------------------------------------------------- sentinels */
 

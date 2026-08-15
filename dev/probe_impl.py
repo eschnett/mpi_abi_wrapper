@@ -28,9 +28,17 @@ macro -- Open MPI defines MPI_Aint_add that way -- and a macro is perfectly
 callable. The compiler is the only thing that answers the question the
 generated code actually asks.
 
-**What gets probed** is read out of the generated sources: every
-`MPIWRAPPER_HAVE_<name>` they mention, and nothing else. So the generator
-decides what needs asking and the two cannot drift apart.
+**What gets probed** is read out of the sources that guard: every
+`MPIWRAPPER_HAVE_<name>` they mention, and nothing else. So what needs asking
+is decided by the code that asks it, and the two cannot drift apart.
+
+That is `gen/mpiwrapper/` *and* `src/mpiwrapper/`. It used to be the generated
+pair alone, on the reasoning that the generator decides -- which stopped being
+true in S4a: a hand-written body is subject to decision 6 exactly like a
+generated one, and its guard was silently false while the probe was not
+reading the file it appeared in. A guard nobody probes is not a guard; it is a
+permanently-taken `#else` branch that reports
+MPI_ERR_UNSUPPORTED_OPERATION for an entry point the implementation has.
 
 **How, and what it costs.** All of them go into *one* translation unit, one
 probe per line, compiled `-fsyntax-only` -- not one configure test per name.
@@ -66,8 +74,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_ENTRYPOINTS = ROOT / "dev" / "entrypoints.txt"
-DEFAULT_SOURCES = [ROOT / "gen" / "mpiwrapper" / "wrappers.c",
-                   ROOT / "gen" / "mpiwrapper" / "constants.c"]
+DEFAULT_SOURCES = ([ROOT / "gen" / "mpiwrapper" / "wrappers.c",
+                    ROOT / "gen" / "mpiwrapper" / "constants.c"]
+                   + sorted((ROOT / "src" / "mpiwrapper").glob("*.c")))
 
 _LINE_RE = re.compile(r"^[^\s].*?:(\d+):(?:\d+:)?\s*(?:fatal\s+)?error:",
                       re.MULTILINE)

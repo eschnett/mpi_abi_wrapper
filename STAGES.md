@@ -214,7 +214,7 @@ wrapper-owned state that does not exist yet. That puts 70 entry points in the
 first session and 40 in the second, which is the right imbalance: 42 of the
 first session's 70 are one table written eleven times.
 
-#### S4a — the converter face (70)
+#### S4a — the converter face (70) *(done: 78 of the ledger's 118 have bodies)*
 
 The 42 remaining handle converters, the four Fortran status converters, the nine
 remaining status-consuming functions of §5.2, the nine remaining output-string
@@ -243,6 +243,27 @@ Fortran integer we hand out is not the one the implementation's own Fortran side
 would recognise, which is the entire point of these 44 functions. The real
 oracle is **mpif in S8**; until then, keep the round-trip honest by checking
 against handles the *implementation* produced rather than only ones we made.
+
+**What the session did, and what turned out to be stronger than this
+predicted.** `test/abi_converters_test.c` is the behavioural half, and two of
+its checks are not round trips at all: `_toint` of a predefined handle is
+compared against the ABI header's own constant, which MPI-5.0 §20.4.5 requires
+and no round trip can detect, and a status converted to the Fortran form and
+back is asked `MPI_Get_count`, which only succeeds if the implementation's
+private bytes travelled with it. The weakness above therefore applies to the 22
+`_c2f`/`_f2c` forms alone; the 22 serialization forms turned out to have an
+oracle in the standard. `mpiwrapper_selftest` covers what a black-box test
+cannot reach — the intern table's capacity behaviour, which has no error
+channel and so must answer 0.
+
+Three things it settled that this plan did not name, all in `NOTES.md` §3's
+"What S4a settled": **`_toint`/`_fromint` are ABI-side rather than converters**,
+because §20.4 puts `c2f`/`f2c` outside the ABI while §20.4.5 pins serialization
+to the ABI's own predefined values; **`src/mpiwrapper/serialize.c`**, because a
+dynamic ABI handle is a 64-bit address on Open MPI and no cast to `int`
+recovers it; and **`dev/probe_impl.py` now reads `src/mpiwrapper/` too**,
+because a hand-written body's `MPIWRAPPER_HAVE_` guard was silently false while
+the probe read only the generated sources.
 
 #### S4b — the state the wrapper has to own (40)
 

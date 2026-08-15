@@ -41,118 +41,6 @@
 #include <string.h>
 
 
-/* ------------------------------------------- MPI_Abi_get_fortran_booleans */
-
-/* ABI introspection: answers about this library, not about the wrapped MPI;
- * no body yet (S4)
- */
-#define BODY_MPI_Abi_get_fortran_booleans(TARGET)                              \
-  {                                                                            \
-    (void)abi_logical_size;                                                    \
-    (void)abi_logical_true;                                                    \
-    (void)abi_logical_false;                                                   \
-    (void)abi_is_set;                                                          \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Abi_get_fortran_booleans(int abi_logical_size,
-                                          void *abi_logical_true,
-                                          void *abi_logical_false,
-                                          int *abi_is_set)
-    BODY_MPI_Abi_get_fortran_booleans(MPI_Abi_get_fortran_booleans)
-static int w_PMPI_Abi_get_fortran_booleans(int abi_logical_size,
-                                           void *abi_logical_true,
-                                           void *abi_logical_false,
-                                           int *abi_is_set)
-    BODY_MPI_Abi_get_fortran_booleans(PMPI_Abi_get_fortran_booleans)
-
-/* ----------------------------------------------- MPI_Abi_get_fortran_info */
-
-/* ABI introspection: answers about this library, not about the wrapped MPI;
- * no body yet (S4)
- */
-#define BODY_MPI_Abi_get_fortran_info(TARGET)                                  \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Abi_get_fortran_info(MPIABI_Info *abi_info)
-    BODY_MPI_Abi_get_fortran_info(MPI_Abi_get_fortran_info)
-static int w_PMPI_Abi_get_fortran_info(MPIABI_Info *abi_info)
-    BODY_MPI_Abi_get_fortran_info(PMPI_Abi_get_fortran_info)
-
-/* ------------------------------------------------------- MPI_Abi_get_info */
-
-/* ABI introspection: answers about this library, not about the wrapped MPI;
- * no body yet (S4)
- */
-#define BODY_MPI_Abi_get_info(TARGET)                                          \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Abi_get_info(MPIABI_Info *abi_info)
-    BODY_MPI_Abi_get_info(MPI_Abi_get_info)
-static int w_PMPI_Abi_get_info(MPIABI_Info *abi_info)
-    BODY_MPI_Abi_get_info(PMPI_Abi_get_info)
-
-/* ---------------------------------------------------- MPI_Abi_get_version */
-
-/* ABI introspection: answers about this library, not about the wrapped MPI;
- * no body yet (S4)
- */
-#define BODY_MPI_Abi_get_version(TARGET)                                       \
-  {                                                                            \
-    (void)abi_abi_major;                                                       \
-    (void)abi_abi_minor;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Abi_get_version(int *abi_abi_major, int *abi_abi_minor)
-    BODY_MPI_Abi_get_version(MPI_Abi_get_version)
-static int w_PMPI_Abi_get_version(int *abi_abi_major, int *abi_abi_minor)
-    BODY_MPI_Abi_get_version(PMPI_Abi_get_version)
-
-/* ------------------------------------------- MPI_Abi_set_fortran_booleans */
-
-/* ABI introspection: answers about this library, not about the wrapped MPI;
- * no body yet (S4)
- */
-#define BODY_MPI_Abi_set_fortran_booleans(TARGET)                              \
-  {                                                                            \
-    (void)abi_logical_size;                                                    \
-    (void)abi_logical_true;                                                    \
-    (void)abi_logical_false;                                                   \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Abi_set_fortran_booleans(int abi_logical_size,
-                                          void *abi_logical_true,
-                                          void *abi_logical_false)
-    BODY_MPI_Abi_set_fortran_booleans(MPI_Abi_set_fortran_booleans)
-static int w_PMPI_Abi_set_fortran_booleans(int abi_logical_size,
-                                           void *abi_logical_true,
-                                           void *abi_logical_false)
-    BODY_MPI_Abi_set_fortran_booleans(PMPI_Abi_set_fortran_booleans)
-
-/* ----------------------------------------------- MPI_Abi_set_fortran_info */
-
-/* ABI introspection: answers about this library, not about the wrapped MPI;
- * no body yet (S4)
- */
-#define BODY_MPI_Abi_set_fortran_info(TARGET)                                  \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Abi_set_fortran_info(MPIABI_Info abi_info)
-    BODY_MPI_Abi_set_fortran_info(MPI_Abi_set_fortran_info)
-static int w_PMPI_Abi_set_fortran_info(MPIABI_Info abi_info)
-    BODY_MPI_Abi_set_fortran_info(PMPI_Abi_set_fortran_info)
-
 /* -------------------------------------------------------------- MPI_Abort */
 
 /* lifecycle: initialization state the wrapper itself has to track; no body
@@ -3315,26 +3203,6 @@ static int w_PMPI_Comm_get_info(MPIABI_Comm abi_comm,
                                 MPIABI_Info *abi_info_used)
     BODY_MPI_Comm_get_info(PMPI_Comm_get_info)
 
-/* ------------------------------------------------------ MPI_Comm_get_name */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Comm_get_name(TARGET)                                         \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_comm_name;                                                       \
-    (void)abi_resultlen;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_get_name(MPIABI_Comm abi_comm, char *abi_comm_name,
-                               int *abi_resultlen)
-    BODY_MPI_Comm_get_name(MPI_Comm_get_name)
-static int w_PMPI_Comm_get_name(MPIABI_Comm abi_comm, char *abi_comm_name,
-                                int *abi_resultlen)
-    BODY_MPI_Comm_get_name(PMPI_Comm_get_name)
-
 /* ---------------------------------------------------- MPI_Comm_get_parent */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Comm_get_parent
@@ -5000,32 +4868,6 @@ static int w_PMPI_File_get_type_extent_c(MPIABI_File abi_fh,
                                          MPIABI_Datatype abi_datatype,
                                          MPIABI_Count *abi_extent)
     BODY_MPI_File_get_type_extent_c(PMPI_File_get_type_extent_c)
-
-/* ------------------------------------------------------ MPI_File_get_view */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_File_get_view(TARGET)                                         \
-  {                                                                            \
-    (void)abi_fh;                                                              \
-    (void)abi_disp;                                                            \
-    (void)abi_etype;                                                           \
-    (void)abi_filetype;                                                        \
-    (void)abi_datarep;                                                         \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_File_get_view(MPIABI_File abi_fh, MPIABI_Offset *abi_disp,
-                               MPIABI_Datatype *abi_etype,
-                               MPIABI_Datatype *abi_filetype,
-                               char *abi_datarep)
-    BODY_MPI_File_get_view(MPI_File_get_view)
-static int w_PMPI_File_get_view(MPIABI_File abi_fh, MPIABI_Offset *abi_disp,
-                                MPIABI_Datatype *abi_etype,
-                                MPIABI_Datatype *abi_filetype,
-                                char *abi_datarep)
-    BODY_MPI_File_get_view(PMPI_File_get_view)
 
 /* --------------------------------------------------------- MPI_File_iread */
 
@@ -8601,87 +8443,6 @@ static int w_PMPI_Get_address(const void *abi_location,
                               MPIABI_Aint *abi_address)
     BODY_MPI_Get_address(PMPI_Get_address)
 
-/* -------------------------------------------------------- MPI_Get_count_c */
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Get_count_c(TARGET)                                           \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_datatype;                                                        \
-    (void)abi_count;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Get_count_c(const MPIABI_Status *abi_status,
-                             MPIABI_Datatype abi_datatype,
-                             MPIABI_Count *abi_count)
-    BODY_MPI_Get_count_c(MPI_Get_count_c)
-static int w_PMPI_Get_count_c(const MPIABI_Status *abi_status,
-                              MPIABI_Datatype abi_datatype,
-                              MPIABI_Count *abi_count)
-    BODY_MPI_Get_count_c(PMPI_Get_count_c)
-
-/* ------------------------------------------------------- MPI_Get_elements */
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Get_elements(TARGET)                                          \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_datatype;                                                        \
-    (void)abi_count;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Get_elements(const MPIABI_Status *abi_status,
-                              MPIABI_Datatype abi_datatype, int *abi_count)
-    BODY_MPI_Get_elements(MPI_Get_elements)
-static int w_PMPI_Get_elements(const MPIABI_Status *abi_status,
-                               MPIABI_Datatype abi_datatype, int *abi_count)
-    BODY_MPI_Get_elements(PMPI_Get_elements)
-
-/* ----------------------------------------------------- MPI_Get_elements_c */
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Get_elements_c(TARGET)                                        \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_datatype;                                                        \
-    (void)abi_count;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Get_elements_c(const MPIABI_Status *abi_status,
-                                MPIABI_Datatype abi_datatype,
-                                MPIABI_Count *abi_count)
-    BODY_MPI_Get_elements_c(MPI_Get_elements_c)
-static int w_PMPI_Get_elements_c(const MPIABI_Status *abi_status,
-                                 MPIABI_Datatype abi_datatype,
-                                 MPIABI_Count *abi_count)
-    BODY_MPI_Get_elements_c(PMPI_Get_elements_c)
-
-/* ----------------------------------------------------- MPI_Get_elements_x */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Get_elements_x(TARGET)                                        \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_datatype;                                                        \
-    (void)abi_count;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Get_elements_x(const MPIABI_Status *abi_status,
-                                MPIABI_Datatype abi_datatype,
-                                MPIABI_Count *abi_count)
-    BODY_MPI_Get_elements_x(MPI_Get_elements_x)
-static int w_PMPI_Get_elements_x(const MPIABI_Status *abi_status,
-                                 MPIABI_Datatype abi_datatype,
-                                 MPIABI_Count *abi_count)
-    BODY_MPI_Get_elements_x(PMPI_Get_elements_x)
-#pragma GCC diagnostic pop
-
 /* ----------------------------------------------- MPI_Get_hw_resource_info */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Get_hw_resource_info
@@ -8709,40 +8470,6 @@ static int w_MPI_Get_hw_resource_info(MPIABI_Info *abi_hw_info)
     BODY_MPI_Get_hw_resource_info(MPI_Get_hw_resource_info)
 static int w_PMPI_Get_hw_resource_info(MPIABI_Info *abi_hw_info)
     BODY_MPI_Get_hw_resource_info(PMPI_Get_hw_resource_info)
-
-/* ------------------------------------------------ MPI_Get_library_version */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Get_library_version(TARGET)                                   \
-  {                                                                            \
-    (void)abi_version;                                                         \
-    (void)abi_resultlen;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Get_library_version(char *abi_version, int *abi_resultlen)
-    BODY_MPI_Get_library_version(MPI_Get_library_version)
-static int w_PMPI_Get_library_version(char *abi_version, int *abi_resultlen)
-    BODY_MPI_Get_library_version(PMPI_Get_library_version)
-
-/* ------------------------------------------------- MPI_Get_processor_name */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Get_processor_name(TARGET)                                    \
-  {                                                                            \
-    (void)abi_name;                                                            \
-    (void)abi_resultlen;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Get_processor_name(char *abi_name, int *abi_resultlen)
-    BODY_MPI_Get_processor_name(MPI_Get_processor_name)
-static int w_PMPI_Get_processor_name(char *abi_name, int *abi_resultlen)
-    BODY_MPI_Get_processor_name(PMPI_Get_processor_name)
 
 /* -------------------------------------------------------- MPI_Get_version */
 
@@ -11942,26 +11669,6 @@ static int w_MPI_Info_get_nkeys(MPIABI_Info abi_info, int *abi_nkeys)
 static int w_PMPI_Info_get_nkeys(MPIABI_Info abi_info, int *abi_nkeys)
     BODY_MPI_Info_get_nkeys(PMPI_Info_get_nkeys)
 
-/* ---------------------------------------------------- MPI_Info_get_nthkey */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Info_get_nthkey(TARGET)                                       \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    (void)abi_n;                                                               \
-    (void)abi_key;                                                             \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Info_get_nthkey(MPIABI_Info abi_info, int abi_n,
-                                 char *abi_key)
-    BODY_MPI_Info_get_nthkey(MPI_Info_get_nthkey)
-static int w_PMPI_Info_get_nthkey(MPIABI_Info abi_info, int abi_n,
-                                  char *abi_key)
-    BODY_MPI_Info_get_nthkey(PMPI_Info_get_nthkey)
-
 /* ---------------------------------------------------- MPI_Info_get_string */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Info_get_string
@@ -13570,26 +13277,6 @@ static int w_PMPI_Issend_c(const void *abi_buf, MPIABI_Count abi_count,
                            MPIABI_Request *abi_request)
     BODY_MPI_Issend_c(PMPI_Issend_c)
 
-/* -------------------------------------------------------- MPI_Lookup_name */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Lookup_name(TARGET)                                           \
-  {                                                                            \
-    (void)abi_service_name;                                                    \
-    (void)abi_info;                                                            \
-    (void)abi_port_name;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Lookup_name(const char *abi_service_name,
-                             MPIABI_Info abi_info, char *abi_port_name)
-    BODY_MPI_Lookup_name(MPI_Lookup_name)
-static int w_PMPI_Lookup_name(const char *abi_service_name,
-                              MPIABI_Info abi_info, char *abi_port_name)
-    BODY_MPI_Lookup_name(PMPI_Lookup_name)
-
 /* ------------------------------------------------------------- MPI_Mprobe */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Mprobe
@@ -15082,23 +14769,6 @@ static int w_PMPI_Op_create_c(MPIABI_User_function_c *abi_user_fn,
 
 static int w_MPI_Op_free(MPIABI_Op *abi_op) BODY_MPI_Op_free(MPI_Op_free)
 static int w_PMPI_Op_free(MPIABI_Op *abi_op) BODY_MPI_Op_free(PMPI_Op_free)
-
-/* ---------------------------------------------------------- MPI_Open_port */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Open_port(TARGET)                                             \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    (void)abi_port_name;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Open_port(MPIABI_Info abi_info, char *abi_port_name)
-    BODY_MPI_Open_port(MPI_Open_port)
-static int w_PMPI_Open_port(MPIABI_Info abi_info, char *abi_port_name)
-    BODY_MPI_Open_port(PMPI_Open_port)
 
 /* --------------------------------------------------------------- MPI_Pack */
 
@@ -19536,84 +19206,6 @@ static int w_MPI_Status_get_tag(const MPIABI_Status *abi_status, int *abi_tag)
 static int w_PMPI_Status_get_tag(const MPIABI_Status *abi_status, int *abi_tag)
     BODY_MPI_Status_get_tag(PMPI_Status_get_tag)
 
-/* ----------------------------------------------- MPI_Status_set_cancelled */
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Status_set_cancelled(TARGET)                                  \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_flag;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_set_cancelled(MPIABI_Status *abi_status, int abi_flag)
-    BODY_MPI_Status_set_cancelled(MPI_Status_set_cancelled)
-static int w_PMPI_Status_set_cancelled(MPIABI_Status *abi_status, int abi_flag)
-    BODY_MPI_Status_set_cancelled(PMPI_Status_set_cancelled)
-
-/* ------------------------------------------------ MPI_Status_set_elements */
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Status_set_elements(TARGET)                                   \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_datatype;                                                        \
-    (void)abi_count;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_set_elements(MPIABI_Status *abi_status,
-                                     MPIABI_Datatype abi_datatype,
-                                     int abi_count)
-    BODY_MPI_Status_set_elements(MPI_Status_set_elements)
-static int w_PMPI_Status_set_elements(MPIABI_Status *abi_status,
-                                      MPIABI_Datatype abi_datatype,
-                                      int abi_count)
-    BODY_MPI_Status_set_elements(PMPI_Status_set_elements)
-
-/* ---------------------------------------------- MPI_Status_set_elements_c */
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Status_set_elements_c(TARGET)                                 \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_datatype;                                                        \
-    (void)abi_count;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_set_elements_c(MPIABI_Status *abi_status,
-                                       MPIABI_Datatype abi_datatype,
-                                       MPIABI_Count abi_count)
-    BODY_MPI_Status_set_elements_c(MPI_Status_set_elements_c)
-static int w_PMPI_Status_set_elements_c(MPIABI_Status *abi_status,
-                                        MPIABI_Datatype abi_datatype,
-                                        MPIABI_Count abi_count)
-    BODY_MPI_Status_set_elements_c(PMPI_Status_set_elements_c)
-
-/* ---------------------------------------------- MPI_Status_set_elements_x */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Status_set_elements_x(TARGET)                                 \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_datatype;                                                        \
-    (void)abi_count;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_set_elements_x(MPIABI_Status *abi_status,
-                                       MPIABI_Datatype abi_datatype,
-                                       MPIABI_Count abi_count)
-    BODY_MPI_Status_set_elements_x(MPI_Status_set_elements_x)
-static int w_PMPI_Status_set_elements_x(MPIABI_Status *abi_status,
-                                        MPIABI_Datatype abi_datatype,
-                                        MPIABI_Count abi_count)
-    BODY_MPI_Status_set_elements_x(PMPI_Status_set_elements_x)
-#pragma GCC diagnostic pop
-
 /* --------------------------------------------------- MPI_Status_set_error */
 
 /* Pure ABI-side: this reads or writes a named field of the caller's own
@@ -19708,22 +19300,6 @@ static int w_MPI_Test(MPIABI_Request *abi_request, int *abi_flag,
                       MPIABI_Status *abi_status) BODY_MPI_Test(MPI_Test)
 static int w_PMPI_Test(MPIABI_Request *abi_request, int *abi_flag,
                        MPIABI_Status *abi_status) BODY_MPI_Test(PMPI_Test)
-
-/* ----------------------------------------------------- MPI_Test_cancelled */
-
-/* consumes a status in the *in* direction (NOTES.md #5.2); no body yet (S4) */
-#define BODY_MPI_Test_cancelled(TARGET)                                        \
-  {                                                                            \
-    (void)abi_status;                                                          \
-    (void)abi_flag;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Test_cancelled(const MPIABI_Status *abi_status, int *abi_flag)
-    BODY_MPI_Test_cancelled(MPI_Test_cancelled)
-static int w_PMPI_Test_cancelled(const MPIABI_Status *abi_status,
-                                 int *abi_flag)
-    BODY_MPI_Test_cancelled(PMPI_Test_cancelled)
 
 /* ------------------------------------------------------------ MPI_Testall */
 
@@ -21545,26 +21121,6 @@ static int w_PMPI_Type_get_extent_x(MPIABI_Datatype abi_datatype,
     BODY_MPI_Type_get_extent_x(PMPI_Type_get_extent_x)
 #pragma GCC diagnostic pop
 
-/* ------------------------------------------------------ MPI_Type_get_name */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Type_get_name(TARGET)                                         \
-  {                                                                            \
-    (void)abi_datatype;                                                        \
-    (void)abi_type_name;                                                       \
-    (void)abi_resultlen;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Type_get_name(MPIABI_Datatype abi_datatype,
-                               char *abi_type_name, int *abi_resultlen)
-    BODY_MPI_Type_get_name(MPI_Type_get_name)
-static int w_PMPI_Type_get_name(MPIABI_Datatype abi_datatype,
-                                char *abi_type_name, int *abi_resultlen)
-    BODY_MPI_Type_get_name(PMPI_Type_get_name)
-
 /* ----------------------------------------------- MPI_Type_get_true_extent */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_true_extent
@@ -23295,26 +22851,6 @@ static int w_MPI_Win_get_info(MPIABI_Win abi_win, MPIABI_Info *abi_info_used)
 static int w_PMPI_Win_get_info(MPIABI_Win abi_win, MPIABI_Info *abi_info_used)
     BODY_MPI_Win_get_info(PMPI_Win_get_info)
 
-/* ------------------------------------------------------- MPI_Win_get_name */
-
-/* output string buffer with no length argument: truncate or error is a per-
- * parameter judgement (NOTES.md #5.8); no body yet (S4)
- */
-#define BODY_MPI_Win_get_name(TARGET)                                          \
-  {                                                                            \
-    (void)abi_win;                                                             \
-    (void)abi_win_name;                                                        \
-    (void)abi_resultlen;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Win_get_name(MPIABI_Win abi_win, char *abi_win_name,
-                              int *abi_resultlen)
-    BODY_MPI_Win_get_name(MPI_Win_get_name)
-static int w_PMPI_Win_get_name(MPIABI_Win abi_win, char *abi_win_name,
-                               int *abi_resultlen)
-    BODY_MPI_Win_get_name(PMPI_Win_get_name)
-
 /* ----------------------------------------------------------- MPI_Win_lock */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Win_lock
@@ -23802,312 +23338,6 @@ static double w_PMPI_Wtick(void) BODY_MPI_Wtick(PMPI_Wtick)
 
 static double w_MPI_Wtime(void) BODY_MPI_Wtime(MPI_Wtime)
 static double w_PMPI_Wtime(void) BODY_MPI_Wtime(PMPI_Wtime)
-
-/* ------------------------------------------------------- MPI_Comm_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Comm_fromint(TARGET)                                          \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    return (MPIABI_Comm)0;                                                     \
-  }
-
-static MPIABI_Comm w_MPI_Comm_fromint(int abi_comm)
-    BODY_MPI_Comm_fromint(MPI_Comm_fromint)
-static MPIABI_Comm w_PMPI_Comm_fromint(int abi_comm)
-    BODY_MPI_Comm_fromint(PMPI_Comm_fromint)
-
-/* --------------------------------------------------------- MPI_Comm_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Comm_toint(TARGET)                                            \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Comm_toint(MPIABI_Comm abi_comm)
-    BODY_MPI_Comm_toint(MPI_Comm_toint)
-static int w_PMPI_Comm_toint(MPIABI_Comm abi_comm)
-    BODY_MPI_Comm_toint(PMPI_Comm_toint)
-
-/* ------------------------------------------------- MPI_Errhandler_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Errhandler_fromint(TARGET)                                    \
-  {                                                                            \
-    (void)abi_errhandler;                                                      \
-    return (MPIABI_Errhandler)0;                                               \
-  }
-
-static MPIABI_Errhandler w_MPI_Errhandler_fromint(int abi_errhandler)
-    BODY_MPI_Errhandler_fromint(MPI_Errhandler_fromint)
-static MPIABI_Errhandler w_PMPI_Errhandler_fromint(int abi_errhandler)
-    BODY_MPI_Errhandler_fromint(PMPI_Errhandler_fromint)
-
-/* --------------------------------------------------- MPI_Errhandler_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Errhandler_toint(TARGET)                                      \
-  {                                                                            \
-    (void)abi_errhandler;                                                      \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Errhandler_toint(MPIABI_Errhandler abi_errhandler)
-    BODY_MPI_Errhandler_toint(MPI_Errhandler_toint)
-static int w_PMPI_Errhandler_toint(MPIABI_Errhandler abi_errhandler)
-    BODY_MPI_Errhandler_toint(PMPI_Errhandler_toint)
-
-/* ------------------------------------------------------- MPI_File_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_File_fromint(TARGET)                                          \
-  {                                                                            \
-    (void)abi_file;                                                            \
-    return (MPIABI_File)0;                                                     \
-  }
-
-static MPIABI_File w_MPI_File_fromint(int abi_file)
-    BODY_MPI_File_fromint(MPI_File_fromint)
-static MPIABI_File w_PMPI_File_fromint(int abi_file)
-    BODY_MPI_File_fromint(PMPI_File_fromint)
-
-/* --------------------------------------------------------- MPI_File_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_File_toint(TARGET)                                            \
-  {                                                                            \
-    (void)abi_file;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_File_toint(MPIABI_File abi_file)
-    BODY_MPI_File_toint(MPI_File_toint)
-static int w_PMPI_File_toint(MPIABI_File abi_file)
-    BODY_MPI_File_toint(PMPI_File_toint)
-
-/* ------------------------------------------------------ MPI_Group_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Group_fromint(TARGET)                                         \
-  {                                                                            \
-    (void)abi_group;                                                           \
-    return (MPIABI_Group)0;                                                    \
-  }
-
-static MPIABI_Group w_MPI_Group_fromint(int abi_group)
-    BODY_MPI_Group_fromint(MPI_Group_fromint)
-static MPIABI_Group w_PMPI_Group_fromint(int abi_group)
-    BODY_MPI_Group_fromint(PMPI_Group_fromint)
-
-/* -------------------------------------------------------- MPI_Group_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Group_toint(TARGET)                                           \
-  {                                                                            \
-    (void)abi_group;                                                           \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Group_toint(MPIABI_Group abi_group)
-    BODY_MPI_Group_toint(MPI_Group_toint)
-static int w_PMPI_Group_toint(MPIABI_Group abi_group)
-    BODY_MPI_Group_toint(PMPI_Group_toint)
-
-/* ------------------------------------------------------- MPI_Info_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Info_fromint(TARGET)                                          \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    return (MPIABI_Info)0;                                                     \
-  }
-
-static MPIABI_Info w_MPI_Info_fromint(int abi_info)
-    BODY_MPI_Info_fromint(MPI_Info_fromint)
-static MPIABI_Info w_PMPI_Info_fromint(int abi_info)
-    BODY_MPI_Info_fromint(PMPI_Info_fromint)
-
-/* --------------------------------------------------------- MPI_Info_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Info_toint(TARGET)                                            \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Info_toint(MPIABI_Info abi_info)
-    BODY_MPI_Info_toint(MPI_Info_toint)
-static int w_PMPI_Info_toint(MPIABI_Info abi_info)
-    BODY_MPI_Info_toint(PMPI_Info_toint)
-
-/* ---------------------------------------------------- MPI_Message_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Message_fromint(TARGET)                                       \
-  {                                                                            \
-    (void)abi_message;                                                         \
-    return (MPIABI_Message)0;                                                  \
-  }
-
-static MPIABI_Message w_MPI_Message_fromint(int abi_message)
-    BODY_MPI_Message_fromint(MPI_Message_fromint)
-static MPIABI_Message w_PMPI_Message_fromint(int abi_message)
-    BODY_MPI_Message_fromint(PMPI_Message_fromint)
-
-/* ------------------------------------------------------ MPI_Message_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Message_toint(TARGET)                                         \
-  {                                                                            \
-    (void)abi_message;                                                         \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Message_toint(MPIABI_Message abi_message)
-    BODY_MPI_Message_toint(MPI_Message_toint)
-static int w_PMPI_Message_toint(MPIABI_Message abi_message)
-    BODY_MPI_Message_toint(PMPI_Message_toint)
-
-/* --------------------------------------------------------- MPI_Op_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Op_fromint(TARGET)                                            \
-  {                                                                            \
-    (void)abi_op;                                                              \
-    return (MPIABI_Op)0;                                                       \
-  }
-
-static MPIABI_Op w_MPI_Op_fromint(int abi_op)
-    BODY_MPI_Op_fromint(MPI_Op_fromint)
-static MPIABI_Op w_PMPI_Op_fromint(int abi_op)
-    BODY_MPI_Op_fromint(PMPI_Op_fromint)
-
-/* ----------------------------------------------------------- MPI_Op_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Op_toint(TARGET)                                              \
-  {                                                                            \
-    (void)abi_op;                                                              \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Op_toint(MPIABI_Op abi_op) BODY_MPI_Op_toint(MPI_Op_toint)
-static int w_PMPI_Op_toint(MPIABI_Op abi_op) BODY_MPI_Op_toint(PMPI_Op_toint)
-
-/* ---------------------------------------------------- MPI_Request_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Request_fromint(TARGET)                                       \
-  {                                                                            \
-    (void)abi_request;                                                         \
-    return (MPIABI_Request)0;                                                  \
-  }
-
-static MPIABI_Request w_MPI_Request_fromint(int abi_request)
-    BODY_MPI_Request_fromint(MPI_Request_fromint)
-static MPIABI_Request w_PMPI_Request_fromint(int abi_request)
-    BODY_MPI_Request_fromint(PMPI_Request_fromint)
-
-/* ------------------------------------------------------ MPI_Request_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Request_toint(TARGET)                                         \
-  {                                                                            \
-    (void)abi_request;                                                         \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Request_toint(MPIABI_Request abi_request)
-    BODY_MPI_Request_toint(MPI_Request_toint)
-static int w_PMPI_Request_toint(MPIABI_Request abi_request)
-    BODY_MPI_Request_toint(PMPI_Request_toint)
-
-/* ---------------------------------------------------- MPI_Session_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Session_fromint(TARGET)                                       \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    return (MPIABI_Session)0;                                                  \
-  }
-
-static MPIABI_Session w_MPI_Session_fromint(int abi_session)
-    BODY_MPI_Session_fromint(MPI_Session_fromint)
-static MPIABI_Session w_PMPI_Session_fromint(int abi_session)
-    BODY_MPI_Session_fromint(PMPI_Session_fromint)
-
-/* ------------------------------------------------------ MPI_Session_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Session_toint(TARGET)                                         \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Session_toint(MPIABI_Session abi_session)
-    BODY_MPI_Session_toint(MPI_Session_toint)
-static int w_PMPI_Session_toint(MPIABI_Session abi_session)
-    BODY_MPI_Session_toint(PMPI_Session_toint)
-
-/* ------------------------------------------------------- MPI_Type_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Type_fromint(TARGET)                                          \
-  {                                                                            \
-    (void)abi_datatype;                                                        \
-    return (MPIABI_Datatype)0;                                                 \
-  }
-
-static MPIABI_Datatype w_MPI_Type_fromint(int abi_datatype)
-    BODY_MPI_Type_fromint(MPI_Type_fromint)
-static MPIABI_Datatype w_PMPI_Type_fromint(int abi_datatype)
-    BODY_MPI_Type_fromint(PMPI_Type_fromint)
-
-/* --------------------------------------------------------- MPI_Type_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Type_toint(TARGET)                                            \
-  {                                                                            \
-    (void)abi_datatype;                                                        \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Type_toint(MPIABI_Datatype abi_datatype)
-    BODY_MPI_Type_toint(MPI_Type_toint)
-static int w_PMPI_Type_toint(MPIABI_Datatype abi_datatype)
-    BODY_MPI_Type_toint(PMPI_Type_toint)
-
-/* -------------------------------------------------------- MPI_Win_fromint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Win_fromint(TARGET)                                           \
-  {                                                                            \
-    (void)abi_win;                                                             \
-    return (MPIABI_Win)0;                                                      \
-  }
-
-static MPIABI_Win w_MPI_Win_fromint(int abi_win)
-    BODY_MPI_Win_fromint(MPI_Win_fromint)
-static MPIABI_Win w_PMPI_Win_fromint(int abi_win)
-    BODY_MPI_Win_fromint(PMPI_Win_fromint)
-
-/* ---------------------------------------------------------- MPI_Win_toint */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Win_toint(TARGET)                                             \
-  {                                                                            \
-    (void)abi_win;                                                             \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Win_toint(MPIABI_Win abi_win)
-    BODY_MPI_Win_toint(MPI_Win_toint)
-static int w_PMPI_Win_toint(MPIABI_Win abi_win)
-    BODY_MPI_Win_toint(PMPI_Win_toint)
 
 /* ------------------------------------------------- MPI_T_category_changed */
 
@@ -25847,376 +25077,24 @@ static int w_PMPI_T_source_get_timestamp(int abi_source_index,
                                          MPIABI_Count *abi_timestamp)
     BODY_MPI_T_source_get_timestamp(PMPI_T_source_get_timestamp)
 
-/* --------------------------------------------------------- MPI_Status_f2c */
-
-/* Fortran status converter: memcpy-shaped, not argument-shaped; no body yet
- * (S4)
- */
-#define BODY_MPI_Status_f2c(TARGET)                                            \
-  {                                                                            \
-    (void)abi_f_status;                                                        \
-    (void)abi_c_status;                                                        \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_f2c(const MPIABI_Fint *abi_f_status,
-                            MPIABI_Status *abi_c_status)
-    BODY_MPI_Status_f2c(MPI_Status_f2c)
-static int w_PMPI_Status_f2c(const MPIABI_Fint *abi_f_status,
-                             MPIABI_Status *abi_c_status)
-    BODY_MPI_Status_f2c(PMPI_Status_f2c)
-
-/* --------------------------------------------------------- MPI_Status_c2f */
-
-/* Fortran status converter: memcpy-shaped, not argument-shaped; no body yet
- * (S4)
- */
-#define BODY_MPI_Status_c2f(TARGET)                                            \
-  {                                                                            \
-    (void)abi_c_status;                                                        \
-    (void)abi_f_status;                                                        \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_c2f(const MPIABI_Status *abi_c_status,
-                            MPIABI_Fint *abi_f_status)
-    BODY_MPI_Status_c2f(MPI_Status_c2f)
-static int w_PMPI_Status_c2f(const MPIABI_Status *abi_c_status,
-                             MPIABI_Fint *abi_f_status)
-    BODY_MPI_Status_c2f(PMPI_Status_c2f)
-
-/* ------------------------------------------------------- MPI_Status_f082c */
-
-/* Fortran status converter: memcpy-shaped, not argument-shaped; no body yet
- * (S4)
- */
-#define BODY_MPI_Status_f082c(TARGET)                                          \
-  {                                                                            \
-    (void)abi_f08_status;                                                      \
-    (void)abi_c_status;                                                        \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_f082c(const MPIABI_F08_Status *abi_f08_status,
-                              MPIABI_Status *abi_c_status)
-    BODY_MPI_Status_f082c(MPI_Status_f082c)
-static int w_PMPI_Status_f082c(const MPIABI_F08_Status *abi_f08_status,
-                               MPIABI_Status *abi_c_status)
-    BODY_MPI_Status_f082c(PMPI_Status_f082c)
-
-/* ------------------------------------------------------- MPI_Status_c2f08 */
-
-/* Fortran status converter: memcpy-shaped, not argument-shaped; no body yet
- * (S4)
- */
-#define BODY_MPI_Status_c2f08(TARGET)                                          \
-  {                                                                            \
-    (void)abi_c_status;                                                        \
-    (void)abi_f08_status;                                                      \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-
-static int w_MPI_Status_c2f08(const MPIABI_Status *abi_c_status,
-                              MPIABI_F08_Status *abi_f08_status)
-    BODY_MPI_Status_c2f08(MPI_Status_c2f08)
-static int w_PMPI_Status_c2f08(const MPIABI_Status *abi_c_status,
-                               MPIABI_F08_Status *abi_f08_status)
-    BODY_MPI_Status_c2f08(PMPI_Status_c2f08)
-
-/* ----------------------------------------------------- MPI_Errhandler_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Errhandler_f2c(TARGET)                                        \
-  {                                                                            \
-    (void)abi_errhandler;                                                      \
-    return (MPIABI_Errhandler)0;                                               \
-  }
-
-static MPIABI_Errhandler w_MPI_Errhandler_f2c(MPIABI_Fint abi_errhandler)
-    BODY_MPI_Errhandler_f2c(MPI_Errhandler_f2c)
-static MPIABI_Errhandler w_PMPI_Errhandler_f2c(MPIABI_Fint abi_errhandler)
-    BODY_MPI_Errhandler_f2c(PMPI_Errhandler_f2c)
-
-/* ----------------------------------------------------- MPI_Errhandler_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Errhandler_c2f(TARGET)                                        \
-  {                                                                            \
-    (void)abi_errhandler;                                                      \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Errhandler_c2f(MPIABI_Errhandler abi_errhandler)
-    BODY_MPI_Errhandler_c2f(MPI_Errhandler_c2f)
-static MPIABI_Fint w_PMPI_Errhandler_c2f(MPIABI_Errhandler abi_errhandler)
-    BODY_MPI_Errhandler_c2f(PMPI_Errhandler_c2f)
-
-/* ----------------------------------------------------------- MPI_File_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_File_f2c(TARGET)                                              \
-  {                                                                            \
-    (void)abi_file;                                                            \
-    return (MPIABI_File)0;                                                     \
-  }
-
-static MPIABI_File w_MPI_File_f2c(MPIABI_Fint abi_file)
-    BODY_MPI_File_f2c(MPI_File_f2c)
-static MPIABI_File w_PMPI_File_f2c(MPIABI_Fint abi_file)
-    BODY_MPI_File_f2c(PMPI_File_f2c)
-
-/* ----------------------------------------------------------- MPI_File_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_File_c2f(TARGET)                                              \
-  {                                                                            \
-    (void)abi_file;                                                            \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_File_c2f(MPIABI_File abi_file)
-    BODY_MPI_File_c2f(MPI_File_c2f)
-static MPIABI_Fint w_PMPI_File_c2f(MPIABI_File abi_file)
-    BODY_MPI_File_c2f(PMPI_File_c2f)
-
-/* ---------------------------------------------------------- MPI_Group_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Group_f2c(TARGET)                                             \
-  {                                                                            \
-    (void)abi_group;                                                           \
-    return (MPIABI_Group)0;                                                    \
-  }
-
-static MPIABI_Group w_MPI_Group_f2c(MPIABI_Fint abi_group)
-    BODY_MPI_Group_f2c(MPI_Group_f2c)
-static MPIABI_Group w_PMPI_Group_f2c(MPIABI_Fint abi_group)
-    BODY_MPI_Group_f2c(PMPI_Group_f2c)
-
-/* ---------------------------------------------------------- MPI_Group_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Group_c2f(TARGET)                                             \
-  {                                                                            \
-    (void)abi_group;                                                           \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Group_c2f(MPIABI_Group abi_group)
-    BODY_MPI_Group_c2f(MPI_Group_c2f)
-static MPIABI_Fint w_PMPI_Group_c2f(MPIABI_Group abi_group)
-    BODY_MPI_Group_c2f(PMPI_Group_c2f)
-
-/* ----------------------------------------------------------- MPI_Info_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Info_f2c(TARGET)                                              \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    return (MPIABI_Info)0;                                                     \
-  }
-
-static MPIABI_Info w_MPI_Info_f2c(MPIABI_Fint abi_info)
-    BODY_MPI_Info_f2c(MPI_Info_f2c)
-static MPIABI_Info w_PMPI_Info_f2c(MPIABI_Fint abi_info)
-    BODY_MPI_Info_f2c(PMPI_Info_f2c)
-
-/* ----------------------------------------------------------- MPI_Info_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Info_c2f(TARGET)                                              \
-  {                                                                            \
-    (void)abi_info;                                                            \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Info_c2f(MPIABI_Info abi_info)
-    BODY_MPI_Info_c2f(MPI_Info_c2f)
-static MPIABI_Fint w_PMPI_Info_c2f(MPIABI_Info abi_info)
-    BODY_MPI_Info_c2f(PMPI_Info_c2f)
-
-/* -------------------------------------------------------- MPI_Message_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Message_f2c(TARGET)                                           \
-  {                                                                            \
-    (void)abi_message;                                                         \
-    return (MPIABI_Message)0;                                                  \
-  }
-
-static MPIABI_Message w_MPI_Message_f2c(MPIABI_Fint abi_message)
-    BODY_MPI_Message_f2c(MPI_Message_f2c)
-static MPIABI_Message w_PMPI_Message_f2c(MPIABI_Fint abi_message)
-    BODY_MPI_Message_f2c(PMPI_Message_f2c)
-
-/* -------------------------------------------------------- MPI_Message_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Message_c2f(TARGET)                                           \
-  {                                                                            \
-    (void)abi_message;                                                         \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Message_c2f(MPIABI_Message abi_message)
-    BODY_MPI_Message_c2f(MPI_Message_c2f)
-static MPIABI_Fint w_PMPI_Message_c2f(MPIABI_Message abi_message)
-    BODY_MPI_Message_c2f(PMPI_Message_c2f)
-
-/* ------------------------------------------------------------- MPI_Op_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Op_f2c(TARGET)                                                \
-  {                                                                            \
-    (void)abi_op;                                                              \
-    return (MPIABI_Op)0;                                                       \
-  }
-
-static MPIABI_Op w_MPI_Op_f2c(MPIABI_Fint abi_op) BODY_MPI_Op_f2c(MPI_Op_f2c)
-static MPIABI_Op w_PMPI_Op_f2c(MPIABI_Fint abi_op) BODY_MPI_Op_f2c(PMPI_Op_f2c)
-
-/* ------------------------------------------------------------- MPI_Op_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Op_c2f(TARGET)                                                \
-  {                                                                            \
-    (void)abi_op;                                                              \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Op_c2f(MPIABI_Op abi_op) BODY_MPI_Op_c2f(MPI_Op_c2f)
-static MPIABI_Fint w_PMPI_Op_c2f(MPIABI_Op abi_op) BODY_MPI_Op_c2f(PMPI_Op_c2f)
-
-/* -------------------------------------------------------- MPI_Request_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Request_f2c(TARGET)                                           \
-  {                                                                            \
-    (void)abi_request;                                                         \
-    return (MPIABI_Request)0;                                                  \
-  }
-
-static MPIABI_Request w_MPI_Request_f2c(MPIABI_Fint abi_request)
-    BODY_MPI_Request_f2c(MPI_Request_f2c)
-static MPIABI_Request w_PMPI_Request_f2c(MPIABI_Fint abi_request)
-    BODY_MPI_Request_f2c(PMPI_Request_f2c)
-
-/* -------------------------------------------------------- MPI_Request_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Request_c2f(TARGET)                                           \
-  {                                                                            \
-    (void)abi_request;                                                         \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Request_c2f(MPIABI_Request abi_request)
-    BODY_MPI_Request_c2f(MPI_Request_c2f)
-static MPIABI_Fint w_PMPI_Request_c2f(MPIABI_Request abi_request)
-    BODY_MPI_Request_c2f(PMPI_Request_c2f)
-
-/* -------------------------------------------------------- MPI_Session_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Session_f2c(TARGET)                                           \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    return (MPIABI_Session)0;                                                  \
-  }
-
-static MPIABI_Session w_MPI_Session_f2c(MPIABI_Fint abi_session)
-    BODY_MPI_Session_f2c(MPI_Session_f2c)
-static MPIABI_Session w_PMPI_Session_f2c(MPIABI_Fint abi_session)
-    BODY_MPI_Session_f2c(PMPI_Session_f2c)
-
-/* -------------------------------------------------------- MPI_Session_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Session_c2f(TARGET)                                           \
-  {                                                                            \
-    (void)abi_session;                                                         \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Session_c2f(MPIABI_Session abi_session)
-    BODY_MPI_Session_c2f(MPI_Session_c2f)
-static MPIABI_Fint w_PMPI_Session_c2f(MPIABI_Session abi_session)
-    BODY_MPI_Session_c2f(PMPI_Session_c2f)
-
-/* ----------------------------------------------------------- MPI_Type_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Type_f2c(TARGET)                                              \
-  {                                                                            \
-    (void)abi_datatype;                                                        \
-    return (MPIABI_Datatype)0;                                                 \
-  }
-
-static MPIABI_Datatype w_MPI_Type_f2c(MPIABI_Fint abi_datatype)
-    BODY_MPI_Type_f2c(MPI_Type_f2c)
-static MPIABI_Datatype w_PMPI_Type_f2c(MPIABI_Fint abi_datatype)
-    BODY_MPI_Type_f2c(PMPI_Type_f2c)
-
-/* ----------------------------------------------------------- MPI_Type_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Type_c2f(TARGET)                                              \
-  {                                                                            \
-    (void)abi_datatype;                                                        \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Type_c2f(MPIABI_Datatype abi_datatype)
-    BODY_MPI_Type_c2f(MPI_Type_c2f)
-static MPIABI_Fint w_PMPI_Type_c2f(MPIABI_Datatype abi_datatype)
-    BODY_MPI_Type_c2f(PMPI_Type_c2f)
-
-/* ------------------------------------------------------------ MPI_Win_f2c */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Win_f2c(TARGET)                                               \
-  {                                                                            \
-    (void)abi_win;                                                             \
-    return (MPIABI_Win)0;                                                      \
-  }
-
-static MPIABI_Win w_MPI_Win_f2c(MPIABI_Fint abi_win)
-    BODY_MPI_Win_f2c(MPI_Win_f2c)
-static MPIABI_Win w_PMPI_Win_f2c(MPIABI_Fint abi_win)
-    BODY_MPI_Win_f2c(PMPI_Win_f2c)
-
-/* ------------------------------------------------------------ MPI_Win_c2f */
-
-/* handle converter: the reason mpif can run over any MPI; no body yet (S4) */
-#define BODY_MPI_Win_c2f(TARGET)                                               \
-  {                                                                            \
-    (void)abi_win;                                                             \
-    return (MPIABI_Fint)0;                                                     \
-  }
-
-static MPIABI_Fint w_MPI_Win_c2f(MPIABI_Win abi_win)
-    BODY_MPI_Win_c2f(MPI_Win_c2f)
-static MPIABI_Fint w_PMPI_Win_c2f(MPIABI_Win abi_win)
-    BODY_MPI_Win_c2f(PMPI_Win_c2f)
-
 
 /* Designated initializers, so a slot the generator forgets is a NULL pointer
  * rather than a shifted one -- and mpiwrapper_get_vtable asserts none is NULL
  * before handing the table out.
  */
 const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
-    .MPI_Abi_get_fortran_booleans      = w_MPI_Abi_get_fortran_booleans,
-    .PMPI_Abi_get_fortran_booleans     = w_PMPI_Abi_get_fortran_booleans,
-    .MPI_Abi_get_fortran_info          = w_MPI_Abi_get_fortran_info,
-    .PMPI_Abi_get_fortran_info         = w_PMPI_Abi_get_fortran_info,
-    .MPI_Abi_get_info                  = w_MPI_Abi_get_info,
-    .PMPI_Abi_get_info                 = w_PMPI_Abi_get_info,
-    .MPI_Abi_get_version               = w_MPI_Abi_get_version,
-    .PMPI_Abi_get_version              = w_PMPI_Abi_get_version,
-    .MPI_Abi_set_fortran_booleans      = w_MPI_Abi_set_fortran_booleans,
-    .PMPI_Abi_set_fortran_booleans     = w_PMPI_Abi_set_fortran_booleans,
-    .MPI_Abi_set_fortran_info          = w_MPI_Abi_set_fortran_info,
-    .PMPI_Abi_set_fortran_info         = w_PMPI_Abi_set_fortran_info,
+    .MPI_Abi_get_fortran_booleans      = mpiwrapper_w_MPI_Abi_get_fortran_booleans,
+    .PMPI_Abi_get_fortran_booleans     = mpiwrapper_w_PMPI_Abi_get_fortran_booleans,
+    .MPI_Abi_get_fortran_info          = mpiwrapper_w_MPI_Abi_get_fortran_info,
+    .PMPI_Abi_get_fortran_info         = mpiwrapper_w_PMPI_Abi_get_fortran_info,
+    .MPI_Abi_get_info                  = mpiwrapper_w_MPI_Abi_get_info,
+    .PMPI_Abi_get_info                 = mpiwrapper_w_PMPI_Abi_get_info,
+    .MPI_Abi_get_version               = mpiwrapper_w_MPI_Abi_get_version,
+    .PMPI_Abi_get_version              = mpiwrapper_w_PMPI_Abi_get_version,
+    .MPI_Abi_set_fortran_booleans      = mpiwrapper_w_MPI_Abi_set_fortran_booleans,
+    .PMPI_Abi_set_fortran_booleans     = mpiwrapper_w_PMPI_Abi_set_fortran_booleans,
+    .MPI_Abi_set_fortran_info          = mpiwrapper_w_MPI_Abi_set_fortran_info,
+    .PMPI_Abi_set_fortran_info         = mpiwrapper_w_PMPI_Abi_set_fortran_info,
     .MPI_Abort                         = w_MPI_Abort,
     .PMPI_Abort                        = w_PMPI_Abort,
     .MPI_Accumulate                    = w_MPI_Accumulate,
@@ -26377,8 +25255,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Comm_get_errhandler          = w_PMPI_Comm_get_errhandler,
     .MPI_Comm_get_info                 = w_MPI_Comm_get_info,
     .PMPI_Comm_get_info                = w_PMPI_Comm_get_info,
-    .MPI_Comm_get_name                 = w_MPI_Comm_get_name,
-    .PMPI_Comm_get_name                = w_PMPI_Comm_get_name,
+    .MPI_Comm_get_name                 = mpiwrapper_w_MPI_Comm_get_name,
+    .PMPI_Comm_get_name                = mpiwrapper_w_PMPI_Comm_get_name,
     .MPI_Comm_get_parent               = w_MPI_Comm_get_parent,
     .PMPI_Comm_get_parent              = w_PMPI_Comm_get_parent,
     .MPI_Comm_group                    = w_MPI_Comm_group,
@@ -26475,8 +25353,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_File_get_type_extent         = w_PMPI_File_get_type_extent,
     .MPI_File_get_type_extent_c        = w_MPI_File_get_type_extent_c,
     .PMPI_File_get_type_extent_c       = w_PMPI_File_get_type_extent_c,
-    .MPI_File_get_view                 = w_MPI_File_get_view,
-    .PMPI_File_get_view                = w_PMPI_File_get_view,
+    .MPI_File_get_view                 = mpiwrapper_w_MPI_File_get_view,
+    .PMPI_File_get_view                = mpiwrapper_w_PMPI_File_get_view,
     .MPI_File_iread                    = w_MPI_File_iread,
     .PMPI_File_iread                   = w_PMPI_File_iread,
     .MPI_File_iread_c                  = w_MPI_File_iread_c,
@@ -26655,20 +25533,20 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Get_address                  = w_PMPI_Get_address,
     .MPI_Get_count                     = mpiwrapper_w_MPI_Get_count,
     .PMPI_Get_count                    = mpiwrapper_w_PMPI_Get_count,
-    .MPI_Get_count_c                   = w_MPI_Get_count_c,
-    .PMPI_Get_count_c                  = w_PMPI_Get_count_c,
-    .MPI_Get_elements                  = w_MPI_Get_elements,
-    .PMPI_Get_elements                 = w_PMPI_Get_elements,
-    .MPI_Get_elements_c                = w_MPI_Get_elements_c,
-    .PMPI_Get_elements_c               = w_PMPI_Get_elements_c,
-    .MPI_Get_elements_x                = w_MPI_Get_elements_x,
-    .PMPI_Get_elements_x               = w_PMPI_Get_elements_x,
+    .MPI_Get_count_c                   = mpiwrapper_w_MPI_Get_count_c,
+    .PMPI_Get_count_c                  = mpiwrapper_w_PMPI_Get_count_c,
+    .MPI_Get_elements                  = mpiwrapper_w_MPI_Get_elements,
+    .PMPI_Get_elements                 = mpiwrapper_w_PMPI_Get_elements,
+    .MPI_Get_elements_c                = mpiwrapper_w_MPI_Get_elements_c,
+    .PMPI_Get_elements_c               = mpiwrapper_w_PMPI_Get_elements_c,
+    .MPI_Get_elements_x                = mpiwrapper_w_MPI_Get_elements_x,
+    .PMPI_Get_elements_x               = mpiwrapper_w_PMPI_Get_elements_x,
     .MPI_Get_hw_resource_info          = w_MPI_Get_hw_resource_info,
     .PMPI_Get_hw_resource_info         = w_PMPI_Get_hw_resource_info,
-    .MPI_Get_library_version           = w_MPI_Get_library_version,
-    .PMPI_Get_library_version          = w_PMPI_Get_library_version,
-    .MPI_Get_processor_name            = w_MPI_Get_processor_name,
-    .PMPI_Get_processor_name           = w_PMPI_Get_processor_name,
+    .MPI_Get_library_version           = mpiwrapper_w_MPI_Get_library_version,
+    .PMPI_Get_library_version          = mpiwrapper_w_PMPI_Get_library_version,
+    .MPI_Get_processor_name            = mpiwrapper_w_MPI_Get_processor_name,
+    .PMPI_Get_processor_name           = mpiwrapper_w_PMPI_Get_processor_name,
     .MPI_Get_version                   = w_MPI_Get_version,
     .PMPI_Get_version                  = w_PMPI_Get_version,
     .MPI_Graph_create                  = w_MPI_Graph_create,
@@ -26799,8 +25677,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Info_get                     = w_PMPI_Info_get,
     .MPI_Info_get_nkeys                = w_MPI_Info_get_nkeys,
     .PMPI_Info_get_nkeys               = w_PMPI_Info_get_nkeys,
-    .MPI_Info_get_nthkey               = w_MPI_Info_get_nthkey,
-    .PMPI_Info_get_nthkey              = w_PMPI_Info_get_nthkey,
+    .MPI_Info_get_nthkey               = mpiwrapper_w_MPI_Info_get_nthkey,
+    .PMPI_Info_get_nthkey              = mpiwrapper_w_PMPI_Info_get_nthkey,
     .MPI_Info_get_string               = w_MPI_Info_get_string,
     .PMPI_Info_get_string              = w_PMPI_Info_get_string,
     .MPI_Info_get_valuelen             = w_MPI_Info_get_valuelen,
@@ -26871,8 +25749,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Issend                       = w_PMPI_Issend,
     .MPI_Issend_c                      = w_MPI_Issend_c,
     .PMPI_Issend_c                     = w_PMPI_Issend_c,
-    .MPI_Lookup_name                   = w_MPI_Lookup_name,
-    .PMPI_Lookup_name                  = w_PMPI_Lookup_name,
+    .MPI_Lookup_name                   = mpiwrapper_w_MPI_Lookup_name,
+    .PMPI_Lookup_name                  = mpiwrapper_w_PMPI_Lookup_name,
     .MPI_Mprobe                        = w_MPI_Mprobe,
     .PMPI_Mprobe                       = w_PMPI_Mprobe,
     .MPI_Mrecv                         = w_MPI_Mrecv,
@@ -26927,8 +25805,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Op_create_c                  = w_PMPI_Op_create_c,
     .MPI_Op_free                       = w_MPI_Op_free,
     .PMPI_Op_free                      = w_PMPI_Op_free,
-    .MPI_Open_port                     = w_MPI_Open_port,
-    .PMPI_Open_port                    = w_PMPI_Open_port,
+    .MPI_Open_port                     = mpiwrapper_w_MPI_Open_port,
+    .PMPI_Open_port                    = mpiwrapper_w_PMPI_Open_port,
     .MPI_Pack                          = w_MPI_Pack,
     .PMPI_Pack                         = w_PMPI_Pack,
     .MPI_Pack_c                        = w_MPI_Pack_c,
@@ -27139,14 +26017,14 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Status_get_source            = w_PMPI_Status_get_source,
     .MPI_Status_get_tag                = w_MPI_Status_get_tag,
     .PMPI_Status_get_tag               = w_PMPI_Status_get_tag,
-    .MPI_Status_set_cancelled          = w_MPI_Status_set_cancelled,
-    .PMPI_Status_set_cancelled         = w_PMPI_Status_set_cancelled,
-    .MPI_Status_set_elements           = w_MPI_Status_set_elements,
-    .PMPI_Status_set_elements          = w_PMPI_Status_set_elements,
-    .MPI_Status_set_elements_c         = w_MPI_Status_set_elements_c,
-    .PMPI_Status_set_elements_c        = w_PMPI_Status_set_elements_c,
-    .MPI_Status_set_elements_x         = w_MPI_Status_set_elements_x,
-    .PMPI_Status_set_elements_x        = w_PMPI_Status_set_elements_x,
+    .MPI_Status_set_cancelled          = mpiwrapper_w_MPI_Status_set_cancelled,
+    .PMPI_Status_set_cancelled         = mpiwrapper_w_PMPI_Status_set_cancelled,
+    .MPI_Status_set_elements           = mpiwrapper_w_MPI_Status_set_elements,
+    .PMPI_Status_set_elements          = mpiwrapper_w_PMPI_Status_set_elements,
+    .MPI_Status_set_elements_c         = mpiwrapper_w_MPI_Status_set_elements_c,
+    .PMPI_Status_set_elements_c        = mpiwrapper_w_PMPI_Status_set_elements_c,
+    .MPI_Status_set_elements_x         = mpiwrapper_w_MPI_Status_set_elements_x,
+    .PMPI_Status_set_elements_x        = mpiwrapper_w_PMPI_Status_set_elements_x,
     .MPI_Status_set_error              = w_MPI_Status_set_error,
     .PMPI_Status_set_error             = w_PMPI_Status_set_error,
     .MPI_Status_set_source             = w_MPI_Status_set_source,
@@ -27155,8 +26033,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Status_set_tag               = w_PMPI_Status_set_tag,
     .MPI_Test                          = w_MPI_Test,
     .PMPI_Test                         = w_PMPI_Test,
-    .MPI_Test_cancelled                = w_MPI_Test_cancelled,
-    .PMPI_Test_cancelled               = w_PMPI_Test_cancelled,
+    .MPI_Test_cancelled                = mpiwrapper_w_MPI_Test_cancelled,
+    .PMPI_Test_cancelled               = mpiwrapper_w_PMPI_Test_cancelled,
     .MPI_Testall                       = w_MPI_Testall,
     .PMPI_Testall                      = w_PMPI_Testall,
     .MPI_Testany                       = w_MPI_Testany,
@@ -27235,8 +26113,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Type_get_extent_c            = w_PMPI_Type_get_extent_c,
     .MPI_Type_get_extent_x             = w_MPI_Type_get_extent_x,
     .PMPI_Type_get_extent_x            = w_PMPI_Type_get_extent_x,
-    .MPI_Type_get_name                 = w_MPI_Type_get_name,
-    .PMPI_Type_get_name                = w_PMPI_Type_get_name,
+    .MPI_Type_get_name                 = mpiwrapper_w_MPI_Type_get_name,
+    .PMPI_Type_get_name                = mpiwrapper_w_PMPI_Type_get_name,
     .MPI_Type_get_true_extent          = w_MPI_Type_get_true_extent,
     .PMPI_Type_get_true_extent         = w_PMPI_Type_get_true_extent,
     .MPI_Type_get_true_extent_c        = w_MPI_Type_get_true_extent_c,
@@ -27333,8 +26211,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Win_get_group                = w_PMPI_Win_get_group,
     .MPI_Win_get_info                  = w_MPI_Win_get_info,
     .PMPI_Win_get_info                 = w_PMPI_Win_get_info,
-    .MPI_Win_get_name                  = w_MPI_Win_get_name,
-    .PMPI_Win_get_name                 = w_PMPI_Win_get_name,
+    .MPI_Win_get_name                  = mpiwrapper_w_MPI_Win_get_name,
+    .PMPI_Win_get_name                 = mpiwrapper_w_PMPI_Win_get_name,
     .MPI_Win_lock                      = w_MPI_Win_lock,
     .PMPI_Win_lock                     = w_PMPI_Win_lock,
     .MPI_Win_lock_all                  = w_MPI_Win_lock_all,
@@ -27373,50 +26251,50 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Wtick                        = w_PMPI_Wtick,
     .MPI_Wtime                         = w_MPI_Wtime,
     .PMPI_Wtime                        = w_PMPI_Wtime,
-    .MPI_Comm_fromint                  = w_MPI_Comm_fromint,
-    .PMPI_Comm_fromint                 = w_PMPI_Comm_fromint,
-    .MPI_Comm_toint                    = w_MPI_Comm_toint,
-    .PMPI_Comm_toint                   = w_PMPI_Comm_toint,
-    .MPI_Errhandler_fromint            = w_MPI_Errhandler_fromint,
-    .PMPI_Errhandler_fromint           = w_PMPI_Errhandler_fromint,
-    .MPI_Errhandler_toint              = w_MPI_Errhandler_toint,
-    .PMPI_Errhandler_toint             = w_PMPI_Errhandler_toint,
-    .MPI_File_fromint                  = w_MPI_File_fromint,
-    .PMPI_File_fromint                 = w_PMPI_File_fromint,
-    .MPI_File_toint                    = w_MPI_File_toint,
-    .PMPI_File_toint                   = w_PMPI_File_toint,
-    .MPI_Group_fromint                 = w_MPI_Group_fromint,
-    .PMPI_Group_fromint                = w_PMPI_Group_fromint,
-    .MPI_Group_toint                   = w_MPI_Group_toint,
-    .PMPI_Group_toint                  = w_PMPI_Group_toint,
-    .MPI_Info_fromint                  = w_MPI_Info_fromint,
-    .PMPI_Info_fromint                 = w_PMPI_Info_fromint,
-    .MPI_Info_toint                    = w_MPI_Info_toint,
-    .PMPI_Info_toint                   = w_PMPI_Info_toint,
-    .MPI_Message_fromint               = w_MPI_Message_fromint,
-    .PMPI_Message_fromint              = w_PMPI_Message_fromint,
-    .MPI_Message_toint                 = w_MPI_Message_toint,
-    .PMPI_Message_toint                = w_PMPI_Message_toint,
-    .MPI_Op_fromint                    = w_MPI_Op_fromint,
-    .PMPI_Op_fromint                   = w_PMPI_Op_fromint,
-    .MPI_Op_toint                      = w_MPI_Op_toint,
-    .PMPI_Op_toint                     = w_PMPI_Op_toint,
-    .MPI_Request_fromint               = w_MPI_Request_fromint,
-    .PMPI_Request_fromint              = w_PMPI_Request_fromint,
-    .MPI_Request_toint                 = w_MPI_Request_toint,
-    .PMPI_Request_toint                = w_PMPI_Request_toint,
-    .MPI_Session_fromint               = w_MPI_Session_fromint,
-    .PMPI_Session_fromint              = w_PMPI_Session_fromint,
-    .MPI_Session_toint                 = w_MPI_Session_toint,
-    .PMPI_Session_toint                = w_PMPI_Session_toint,
-    .MPI_Type_fromint                  = w_MPI_Type_fromint,
-    .PMPI_Type_fromint                 = w_PMPI_Type_fromint,
-    .MPI_Type_toint                    = w_MPI_Type_toint,
-    .PMPI_Type_toint                   = w_PMPI_Type_toint,
-    .MPI_Win_fromint                   = w_MPI_Win_fromint,
-    .PMPI_Win_fromint                  = w_PMPI_Win_fromint,
-    .MPI_Win_toint                     = w_MPI_Win_toint,
-    .PMPI_Win_toint                    = w_PMPI_Win_toint,
+    .MPI_Comm_fromint                  = mpiwrapper_w_MPI_Comm_fromint,
+    .PMPI_Comm_fromint                 = mpiwrapper_w_PMPI_Comm_fromint,
+    .MPI_Comm_toint                    = mpiwrapper_w_MPI_Comm_toint,
+    .PMPI_Comm_toint                   = mpiwrapper_w_PMPI_Comm_toint,
+    .MPI_Errhandler_fromint            = mpiwrapper_w_MPI_Errhandler_fromint,
+    .PMPI_Errhandler_fromint           = mpiwrapper_w_PMPI_Errhandler_fromint,
+    .MPI_Errhandler_toint              = mpiwrapper_w_MPI_Errhandler_toint,
+    .PMPI_Errhandler_toint             = mpiwrapper_w_PMPI_Errhandler_toint,
+    .MPI_File_fromint                  = mpiwrapper_w_MPI_File_fromint,
+    .PMPI_File_fromint                 = mpiwrapper_w_PMPI_File_fromint,
+    .MPI_File_toint                    = mpiwrapper_w_MPI_File_toint,
+    .PMPI_File_toint                   = mpiwrapper_w_PMPI_File_toint,
+    .MPI_Group_fromint                 = mpiwrapper_w_MPI_Group_fromint,
+    .PMPI_Group_fromint                = mpiwrapper_w_PMPI_Group_fromint,
+    .MPI_Group_toint                   = mpiwrapper_w_MPI_Group_toint,
+    .PMPI_Group_toint                  = mpiwrapper_w_PMPI_Group_toint,
+    .MPI_Info_fromint                  = mpiwrapper_w_MPI_Info_fromint,
+    .PMPI_Info_fromint                 = mpiwrapper_w_PMPI_Info_fromint,
+    .MPI_Info_toint                    = mpiwrapper_w_MPI_Info_toint,
+    .PMPI_Info_toint                   = mpiwrapper_w_PMPI_Info_toint,
+    .MPI_Message_fromint               = mpiwrapper_w_MPI_Message_fromint,
+    .PMPI_Message_fromint              = mpiwrapper_w_PMPI_Message_fromint,
+    .MPI_Message_toint                 = mpiwrapper_w_MPI_Message_toint,
+    .PMPI_Message_toint                = mpiwrapper_w_PMPI_Message_toint,
+    .MPI_Op_fromint                    = mpiwrapper_w_MPI_Op_fromint,
+    .PMPI_Op_fromint                   = mpiwrapper_w_PMPI_Op_fromint,
+    .MPI_Op_toint                      = mpiwrapper_w_MPI_Op_toint,
+    .PMPI_Op_toint                     = mpiwrapper_w_PMPI_Op_toint,
+    .MPI_Request_fromint               = mpiwrapper_w_MPI_Request_fromint,
+    .PMPI_Request_fromint              = mpiwrapper_w_PMPI_Request_fromint,
+    .MPI_Request_toint                 = mpiwrapper_w_MPI_Request_toint,
+    .PMPI_Request_toint                = mpiwrapper_w_PMPI_Request_toint,
+    .MPI_Session_fromint               = mpiwrapper_w_MPI_Session_fromint,
+    .PMPI_Session_fromint              = mpiwrapper_w_PMPI_Session_fromint,
+    .MPI_Session_toint                 = mpiwrapper_w_MPI_Session_toint,
+    .PMPI_Session_toint                = mpiwrapper_w_PMPI_Session_toint,
+    .MPI_Type_fromint                  = mpiwrapper_w_MPI_Type_fromint,
+    .PMPI_Type_fromint                 = mpiwrapper_w_PMPI_Type_fromint,
+    .MPI_Type_toint                    = mpiwrapper_w_MPI_Type_toint,
+    .PMPI_Type_toint                   = mpiwrapper_w_PMPI_Type_toint,
+    .MPI_Win_fromint                   = mpiwrapper_w_MPI_Win_fromint,
+    .PMPI_Win_fromint                  = mpiwrapper_w_PMPI_Win_fromint,
+    .MPI_Win_toint                     = mpiwrapper_w_MPI_Win_toint,
+    .PMPI_Win_toint                    = mpiwrapper_w_PMPI_Win_toint,
     .MPI_T_category_changed            = w_MPI_T_category_changed,
     .PMPI_T_category_changed           = w_PMPI_T_category_changed,
     .MPI_T_category_get_categories     = w_MPI_T_category_get_categories,
@@ -27519,56 +26397,56 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_T_source_get_num             = w_PMPI_T_source_get_num,
     .MPI_T_source_get_timestamp        = w_MPI_T_source_get_timestamp,
     .PMPI_T_source_get_timestamp       = w_PMPI_T_source_get_timestamp,
-    .MPI_Status_f2c                    = w_MPI_Status_f2c,
-    .PMPI_Status_f2c                   = w_PMPI_Status_f2c,
-    .MPI_Status_c2f                    = w_MPI_Status_c2f,
-    .PMPI_Status_c2f                   = w_PMPI_Status_c2f,
-    .MPI_Status_f082c                  = w_MPI_Status_f082c,
-    .PMPI_Status_f082c                 = w_PMPI_Status_f082c,
-    .MPI_Status_c2f08                  = w_MPI_Status_c2f08,
-    .PMPI_Status_c2f08                 = w_PMPI_Status_c2f08,
+    .MPI_Status_f2c                    = mpiwrapper_w_MPI_Status_f2c,
+    .PMPI_Status_f2c                   = mpiwrapper_w_PMPI_Status_f2c,
+    .MPI_Status_c2f                    = mpiwrapper_w_MPI_Status_c2f,
+    .PMPI_Status_c2f                   = mpiwrapper_w_PMPI_Status_c2f,
+    .MPI_Status_f082c                  = mpiwrapper_w_MPI_Status_f082c,
+    .PMPI_Status_f082c                 = mpiwrapper_w_PMPI_Status_f082c,
+    .MPI_Status_c2f08                  = mpiwrapper_w_MPI_Status_c2f08,
+    .PMPI_Status_c2f08                 = mpiwrapper_w_PMPI_Status_c2f08,
     .MPI_Comm_f2c                      = mpiwrapper_w_MPI_Comm_f2c,
     .PMPI_Comm_f2c                     = mpiwrapper_w_PMPI_Comm_f2c,
     .MPI_Comm_c2f                      = mpiwrapper_w_MPI_Comm_c2f,
     .PMPI_Comm_c2f                     = mpiwrapper_w_PMPI_Comm_c2f,
-    .MPI_Errhandler_f2c                = w_MPI_Errhandler_f2c,
-    .PMPI_Errhandler_f2c               = w_PMPI_Errhandler_f2c,
-    .MPI_Errhandler_c2f                = w_MPI_Errhandler_c2f,
-    .PMPI_Errhandler_c2f               = w_PMPI_Errhandler_c2f,
-    .MPI_File_f2c                      = w_MPI_File_f2c,
-    .PMPI_File_f2c                     = w_PMPI_File_f2c,
-    .MPI_File_c2f                      = w_MPI_File_c2f,
-    .PMPI_File_c2f                     = w_PMPI_File_c2f,
-    .MPI_Group_f2c                     = w_MPI_Group_f2c,
-    .PMPI_Group_f2c                    = w_PMPI_Group_f2c,
-    .MPI_Group_c2f                     = w_MPI_Group_c2f,
-    .PMPI_Group_c2f                    = w_PMPI_Group_c2f,
-    .MPI_Info_f2c                      = w_MPI_Info_f2c,
-    .PMPI_Info_f2c                     = w_PMPI_Info_f2c,
-    .MPI_Info_c2f                      = w_MPI_Info_c2f,
-    .PMPI_Info_c2f                     = w_PMPI_Info_c2f,
-    .MPI_Message_f2c                   = w_MPI_Message_f2c,
-    .PMPI_Message_f2c                  = w_PMPI_Message_f2c,
-    .MPI_Message_c2f                   = w_MPI_Message_c2f,
-    .PMPI_Message_c2f                  = w_PMPI_Message_c2f,
-    .MPI_Op_f2c                        = w_MPI_Op_f2c,
-    .PMPI_Op_f2c                       = w_PMPI_Op_f2c,
-    .MPI_Op_c2f                        = w_MPI_Op_c2f,
-    .PMPI_Op_c2f                       = w_PMPI_Op_c2f,
-    .MPI_Request_f2c                   = w_MPI_Request_f2c,
-    .PMPI_Request_f2c                  = w_PMPI_Request_f2c,
-    .MPI_Request_c2f                   = w_MPI_Request_c2f,
-    .PMPI_Request_c2f                  = w_PMPI_Request_c2f,
-    .MPI_Session_f2c                   = w_MPI_Session_f2c,
-    .PMPI_Session_f2c                  = w_PMPI_Session_f2c,
-    .MPI_Session_c2f                   = w_MPI_Session_c2f,
-    .PMPI_Session_c2f                  = w_PMPI_Session_c2f,
-    .MPI_Type_f2c                      = w_MPI_Type_f2c,
-    .PMPI_Type_f2c                     = w_PMPI_Type_f2c,
-    .MPI_Type_c2f                      = w_MPI_Type_c2f,
-    .PMPI_Type_c2f                     = w_PMPI_Type_c2f,
-    .MPI_Win_f2c                       = w_MPI_Win_f2c,
-    .PMPI_Win_f2c                      = w_PMPI_Win_f2c,
-    .MPI_Win_c2f                       = w_MPI_Win_c2f,
-    .PMPI_Win_c2f                      = w_PMPI_Win_c2f,
+    .MPI_Errhandler_f2c                = mpiwrapper_w_MPI_Errhandler_f2c,
+    .PMPI_Errhandler_f2c               = mpiwrapper_w_PMPI_Errhandler_f2c,
+    .MPI_Errhandler_c2f                = mpiwrapper_w_MPI_Errhandler_c2f,
+    .PMPI_Errhandler_c2f               = mpiwrapper_w_PMPI_Errhandler_c2f,
+    .MPI_File_f2c                      = mpiwrapper_w_MPI_File_f2c,
+    .PMPI_File_f2c                     = mpiwrapper_w_PMPI_File_f2c,
+    .MPI_File_c2f                      = mpiwrapper_w_MPI_File_c2f,
+    .PMPI_File_c2f                     = mpiwrapper_w_PMPI_File_c2f,
+    .MPI_Group_f2c                     = mpiwrapper_w_MPI_Group_f2c,
+    .PMPI_Group_f2c                    = mpiwrapper_w_PMPI_Group_f2c,
+    .MPI_Group_c2f                     = mpiwrapper_w_MPI_Group_c2f,
+    .PMPI_Group_c2f                    = mpiwrapper_w_PMPI_Group_c2f,
+    .MPI_Info_f2c                      = mpiwrapper_w_MPI_Info_f2c,
+    .PMPI_Info_f2c                     = mpiwrapper_w_PMPI_Info_f2c,
+    .MPI_Info_c2f                      = mpiwrapper_w_MPI_Info_c2f,
+    .PMPI_Info_c2f                     = mpiwrapper_w_PMPI_Info_c2f,
+    .MPI_Message_f2c                   = mpiwrapper_w_MPI_Message_f2c,
+    .PMPI_Message_f2c                  = mpiwrapper_w_PMPI_Message_f2c,
+    .MPI_Message_c2f                   = mpiwrapper_w_MPI_Message_c2f,
+    .PMPI_Message_c2f                  = mpiwrapper_w_PMPI_Message_c2f,
+    .MPI_Op_f2c                        = mpiwrapper_w_MPI_Op_f2c,
+    .PMPI_Op_f2c                       = mpiwrapper_w_PMPI_Op_f2c,
+    .MPI_Op_c2f                        = mpiwrapper_w_MPI_Op_c2f,
+    .PMPI_Op_c2f                       = mpiwrapper_w_PMPI_Op_c2f,
+    .MPI_Request_f2c                   = mpiwrapper_w_MPI_Request_f2c,
+    .PMPI_Request_f2c                  = mpiwrapper_w_PMPI_Request_f2c,
+    .MPI_Request_c2f                   = mpiwrapper_w_MPI_Request_c2f,
+    .PMPI_Request_c2f                  = mpiwrapper_w_PMPI_Request_c2f,
+    .MPI_Session_f2c                   = mpiwrapper_w_MPI_Session_f2c,
+    .PMPI_Session_f2c                  = mpiwrapper_w_PMPI_Session_f2c,
+    .MPI_Session_c2f                   = mpiwrapper_w_MPI_Session_c2f,
+    .PMPI_Session_c2f                  = mpiwrapper_w_PMPI_Session_c2f,
+    .MPI_Type_f2c                      = mpiwrapper_w_MPI_Type_f2c,
+    .PMPI_Type_f2c                     = mpiwrapper_w_PMPI_Type_f2c,
+    .MPI_Type_c2f                      = mpiwrapper_w_MPI_Type_c2f,
+    .PMPI_Type_c2f                     = mpiwrapper_w_PMPI_Type_c2f,
+    .MPI_Win_f2c                       = mpiwrapper_w_MPI_Win_f2c,
+    .PMPI_Win_f2c                      = mpiwrapper_w_PMPI_Win_f2c,
+    .MPI_Win_c2f                       = mpiwrapper_w_MPI_Win_c2f,
+    .PMPI_Win_c2f                      = mpiwrapper_w_PMPI_Win_c2f,
 };

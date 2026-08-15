@@ -221,6 +221,28 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # probe is compile-only, so this stays cross-compilable, and it costs well
   # under a second because all ~600 questions go into one translation unit --
   # not one configure test per name.
+  # The conversion runtime and the hand-written entry-point bodies, named once
+  # rather than in each of the three targets that need them -- and named here
+  # because the availability probe below reads the same files for the
+  # MPIWRAPPER_HAVE_* guards they test.
+  set(MPIABI_WRAPPER_RUNTIME_SOURCES
+    src/mpiwrapper/handles.c
+    src/mpiwrapper/status.c
+    src/mpiwrapper/staging.c
+    src/mpiwrapper/extents.c
+    src/mpiwrapper/keyvals.c
+    src/mpiwrapper/toolobj.c
+    src/mpiwrapper/callbacks.c
+    src/mpiwrapper/serialize.c
+  )
+  set(MPIABI_WRAPPER_BODY_SOURCES
+    src/mpiwrapper/handwritten.c
+    src/mpiwrapper/hw_converters.c
+    src/mpiwrapper/hw_status.c
+    src/mpiwrapper/hw_strings.c
+    src/mpiwrapper/hw_abi.c
+  )
+
   set(MPIABI_IMPL_CONFIG ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_impl_config.h)
   set(MPIABI_PROBE_FLAGS)
   foreach(dir ${MPI_C_INCLUDE_DIRS})
@@ -234,9 +256,14 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     COMMAND ${Python3_EXECUTABLE} ${MPIABI_PROBE_SCRIPT}
             --cc ${CMAKE_C_COMPILER} ${MPIABI_PROBE_FLAGS}
             --out ${MPIABI_IMPL_CONFIG}
+    # The probe reads every MPIWRAPPER_HAVE_* the sources mention, and that is
+    # both directories: a hand-written body is subject to decision 6 like a
+    # generated one, so its guards have to be asked about too.
     DEPENDS ${MPIABI_PROBE_SCRIPT}
             ${CMAKE_SOURCE_DIR}/gen/mpiwrapper/wrappers.c
             ${CMAKE_SOURCE_DIR}/gen/mpiwrapper/constants.c
+            ${MPIABI_WRAPPER_RUNTIME_SOURCES}
+            ${MPIABI_WRAPPER_BODY_SOURCES}
             ${CMAKE_SOURCE_DIR}/dev/entrypoints.txt
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Probing which MPI entry points this implementation declares")
@@ -248,14 +275,8 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
 
   add_library(mpiwrapper SHARED
     gen/mpiwrapper/constants.c
-    src/mpiwrapper/handles.c
-    src/mpiwrapper/status.c
-    src/mpiwrapper/staging.c
-    src/mpiwrapper/extents.c
-    src/mpiwrapper/keyvals.c
-    src/mpiwrapper/toolobj.c
-    src/mpiwrapper/callbacks.c
-    src/mpiwrapper/handwritten.c
+    ${MPIABI_WRAPPER_RUNTIME_SOURCES}
+    ${MPIABI_WRAPPER_BODY_SOURCES}
     gen/mpiwrapper/wrappers.c
     src/mpiwrapper/getvtable.c
   )
@@ -282,14 +303,8 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   if(APPLE)
     add_library(mpiwrapper_unisolated SHARED
       gen/mpiwrapper/constants.c
-      src/mpiwrapper/handles.c
-      src/mpiwrapper/status.c
-      src/mpiwrapper/staging.c
-      src/mpiwrapper/extents.c
-      src/mpiwrapper/keyvals.c
-      src/mpiwrapper/toolobj.c
-      src/mpiwrapper/callbacks.c
-      src/mpiwrapper/handwritten.c
+      ${MPIABI_WRAPPER_RUNTIME_SOURCES}
+      ${MPIABI_WRAPPER_BODY_SOURCES}
       gen/mpiwrapper/wrappers.c
       src/mpiwrapper/getvtable.c
     )
@@ -331,13 +346,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_executable(mpiwrapper_selftest
     test/mpiwrapper_selftest.c
     gen/mpiwrapper/constants.c
-    src/mpiwrapper/handles.c
-    src/mpiwrapper/status.c
-    src/mpiwrapper/staging.c
-    src/mpiwrapper/extents.c
-    src/mpiwrapper/keyvals.c
-    src/mpiwrapper/toolobj.c
-    src/mpiwrapper/callbacks.c
+    ${MPIABI_WRAPPER_RUNTIME_SOURCES}
   )
   target_include_directories(mpiwrapper_selftest PRIVATE
     ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
@@ -409,6 +418,23 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_test(NAME abi_tools_test
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_tools_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_tools_test PROPERTIES
+    ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+
+  # The same for S4a: the converter face. The two properties it covers that no
+  # assertion in the generator can see are that _toint answers a predefined
+  # handle with the ABI's own value -- which the standard requires and a
+  # round trip cannot detect -- and that a status converted to the Fortran form
+  # and back still answers MPI_Get_count, which is only true if the private
+  # bytes travelled with it.
+  add_executable(abi_converters_test test/abi_converters_test.c)
+  target_include_directories(abi_converters_test PRIVATE
+    ${MPIABI_GEN_INCLUDE_DIR})
+  target_compile_options(abi_converters_test PRIVATE ${MPIABI_WARNINGS})
+  target_link_libraries(abi_converters_test PRIVATE mpi_abi)
+
+  add_test(NAME abi_converters_test
+    COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_converters_test> ${MPIABI_RUN_POST})
+  set_tests_properties(abi_converters_test PROPERTIES
     ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
 
   # 20.2.1 wants libmpi_abi to be the application's only direct MPI dependency,

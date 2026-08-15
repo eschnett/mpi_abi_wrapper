@@ -453,6 +453,83 @@ static void test_keyvals(void)
         "an implementation keyval we never registered was translated anyway");
 }
 
+/* ------------------------------------------------- handle serialization */
+
+/* serialize.c, which abi_converters_test exercises from outside but cannot
+ * push to its limits: the table is 4096 entries and the only way to fill it is
+ * from in here.
+ *
+ * What the black-box test cannot see at all is the *capacity* behaviour. A
+ * full table has nowhere to report a failure -- MPI_Comm_toint returns an int,
+ * not an error code -- so the contract is that it answers 0, which no
+ * _fromint accepts, and the caller finds the handle invalid rather than being
+ * handed someone else's.
+ */
+static void test_serialization(void)
+{
+  /* 1. A predefined ABI handle serializes to its own value and is not
+   * interned. MPI-5.0 20.4.5 requires the first half; the second is what
+   * makes the requirement survive a table that has run out of room.
+   */
+  CHECK(mpiwrapper_handle_toint(MPIWRAPPER_BITS(MPIABI_COMM_WORLD))
+            == (int)(uintptr_t)MPIABI_COMM_WORLD,
+        "a predefined handle does not serialize to its ABI value");
+  CHECK(mpiwrapper_handle_toint(MPIWRAPPER_BITS(MPIABI_DATATYPE_NULL))
+            == (int)(uintptr_t)MPIABI_DATATYPE_NULL,
+        "a predefined null handle does not serialize to its ABI value");
+
+  uint64_t bits = 0;
+  CHECK(mpiwrapper_handle_fromint((int)(uintptr_t)MPIABI_COMM_WORLD, &bits)
+            && bits == MPIWRAPPER_BITS(MPIABI_COMM_WORLD),
+        "a predefined handle does not deserialize to itself");
+
+  /* 2. A dynamic handle is interned, stably, outside the predefined range,
+   * and a repeat of the same bits reuses its entry rather than a second slot.
+   */
+  const uint64_t a = UINT64_C(0x00007fff12345678); /* an Open MPI-shaped one */
+  const uint64_t b = UINT64_C(0x000000004c000123); /* an MPICH-shaped one */
+
+  const int ia = mpiwrapper_handle_toint(a);
+  const int ib = mpiwrapper_handle_toint(b);
+  CHECK(ia != 0 && ib != 0, "the serialization table refused two handles");
+  CHECK(ia != ib, "two handles serialized to one integer");
+  CHECK(mpiwrapper_handle_toint(a) == ia,
+        "serializing the same handle twice gave two integers");
+  CHECK(!mpiwrapper_in_predef_range((uint64_t)(unsigned)ia),
+        "a dynamic handle serialized into the predefined range");
+
+  CHECK(mpiwrapper_handle_fromint(ia, &bits) && bits == a,
+        "a 64-bit handle did not survive the round trip");
+  CHECK(mpiwrapper_handle_fromint(ib, &bits) && bits == b,
+        "an int-shaped handle did not survive the round trip");
+
+  /* 3. Nothing this library never issued is accepted. 1 is below the
+   * predefined range and 0 is what a full table answers with.
+   */
+  CHECK(!mpiwrapper_handle_fromint(1, &bits),
+        "an integer below the predefined range was accepted");
+  CHECK(!mpiwrapper_handle_fromint(0, &bits),
+        "zero was accepted as a serialized handle");
+  CHECK(!mpiwrapper_handle_fromint(-1, &bits),
+        "a negative integer was accepted as a serialized handle");
+
+  /* 4. Overflow. Fill the table and check that it degrades the documented way
+   * rather than wrapping into a valid index -- and that what was already in it
+   * still converts, since an application holding an integer from before the
+   * overflow must not have it silently repointed.
+   */
+  for (int i = 0; i < MPIWRAPPER_SERIAL_SLOTS + 16; ++i)
+    (void)mpiwrapper_handle_toint(UINT64_C(0x0000700000000000) + (uint64_t)i);
+
+  CHECK(mpiwrapper_handle_toint(UINT64_C(0x0000600000000001)) == 0,
+        "a full serialization table issued an integer anyway");
+  CHECK(mpiwrapper_handle_fromint(ia, &bits) && bits == a,
+        "filling the table disturbed an integer issued earlier");
+  CHECK(mpiwrapper_handle_toint(MPIWRAPPER_BITS(MPIABI_COMM_WORLD))
+            == (int)(uintptr_t)MPIABI_COMM_WORLD,
+        "a full table stopped answering for predefined handles");
+}
+
 /* ------------------------------------------------- MPI_T's handle classes */
 
 /* Six classes with at most two predefined values each, so the sentinel shape
@@ -520,6 +597,7 @@ int main(int argc, char **argv)
     test_dynamic_handles();
     test_staged_requests();
     test_keyvals();
+    test_serialization();
     test_tool_handles();
   }
 
