@@ -75,12 +75,12 @@ struct mpiwrapper_vtable {
  * for the wrapper to build its reverse handle map, and to check its own symbol
  * resolution, before anyone can call a slot.
  *
- * `size` is sizeof(struct mpiwrapper_vtable) as the *caller* understands it. A
- * wrapper may accept a smaller size than its own and serve the common prefix; it
- * must refuse a larger one, since the caller would read past the end. Note that
- * nothing currently reaches the prefix case: the layout hash is taken over the
- * whole slot list, so a caller built from a shorter one is already rejected.
- * NOTES.md #2 records the two ways out of that.
+ * `size` is sizeof(struct mpiwrapper_vtable) as the *caller* understands it, and
+ * it must match exactly -- there is no "accept a smaller one and serve the
+ * prefix", because the layout hash covers the whole slot list and refuses such a
+ * caller first. The size catches what the hash cannot: it is taken over the
+ * *text* of the slot list, so two halves built for different targets hash
+ * identically and disagree about sizeof. NOTES.md #2.
  *
  * Both `abi_version` and `abi_subversion` are checked, against the header's
  * MPI_ABI_VERSION and MPI_ABI_SUBVERSION. The layout hash alone is not enough: a

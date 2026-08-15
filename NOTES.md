@@ -580,24 +580,25 @@ The failure mode they leave is a stack overflow, not a wrong answer, which is wh
 would narrow the gap and not close it; closing it would need the loader to answer
 "where does this call site bind", which neither `dladdr` nor `dlsym` will do.
 
-`size` is `sizeof(struct mpiwrapper_vtable)` as the *caller* understands it. A
-wrapper may accept a smaller size than its own and serve the common prefix; it must
-refuse a larger one, since the caller would read past the end.
+`size` is `sizeof(struct mpiwrapper_vtable)` as the *caller* understands it, and
+**it must match exactly.** An earlier contract said a wrapper may accept a
+smaller size and serve the common prefix; that was never reachable, because the
+three checks in front of it each demand exact equality — `abi_version`,
+`abi_subversion`, and a `layout_hash` taken over the *whole* slot list — so a
+caller built from a shorter slot list is refused before `size` is looked at. A
+provision no input can reach is not forward compatibility, it is a story about
+it, and it invited the reader to plan on growth the handshake does not
+implement. If additive growth is ever wanted, the honest way to get it is to
+hash only the slots up to `size`, and that can be adopted without changing this
+signature.
 
-**But nothing can currently reach the prefix case, and that is worth deciding
-rather than leaving as it is.** The three checks in front of the size check each
-demand exact equality — `abi_version`, `abi_subversion`, and a `layout_hash`
-taken over the *whole* slot list — so a caller built from a shorter slot list is
-rejected before `size` is looked at. `size` is therefore a live guard against
-exactly one thing (a larger caller struct, which cannot happen either) and dead
-weight otherwise. Two coherent resolutions, and v1 takes the first:
-**(a)** keep `size` as belt-and-braces and say so, treating "serve the prefix"
-as documentation of a future subversion policy rather than of current behaviour;
-**(b)** make additive growth real by hashing only the slots up to `size` and
-letting a newer wrapper serve an older `libmpi_abi`, which is what the getter's
-shape was originally chosen for. (b) is the only one that makes
-`MPI_ABI_SUBVERSION` mean anything at run time, and it can be adopted later
-without changing the signature — so nothing is lost by starting at (a).
+The check is kept rather than deleted, because it is the one thing here the hash
+cannot see. The hash is taken over the *text* of the slot list, so two halves
+that agree on every declaration and disagree on what those declarations weigh —
+a 32-bit `libmpi_abi` against a 64-bit `libmpiwrapper`, or two compilers
+differing about a struct's layout — hash identically and differ in `sizeof`.
+That is precisely the mismatch that produces a call through a shifted slot, and
+it is the case §4.1's pointer-sized handles make plausible rather than exotic.
 
 **Naming, and the renaming rules for `mpiabi.h`.** `MPIABI_` uniformly
 (`MPIABI_Comm`, `MPIABI_COMM_WORLD`). Not `MPI_ABI_`, because the stub header
@@ -1540,7 +1541,10 @@ clearing the block, and the releaser would free the new owner's block.
    about at configure time and not enforced, since no released Open MPI meets it.
    The enforced floor is **MPI-3.0**, verified with MPICH 3.1.4. §1, §9.
 4. **`mpiwrapper` exports exactly one symbol**, a getter carrying
-   `MPI_ABI_VERSION` and a generated layout hash. §2.
+   `MPI_ABI_VERSION`, `MPI_ABI_SUBVERSION`, a generated layout hash and the
+   vtable's `sizeof`. **All four are checked for exact equality**; there is no
+   prefix serving and no forward compatibility, and the size is what catches a
+   layout mismatch the text-derived hash cannot. §2.
 5. **`mpi_abi` finds the wrapper from an environment variable**, falling back to a
    build-time path. §2. **Both libraries are built together into one prefix per MPI
    installation**, and the split is not user-visible; wrapper libraries are *not*

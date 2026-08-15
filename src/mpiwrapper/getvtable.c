@@ -58,8 +58,9 @@ static int resolution_is_outward(const void *abi_probe, const char **diagnostic)
     *diagnostic =
         "symbol resolution captured: this libmpiwrapper's MPI_* calls resolve "
         "back into libmpi_abi instead of the MPI implementation, which would "
-        "recurse until the stack is exhausted. Load the wrapper with dlmopen "
-        "or RTLD_DEEPBIND (see MPI_ABI_WRAPPER_DLOPEN_MODE).";
+        "recurse until the stack is exhausted. Load the wrapper with "
+        "dlopen(RTLD_LOCAL | RTLD_DEEPBIND), which is the default; dlmopen is "
+        "selectable but does not work with an MPI that dlopen's its components.";
     return 0;
   }
   return 1;
@@ -109,13 +110,25 @@ mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
                   "generated from different slot lists";
     return NULL;
   }
-  /* A larger caller struct would read past the end of ours. A smaller one is
-   * fine: it sees a prefix, and the layout hash already established that the
-   * prefix agrees.
+  /* Exact equality, not "smaller is fine, serve the prefix". Serving a prefix
+   * was never reachable anyway -- the layout hash above is taken over the whole
+   * slot list, so a caller built from a shorter one is already refused -- and
+   * pretending otherwise invited a forward-compatibility story the handshake
+   * does not implement.
+   *
+   * The check still earns its place, because it is the one thing here that the
+   * hash cannot see: the hash is computed over the *text* of the slot list, so
+   * two halves that agree on every declaration but disagree on what those
+   * declarations weigh -- a 32-bit libmpi_abi against a 64-bit libmpiwrapper,
+   * or two compilers differing about a struct's ABI -- hash identically and
+   * differ in sizeof. That is exactly the mismatch a shifted-slot call comes
+   * from.
    */
-  if (size > sizeof(struct mpiwrapper_vtable)) {
+  if (size != sizeof(struct mpiwrapper_vtable)) {
     *diagnostic =
-        "libmpi_abi expects a larger vtable than this libmpiwrapper provides";
+        "vtable size mismatch: libmpi_abi and libmpiwrapper agree on the slot "
+        "list but not on its layout, which means they were built for different "
+        "targets or with incompatible compiler settings";
     return NULL;
   }
 
@@ -123,6 +136,22 @@ mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
   if (!every_slot_filled(sizeof(struct mpiwrapper_vtable), diagnostic))
     return NULL;
 
+  /* Build the reverse maps once, before handing out a table whose slots use
+   * them -- which is the reason this is a getter rather than an exported
+   * struct.
+   *
+   * "Once" is what the CAS gives, and it is worth being exact about what it
+   * does not give. A *second* concurrent caller loses the exchange and returns
+   * immediately, possibly while the winner is still filling the maps; and a
+   * failed build leaves `initialized` set, so a retry would succeed with maps
+   * that were never built. Neither can happen as the library is used: the only
+   * caller is libmpi_abi's constructor, which runs once, before main, on one
+   * thread. So this is a guard against a second libmpi_abi in the process
+   * rather than against concurrency, and it is deliberately not a barrier --
+   * making it one means a mutex or a spin, and there is no caller to serialize.
+   * If a second entry point into this function ever appears, this is the thing
+   * that has to change with it.
+   */
   int expected = 0;
   if (atomic_compare_exchange_strong_explicit(&initialized, &expected, 1,
                                               memory_order_acq_rel,
@@ -130,8 +159,5 @@ mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
     if (!mpiwrapper_init_reverse_maps(diagnostic)) return NULL;
   }
 
-  /* The maps are complete before any slot can be reached, which is the reason
-   * this is a getter rather than an exported struct.
-   */
   return &mpiwrapper_vtable_instance;
 }

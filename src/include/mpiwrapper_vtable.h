@@ -156,9 +156,14 @@ struct mpiwrapper_vtable {
  * natural place for the wrapper to build its reverse handle map, and to check
  * its own symbol resolution, before anyone can call a slot.
  *
- * `size` is sizeof(struct mpiwrapper_vtable) as the *caller* understands it. A
- * wrapper may accept a smaller size than its own and serve the common prefix;
- * it must refuse a larger one, since the caller would read past the end.
+ * `size` is sizeof(struct mpiwrapper_vtable) as the *caller* understands it, and
+ * it must match exactly. Serving a common prefix to a caller with fewer slots
+ * was the earlier contract and was never reachable: the layout hash covers the
+ * whole slot list, so such a caller is refused before the size is looked at.
+ * What the size does catch is the one mismatch the hash cannot -- the hash is
+ * taken over the *text* of the slot list, so two halves built for different
+ * targets (32- against 64-bit) or with incompatible struct-layout settings hash
+ * identically and disagree about sizeof.
  *
  * Both `abi_version` and `abi_subversion` are checked, against the header's
  * MPI_ABI_VERSION and MPI_ABI_SUBVERSION. The layout hash alone is not enough:

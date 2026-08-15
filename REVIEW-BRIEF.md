@@ -87,24 +87,27 @@ is sufficient, not necessary.
   - `examples/README.md` now lists all five divergences found so far, since the
     pattern — *compiles, therefore unchecked* — is the point.
 
-## Still open, deliberately not changed here
+## Settled after the review
 
-1. **The vtable's `size` parameter is unreachable.** Version, subversion and a
-   layout hash over the *whole* slot list each demand exact equality, so no caller
-   can present a shorter struct and reach the "serve the common prefix" path.
-   §2 now states this and offers two resolutions; **someone has to pick one**, and
-   the choice decides whether `MPI_ABI_SUBVERSION` means anything at run time.
-2. **`mpiwrapper_get_vtable`'s init is not fully serialized.** The CAS around
-   `mpiwrapper_init_reverse_maps` means a *second* concurrent caller returns the
-   vtable while the first is still building the maps, and a failed build leaves
-   `initialized` set so a retry succeeds with unbuilt maps. Harmless today — the
-   only caller is a constructor, running single-threaded — but the comment above it
-   claims "the maps are complete before any slot can be reached", which is what the
-   getter exists for. Worth an S2 or S4 fix, not a doc change.
-3. **`getvtable.c`'s capture diagnostic tells the user to load the wrapper with
-   `dlmopen` or `RTLD_DEEPBIND`.** Half of that advice now leads into a segfault
-   during `MPI_Init`. It is a user-visible string, so it was left for whoever
-   touches that file next.
+The three things the review left open were decided immediately afterwards, in
+`src/mpiwrapper/getvtable.c` and §2:
+
+1. **The vtable handshake requires exact equality on all four fields**, `size`
+   included. "Accept a smaller size and serve the common prefix" is gone: it was
+   unreachable behind the layout hash, and a provision no input can reach is a
+   story about forward compatibility rather than the thing itself. The size check
+   stays because it is the only one that catches a mismatch the hash cannot — the
+   hash is over the slot list's *text*, so a 32-bit `libmpi_abi` against a 64-bit
+   `libmpiwrapper` hashes identically and differs in `sizeof`.
+2. **The comment over the map construction now says what the CAS actually
+   guarantees** — once, not a barrier — and names the two things it does not
+   cover (a second concurrent caller, and a failed build leaving `initialized`
+   set), why neither can happen with a constructor as the only caller, and what
+   would have to change if a second entry point ever appeared. The code is
+   unchanged; the claim was the defect.
+3. **The capture diagnostic advises `dlopen(RTLD_LOCAL | RTLD_DEEPBIND)`**, the
+   actual default, and says that `dlmopen` is selectable but does not work with
+   an MPI that `dlopen`s its components.
 ## What is worth re-checking next time
 
 - **Anything asserted rather than measured.** `dev/` holds five probes. A claim
