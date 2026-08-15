@@ -59,8 +59,7 @@ static int resolution_is_outward(const void *abi_probe, const char **diagnostic)
         "symbol resolution captured: this libmpiwrapper's MPI_* calls resolve "
         "back into libmpi_abi instead of the MPI implementation, which would "
         "recurse until the stack is exhausted. Load the wrapper with "
-        "dlopen(RTLD_LOCAL | RTLD_DEEPBIND), which is the default; dlmopen is "
-        "selectable but does not work with an MPI that dlopen's its components.";
+        "dlopen(RTLD_LOCAL | RTLD_DEEPBIND), which is the default.";
     return 0;
   }
   return 1;
