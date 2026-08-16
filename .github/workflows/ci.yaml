@@ -1,0 +1,403 @@
+# CI for mpi_abi_wrapper.
+#
+# Every job below runs an existing entry point from ci-scripts/ rather than
+# re-expressing its recipe here; those scripts are runnable by hand and are
+# where the reasons live. NOTES.md #9 and #10 are what this file implements:
+#
+#   #10 oracle 1     the header and generator checks, "the cheapest job in CI"
+#   #9               a job asserting the committed generated code is unchanged
+#   #9 decision 19   the three consumption routes "exercised by CI rather than
+#                    merely parsed" -- each must build *and run* a program
+#   #9               MPI provisioned from pinned released tarballs, cached
+#
+# Not here, deliberately, though the design calls for them: the MPI-3.0 floor
+# row (ci-scripts/linux-floor.sh, some fifteen minutes), the MPICH C suite
+# (ci-scripts/suite/), the cross test, sanitizers and the 32-bit row. Excluding
+# the floor row also removes the only coverage of the *toolchain* floor --
+# CMake 3.20, Python 3.8, gcc 9 -- which is the kind of drift HISTORY.md #3's
+# S6 entry records as invisible everywhere else.
+
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Not an unconditional true. A cache saved on a PR branch is invisible to
+  # other branches while one saved on main is visible to every PR, so main is
+  # what warms the from-source MPI caches. Cancelling a main run to start
+  # another throws away a build every later PR would have restored in seconds.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # --------------------------------------------------------------- no MPI
+  # -DMPI_ABI_BUILD_WRAPPER=OFF never reaches find_package(MPI), so this job
+  # needs no MPI on the host at all. It builds libmpi_abi and the three
+  # header-compile object libraries, and registers exactly the five tests
+  # CMakeLists.txt declares outside that block.
+  checks:
+    name: checks (no MPI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      # poppler-utils is the one package the runner image lacks:
+      # dev/check-c-bindings.py shells out to `pdftotext -layout` to read
+      # MPI-5.0's Appendix A.3 out of the committed doc/mpi50-report.pdf.
+      # cmake, python3, patch and binutils are already there, and newer than
+      # apt's.
+      - name: Install poppler-utils, for pdftotext
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends poppler-utils
+
+      - name: Configure
+        run: cmake -S . -B build -DMPI_ABI_BUILD_WRAPPER=OFF
+
+      - name: Build
+        run: cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
+
+      # generated-up-to-date is NOTES.md #9's empty-diff gate: generate.py
+      # --check regenerates in memory and exits non-zero on any difference,
+      # writing nothing. The `regenerate` target is never run here -- it writes
+      # into the source tree.
+      #
+      # --no-tests=error rather than an expected count written into YAML: it
+      # catches "the five became zero" without becoming a second place a tally
+      # has to be kept up to date.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error --timeout 300
+
+      - name: Show CMake's check logs
+        if: failure()
+        run: |
+          for log in build/CMakeFiles/CMakeConfigureLog.yaml \
+                     build/CMakeFiles/CMakeError.log; do
+              if [[ -f ${log} ]]; then
+                  echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
+              fi
+          done
+
+  # ------------------------------------------------------- distro MPI rows
+  # ci-scripts/linux-test.sh does everything: as root with apt it installs its
+  # own packages, resolves mpicc through Debian's alternatives, configures,
+  # builds, runs the full ctest, and separates its gating steps from the two
+  # informational ones (symbol binding, dlmopen mode). It tails its own CMake
+  # and build logs on failure, so this job adds no diagnostics of its own.
+  #
+  # Two ways this is weaker than `ci-scripts/run-linux-docker.sh` locally, both
+  # worth knowing rather than assuming parity: the source tree is NOT mounted
+  # read-only here, so the `patch -o -` property that mount was written to
+  # catch is untested; and GitHub's runners are x86_64 while the local rows
+  # were measured on aarch64.
+  linux-distro:
+    name: linux / ${{ matrix.mpi }} (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    # Also the only backstop against a hung launcher: linux-test.sh calls ctest
+    # with no --timeout and ctest's own default is 1500 s per test. These rows
+    # are under two minutes plus the package install when they work.
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The image is part of the row and the two are not interchangeable.
+          # Ubuntu 24.04's MPICH links libpmix and imports PMIx_Init while the
+          # mpiexec.hydra in the same package is a PMI-1 server, so `mpiexec -n
+          # 2` there returns two singletons and exit 0 rather than a two-rank
+          # job -- with nothing of this project involved. Debian 13's MPICH
+          # 4.2.1 links no libpmix and speaks the PMI-1 its hydra serves.
+          # test/README.md "Linux" has the measurement.
+          - mpi: mpich
+            image: debian:13
+          # Open MPI stays on Ubuntu 24.04 because ci-scripts/suite's
+          # expected-failure list is calibrated line by line against the Open
+          # MPI 4.1.6 that image ships. That suite is not run here yet, but the
+          # pin is the documented one and moving it would invalidate the file.
+          # 4.1.6 is also the only place the unsupported-operation paths are
+          # exercised: it provides 466 of the ABI's 688 entry points.
+          - mpi: openmpi
+            image: ubuntu:24.04
+    steps:
+      # Before checkout, deliberately. The base images carry no git, which
+      # sends actions/checkout down its REST-tarball fallback -- it works, and
+      # leaves no .git at all.
+      - name: Install git for actions/checkout
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v6
+
+      - name: Build and test
+        run: bash ci-scripts/linux-test.sh ${{ matrix.mpi }}
+
+  # ------------------------------- pinned tarballs, cached, + consumption
+  # NOTES.md #9's version table: MPICH >= 4.0 is the only implementation that
+  # provides the ABI's `_c` large-count surface, and Open MPI >= 5.0 is
+  # sessions plus the current component architecture -- which nothing else in
+  # this workflow covers, the distro row above being 4.1.6. Both versions are
+  # the installers' own defaults, restated here so they are visible and can
+  # enter the cache key.
+  linux-source:
+    name: linux / ${{ matrix.mpi }} ${{ matrix.version }} (from source)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mpi: mpich
+            version: 4.3.1
+          - mpi: openmpi
+            version: 5.0.6
+    steps:
+      - uses: actions/checkout@v6
+
+      # gfortran is required, not incidental. NOTES.md #9 forbids
+      # --disable-fortran: it silently drops the *implementations* of
+      # MPI_Type_create_f90_{real,complex,integer}, which are plain C entry
+      # points MPI-5.0 requires, so the compile-only probe reports them
+      # available and only the wrapper's link step fails. The installers run a
+      # stock configure, which needs a Fortran compiler present.
+      #
+      # This job is not root, so linux-test.sh's own apt block is skipped and
+      # this step is what provisions the runner. pkg-config is here so
+      # check-install.sh's pkg-config leg runs rather than self-skipping.
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+              build-essential gfortran cmake python3 patch binutils \
+              poppler-utils curl ca-certificates pkg-config
+
+      # runner.temp is usable in a step's with:/env: but not in a job's env:
+      # block, hence a step. The prefix carries the implementation name so the
+      # two legs never collide -- mpicc, the RPATHs and the install names all
+      # bake absolute paths in -- and so a later cross-test row could restore
+      # both onto one runner. MPI_SRC_DIR is set for re-runs and diagnostics,
+      # not for caching; see below.
+      - name: Set up paths
+        run: |
+          {
+              echo "PREFIX=${RUNNER_TEMP}/opt/mpi-${{ matrix.mpi }}"
+              echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-${{ matrix.mpi }}"
+          } >>"${GITHUB_ENV}"
+
+      # The key hashes ci-scripts/ and must NOT hash ci-scripts/suite/'s
+      # expected-failure lists, or every edit to a reason rebuilds MPI on every
+      # variant -- ci-scripts/README.md and CODE.md #3 both state the rule.
+      # `ci-scripts/**` with explicit negations, never `ci-scripts/*`:
+      # @actions/glob expands a matched directory to all of its descendants, so
+      # the shorter pattern would put the suite back in the key. The cache step
+      # prints the key it used, so if a suite-only commit ever changes that
+      # hash, this is wrong again.
+      #
+      # The version is in the key because it is a matrix value rather than a
+      # file: the installer's own default is hashed, but the argument passed
+      # here is not, so without it a version bump would restore the previous
+      # MPI under an unchanged hash.
+      #
+      # `mpi1-` is a manual epoch: actions/cache restores an archive to the
+      # absolute paths recorded at save time, so renaming the prefix means
+      # bumping this or a stale cache restores to the old path and reads as a
+      # broken installation rather than a stale cache.
+      - name: Restore the MPI installation
+        id: cache-mpi
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/opt/mpi-${{ matrix.mpi }}
+          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/**', '!ci-scripts/suite/**', '!ci-scripts/README.md') }}
+
+      - name: Build and install ${{ matrix.mpi }} ${{ matrix.version }}
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        run: ci-scripts/install-${{ matrix.mpi }}.sh "${PREFIX}" "${{ matrix.version }}"
+
+      # Saved here rather than through plain actions/cache, whose post step is
+      # post-if: success() -- a test failure below would otherwise discard an
+      # MPI that had just taken twenty minutes to build. The predicate is then
+      # exactly "the MPI installed", which is what it should be.
+      #
+      # The unpacked source tree is deliberately not cached: it is a couple of
+      # hundred megabytes to save a twenty-second download, and it competes for
+      # the repository's cache budget with the prefixes that matter.
+      - name: Save the MPI installation
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/opt/mpi-${{ matrix.mpi }}
+          key: ${{ steps.cache-mpi.outputs.cache-primary-key }}
+
+      # The gate that keeps an environment failure from being reported as a
+      # wrapper failure. MPICH's ch4:ofi and Open MPI's prte each choose a
+      # network interface on their own, and test/README.md records at length
+      # what happens when the one they choose does not work. If this step
+      # fails, the answer is to name the interface in this file with a comment
+      # -- never to set -DMPI_ABI_TEST_USE_LAUNCHER=OFF, which would put
+      # MPI_ABI_EXPECT_RANKS=1 into every test's environment and let the row
+      # pass green having never crossed a rank boundary (HISTORY.md #2.14).
+      - name: Two ranks, with no wrapper involved
+        run: |
+          cat >"${RUNNER_TEMP}/hello.c" <<'EOF'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(int argc, char **argv) {
+              int size = -1, rank = -1;
+              MPI_Init(&argc, &argv);
+              MPI_Comm_size(MPI_COMM_WORLD, &size);
+              MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+              printf("rank %d of %d\n", rank, size);
+              MPI_Finalize();
+              return size == 2 ? 0 : 1;
+          }
+          EOF
+          "${PREFIX}/bin/mpicc" -o "${RUNNER_TEMP}/hello" "${RUNNER_TEMP}/hello.c"
+          if ! "${PREFIX}/bin/mpiexec" -n 2 "${RUNNER_TEMP}/hello"; then
+              echo "::error::${{ matrix.mpi }} ${{ matrix.version }} cannot launch two ranks on this runner; ctest below would have blamed the wrapper"
+              exit 1
+          fi
+
+      # The path arm of linux-test.sh is exactly what its header documents for
+      # "an MPI built from a pinned tarball, which is how NOTES.md #9 wants CI
+      # to provision them", and reusing it keeps the gating/informational
+      # split, the symbol-binding report and the dlmopen probe in one place.
+      #
+      # One thing it does not cover: the script exports
+      # OMPI_MCA_btl_vader_single_copy_mechanism=none, which is the Open MPI
+      # 4.x spelling and a no-op on 5.0.6. If the 5.0.6 leg ever shows
+      # single-copy errors, the variable to add here is OMPI_MCA_smsc=^cma.
+      - name: Build and test
+        run: ci-scripts/linux-test.sh "${PREFIX}/bin/mpicc"
+
+      # NOTES.md #9 decision 19. Installs this project into a prefix of its own
+      # and builds *and runs* a program through bin/mpicc,
+      # find_package(mpi_abi), the FindMPI shim and pkg-config, with
+      # LD_LIBRARY_PATH/DYLD_LIBRARY_PATH cleared, checking that libmpi_abi is
+      # each binary's only MPI dependency. This is also the only place the
+      # Linux RPATH story is tested: on macOS the absolute install names make
+      # every route pass for free.
+      - name: Check the installed prefix's consumption routes
+        run: ci-scripts/check-install.sh "${PREFIX}/bin/mpicc"
+
+      # linux-test.sh tails 25 lines of its own configure log; FindMPI
+      # suppresses its probes' compile and link output, which is the part that
+      # says why.
+      - name: Show CMake's check logs
+        if: failure()
+        run: |
+          for log in /tmp/cmake-mpi-${{ matrix.mpi }}.log \
+                     /tmp/build-mpi-${{ matrix.mpi }}/CMakeFiles/CMakeConfigureLog.yaml \
+                     /tmp/build-mpi-${{ matrix.mpi }}/CMakeFiles/CMakeError.log; do
+              if [[ -f ${log} ]]; then
+                  echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
+              fi
+          done
+
+  # ----------------------------------------------------------------- macOS
+  # Required by NOTES.md #1's portability constraint and not redundant with
+  # Linux: macOS is where the two-level namespace does the isolation (#2),
+  # where isolation-check builds a second -flat_namespace wrapper to prove the
+  # check fires, and where bin/mpicc's -isysroot handling is exercised.
+  #
+  # linux-test.sh is not usable here -- nproc, `nm -D` and .so globs -- so this
+  # leg spells out the same commands. scripts/host-env.sh must NOT be called:
+  # it is one laptop's firewall and VPN configuration.
+  macos:
+    name: macos / ${{ matrix.mpi }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      HOMEBREW_NO_ENV_HINTS: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One implementation per leg: the two formulae conflict.
+          - mpi: mpich
+            formula: mpich
+          - mpi: openmpi
+            formula: open-mpi
+    steps:
+      - uses: actions/checkout@v6
+
+      # poppler is pdftotext, for the c-bindings cross-check; pkgconf makes
+      # check-install.sh's pkg-config route real rather than skipped with a
+      # reason. cmake and python3 come with the runner image.
+      - name: Install ${{ matrix.formula }}
+        run: brew install ${{ matrix.formula }} poppler pkgconf
+
+      # The keg's own bin, never the shared $(brew --prefix)/bin, and never a
+      # hard-coded /opt/homebrew. CMakeLists.txt takes mpiexec from *beside*
+      # MPI_C_COMPILER with NO_DEFAULT_PATH, so that one implementation's
+      # binaries are never launched under another's hydra -- and Homebrew puts
+      # every formula's wrappers in one shared bindir, which defeats exactly
+      # that. A keg's bin holds one implementation and nothing else.
+      - name: Set up paths
+        run: echo "MPI_BINDIR=$(brew --prefix ${{ matrix.formula }})/bin" >>"${GITHUB_ENV}"
+
+      # The same gate as the Linux from-source rows, and here it is
+      # load-bearing: test/README.md records Open MPI 5.0.x failing to launch
+      # on the developer's laptop, which HISTORY.md #2.13 traced to that
+      # machine's application firewall blocking prte rather than to Open MPI.
+      # GitHub's macOS images ship the firewall off, so this should pass; if it
+      # does not, that is a finding to investigate, not a flag to set.
+      - name: Two ranks, with no wrapper involved
+        run: |
+          cat >"${RUNNER_TEMP}/hello.c" <<'EOF'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(int argc, char **argv) {
+              int size = -1, rank = -1;
+              MPI_Init(&argc, &argv);
+              MPI_Comm_size(MPI_COMM_WORLD, &size);
+              MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+              printf("rank %d of %d\n", rank, size);
+              MPI_Finalize();
+              return size == 2 ? 0 : 1;
+          }
+          EOF
+          "${MPI_BINDIR}/mpicc" -o "${RUNNER_TEMP}/hello" "${RUNNER_TEMP}/hello.c"
+          if ! "${MPI_BINDIR}/mpiexec" -n 2 "${RUNNER_TEMP}/hello"; then
+              echo "::error::${{ matrix.formula }} cannot launch two ranks on this runner"
+              exit 1
+          fi
+
+      - name: Configure
+        run: cmake -S . -B build -DMPI_C_COMPILER="${MPI_BINDIR}/mpicc"
+
+      - name: Build
+        run: cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
+
+      # No -DMPI_ABI_TEST_USE_LAUNCHER=OFF: see the gate above. --timeout is
+      # not decoration either -- test/README.md documents MPI_Comm_spawn
+      # hanging under hydra on macOS, and ctest's own default is 1500 s.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error --timeout 300
+
+      - name: Check the installed prefix's consumption routes
+        run: ci-scripts/check-install.sh "${MPI_BINDIR}/mpicc"
+
+      - name: Show CMake's check logs
+        if: failure()
+        run: |
+          for log in build/CMakeFiles/CMakeConfigureLog.yaml \
+                     build/CMakeFiles/CMakeError.log; do
+              if [[ -f ${log} ]]; then
+                  echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
+              fi
+          done

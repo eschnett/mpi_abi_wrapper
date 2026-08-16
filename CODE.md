@@ -79,6 +79,8 @@ check.
 ## 3. Repository layout
 
 ```
+.github/workflows/ ci.yaml -- the four gating CI jobs, each calling a ci-scripts
+                     entry point rather than repeating its recipe
 bin/               mpicc.in, mpicxx.in -- the compiler wrappers, configured at install
 ci-scripts/        MPI install and build-shape checks
   check-install.sh   the five-leg installed-prefix consumption test
@@ -116,7 +118,11 @@ The `ci-scripts/` versus `ci-scripts/suite/` split is deliberate: the MPI-instal
 cache key must hash the install scripts and must **not** hash the suite's
 expected-failure lists, or every edit to a reason rebuilds MPI on every variant.
 `ci-scripts/*` also does not mean what it looks like in `@actions/glob` — a
-matched directory expands to all of its descendants.
+matched directory expands to all of its descendants. The one place that rule is
+honoured is `.github/workflows/ci.yaml`'s `linux-source` cache key, which spells
+it `ci-scripts/**` plus explicit `!ci-scripts/suite/**`; the cache step prints
+the key it used, so a suite-only commit that moves the hash means it is wrong
+again.
 
 ## 4. The generator and its seven artifacts
 

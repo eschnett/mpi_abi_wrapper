@@ -90,3 +90,46 @@ A failing gating step exits non-zero all the way out through
 `run-linux-docker.sh`; that is worth stating because the first draft of this
 script piped `ctest` into `tail` and would have reported success for a failed
 run.
+
+## What GitHub Actions runs
+
+`.github/workflows/ci.yaml` holds four gating jobs, and each one calls a script
+from this directory rather than repeating its recipe in YAML. That is the point
+of the split: the reasons live here, next to the code they are about, and stay
+runnable by hand.
+
+| job | calls | provides its own MPI? |
+|---|---|---|
+| `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks |
+| `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root |
+| `linux-source` | `install-{mpich,openmpi}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached |
+| `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew |
+
+Three things about it that are decisions rather than defaults:
+
+- **The MPI cache key is where this file's split is cashed in.** It is
+  `hashFiles('ci-scripts/**', '!ci-scripts/suite/**', '!ci-scripts/README.md')`
+  — `**` with explicit negations, never `ci-scripts/*`, for the `@actions/glob`
+  reason above. The version is in the key too, because it is passed as a matrix
+  argument rather than read from a file, so the installer's own default is
+  hashed and the value actually used is not.
+- **The MPI is saved to the cache immediately after it installs**, through the
+  `actions/cache/restore` + `save` pair rather than plain `actions/cache`, whose
+  post step is `post-if: success()` — a failing test later in the job would
+  otherwise discard an MPI that had just taken twenty minutes to build.
+- **Every row that provisions its own MPI first launches two ranks with no
+  wrapper involved**, and fails loudly if it gets one. This separates "this
+  runner cannot launch a job" from "the wrapper is broken", which are otherwise
+  the same red `ctest`. It exists because the tempting answer to the first —
+  `-DMPI_ABI_TEST_USE_LAUNCHER=OFF` — sets `MPI_ABI_EXPECT_RANKS=1` and turns
+  the row green at a job size nobody chose, which is the failure `HISTORY.md`
+  §2.14 records going unnoticed for a year.
+
+Two ways the container rows there are **weaker** than `run-linux-docker.sh`
+here, worth knowing before reading a green run as parity: GitHub does not mount
+the source tree read-only, so the `patch -o -` property that mount was written
+to catch is untested; and its runners are x86_64, while every Linux row in
+`CODE.md` §11 was measured on aarch64 under Docker Desktop.
+
+The rows this repository has scripts for and that workflow does **not** run:
+`floor`, and everything under `suite/`.
