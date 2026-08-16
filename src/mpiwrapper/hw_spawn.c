@@ -26,7 +26,7 @@
  *
  * **Testing.** Spawn needs a launcher, so test/abi_state_test.c exercises it
  * only where one works: MPICH here, with Open MPI's row a documented gap
- * rather than a pass (STAGES.md S4b, test/README.md).
+ * rather than a pass (HISTORY.md S4b, test/README.md).
  */
 
 #include "internal.h"

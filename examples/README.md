@@ -10,8 +10,8 @@ compiler is a guess.
 exists in both places is a second source of truth, and the tested one wins.
 
 Everything found wrong here so far, as a warning about how this file drifts —
-three of the five were invisible to `check.sh`, because compiling proves nothing
-about agreement:
+five of the six were invisible to `check.sh`, because compiling proves nothing
+about agreement (`HISTORY.md` §5 keeps the same list as a standing warning):
 
 1. the reverse-map tables were `static`, which does not compile against an
    implementation whose handles are addresses;
@@ -22,9 +22,12 @@ about agreement:
    (the handshake version, 1) — it rejected every valid pairing and compiled
    cleanly, because both macros exist;
 5. `mpi_abi_side.c` still *defaulted* to `dlmopen` on Linux, which `src/` never
-   did and which is now known not to work with a real MPI at all.
+   did and which is now known not to work with a real MPI at all;
+6. the slot count said 1376 where the real vtable has 1366 — the five entry
+   points MPI-3.0 deleted are answered by `libmpi_abi` itself and have no slot,
+   while all 1376 names are still exported (`NOTES.md` #1, #3).
 
-All five are corrected. What is still deliberately absent here is the
+All six are corrected. What is still deliberately absent here is the
 behavioural probe (`src/mpi_abi/bootstrap.c`'s decoy vtable): the `dladdr` check
 narrated below is necessary and not sufficient, and `NOTES.md` §2 explains why.
 
@@ -36,7 +39,7 @@ narrated below is necessary and not sufficient, and `NOTES.md` §2 explains why.
 | `mpiwrapper_wrappers.c` | `gen/mpiwrapper/wrappers.c` | generator |
 | `mpiwrapper_convert.c` | `src/mpiwrapper/*.c` | hand |
 
-The headers are excerpts: nine vtable slots of 1376, and only the types and constants
+The headers are excerpts: nine vtable slots of 1366, and only the types and constants
 the examples reference.
 
 ## Checking them

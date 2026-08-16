@@ -2413,15 +2413,19 @@ VTABLE_PREAMBLE = '''\
  */
 #define MPIWRAPPER_LAYOUT_HASH {hash:#010x}u
 
-/* One slot per ABI entry point, so {nslots} of them: MPI_X and PMPI_X get
- * their own, and each leads to a wrapper body that calls the implementation's
- * correspondingly-shifted name. Routing both to a single MPI_X slot would be
- * cheaper, but then an application calling PMPI_Send to bypass profiling would
- * still be seen by a tool interposed between the wrapper and the
- * implementation -- it would have bypassed the ABI-level profiling layer only.
- * Keeping them distinct also makes the ledger 1:1 rather than 2:1, so "each
- * entry point has exactly one slot and one body" is a uniform invariant with
- * no special case.
+/* One slot per *forwarded* ABI entry point, so {nslots} of them: MPI_X and
+ * PMPI_X get their own, and each leads to a wrapper body that calls the
+ * implementation's correspondingly-shifted name. That is fewer than the 1376
+ * names libmpi_abi exports, because the entry points MPI-3.0 deleted are
+ * answered on the ABI side in terms of their replacements and reach no slot at
+ * all (NOTES.md #3); gen/report.txt freezes both counts.
+ *
+ * Routing MPI_X and PMPI_X to a single slot would be cheaper, but then an
+ * application calling PMPI_Send to bypass profiling would still be seen by a
+ * tool interposed between the wrapper and the implementation -- it would have
+ * bypassed the ABI-level profiling layer only. Keeping them distinct also
+ * makes the ledger 1:1 rather than 2:1, so "each forwarded entry point has
+ * exactly one slot and one body" is a uniform invariant with no special case.
  *
  * Both names are always available to link against, though not in the shape
  * NOTES.md #2 originally recorded from Linux: on macOS the conda-forge MPICH
@@ -2493,17 +2497,26 @@ def slot_declaration(ep):
 
 def emit_vtable_h(entrypoints):
     slots = []
+    nslots = 0
     for ep in entrypoints:
         if ep.status == "abi-alias":
             continue
         slots += slot_declaration(ep)
+        nslots += 1
     body = "\n".join(slots) + "\n"
-    text = (VTABLE_PREAMBLE.format(hash=0, nslots=len(entrypoints)) + body +
+    # nslots is the count of *slots*, not of entry points: the abi-alias ones
+    # skipped above reach no slot, so len(entrypoints) is the wrong number here
+    # even though it is the right one for ENTRYPOINTS_PREAMBLE, which counts
+    # exported forwarders. Getting this wrong is invisible -- it only mis-states
+    # a comment sitting directly above the struct it miscounts, which is how it
+    # survived from the commit that introduced the aliases until a review.
+    text = (VTABLE_PREAMBLE.format(hash=0, nslots=nslots) + body +
             VTABLE_EPILOGUE)
     # The hash is over the emitted slot list itself, by dev/layout_hash.py's
-    # definition, so it is computed from the text and substituted back.
+    # definition, so it is computed from the text and substituted back. The
+    # comment above is not part of that text, so nslots does not affect it.
     value = lh.fnv1a32(lh.slot_list_text(text).encode())
-    return (VTABLE_PREAMBLE.format(hash=value, nslots=len(entrypoints)) + body +
+    return (VTABLE_PREAMBLE.format(hash=value, nslots=nslots) + body +
             VTABLE_EPILOGUE)
 
 
@@ -3590,11 +3603,13 @@ def emit_report(protos, tallies, handwritten_bodies):
     w("  An entry point with a body in src/mpiwrapper/ is marked [done]. All")
     w("  of them are: S1 wrote eight, S4a the converter face (the handle and")
     w("  status converters, the status-consuming functions, the output-string")
-    w("  buffers and MPI_Abi_*), and S4b the 40 that need state the wrapper")
-    w("  owns -- the lifecycle, the fifteen callback registrars, the buffer")
-    w("  attach and detach forms, the dynamic error-code registry, spawn and")
-    w("  MPI_Pcontrol. The count of bodies is a frozen tally above, so one")
-    w("  going missing fails generation rather than becoming a stub.")
+    w("  buffers and MPI_Abi_*), S4b the 40 that need state the wrapper owns")
+    w("  -- the lifecycle, the thirteen callback registrars S1 had not")
+    w("  already written, the buffer attach and detach forms, the dynamic")
+    w("  error-code registry, spawn and MPI_Pcontrol -- and S7 the two")
+    w("  attribute getters, whose class no signature carries. The count of")
+    w("  bodies is a frozen tally above, so one going missing fails")
+    w("  generation rather than becoming a stub.")
     w("")
     w("  What still answers MPI_ERR_UNSUPPORTED_OPERATION is decided per")
     w("  build by dev/probe_impl.py: an entry point the implementation does")

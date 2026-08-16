@@ -1,6 +1,6 @@
 # `ci-scripts/suite/`
 
-MPICH's own C test suite, run against this project (STAGES.md S7, NOTES.md
+MPICH's own C test suite, run against this project (HISTORY.md S7, NOTES.md
 #10). It is the first oracle here that nothing in this repository wrote: ~900
 programs that know only the MPI standard, compiled with the wrapper's `mpicc`
 and linked against `libmpi_abi`, exactly as HDF5 or PETSc will be in S8.
@@ -84,10 +84,10 @@ A line is `<dir>/<program> <np> : why`, with runtests' own name for the test
 so the list can be compared with an unwrapped run by eye.
 
 **The two lists are in different states, and that is deliberate rather than
-unfinished-looking.** `xfail-mpich.txt` is fully triaged: 41 failures out of
-1229 tests, each with a cause. The three bugs of ours that this suite found
-are not in it, because all three were fixed -- the last of them,
-`MPI_DISPLACEMENT_CURRENT`, emptied a whole group out of the file. `xfail-openmpi.txt` is 171 failures out of 1231, of
+unfinished-looking.** `xfail-mpich.txt` is fully triaged: **41** failures, each
+with a cause. The three bugs of ours that this suite found are not in it,
+because all three were fixed -- the last of them, `MPI_DISPLACEMENT_CURRENT`,
+emptied a whole group out of the file. `xfail-openmpi.txt` is **168**, of
 which the entry points Open MPI 4.1.6 simply does not have are attributed
 mechanically -- from the probe header that records what the implementation
 provides -- and about half are honest placeholders saying what was observed
@@ -95,6 +95,14 @@ and claiming nothing more. Finishing that triage is the next session's first
 task; the method is the one used throughout this stage, which is to build the
 same test with the implementation's own `mpicc` and see whether it passes
 without the wrapper.
+
+**Failure counts above are `wc -l` on the lists; the per-run *totals* are
+not quoted here on purpose.** They moved twice as the lists were retriaged and
+the copies of them did not all follow -- four documents disagreed (1212, 1229,
+1230, 1231) before this note replaced them. A total is only as good as the run
+that produced it, and three configure decisions change it, including whether
+the `threads` directory exists at all. `run-suite.sh` prints all three; take
+the total from a run rather than from prose.
 
 ## Two things about the environment
 

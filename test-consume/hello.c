@@ -1,5 +1,5 @@
 /* test-consume -- the CMake-route half of S6's install-consumption check
- * (NOTES.md #9, STAGES.md's S6 exit check). An ordinary application: it knows
+ * (NOTES.md #9, HISTORY.md's S6 exit check). An ordinary application: it knows
  * nothing about libmpiwrapper, only #include <mpi.h> and -lmpi_abi (here,
  * target_link_libraries(... mpi_abi::mpi_abi)).
  *

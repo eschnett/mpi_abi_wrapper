@@ -1,10 +1,12 @@
 # Expected failures of MPICH's C test suite over this project, wrapping the
-# Open MPI 4.1.6 that Ubuntu 24.04 ships (STAGES.md S7). One line per test,
+# Open MPI 4.1.6 that Ubuntu 24.04 ships (HISTORY.md S7). One line per test,
 # `<dir>/<program> <np> : why`, in runtests' own naming.
 #
 # This row runs on Linux, in the container ci-scripts/suite/linux-suite.sh
 # starts, because no Open MPI 5.0.x launcher works on macOS 26 with or
-# without this project (test/README.md). 1231 tests, and the failures below.
+# without this project (test/README.md). The failures are below -- 168 of
+# them, which is `wc -l` on this file; the run's total is not recorded here,
+# for the reason ci-scripts/suite/README.md gives.
 #
 # **The list is version-specific and most of it is not about this project.**
 # Open MPI 4.1.6 provides 466 of the ABI's 688 entry points, so everything

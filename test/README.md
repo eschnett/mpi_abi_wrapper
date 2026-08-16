@@ -1,8 +1,9 @@
 # `test/`
 
-Our own tests (NOTES.md §9), as opposed to the MPICH suite in
-`ci-scripts/suite/`, which S7 built and which is the first oracle here that
-nothing in this repository wrote.
+Our own tests, as opposed to the MPICH suite in `ci-scripts/suite/`, which is
+the first oracle here that nothing in this repository wrote. `CODE.md` §10 has
+the same inventory in one table; `NOTES.md` #10 has the five oracles these
+implement.
 
 Two of the tests below carry checks that exist because that suite found what
 they were missing: `abi_tools_test` now checks the *values* of the five
@@ -19,7 +20,7 @@ are ranks, `MPI_LASTUSEDCODE` an error code, `MPI_WIN_CREATE_FLAVOR` and
 | `generated-up-to-date` (`dev/generate.py --check`) | no | a fresh generation reproduces the committed `gen/` byte for byte, the frozen tallies still hold, and every one of the 688 entry points is generated, in the ledger, or deferred with a reason |
 | `prototype-reproduced` (`dev/check_prototype.py`) | no | S2's exit check: the generator still reproduces `dev/s1-reference/`, item by item, or the difference is a named exemption that fails when it stops firing |
 | `mpiwrapper_impl_config.h` (`dev/probe_impl.py`, at configure time) | yes, its header | not a test but a build step, and the thing every guard in the generated sources tests: which entry points and which optional constants this implementation actually has. Asked of the compiler, because `#ifdef` on the implementation's own name is quietly false wherever it spells a constant as an enumerator |
-| `mpiwrapper_selftest.c` | yes, one rank | white box: every predefined handle in both directions, the rank/tag/error/mode maps, the status blob, staging, the staged-request table, the **dynamic-handle collision probe**, the handle-serialization table's capacity behaviour (which has no error channel — `MPI_Comm_toint` returns an int, so a full table must answer 0 and no `_fromint` may accept it), the **error-code registry**, whose `toabi` direction has no error channel and so must fall back to `MPI_ERR_OTHER` when the table fills; and the two maps whose sharpest cases no black-box test can set up — the **keyval registry** and the error-code one, including that a recycled implementation value resolves to its newest registration rather than a stale one; and `MPI_T`'s handle sentinels |
+| `mpiwrapper_selftest.c` | yes, one rank | white box: every predefined handle in both directions, the rank/tag/error/mode maps, the status blob, staging, the staged-request table, the **dynamic-handle collision probe**, `MPI_DISPLACEMENT_CURRENT` in both halves — that the sentinel converts *and* that every other displacement, negative ones included, crosses untouched, which is what a mapper written as a family would break — the handle-serialization table's capacity behaviour (which has no error channel — `MPI_Comm_toint` returns an int, so a full table must answer 0 and no `_fromint` may accept it), the **error-code registry**, whose `toabi` direction has no error channel and so must fall back to `MPI_ERR_OTHER` when the table fills; and the two maps whose sharpest cases no black-box test can set up — the **keyval registry** and the error-code one, including that a recycled implementation value resolves to its newest registration rather than a stale one; and `MPI_T`'s handle sentinels |
 | `abi_prototype_test.c` | yes, two ranks by preference | black box: an ordinary MPI application over the ABI header, linking `libmpi_abi` and nothing else, exercising all 29 prototype entry points |
 | `abi_arrays_test.c` | yes, two ranks by preference | the same, for S3's argument classes: request and status arrays, the graph topologies, the `*` extents, the status accessors — and the **lifetime** of a staged temporary, which no assertion in the generator can see. A persistent `MPI_Alltoallw` started three times is what a body that frees at completion breaks on; 1200 create/free cycles against a 1024-entry table are what a body that never frees breaks on |
 | `abi_tools_test.c` | yes, two ranks by preference | the same, for S3's second half: the five entry points MPI-3.0 deleted, which `libmpi_abi` answers in terms of their replacements — including the three attribute-callback sentinels the two spellings must agree about, which cannot be a `_Static_assert` because a cast to a pointer type is not an integer constant expression; keyvals, output-string buffers with an explicit length, `MPI_T`'s handle and enumerated classes, and the `obj_handle` whose class comes from a query rather than from its own argument list. Its sharpest case is the one no generator assertion can see either — **`MPI_T` lets a caller pass a null pointer for any OUT parameter**, so every query here is called twice, once asking for everything and once for one field, and a body that copied its converted results back unconditionally writes through the nulls of the second call. It also covers `MPI_T_PVAR_ALL_HANDLES`, which is 1 in the ABI, -1 in Open MPI and an `extern ... * const` in MPICH. Every test skips rather than fails on `MPI_ERR_UNSUPPORTED_OPERATION`, which is how it stays meaningful over Open MPI 5.0.6, whose `MPI_T` has no events at all |
@@ -83,7 +84,9 @@ there, which is where the Open MPI row of that suite lives:
 MPIABI_LINUX_SCRIPT=/src/ci-scripts/suite/linux-suite.sh \
   MPIABI_LINUX_OUT=$PWD/build/linux-out \
   ci-scripts/run-linux-docker.sh openmpi
-``` Worth doing early and often:
+```
+
+Worth doing early and often:
 the first Linux build needed four fixes that macOS could not have surfaced, and
 one of them was in the S0 header generator rather than in any of this stage's
 code.

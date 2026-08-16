@@ -7,7 +7,9 @@
  *
  * Two parts:
  *   - the bootstrap, hand-written, in src/mpi_abi/
- *   - 1376 forwarders, generated, in gen/mpi_abi/entrypoints.c, one per slot
+ *   - 1376 forwarders, generated, in gen/mpi_abi/entrypoints.c: 1366 of them
+ *     one per vtable slot, and ten answering the five entry points MPI-3.0
+ *     deleted in terms of their replacements (NOTES.md #3)
  *
  * MPI_Send and PMPI_Send are shown; the other 686 pairs are identical in shape.
  */

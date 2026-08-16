@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# S6's exit check (STAGES.md): configure, build and install this project into
+# S6's exit check (HISTORY.md): configure, build and install this project into
 # a prefix of its own, then build and run a program through each of the three
 # consumption routes NOTES.md #9 requires -- bin/mpicc, find_package(mpi_abi)
 # (and, separately, the FindMPI shim's plain find_package(MPI)), and

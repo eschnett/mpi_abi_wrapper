@@ -47,7 +47,7 @@
  * green run is not read as more than it is:
  *
  *  - **spawn needs a launcher**, so it runs where one works (MPICH here) and
- *    is skipped otherwise. STAGES.md S4b says so; test/README.md repeats it.
+ *    is skipped otherwise. HISTORY.md S4b says so; test/README.md repeats it.
  *  - **MPI_T's event callbacks have no oracle here.** Open MPI 5.0.6 has no
  *    event interface, and MPICH 4.3.1 declares every entry point and reports
  *    zero event types, so no registration handle exists to key the map in
@@ -955,7 +955,7 @@ static void test_spawn(void)
   if (unsupported(ierror, "MPI_Comm_spawn")) return;
   if (ierror != MPI_SUCCESS) {
     /* No launcher, or one that cannot spawn: a documented gap rather than a
-     * failure (STAGES.md S4b).
+     * failure (HISTORY.md S4b).
      */
     if (rank == 0)
       printf("  skipping spawn: MPI_Comm_spawn returned %d\n", ierror);

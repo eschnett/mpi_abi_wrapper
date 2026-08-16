@@ -5,9 +5,10 @@ project(mpi_abi_wrapper
   HOMEPAGE_URL "https://github.com/eschnett/mpi_abi_wrapper"
   LANGUAGES C)
 
-# S0 built the two headers, S1 the prototype; S2 replaces the four S1 stand-ins
-# with generated output -- all 688 entry points and 1376 slots (STAGES.md).
-# Packaging is S6.
+# All 688 entry points, exported under both names (1376 symbols) and reaching
+# 1366 vtable slots -- the five entry points MPI-3.0 deleted are answered by
+# libmpi_abi itself and have no slot (NOTES.md #3). CODE.md has the layout,
+# the options and the authority behind each count.
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

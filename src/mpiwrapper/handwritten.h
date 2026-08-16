@@ -1,6 +1,6 @@
 /* The hand-written entry-point bodies, for the vtable to point at.
  *
- * The generated wrappers.c holds one vtable initializer covering all 1376
+ * The generated wrappers.c holds one vtable initializer covering all 1366
  * slots, so it has to name the bodies the generator did *not* write. This is
  * that list: exactly the members of the HAND_WRITTEN ledger that have a body,
  * one declaration each, MPI_ and PMPI_ separately. If the two sets ever

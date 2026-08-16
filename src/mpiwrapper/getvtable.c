@@ -67,7 +67,7 @@ static int resolution_is_outward(const void *abi_probe, const char **diagnostic)
 
 /* Every slot must be filled. A designated initializer that names a slot the
  * generator forgot leaves a NULL, and a NULL slot is a jump to address zero on
- * the first call; catching it here costs one pass over 1376 pointers, once.
+ * the first call; catching it here costs one pass over 1366 pointers, once.
  */
 static int every_slot_filled(size_t size, const char **diagnostic)
 {

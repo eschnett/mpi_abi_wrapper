@@ -4,7 +4,7 @@
 
     check-tap.py <summary.tap> <xfail-file> [--dirs=a,b,c] [--update]
 
-STAGES.md S7: "the xfail list is committed with reasons; a variant's result
+HISTORY.md S7: "the xfail list is committed with reasons; a variant's result
 matching its list is the gate". Matching is checked in both directions, the
 same discipline dev/check-c-bindings.py applies to the standard's Appendix
 A.3 and dev/check_prototype.py to S1's reference bodies:

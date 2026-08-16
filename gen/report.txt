@@ -591,11 +591,13 @@ Hand-written (120)
   An entry point with a body in src/mpiwrapper/ is marked [done]. All
   of them are: S1 wrote eight, S4a the converter face (the handle and
   status converters, the status-consuming functions, the output-string
-  buffers and MPI_Abi_*), and S4b the 40 that need state the wrapper
-  owns -- the lifecycle, the fifteen callback registrars, the buffer
-  attach and detach forms, the dynamic error-code registry, spawn and
-  MPI_Pcontrol. The count of bodies is a frozen tally above, so one
-  going missing fails generation rather than becoming a stub.
+  buffers and MPI_Abi_*), S4b the 40 that need state the wrapper owns
+  -- the lifecycle, the thirteen callback registrars S1 had not
+  already written, the buffer attach and detach forms, the dynamic
+  error-code registry, spawn and MPI_Pcontrol -- and S7 the two
+  attribute getters, whose class no signature carries. The count of
+  bodies is a frozen tally above, so one going missing fails
+  generation rather than becoming a stub.
 
   What still answers MPI_ERR_UNSUPPORTED_OPERATION is decided per
   build by dev/probe_impl.py: an entry point the implementation does

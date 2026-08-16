@@ -6,7 +6,7 @@
  * by *version*, and MPIWRAPPER_LAYOUT_HASH is what turns that into a clean
  * failure instead of a call through a shifted slot.
  *
- * The real file has 1376 slots. Nine are shown.
+ * The real file has 1366 slots. Nine are shown.
  */
 
 #ifndef MPIWRAPPER_VTABLE_H
@@ -32,7 +32,9 @@
  */
 #define MPIWRAPPER_LAYOUT_HASH 0x9f2c41beu
 
-/* One slot per ABI entry point, so 1376: MPI_X and PMPI_X get their own, and each
+/* One slot per ABI entry point that is forwarded, so 1366: MPI_X and PMPI_X get
+ * their own -- and the five entry points MPI-3.0 deleted get none at all, being
+ * answered by libmpi_abi in terms of their replacements (NOTES.md #3). Each
  * leads to a wrapper body that calls the implementation's correspondingly-shifted
  * name. Routing both to a single MPI_X slot would be cheaper, but then an
  * application calling PMPI_Send to bypass profiling would still be seen by a tool

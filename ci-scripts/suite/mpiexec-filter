@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# The `mpiexec` the MPICH test suite sees (STAGES.md S7, NOTES.md #10).
+# The `mpiexec` the MPICH test suite sees (HISTORY.md S7, NOTES.md #10).
 #
 # This project ships no launcher and never will: the MPI ABI is a library
 # ABI, so a program built against `libmpi_abi` is started by the *wrapped*

@@ -36,15 +36,19 @@
  */
 #define MPIWRAPPER_LAYOUT_HASH 0x2bef627fu
 
-/* One slot per ABI entry point, so 1376 of them: MPI_X and PMPI_X get
- * their own, and each leads to a wrapper body that calls the implementation's
- * correspondingly-shifted name. Routing both to a single MPI_X slot would be
- * cheaper, but then an application calling PMPI_Send to bypass profiling would
- * still be seen by a tool interposed between the wrapper and the
- * implementation -- it would have bypassed the ABI-level profiling layer only.
- * Keeping them distinct also makes the ledger 1:1 rather than 2:1, so "each
- * entry point has exactly one slot and one body" is a uniform invariant with
- * no special case.
+/* One slot per *forwarded* ABI entry point, so 1366 of them: MPI_X and
+ * PMPI_X get their own, and each leads to a wrapper body that calls the
+ * implementation's correspondingly-shifted name. That is fewer than the 1376
+ * names libmpi_abi exports, because the entry points MPI-3.0 deleted are
+ * answered on the ABI side in terms of their replacements and reach no slot at
+ * all (NOTES.md #3); gen/report.txt freezes both counts.
+ *
+ * Routing MPI_X and PMPI_X to a single slot would be cheaper, but then an
+ * application calling PMPI_Send to bypass profiling would still be seen by a
+ * tool interposed between the wrapper and the implementation -- it would have
+ * bypassed the ABI-level profiling layer only. Keeping them distinct also
+ * makes the ledger 1:1 rather than 2:1, so "each forwarded entry point has
+ * exactly one slot and one body" is a uniform invariant with no special case.
  *
  * Both names are always available to link against, though not in the shape
  * NOTES.md #2 originally recorded from Linux: on macOS the conda-forge MPICH

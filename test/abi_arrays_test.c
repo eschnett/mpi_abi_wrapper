@@ -5,7 +5,7 @@
  * S3 taught the generator -- out and inout arrays, status arrays, the graph
  * topologies, the extents apis.json records as `*`, and above all the
  * **lifetime** of a staged temporary, which is the one property none of the
- * generator's own assertions can see (STAGES.md, S3).
+ * generator's own assertions can see (HISTORY.md, S3).
  *
  * Three of the tests below are written to fail rather than to pass, in the
  * sense that they are the shapes a plausible-but-wrong body gets wrong:

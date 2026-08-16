@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# S7's exit check (STAGES.md): run MPICH's own C test suite against this
+# S7's exit check (HISTORY.md): run MPICH's own C test suite against this
 # project, over one implementation per invocation, and gate the result on a
 # committed expected-failure list with a reason on every line.
 #
@@ -25,7 +25,7 @@
 #   2. --enable-strictmpi, because this project implements the standard and
 #      nothing else. The suite's non-strict tests reach for MPIX_ entry
 #      points and MPICH internals, which are *build* failures here rather
-#      than wrong answers (STAGES.md says to expect them).
+#      than wrong answers (HISTORY.md says to expect them).
 #
 #   3. MPIEXEC is ci-scripts/suite/mpiexec-filter, since a wrapper prefix has
 #      no launcher of its own. That file's header explains the other three
@@ -322,7 +322,7 @@ fi
 
 # ---------------------------------------------------------------- build them
 #
-# -k: a test that does not compile is a result (STAGES.md expects some), so
+# -k: a test that does not compile is a result (HISTORY.md expects some), so
 # the build must not stop at the first one. runtests will report each as the
 # failure of that one test.
 #
@@ -364,7 +364,7 @@ echo "  $(grep -cE '(^make.*\bError\b|error:)' "$work/suite-make.log") build dia
 # counterpart of the --enable-strictmpi above: it would skip every test the
 # testlists mark `strict=FALSE`, which is where the deleted MPI-1 API
 # (MPI_LB, MPI_UB, MPI_Type_extent, ...) and MPICH's QMPI live. Those are the
-# build failures STAGES.md expects, and a line in the xfail list saying which
+# build failures HISTORY.md expects, and a line in the xfail list saying which
 # entry point the ABI header does not declare is worth more than a skip that
 # says nothing. Pass it by hand for a faster run over an implementation whose
 # gaps are already known.

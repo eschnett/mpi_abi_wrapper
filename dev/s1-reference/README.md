@@ -7,10 +7,19 @@ to be the thing S2's generator is measured against.
 
 | file | what the generator emits instead |
 |---|---|
-| `mpiwrapper_vtable.h` | `gen/include/mpiwrapper_vtable.h` (58 slots -> 1376) |
+| `mpiwrapper_vtable.h` | `gen/include/mpiwrapper_vtable.h` (58 slots -> 1366) |
 | `entrypoints.c` | `gen/mpi_abi/entrypoints.c` (29 entry points -> 688) |
-| `wrappers.c` | `gen/mpiwrapper/wrappers.c` (20 bodies -> 518 generated, the rest stubs) |
+| `wrappers.c` | `gen/mpiwrapper/wrappers.c` (20 bodies -> 563 generated, the rest hand-written) |
 | `constants.c` | `gen/mpiwrapper/constants.c` |
+
+**Every number inside these four files is S1's and is not maintained.** Frozen
+means frozen, so where the finished library has moved on they still say what
+was true when they were written — the vtable header's "1376 slots" is the
+clearest case, since the five entry points MPI-3.0 deleted did not yet have
+their own answer on the ABI side and so had not yet stopped needing slots
+(`NOTES.md` #3). Read counts out of `CODE.md` or `gen/report.txt`, never out of
+this directory; their `STAGES.md` references are `HISTORY.md` now for the same
+reason.
 
 `dev/check_prototype.py` compares them item by item and is wired up as the
 `prototype-reproduced` test, so S2's exit check keeps running rather than

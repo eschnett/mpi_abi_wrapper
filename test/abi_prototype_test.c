@@ -5,7 +5,8 @@
  * observes has crossed the vtable boundary twice.
  *
  * It exercises each of the 29 prototype entry points at least once, and each of
- * the argument classes NOTES.md #11 chose them for. Two ranks by preference, one
+ * the argument classes they were chosen for (HISTORY.md, S1's table; the
+ * principle they serve is NOTES.md #11). Two ranks by preference, one
  * where the implementation's launcher cannot manage two.
  *
  * Note that it deliberately uses MPI_ names throughout except where it is
