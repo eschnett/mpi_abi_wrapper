@@ -46,6 +46,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "expect_ranks.h"
+
 static int failures;
 static int rank, size;
 
@@ -781,6 +783,11 @@ int main(int argc, char **argv)
    */
   CHECK_MPI(MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN));
   CHECK_MPI(MPI_Comm_set_errhandler(MPI_COMM_SELF, MPI_ERRORS_RETURN));
+
+  if (mpiabi_expect_ranks("abi_converters_test", size, rank)) {
+    MPI_Finalize();
+    return 1;
+  }
 
   if (rank == 0)
     printf("abi_converters_test: %d rank%s\n", size, size == 1 ? "" : "s");

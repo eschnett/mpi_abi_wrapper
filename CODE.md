@@ -105,7 +105,8 @@ src/mpi_abi/       hand-written: bootstrap, dlopen, vtable acquisition
 src/mpiwrapper/    hand-written: the ledger's bodies, trampolines, maps, conversion
 scripts/           the CI recipes, runnable locally, plus host-env.sh
   host-env.sh        the four variables this development machine needs; §12
-test/              our own tests
+test/              our own tests, plus expect_ranks.h -- the shared rank-count
+                     guard the five black-box tests include (§11)
 test-consume/      a consumer project used by check-install.sh
 ```
 
@@ -256,7 +257,7 @@ singletons instead of an N-rank job.
 |---|---|---|
 | `MPI_ABI_BUILD_WRAPPER` | `ON` | `OFF` builds `libmpi_abi` alone, with no MPI present |
 | `MPI_ABI_WRAP_ABI_IMPL` | `OFF` | wrap a genuine ABI-implementing MPI (oracle 5); warns |
-| `MPI_ABI_TEST_USE_LAUNCHER` | `ON` | `OFF` runs the behavioural tests as singletons |
+| `MPI_ABI_TEST_USE_LAUNCHER` | `ON` | `OFF` runs the behavioural tests as singletons. Either way the build states the rank count it expects (`MPI_ABI_EXPECT_RANKS`) and a test given a different one fails: §11 |
 | `MPI_ABI_TEST_SPAWN` | `OFF` | the spawn case hangs under hydra on macOS 26 |
 
 **Four configure-time checks, all compile-only** so cross-compiling works:
@@ -394,6 +395,16 @@ laptop, and on it MPICH 4.3.1, Open MPI 5.0.6 and Open MPI 5.0.10 each need
 `scripts/host-env.sh` in front of `ctest` or fail 6 of 13, for reasons §12
 attributes to the machine rather than to any of them.
 
+**"two ranks" in this table is now checked rather than asserted.** It used to be
+neither: the tests accept one rank as well as two, so a launcher that answered
+`-n 2` with two singletons produced a green run at a job size nobody asked for,
+and the MPICH row said "two ranks" for a year of runs that had none
+(`HISTORY.md` §2.14). CMake now puts the count it asked the launcher for into
+each test's environment and `test/expect_ranks.h` fails a test given a different
+one, so every row re-run since carries the claim in its exit status. The rows
+above marked with an image and a rank count have been re-run; `MPICH 3.1.4` and
+the two `refused at load` rows have not, and inherit their old evidence.
+
 | configuration | mechanism | status |
 |---|---|---|
 | macOS, native MPICH 4.3.1 | `RTLD_LOCAL` + two-level namespace | **works**, 6/6 tests, two ranks — under `scripts/host-env.sh` |
@@ -402,8 +413,9 @@ attributes to the machine rather than to any of them.
 | macOS, native Open MPI 6.1.0a1 | same | **works**, 6/6, two ranks — despite 698 weak `MPI_*`; needs no such script |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
 | macOS, an ABI-implementing MPI | none available | **refused at load**; dyld coalesces weak definitions |
-| Linux glibc, MPICH 4.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker) |
-| Linux glibc, Open MPI 4.1 | same | **works**, 6/6, two ranks |
+| Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker) |
+| Linux glibc, MPICH 4.2.0 | same | **cannot run two ranks** (Ubuntu 24.04): PMIx-only `libmpi`, PMI-1 hydra, so `-n 2` is two singletons. `HISTORY.md` §2.14 |
+| Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker) |
 | Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6, two ranks — the configure floor, verified |
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI** (`NOTES.md` #2) |

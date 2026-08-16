@@ -533,11 +533,23 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     set(MPIABI_RUN2 ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
                     ${MPIEXEC_PREFLAGS})
     set(MPIABI_RUN_POST ${MPIEXEC_POSTFLAGS})
+    set(MPIABI_EXPECT_RANKS 2)
   else()
     set(MPIABI_RUN1)
     set(MPIABI_RUN2)
     set(MPIABI_RUN_POST)
+    set(MPIABI_EXPECT_RANKS 1)
   endif()
+
+  # Asking for two ranks and being handed two singletons is a green run that
+  # never crossed a rank boundary, and the tests cannot tell the difference on
+  # their own: one rank is a supported configuration, so each singleton simply
+  # passes. The build knows what it asked the launcher for, so it says so, and
+  # test/expect_ranks.h turns a mismatch into a failure. The MPICH row of the
+  # Linux container had been running that way unnoticed (HISTORY.md 2.14).
+  set(MPIABI_TEST_ENV
+    "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}"
+    "MPI_ABI_EXPECT_RANKS=${MPIABI_EXPECT_RANKS}")
 
   add_test(NAME mpiwrapper_selftest
     COMMAND ${MPIABI_RUN1} $<TARGET_FILE:mpiwrapper_selftest> ${MPIABI_RUN_POST})
@@ -552,7 +564,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_test(NAME abi_prototype_test
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_prototype_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_prototype_test PROPERTIES
-    ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+    ENVIRONMENT "${MPIABI_TEST_ENV}")
 
   # The same, for S3's argument classes -- and above all for the lifetime of a
   # staged temporary, which is the property none of the generator's own
@@ -565,7 +577,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_test(NAME abi_arrays_test
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_arrays_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_arrays_test PROPERTIES
-    ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+    ENVIRONMENT "${MPIABI_TEST_ENV}")
 
   # The same for S3's second half: keyvals, output-string buffers with an
   # explicit length, MPI_T's handle and enumerated classes, and the obj_handle
@@ -581,7 +593,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_test(NAME abi_tools_test
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_tools_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_tools_test PROPERTIES
-    ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+    ENVIRONMENT "${MPIABI_TEST_ENV}")
 
   # The same for S4a: the converter face. The two properties it covers that no
   # assertion in the generator can see are that _toint answers a predefined
@@ -598,7 +610,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   add_test(NAME abi_converters_test
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_converters_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_converters_test PROPERTIES
-    ENVIRONMENT "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+    ENVIRONMENT "${MPIABI_TEST_ENV}")
 
   # The same for S4b: the state the wrapper owns. What it covers that no
   # assertion in the generator can see is that a trampoline hands the
@@ -627,7 +639,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   option(MPI_ABI_TEST_SPAWN
     "Run abi_state_test's MPI_Comm_spawn case (needs a launcher that spawns)"
     OFF)
-  set(MPIABI_STATE_TEST_ENV "MPI_ABI_WRAPPER_LIB=${MPIABI_WRAPPER_PATH}")
+  set(MPIABI_STATE_TEST_ENV ${MPIABI_TEST_ENV})
   if(MPI_ABI_TEST_SPAWN)
     list(APPEND MPIABI_STATE_TEST_ENV "MPI_ABI_TEST_SPAWN=1")
   endif()

@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "expect_ranks.h"
+
 static int failures;
 static int rank, size, peer;
 
@@ -622,6 +624,11 @@ int main(int argc, char **argv)
     return 1;
   }
   peer = (size == 2) ? 1 - rank : rank;
+
+  if (mpiabi_expect_ranks("abi_prototype_test", size, rank)) {
+    MPI_Finalize();
+    return 1;
+  }
 
   if (rank == 0)
     printf("abi_prototype_test: %d rank%s\n", size, size == 1 ? "" : "s");

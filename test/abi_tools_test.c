@@ -43,6 +43,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "expect_ranks.h"
+
 static int failures;
 static int rank, size;
 
@@ -840,6 +842,11 @@ int main(int argc, char **argv)
   CHECK_MPI(MPI_Init(&argc, &argv));
   CHECK_MPI(MPI_Comm_size(MPI_COMM_WORLD, &size));
   CHECK_MPI(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
+
+  if (mpiabi_expect_ranks("abi_tools_test", size, rank)) {
+    MPI_Finalize();
+    return 1;
+  }
 
   if (rank == 0)
     printf("abi_tools_test: %d rank%s\n", size, size == 1 ? "" : "s");

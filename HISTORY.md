@@ -601,6 +601,56 @@ environment both runs were made in. The cheap way to get the real control is to
 reproduce the failure with less and less of the stack until nothing recognizable
 is left, which here took one C file.
 
+### 2.14 "The Linux MPICH row runs at two ranks"
+
+It ran at one, twice over, and every run was green. `CODE.md` §11 claimed
+"**works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker)" for MPICH, and
+`ctest -V` in that container says otherwise on every one of the five black-box
+tests:
+
+```
+7: abi_prototype_test: 1 rank
+7: abi_prototype_test: 0 failure(s) across 1 ranks
+7: abi_prototype_test: 1 rank
+7: abi_prototype_test: 0 failure(s) across 1 ranks
+```
+
+Two copies of the same line, because `mpiexec -n 2` started two processes that
+never found each other. **Ubuntu 24.04's MPICH cannot run a multi-rank job at
+all.** Its `libmpi.so.12` is built `--with-pmix`, links `libpmix.so.2` and
+imports `PMIx_Init` and no other PMI entry point; the `mpiexec.hydra` in the
+same package is a PMI-1 server, and sets `PMI_FD`, `PMI_RANK` and `PMI_SIZE`
+that this `libmpi` never reads. `PMIx_Init` finds no server, MPICH takes the
+singleton path, and each process exits 0. Nothing in the image can bridge it:
+Ubuntu 24.04 packages no PMIx launcher at all — no `prrte`, no `prte`, no
+`prun` — and hydra's `-pmi-port` is still PMI-1. Debian 13's MPICH 4.2.1 links
+no `libpmix`, so hydra's PMI-1 is what its `libmpi` speaks, and `mpiexec -n 2`
+is a job; `run-linux-docker.sh` now sends the MPICH row there and leaves the
+Open MPI row on Ubuntu 24.04, where `xfail-openmpi.txt`'s 168 lines are
+calibrated against the 4.1.6 it ships.
+
+**Why nothing caught it is the more useful half.** The five tests support one
+rank as well as two, deliberately: that is what makes
+`-DMPI_ABI_TEST_USE_LAUNCHER=OFF` a real configuration rather than a way of
+skipping. A tolerated configuration is indistinguishable from a degraded one
+when the only thing consulted is the test's own opinion — each singleton took
+the supported one-rank path and passed, honestly, at a job size nobody asked
+for. The tests were not wrong. Nothing had ever said what the *run* was
+supposed to be.
+
+So the build says it now. CMake puts the rank count it passed to the launcher
+into each test's environment, and `test/expect_ranks.h` fails a test handed a
+different one — including a test handed *more* ranks than asked for, since a
+build configured for singletons is written for that path. Running a binary by
+hand sets nothing and keeps the old tolerance.
+
+The transferable part: **a range of supported configurations is not a
+specification of the run.** Wherever a test says "1 or 2 is fine" and a harness
+picks one, something has to record which was picked, or the harness silently
+choosing the weaker one reads exactly like a pass. This is the same discipline
+as `check-tap.py`'s both-directions gate — an expected failure that passes is a
+failure — arrived at from the opposite end.
+
 ---
 
 ## 3. What each stage settled

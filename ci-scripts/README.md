@@ -32,8 +32,22 @@ tarball, unmodified, is the whole of what CI needs to provision.
 ```sh
 ci-scripts/run-linux-docker.sh                 # mpich and openmpi
 ci-scripts/run-linux-docker.sh mpich
-MPIABI_IMAGE=debian:13 ci-scripts/run-linux-docker.sh
+MPIABI_IMAGE=ubuntu:24.04 ci-scripts/run-linux-docker.sh   # override both
 ```
+
+**The default image is per-MPI**, and `run-linux-docker.sh`'s header says why
+each default is the one it is. In short: MPICH runs on `debian:13`, because
+Ubuntu 24.04's MPICH links `libpmix` and imports `PMIx_Init` while shipping a
+PMI-1 hydra, so `mpiexec -n 2` there returns two singletons and exit 0 rather
+than a two-rank job; Open MPI stays on `ubuntu:24.04`, because
+`suite/xfail-openmpi.txt` is calibrated line by line against the Open MPI 4.1.6
+that image ships. `MPIABI_IMAGE` overrides both, which is how the comparison
+above was made.
+
+That failure is silent by nature, so the build no longer takes the launcher's
+word for it: CMake puts the rank count it asked for into each test's
+environment and `test/expect_ranks.h` fails a test that was handed a different
+one. Two singletons where two ranks were requested is now a red run.
 
 `linux-test.sh` installs packages only when it is root and `apt-get` exists, so
 a prepared CI runner can call it directly with no container involved.

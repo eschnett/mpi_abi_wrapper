@@ -27,6 +27,7 @@ are ranks, `MPI_LASTUSEDCODE` an error code, `MPI_WIN_CREATE_FLAVOR` and
 | `abi_converters_test.c` | yes, two ranks by preference | the same, for S4a's converter face: the 44 handle converters, the four status converters, the ten status-consuming functions, the ten output-string buffers with no length argument, and the six `MPI_Abi_*` calls. Two of its checks are not round trips, and those are the ones that matter: **`_toint` of a predefined handle is compared against the ABI header's own constant**, which MPI-5.0 §20.4.5 requires and which no round trip through our own code in both directions could detect; and **a status converted to the Fortran form and back is asked `MPI_Get_count`**, which only answers if the implementation's private bytes travelled with it — a converter that copied the three named fields passes every inspection of `MPI_SOURCE` and `MPI_TAG` and fails there. It also reads `MPI_F_SOURCE` straight out of the integer array, since a converter forwarding to MPICH's own `MPI_Status_c2f` produces a valid status in the wrong layout. What it *cannot* check is whether the `_c2f`/`_f2c` integers would be accepted by an implementation's own Fortran layer; mpif is the oracle for that (S8) |
 | `abi_state_test.c` | yes, two ranks by preference | the same, for S4b: the state the wrapper owns. Its sharpest checks are the ones a plausible-but-wrong body passes everywhere else — each of the four error-handler classes asserts that the trampoline handed the callback **the handle it set the handler on**, not the implementation's bits; `MPI_COMM_DUP_FN` is installed as a copy callback and the attribute is then checked to have survived `MPI_Comm_dup`, which only happens if the ABI's `(function *)0x1` was replaced by the implementation's own function rather than passed through or wrapped; the generalized request is asked `MPI_Get_count` on the status its query callback filled, which needs the whole blob to have crossed in both directions; `MPI_BUFFER_AUTOMATIC` is attached and detached, which is a sentinel translation on MPICH and the wrapper's own emulation on Open MPI, and both must answer `MPI_BUFFER_AUTOMATIC`; and a dynamic error class is added and then asked about through `MPI_Error_class` and `MPI_Error_string`, which are generated bodies that never heard of the registry. It is also the only test that can ask `MPI_Initialized` **before** `MPI_Init` and `MPI_Finalized` **after** `MPI_Finalize`, which is the whole reason those two are answered from the wrapper's own state |
 | `check_exports.cmake` | no | `libmpiwrapper` exports exactly one symbol; `libmpi_abi`'s exports are exactly the ABI header's 1376 entry points, checked in both directions; and the application's only MPI dependency is `libmpi_abi` (MPI-5.0 §20.2.1) |
+| `expect_ranks.h` | — | not a test but the guard the five black-box tests share: the build states the rank count it asked the launcher for, and a test given a different one fails instead of passing at a job size nobody chose |
 
 `mpiwrapper_selftest` compiles the conversion runtime's sources into itself
 rather than loading the shared library, so it can walk the maps in both
@@ -84,6 +85,31 @@ MPI actually guarantees for a single contribution. It is weaker than two ranks
 and much better than nothing, since every conversion still crosses the boundary
 twice.
 
+### Which of the two you actually got, and why the build has to say
+
+Supporting one rank is what makes that option real, and it is also a hole:
+**a launcher that answers `-n 2` with two singletons produces two passing
+one-rank runs and a green `ctest`.** The tests cannot see it — each singleton
+takes the supported one-rank path and passes honestly, at a job size nobody
+asked for — and it is not hypothetical. The MPICH row of the Linux container ran
+that way and reported 13/13 the whole time (`HISTORY.md` §2.14).
+
+So the run is specified rather than inferred. CMake puts the count it passed to
+the launcher into every behavioural test's environment as
+`MPI_ABI_EXPECT_RANKS` — 2 with the launcher, 1 without — and
+`test/expect_ranks.h` fails a test handed a different number, in either
+direction: a build configured for singletons is written for the singleton path,
+so being given two ranks is equally not the run that was configured. Running a
+test binary by hand sets nothing and keeps the old tolerance, which is what
+keeps `mpiexec -n 1 ./abi_state_test` useful while debugging.
+
+What it looks like when it fires, one line per process, since each of them
+believes it is rank 0:
+
+```
+abi_prototype_test: this build asked the launcher for 2 ranks and got 1. ...
+```
+
 ## Linux
 
 `ci-scripts/run-linux-docker.sh` builds and runs all of this on Linux against
@@ -100,6 +126,24 @@ Worth doing early and often:
 the first Linux build needed four fixes that macOS could not have surfaced, and
 one of them was in the S0 header generator rather than in any of this stage's
 code.
+
+**The container image is chosen per MPI, and the MPICH one is a workaround.**
+MPICH runs on `debian:13` and Open MPI on `ubuntu:24.04`. Ubuntu 24.04's MPICH
+**cannot run a multi-rank job at all**: its `libmpi` is built `--with-pmix` and
+imports `PMIx_Init` and no other PMI entry point, while the `mpiexec.hydra` in
+the same package is a PMI-1 server setting `PMI_FD`/`PMI_RANK`/`PMI_SIZE` that
+this `libmpi` never reads, so `PMIx_Init` finds no server and every rank takes
+the singleton path. `mpiexec -n 2 ./hello` there prints "rank 0 of 1" twice and
+exits 0, with nothing of this project involved. Nothing in that image bridges it
+— Ubuntu 24.04 packages no PMIx launcher, and hydra's `-pmi-port` is still
+PMI-1 — so the row moved to Debian 13, whose MPICH 4.2.1 links no `libpmix` and
+speaks the PMI-1 its hydra serves. Open MPI stays on Ubuntu 24.04 because
+`ci-scripts/suite/xfail-openmpi.txt` is calibrated against the 4.1.6 that image
+ships. `MPIABI_IMAGE` overrides both.
+
+This is a defect in one distribution's packaging of one MPI, measured on that
+image and nowhere else. It says nothing about MPICH, about PMIx, or about any
+other Linux.
 
 ## Three environment quirks
 
