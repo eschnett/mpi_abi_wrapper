@@ -97,7 +97,7 @@ dev/               the Python generator and the dev-time cross-checks
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
   dispatch-bench/ dlopen-probe/ get-contents-extent/ handle-map-bench/
-  request-identity/ type-identity/   the six probes whose results NOTES.md cites
+  request-identity/ type-identity/   the six probe directories NOTES.md cites
 doc/               mpi.h.patch, mpi50-report.pdf
 examples/          narrated excerpts of each shape; src/ is the reference
 gen/               committed generated output, never hand-edited

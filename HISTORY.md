@@ -478,9 +478,25 @@ An operation already complete on return needs no per-operation object, and
 neither implementation allocates one: MPICH has one built-in per operation kind,
 Open MPI a single `ompi_request_empty` shared across all of them. The important
 part is that `MPI_Ibarrier` is in that list — the shortcut is not confined to
-point-to-point, and nothing stops an implementation from applying it to a
-zero-work `MPI_Ialltoallw`, which is precisely the family that stages. `NOTES.md`
-§6.3 has what the table does about it, and §13.2 has the part that is still open.
+point-to-point. `NOTES.md` §6.3 has what the table does about it.
+
+### 2.6a "…but not to the staged family"
+
+The third row above was read as saying so, and both `NOTES.md` §6.3 and §13.2
+went on to record the refusal as a conformance bug that was *unreachable*.
+Wrong, and reachable in Open MPI's default configuration: `probe-staged.c` and
+`reproduce.c` (added 2026-08-16) get one shared `ompi_request_empty` from a
+zero-work `MPI_Ialltoallw` and from a degree-0 `MPI_Ineighbor_alltoallw`, and
+`MPI_ERR_INTERN` out of the wrapper for two of either. Open MPI answers *any*
+libnbc collective with an empty schedule that way — `NBC_Schedule_request`, one
+rule over all of them — and a rank that exchanges nothing with anybody has an
+empty schedule.
+
+The row is not wrong, it is unrepresentative: `probe.c` posts distinct buffers
+and a count of 1, which is the one shape that builds a non-empty schedule on a
+one-rank communicator. So this is the §2 pattern twice over — a claim about what
+an implementation would not do, and a measurement whose *scope* was read as
+wider than it was. `NOTES.md` §13.2 has the fix, now five mechanisms deep.
 
 ### 2.7 "An OUT array's stated maximum is safe to forward"
 
