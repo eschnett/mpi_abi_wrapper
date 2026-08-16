@@ -100,7 +100,7 @@ runnable by hand.
 
 | job | calls | provides its own MPI? |
 |---|---|---|
-| `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks |
+| `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks, plus `exported-symbols`, which is oracle 1 |
 | `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root |
 | `linux-source` | `install-{mpich,openmpi}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew |

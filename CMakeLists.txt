@@ -660,11 +660,24 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       ${MPIABI_CAPTURE_MODE}
       -P ${CMAKE_SOURCE_DIR}/test/check_isolation.cmake)
 
-  add_test(NAME exported-symbols
-    COMMAND ${CMAKE_COMMAND}
-      -DABI_LIB=$<TARGET_FILE:mpi_abi>
-      -DWRAPPER_LIB=$<TARGET_FILE:mpiwrapper>
-      -DTEST_BIN=$<TARGET_FILE:abi_prototype_test>
-      -DENTRYPOINTS=${CMAKE_SOURCE_DIR}/dev/entrypoints.txt
-      -P ${CMAKE_SOURCE_DIR}/test/check_exports.cmake)
+  # The two legs of the export check that need a wrapper to look at. The
+  # libmpi_abi leg needs no MPI and is registered outside this block, below.
+  set(MPIABI_EXPORTS_WRAPPER_ARGS
+    -DWRAPPER_LIB=$<TARGET_FILE:mpiwrapper>
+    -DTEST_BIN=$<TARGET_FILE:abi_prototype_test>)
 endif()
+
+# NOTES.md #10 calls oracle 1 "a total completeness check as the cheapest job in
+# CI", and it is only cheap if it needs no MPI. Its subject is libmpi_abi, which
+# is built unconditionally and whose 1376 exports are a property of the ABI
+# header alone -- so this test is registered here rather than inside the block
+# above, and runs in the -DMPI_ABI_BUILD_WRAPPER=OFF developer build too. The
+# two legs that do need a wrapper are passed only when there is one, and
+# check_exports.cmake says in its summary which legs it actually ran, so a
+# one-leg pass cannot be read as the full three-leg oracle.
+add_test(NAME exported-symbols
+  COMMAND ${CMAKE_COMMAND}
+    -DABI_LIB=$<TARGET_FILE:mpi_abi>
+    -DENTRYPOINTS=${CMAKE_SOURCE_DIR}/dev/entrypoints.txt
+    ${MPIABI_EXPORTS_WRAPPER_ARGS}
+    -P ${CMAKE_SOURCE_DIR}/test/check_exports.cmake)

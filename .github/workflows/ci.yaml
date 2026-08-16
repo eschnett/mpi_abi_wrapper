@@ -44,8 +44,10 @@ jobs:
   # --------------------------------------------------------------- no MPI
   # -DMPI_ABI_BUILD_WRAPPER=OFF never reaches find_package(MPI), so this job
   # needs no MPI on the host at all. It builds libmpi_abi and the three
-  # header-compile object libraries, and registers exactly the five tests
-  # CMakeLists.txt declares outside that block.
+  # header-compile object libraries, and registers exactly the six tests
+  # CMakeLists.txt declares outside that block -- the five generator and header
+  # checks, plus exported-symbols, whose libmpi_abi leg is oracle 1 itself and
+  # needs no wrapper to run.
   checks:
     name: checks (no MPI)
     runs-on: ubuntu-24.04

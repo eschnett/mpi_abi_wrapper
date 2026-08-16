@@ -321,8 +321,9 @@ outside the `MPI_*`/`PMPI_*` patterns.
 
 ## 10. Tests
 
-`ctest` runs everything below. Five need no MPI at all and are the cheapest
-gate in CI.
+`ctest` runs everything below. Six need no MPI at all and are the cheapest gate
+in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
+`-DMPI_ABI_BUILD_WRAPPER=OFF`.
 
 | test | needs an MPI? | what it establishes |
 |---|---|---|
@@ -331,7 +332,7 @@ gate in CI.
 | `prototype-reproduced` | no | the generator still reproduces `dev/s1-reference/`: **194 items, 190 exactly, 4 exempted with a reason** that fails when it stops firing |
 | `layout-hash` | no | `MPIWRAPPER_LAYOUT_HASH` still matches the slot list it summarizes |
 | `c-bindings-cross-check` | no | all 688 signatures match MPI-5.0 Appendix A.3, or are one of 8 named exemptions |
-| `exported-symbols` | no | `libmpiwrapper` exports exactly one symbol; `libmpi_abi`'s exports are exactly the header's 1376, both directions; the application's only MPI dependency is `libmpi_abi` |
+| `exported-symbols` | no | `libmpi_abi`'s exports are exactly the header's 1376, both directions — the leg that needs no MPI, and the reason this test is registered outside the wrapper block. Given a wrapper it adds two more: `libmpiwrapper` exports exactly one symbol, and the application's only MPI dependency is `libmpi_abi`. Its summary names the legs it ran, so a no-MPI pass cannot be read as all three |
 | `isolation-check` | yes | an unisolated wrapper is refused at load, or crashes; a *successful* run of one is the failure |
 | `mpiwrapper_selftest` | one rank | white box: all 103 predefined handles both ways, every constant map, the status blob, staging, the staged-request table **and the policy over it**, the dynamic-handle collision probe, and the capacity behaviour of the maps that have no error channel |
 | `abi_prototype_test` | **two ranks required** for the staged-request round | S1's 29 entry points as an ordinary application over the ABI header. At one rank the nonblocking `MPI_Ialltoallw` is complete on return, so #13.2's (b) frees its block and the table is never exercised |

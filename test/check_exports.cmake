@@ -10,7 +10,15 @@
 #    libmpiwrapper, since the wrapper is reached by dlopen.
 #
 # Invoked as:
-#   cmake -DABI_LIB=... -DWRAPPER_LIB=... -DTEST_BIN=... -DENTRYPOINTS=... -P this
+#   cmake -DABI_LIB=... -DENTRYPOINTS=... [-DWRAPPER_LIB=...] [-DTEST_BIN=...] -P this
+#
+# The libmpi_abi leg is the one oracle 1 calls the cheapest check in CI, and it
+# needs no MPI: its subject is built in the -DMPI_ABI_BUILD_WRAPPER=OFF build
+# too, and what it compares against is the ABI header's own entry-point list.
+# So WRAPPER_LIB and TEST_BIN are optional, and their legs are skipped when
+# there is no wrapper to look at. The summary at the end names the legs that
+# actually ran, because a one-leg pass read as a three-leg one would be exactly
+# the "compiles, therefore checked" mistake HISTORY.md #5 collects.
 #
 # -P script mode does not inherit the main configure's policy scope, so
 # IN_LIST below needs its own cmake_minimum_required -- found the hard way, by
@@ -50,12 +58,14 @@ endfunction()
 set(errors 0)
 
 # --- libmpiwrapper: exactly one symbol -------------------------------------
-exported_symbols(wrapper_syms ${WRAPPER_LIB})
-if(NOT "${wrapper_syms}" STREQUAL "mpiwrapper_get_vtable")
-  message(SEND_ERROR
-    "libmpiwrapper must export exactly mpiwrapper_get_vtable, but exports: "
-    "${wrapper_syms}")
-  math(EXPR errors "${errors} + 1")
+if(WRAPPER_LIB)
+  exported_symbols(wrapper_syms ${WRAPPER_LIB})
+  if(NOT "${wrapper_syms}" STREQUAL "mpiwrapper_get_vtable")
+    message(SEND_ERROR
+      "libmpiwrapper must export exactly mpiwrapper_get_vtable, but exports: "
+      "${wrapper_syms}")
+    math(EXPR errors "${errors} + 1")
+  endif()
 endif()
 
 # --- libmpi_abi: MPI_*/PMPI_* only -----------------------------------------
@@ -116,26 +126,41 @@ endif()
 list(LENGTH exported nmpi)
 
 # --- the application's direct dependencies ---------------------------------
-if(APPLE)
-  execute_process(COMMAND otool -L ${TEST_BIN} OUTPUT_VARIABLE deps)
-else()
-  execute_process(COMMAND objdump -p ${TEST_BIN} OUTPUT_VARIABLE deps)
-endif()
-if(deps MATCHES "libmpiwrapper")
-  message(SEND_ERROR
-    "the test binary links libmpiwrapper directly; it must be reached only by "
-    "dlopen (MPI-5.0 20.2.1)")
-  math(EXPR errors "${errors} + 1")
-endif()
-if(deps MATCHES "libmpi\\.|libmpich|libpmpi|libopen_mpi")
-  message(SEND_ERROR
-    "the test binary depends on an MPI implementation directly; libmpi_abi "
-    "must be its only MPI dependency (MPI-5.0 20.2.1)")
-  math(EXPR errors "${errors} + 1")
+if(TEST_BIN)
+  if(APPLE)
+    execute_process(COMMAND otool -L ${TEST_BIN} OUTPUT_VARIABLE deps)
+  else()
+    execute_process(COMMAND objdump -p ${TEST_BIN} OUTPUT_VARIABLE deps)
+  endif()
+  if(deps MATCHES "libmpiwrapper")
+    message(SEND_ERROR
+      "the test binary links libmpiwrapper directly; it must be reached only by "
+      "dlopen (MPI-5.0 20.2.1)")
+    math(EXPR errors "${errors} + 1")
+  endif()
+  if(deps MATCHES "libmpi\\.|libmpich|libpmpi|libopen_mpi")
+    message(SEND_ERROR
+      "the test binary depends on an MPI implementation directly; libmpi_abi "
+      "must be its only MPI dependency (MPI-5.0 20.2.1)")
+    math(EXPR errors "${errors} + 1")
+  endif()
 endif()
 
+# The summary names the legs that ran, not the legs this file can run: in a
+# build with no wrapper only the first clause is true, and saying the rest
+# anyway would make the cheap job look like the whole oracle.
 if(errors EQUAL 0)
-  message(STATUS "exports: libmpiwrapper 1 symbol, libmpi_abi ${nmpi} entry "
-                 "points matching the header's ${nexpected} in both "
-                 "directions, no direct MPI dependency in the application")
+  string(CONCAT summary
+    "libmpi_abi ${nmpi} entry points matching the header's "
+    "${nexpected} in both directions")
+  if(WRAPPER_LIB)
+    string(APPEND summary "; libmpiwrapper 1 symbol")
+  endif()
+  if(TEST_BIN)
+    string(APPEND summary "; no direct MPI dependency in the application")
+  endif()
+  if(NOT WRAPPER_LIB AND NOT TEST_BIN)
+    string(APPEND summary " (no wrapper in this build; its two legs skipped)")
+  endif()
+  message(STATUS "exports: ${summary}")
 endif()
