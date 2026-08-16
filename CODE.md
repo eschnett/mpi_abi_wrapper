@@ -84,6 +84,8 @@ ci-scripts/        MPI install and build-shape checks
   check-install.sh   the five-leg installed-prefix consumption test
   install-mpich.sh, install-openmpi.sh
   linux-test.sh, run-linux-docker.sh
+  linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
+                       to linux-test.sh (§11)
   suite/             MPICH C suite runner, xfail lists, mpiexec filter, TAP gate
 cmake/             FindMPI.cmake (the shim), mpi_abiConfig.cmake.in, mpi_abi.pc.in,
                      mpi_abi.version (ELF), mpi_abi.exported_symbols (Mach-O)
@@ -401,9 +403,10 @@ neither: the tests accept one rank as well as two, so a launcher that answered
 and the MPICH row said "two ranks" for a year of runs that had none
 (`HISTORY.md` §2.14). CMake now puts the count it asked the launcher for into
 each test's environment and `test/expect_ranks.h` fails a test given a different
-one, so every row re-run since carries the claim in its exit status. The rows
-above marked with an image and a rank count have been re-run; `MPICH 3.1.4` and
-the two `refused at load` rows have not, and inherit their old evidence.
+one, so every row re-run since carries the claim in its exit status. Every row
+above with an image and a rank count has been re-run under it, `MPICH 3.1.4`
+included; the two `refused at load` rows and the ones marked unverified inherit
+their old evidence.
 
 | configuration | mechanism | status |
 |---|---|---|
@@ -416,7 +419,7 @@ the two `refused at load` rows have not, and inherit their old evidence.
 | Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker) |
 | Linux glibc, MPICH 4.2.0 | same | **cannot run two ranks** (Ubuntu 24.04): PMIx-only `libmpi`, PMI-1 hydra, so `-n 2` is two singletons. `HISTORY.md` §2.14 |
 | Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker) |
-| Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6, two ranks — the configure floor, verified |
+| Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6, two ranks — the configure floor, verified. `run-linux-docker.sh floor`, built from source on Ubuntu 20.04 / gcc 9, the newest gfortran its configure accepts |
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI** (`NOTES.md` #2) |
 | Linux musl | neither mechanism exists | expected to be refused at load; no Alpine support |

@@ -23,11 +23,13 @@
 # (NOTES.md #9's version table), since it is the only implementation that
 # actually provides the ABI's `_c` large-count entry points. Pass 3.1.4 for
 # the MPI-3.0 floor row instead -- verified, not just declared, per the same
-# table -- but NOTES.md #9 already flags what that row costs: 3.1.4's own
+# table -- but that row needs an older toolchain pinned by hand: 3.1.4's own
 # configure rejects any Fortran compiler modern enough to warn rather than
 # error on a mismatched-argument call (measured here: gcc 13's gfortran, and
-# gcc 11's), so building it needs an older toolchain pinned by hand. That is
-# this release's own limitation, not this script's.
+# gcc 11's). gcc 9, which ubuntu:20.04 ships, is accepted, and
+# ci-scripts/linux-floor.sh is the row wired up end to end. Both of those are
+# this release's own limitations rather than this script's; the out-of-tree
+# one below is the third.
 
 set -euo pipefail
 
@@ -62,9 +64,21 @@ if [ ! -d "$tree" ]; then
   tar -C "$src_dir" -xzf "$tarball"
 fi
 
-build_dir="$src_dir/build"
-rm -rf "$build_dir"
-mkdir -p "$build_dir"
+# 4.x builds out of tree, which keeps a cached MPI_SRC_DIR clean and lets one
+# unpacked source serve more than one prefix. **3.1.4 cannot be built out of
+# tree at all**, and fails in a way that reads like something else: the
+# generated rule for src/binding/fortran/use_mpi/mpi_c_interface_types.mod
+# names its input relative to the *build* directory --
+# src/binding/fortran/use_mpi_f08/mpi_c_interface_types.F90, which exists only
+# in the source tree -- so gfortran stops with "no input files". It looks like a
+# parallel-make race and is not one: -j1 fails identically, and the file is
+# present in the tarball the whole time. So the floor row configures in its own
+# source tree, and pays for it by leaving build artifacts there when
+# MPI_SRC_DIR is a cache.
+case $version in
+  3.*) build_dir=$tree ;;
+  *)   build_dir="$src_dir/build"; rm -rf "$build_dir"; mkdir -p "$build_dir" ;;
+esac
 (
   cd "$build_dir"
   # Not --disable-fortran: measured against 3.1.4, disabling it takes

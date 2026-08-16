@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Run linux-test.sh in a container, from any host that has Docker.
 #
-#   ci-scripts/run-linux-docker.sh              # both MPIs, each on its own image
+#   ci-scripts/run-linux-docker.sh              # both distro MPIs, each on its own image
 #   ci-scripts/run-linux-docker.sh mpich        # one
-#   MPIABI_IMAGE=ubuntu:24.04 ci-scripts/run-linux-docker.sh   # override both
+#   ci-scripts/run-linux-docker.sh floor        # the MPI-3.0 floor, built from source
+#   MPIABI_IMAGE=ubuntu:24.04 ci-scripts/run-linux-docker.sh   # override the image
 #
 # MPIABI_LINUX_SCRIPT names what runs inside; it defaults to linux-test.sh
-# (build and ctest) and S7's suite runner is the other one:
+# (build and ctest), the `floor` row uses linux-floor.sh, and S7's suite runner
+# is the third:
 #
 #   MPIABI_LINUX_SCRIPT=/src/ci-scripts/suite/linux-suite.sh \
 #     MPIABI_LINUX_OUT=$PWD/build/linux-out \
@@ -48,17 +50,32 @@ set -euo pipefail
 #     (ci-scripts/suite/xfail-openmpi.txt says so in its header, and its 168
 #     lines are version-specific). Moving this row to another image invalidates
 #     that file.
+#   floor -> ubuntu:20.04, and this one is the image as much as it is the MPI:
+#     MPICH 3.1.4's configure rejects gcc 11's gfortran and gcc 13's, so gcc 9
+#     is what the row can be built with. See ci-scripts/linux-floor.sh.
 image_for() {
   case ${MPIABI_IMAGE:-} in ?*) printf '%s' "$MPIABI_IMAGE"; return ;; esac
   case $1 in
     mpich) printf 'debian:13' ;;
+    floor) printf 'ubuntu:20.04' ;;
     *)     printf 'ubuntu:24.04' ;;
   esac
 }
 
-inner=${MPIABI_LINUX_SCRIPT:-/src/ci-scripts/linux-test.sh}
+# `floor` provisions its own MPI before running the same tests, since no current
+# distribution packages anything as old as MPI-3.0's floor.
+inner_for() {
+  case ${MPIABI_LINUX_SCRIPT:-} in ?*) printf '%s' "$MPIABI_LINUX_SCRIPT"; return ;; esac
+  case $1 in
+    floor) printf '/src/ci-scripts/linux-floor.sh' ;;
+    *)     printf '/src/ci-scripts/linux-test.sh' ;;
+  esac
+}
+
 src=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mpis=("$@")
+# `floor` is not in the default set: it builds an MPI from source and takes
+# some fifteen minutes, against under two for each of the rows below.
 [ ${#mpis[@]} -gt 0 ] || mpis=(mpich openmpi)
 
 command -v docker >/dev/null || { echo "docker not found" >&2; exit 2; }
@@ -66,6 +83,7 @@ command -v docker >/dev/null || { echo "docker not found" >&2; exit 2; }
 status=0
 for mpi in "${mpis[@]}"; do
   image=$(image_for "$mpi")
+  inner=$(inner_for "$mpi")
   printf '\n########## %s on %s ##########\n' "$mpi" "$image"
   docker run --rm \
     -v "$src:/src:ro" \

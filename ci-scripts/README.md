@@ -16,7 +16,8 @@ do not fail the same way.
 | script | runs | what it does |
 |---|---|---|
 | `linux-test.sh mpich\|openmpi` | inside Linux | installs packages (if root), reports the MPI version and its `MPI_`/`PMPI_` symbol binding, configures, builds, and runs `ctest` |
-| `run-linux-docker.sh [mpi...]` | on the host | runs the above in a container, for one MPI or both |
+| `run-linux-docker.sh [row...]` | on the host | runs the above in a container: `mpich`, `openmpi`, or `floor`, each on the image its row needs |
+| `linux-floor.sh` | inside Linux | the `floor` row: builds MPICH 3.1.4 from source and hands over to `linux-test.sh`. Opt-in — the build takes some fifteen minutes |
 | `install-mpich.sh <prefix> [<version>]` | anywhere | downloads, configures (stock, no patches), builds and installs a pinned MPICH release |
 | `install-openmpi.sh <prefix> [<version>]` | anywhere | the same for Open MPI |
 | `check-install.sh mpich\|openmpi\|/path/to/mpicc` | anywhere | S6's exit check: configure, build and install this project into a prefix of its own, then build and run a program through each of the three consumption routes (NOTES.md #9) with the loader's search path cleared |
@@ -32,17 +33,26 @@ tarball, unmodified, is the whole of what CI needs to provision.
 ```sh
 ci-scripts/run-linux-docker.sh                 # mpich and openmpi
 ci-scripts/run-linux-docker.sh mpich
-MPIABI_IMAGE=ubuntu:24.04 ci-scripts/run-linux-docker.sh   # override both
+ci-scripts/run-linux-docker.sh floor           # the MPI-3.0 floor, from source
+MPIABI_IMAGE=ubuntu:24.04 ci-scripts/run-linux-docker.sh   # override the image
 ```
 
-**The default image is per-MPI**, and `run-linux-docker.sh`'s header says why
-each default is the one it is. In short: MPICH runs on `debian:13`, because
-Ubuntu 24.04's MPICH links `libpmix` and imports `PMIx_Init` while shipping a
-PMI-1 hydra, so `mpiexec -n 2` there returns two singletons and exit 0 rather
-than a two-rank job; Open MPI stays on `ubuntu:24.04`, because
+**The image is per-row**, and `run-linux-docker.sh`'s header says why each
+default is the one it is. In short: MPICH runs on `debian:13`, because Ubuntu
+24.04's MPICH links `libpmix` and imports `PMIx_Init` while shipping a PMI-1
+hydra, so `mpiexec -n 2` there returns two singletons and exit 0 rather than a
+two-rank job; Open MPI stays on `ubuntu:24.04`, because
 `suite/xfail-openmpi.txt` is calibrated line by line against the Open MPI 4.1.6
-that image ships. `MPIABI_IMAGE` overrides both, which is how the comparison
-above was made.
+that image ships; and `floor` runs on `ubuntu:20.04`, because gcc 9's gfortran
+is the newest MPICH 3.1.4's configure will accept. `MPIABI_IMAGE` overrides all
+three, which is how the comparison above was made.
+
+`floor` is not in the default set: it builds an MPI from source, which takes
+some fifteen minutes against under two for either distro row. It is worth
+running when anything under `dev/` or `CMakeLists.txt` changes, because it is
+the only row that tests the *toolchain* floor rather than the standard one —
+Python 3.8, CMake 3.16 as the distro ships it, gcc 9 — and that kind of drift is
+invisible everywhere else (`HISTORY.md` §3, S6).
 
 That failure is silent by nature, so the build no longer takes the launcher's
 word for it: CMake puts the rank count it asked for into each test's

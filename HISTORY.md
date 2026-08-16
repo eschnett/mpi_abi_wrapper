@@ -922,7 +922,37 @@ wrapper's link step fails. Both installers now run a stock configure with no
 Fortran-disabling flag. What remains is the release's own limitation: 3.1.4's
 configure rejects any Fortran compiler modern enough to warn rather than error
 on a mismatched-argument call, gcc 11's and gcc 13's gfortran included, so that
-row needs a pinned older toolchain when someone next picks it up.
+row needs a pinned older toolchain.
+
+**Picked up, and it had rotted.** The row is now
+`ci-scripts/run-linux-docker.sh floor`, which is `ubuntu:20.04` (gcc 9 is the
+newest gfortran 3.1.4 accepts — gcc 11's is rejected on
+`whether gfortran allows mismatched arguments`, re-measured), and it passes
+13/13 at two ranks with the rank guard in force. Getting there cost three
+obstacles that no previous note recorded, and the shape of them is the argument
+for the row existing at all — each is a way the project had quietly acquired a
+dependency on something newer than its stated floor:
+
+- **3.1.4 cannot be built out of tree.** `install-mpich.sh` did a VPATH build,
+  and the generated rule for `mpi_c_interface_types.mod` names its input
+  relative to the build directory, where the F08 source does not exist, so
+  `gfortran` stops with "no input files". It reads exactly like a parallel-make
+  race and is not one — `-j1` fails identically. The installer now configures
+  in the source tree for 3.x and keeps VPATH for 4.x.
+- **The generator required Python 3.9**, from one `str.removesuffix` call, and
+  ubuntu:20.04 ships 3.8. That call arrived in `a61bfe7`, the commit before this
+  one, so the row had been broken for exactly as long as it had gone unrun.
+  Nothing here declares a minimum Python, so the call was spelled out rather
+  than a floor acquired.
+- **CMake 3.16 is what that image ships** and `CMakeLists.txt` asks for 3.20, so
+  `linux-floor.sh` installs a newer one rather than the project lowering its
+  requirement to match an image chosen for its Fortran compiler.
+
+None of the three is about MPI-3.0, which is the point: an old row is a test of
+the *toolchain* floor as much as the *standard* floor, and the second kind of
+drift is invisible until something runs there. It had not been run since it was
+established, because it took a recipe nobody had written down; it is a script
+now.
 
 ### S7 — MPICH's C test suite
 

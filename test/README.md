@@ -145,6 +145,21 @@ This is a defect in one distribution's packaging of one MPI, measured on that
 image and nowhere else. It says nothing about MPICH, about PMIx, or about any
 other Linux.
 
+**The MPI-3.0 floor is a third row**, opt-in because it builds its MPI:
+
+```sh
+ci-scripts/run-linux-docker.sh floor
+```
+
+`ci-scripts/linux-floor.sh` builds MPICH 3.1.4 on `ubuntu:20.04` — gcc 9's
+gfortran being the newest that release's configure accepts — and then hands the
+result to `linux-test.sh`, so everything after provisioning is the same code
+path as the distro rows. It passes 13/13 at two ranks. Run it after touching
+anything under `dev/` or `CMakeLists.txt`: it is the only row where the
+*toolchain* is old, and the last change to `dev/generate.py` before this row was
+scripted had broken it by using a Python 3.9 method on an image that ships 3.8
+(`HISTORY.md` §3, S6).
+
 ## Three environment quirks
 
 None is about this project, and each cost time to attribute, so they are

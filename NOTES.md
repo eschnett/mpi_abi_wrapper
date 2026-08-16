@@ -1574,9 +1574,13 @@ configure, on someone else's machine.
    the consequence — the `_c` slots become `MPI_ERR_UNSUPPORTED_OPERATION` stubs
    — and the floor sits at MPI-3.0, below which the ABI's own surface stops
    being expressible. The floor is tested rather than declared: MPICH 3.1.4
-   passes all six tests at two ranks. It needs an older toolchain to build at
-   all (gcc 9; gcc 11 and 13 both reject its own headers) and a newer CMake than
-   Ubuntu 20.04 ships, which is worth knowing before promising a distro matrix.
+   passes all six tests at two ranks, and `ci-scripts/run-linux-docker.sh floor`
+   is that row wired up rather than a recipe to rediscover. It needs an older
+   toolchain to build at all (gcc 9; gcc 11 and 13 both reject its own headers),
+   a newer CMake than Ubuntu 20.04 ships, an in-tree build, and a generator that
+   stays inside Python 3.8 — four constraints that are about the *toolchain*
+   floor rather than the standard one, and worth knowing before promising a
+   distro matrix. `HISTORY.md` §3's S6 entry has what each cost.
 2. **No self-wrapping.** Hard error if the found MPI prefix is *our own*
    installation, detected by the presence of `mpiwrapper_vtable.h` — a file only
    we install. Neither `MPI_ABI_VERSION` nor the library name discriminates,

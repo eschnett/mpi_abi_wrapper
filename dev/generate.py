@@ -1969,7 +1969,13 @@ def staged_kind(ep):
     """
     has_info = any(p.cls in ("handle_in", "handle_inout") and p.kind == "INFO"
                    for p in ep.params)
-    named_init = ep.name.removesuffix("_c").endswith("_init")
+    # Spelled out rather than str.removesuffix, which is 3.9+: the MPI-3.0
+    # floor row builds on ubuntu:20.04 -- the newest image whose gfortran
+    # MPICH 3.1.4's configure will accept -- and that ships Python 3.8. This
+    # was the generator's only 3.9-ism, and nothing here declares a minimum
+    # Python, so meeting 3.8 is cheaper than acquiring a floor to state.
+    base = ep.name[:-2] if ep.name.endswith("_c") else ep.name
+    named_init = base.endswith("_init")
     if has_info != named_init:
         raise SystemExit(
             f"{ep.name}: cannot tell whether this staging routine is "
