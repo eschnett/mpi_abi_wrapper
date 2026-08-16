@@ -2072,12 +2072,30 @@ kept under it because the wrong reading that hid it is worth not repeating.
        rule already underwrites.
     3. It frees earlier, so no slot is held for a block nobody reads.
 
-    Measured cost: 2.3 ns/call (Open MPI) and 6.2 ns/call (MPICH) against a call
-    already doing an `MPI_Comm_size`-class query, an O(P) `malloc` and O(P)
-    conversions. The incomplete path enters the progress engine and wants its
-    own benchmark before this is called free. If one ever objects, the
-    zero-hot-path-cost variant is to ask only *when the attach meets its own
-    key* — same conformance fix, but benefit 2 is forfeited.
+    **Measured, on the path that decides it.** A complete request answers in
+    2.3 ns (Open MPI) / 6.2 ns (MPICH). The incomplete path is the one (b) takes
+    on every in-flight staged post and the one that can enter the progress
+    engine, so it was benchmarked separately, two ranks, minimum of fifteen
+    trials, interleaved so drift hits both arms:
+
+    | 2 ranks | poll an incomplete request | added to one `MPI_Ialltoallw`+`MPI_Wait` |
+    |---|---|---|
+    | Open MPI 4.1.6, `ubuntu:24.04` | 6.5 ns | 1.4 ns, +0.7% |
+    | MPICH 4.2.1, `debian:13` | 16.3 ns | 6.8 ns, +1.7% |
+
+    So (b) is free enough, and the zero-hot-path-cost variant — ask only *when
+    the attach meets its own key*, same conformance fix, benefit 2 forfeited —
+    is not needed. It is recorded because it is the fallback if a host ever
+    disagrees.
+
+    **A host did disagree, and the reason is a trap worth keeping.** The same
+    benchmark on the development laptop reports 9.2 µs per poll and **+17%** on
+    the pair for MPICH — three orders of magnitude out, and entirely an artefact
+    of `scripts/host-env.sh` pinning `FI_PROVIDER=tcp` to dodge a VPN interface.
+    Every MPICH progress poll on that machine goes through a TCP provider.
+    Benchmarking MPICH progress on this laptop measures the workaround; the
+    container rows are the numbers. Third instance of `HISTORY.md` §2.11's
+    pattern, and the first one where the wrong number came from a *fix*.
 
     Open MPI makes this exact move itself: `ompi_coll_base_retain_datatypes_w`,
     which attaches per-operation state to a request, opens with
@@ -2115,10 +2133,12 @@ kept under it because the wrong reading that hid it is worth not repeating.
   One coverage note worth keeping, because a passing run reads as more than it
   is: `abi_prototype_test`'s nonblocking round only exercises the table **at two
   ranks or more**. At one rank the `MPI_Ialltoallw` is complete on return, (b)
-  frees the block, and nothing enters the table at all — correct, and also why
-  `ctest` alone no longer covers the release path. `ci-scripts/linux-test.sh`
-  runs `ctest` single-rank; the two-rank runs are by hand
-  (`run-linux-docker.sh`, then `mpirun -n 2` on the test binaries).
+  frees the block, and nothing enters the table at all — correct, and it means a
+  single-rank pass says nothing about the release path. `MPI_ABI_TEST_USE_LAUNCHER`
+  is ON by default and `MPI_ABI_EXPECT_RANKS` makes the count an exit status
+  rather than a preference, so `ctest` does cover it — but only in a build
+  configured that way, and `-DMPI_ABI_TEST_USE_LAUNCHER=OFF` is a supported
+  configuration in which it does not.
 
   **Only (b) touches §6.3's inference**, and only by narrowing it; nothing here
   retires it. Attaches happen at 8 entry points and releases at 11, for *every*

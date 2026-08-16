@@ -186,6 +186,14 @@ interface on its own, and on this host the one it picks does not work — and
   current: `ctest` against MPICH fails 6 of 13 without it and passes 13/13 with
   it.
 
+  **Do not benchmark MPICH progress on this laptop.** The workaround is not
+  free: every progress poll goes through a TCP provider, so
+  `MPI_Request_get_status` on an incomplete request costs 9.2 µs here against
+  16.3 ns for the same MPICH in `debian:13`. NOTES.md #13.2 has the case that
+  found it — a 17% regression that was entirely this variable. Correctness
+  results from this host are fine; timings involving the progress engine are
+  not, and want a container row.
+
 - **Open MPI 5.0.x needs its launcher pinned to loopback on this laptop**, and
   `scripts/host-env.sh` is where the three variables that do it live. Run
   without them, conda-forge's 5.0.10 for osx-arm64 and a 5.0.6 built from source
