@@ -96,8 +96,9 @@ task; the method is the one used throughout this stage, which is to build the
 same test with the implementation's own `mpicc` and see whether it passes
 without the wrapper.
 
-**Failure counts above are `wc -l` on the lists; the per-run *totals* are
-not quoted here on purpose.** They moved twice as the lists were retriaged and
+**Failure counts above are `grep -cvE '^\s*(#|$)'` on the lists -- most of each
+file is comment, so plain `wc -l` is not the number -- and the per-run *totals*
+are not quoted here on purpose.** They moved twice as the lists were retriaged and
 the copies of them did not all follow -- four documents disagreed (1212, 1229,
 1230, 1231) before this note replaced them. A total is only as good as the run
 that produced it, and three configure decisions change it, including whether
@@ -109,13 +110,18 @@ the total from a run rather than from prose.
 **`FI_PROVIDER`.** MPICH's `ch4:ofi` picks a VPN interface when one is up and
 `MPI_Finalize` then fails (test/README.md). `FI_PROVIDER=tcp` avoids it. The
 runner does not set it, because it is a property of a host rather than of this
-suite — but it prints what the suite's configure decided, and one of those
+suite; on the machine this project is developed on, `scripts/host-env.sh` is
+what sets it, and this runner is one more thing to put that script in front of.
+The runner does print what the suite's configure decided, and one of those
 decisions (`whether MPI_THREAD_MULTIPLE is supported`) is made by *running* an
 MPI program. A broken environment therefore removes the whole `threads`
 directory from the run rather than failing anything, which is how a green run
 can cover less than the last one. That is why those three lines are printed.
 
-**The Open MPI row runs on Linux.** No Open MPI 5.0.x launcher works on macOS
-26, with or without this project (test/README.md), and a suite whose every
+**The Open MPI row runs on Linux.** When it was established, no Open MPI 5.0.x
+launcher would run a job on the development laptop, and a suite whose every
 test is a launcher failure is a list of 900 excuses rather than a result. In a
-container it works, so `linux-suite.sh` is where that row lives.
+container it works, so `linux-suite.sh` is where that row lives. That laptop has
+since been fixed (`scripts/host-env.sh`, and test/README.md's third environment
+quirk for why it needed fixing), so a macOS Open MPI row is now possible rather
+than impossible — but it has not been run, and this row is the one that exists.

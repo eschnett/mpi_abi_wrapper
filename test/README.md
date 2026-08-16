@@ -47,6 +47,16 @@ launcher is taken from beside it rather than from `PATH`, because launching one
 implementation's binaries under another's `mpiexec` silently produces N
 singletons instead of an N-rank job.
 
+**On the laptop this is developed on, prefix `ctest` with
+`scripts/host-env.sh`** — six of the thirteen tests fail without it, against
+MPICH and against Open MPI 5.0.x alike, for two reasons that are entirely about
+this machine's firewall and VPN interfaces and are the second and third of the
+environment quirks below:
+
+```sh
+scripts/host-env.sh ctest --test-dir build/mpich --output-on-failure
+```
+
 ### Three things `abi_state_test` cannot reach, and why
 
 None is a gap in the test: each is a property of every implementation
@@ -94,7 +104,9 @@ code.
 ## Three environment quirks
 
 None is about this project, and each cost time to attribute, so they are
-written down.
+written down. The second and third are the same shape — an MPI picks a network
+interface on its own, and on this host the one it picks does not work — and
+`scripts/host-env.sh` carries the four variables that settle both.
 
 - **`OMPI_MCA_btl_vader_single_copy_mechanism=none` breaks RMA on Open MPI
   4.1.6**: `MPI_Win_create` answers `MPI_ERR_WIN`, and with the default
@@ -107,16 +119,69 @@ written down.
 
 - **MPICH's `ch4:ofi` picks a VPN interface** when one is up (`utun0`), and then
   `MPI_Finalize` fails with `OFI poll failed (default nic=utun0)`. `FI_PROVIDER=tcp`
-  in the environment avoids it. It is not set in `CMakeLists.txt`, since it is a
-  property of this host rather than of the tests.
-- **No Open MPI 5.0.x launcher works on this host.** conda-forge's 5.0.10 for
-  osx-arm64 and a 5.0.6 built from source behave identically, and identically
-  *without* any of this project involved: a wrapper-free `hello world` under
-  their own `mpiexec` reports "rank 0 of 1" from both processes, complains that
-  the shared-memory segment cannot be created, and segfaults in `PMIx_Finalize`.
-  mpif's Open MPI 6.1.0a1 does work, so it is a 5.0.x-on-macOS-26 problem rather
-  than a machine problem. Until a working 5.x launcher is available here, the
-  Open MPI column is covered by singleton runs
-  (`-DMPI_ABI_TEST_USE_LAUNCHER=OFF`), which is how the S1 results against Open
-  MPI were obtained. `build/mpi/` is where this repository's `.gitignore`
-  expects such prefixes to live.
+  in the environment avoids it, and `scripts/host-env.sh` is where it is set. It
+  is *not* set in `CMakeLists.txt`, since it is a property of this host rather
+  than of the tests, and the difference matters: a variable in `CMakeLists.txt`
+  would travel to every machine that builds this project, where it would be an
+  unexplained narrowing of MPICH's transport choice. Measured today, still
+  current: `ctest` against MPICH fails 6 of 13 without it and passes 13/13 with
+  it.
+
+- **Open MPI 5.0.x needs its launcher pinned to loopback on this laptop**, and
+  `scripts/host-env.sh` is where the three variables that do it live. Run
+  without them, conda-forge's 5.0.10 for osx-arm64 and a 5.0.6 built from source
+  behave identically, and identically *without* any of this project involved: a
+  wrapper-free `hello world` under their own `mpiexec` reports "rank 0 of 1"
+  from both processes, complains that the shared-memory segment cannot be
+  created, and segfaults in `PMIx_Finalize`.
+
+  The cause is not Open MPI, and this entry used to say it was — see
+  `HISTORY.md` §2.13. **This machine has the built-in macOS application
+  firewall enabled**, and its per-application list carries an explicit "Block
+  incoming connections" entry for `build/mpi/*/bin/prte`, the launcher that
+  hosts the PMIx server. That is what the firewall does to every locally built
+  binary that has ever listened: an unsigned or ad-hoc-signed executable earns
+  a dialog no non-GUI session can answer, and the default is deny. Loopback is
+  exempt from all of it. Then: PMIx 5 dropped its Unix-socket transport
+  ("PMIx no longer supports the usock transport for client-server", in
+  `libpmix`'s own strings), so every client-to-server PMIx exchange is TCP; and
+  PMIx drops loopback devices from its interface list by default
+  (`pif_base_retain_loopback`), so `prterun` advertises the `en0` address. The
+  ranks connect there, the firewall kills the connection, and the server's
+  handshake read fails with `blocking_recv received error 57:Socket is not
+  connected from remote`. `MPI_Init` falls back to singleton mode, which is the
+  "rank 0 of 1"; the ranks that do not fall back cannot find rank 0's modex and
+  answer `PML add procs failed / Not found (-13)`. The shared-memory complaint
+  and the `PMIx_Finalize` segfault are downstream of that, not separate faults.
+
+  Two of this quirk's three variables in `host-env.sh` undo that: 5.0.10 needs
+  only `PMIX_MCA_pif_base_retain_loopback`, while 5.0.6's PRRTE has
+  `remote_connections` set and prefers a non-loopback device even once it can
+  see `lo0`, so it needs `PMIX_MCA_ptl_base_if_include` to force the choice.
+  The third, `OMPI_MCA_btl_tcp_if_include`, is the data path rather than the
+  launcher, and is the quirk above in another costume: the TCP BTL picks
+  `utun40`, a VPN interface, and fails with "No route to host". Ordinary
+  on-node runs never reach it, since `sm` carries them — `MPI_Comm_spawn` does,
+  because parent and child are separate jobs and `sm` does not span them.
+
+  Three measurements, from the one furthest from this project inward. A C
+  program that connects to its own listening socket gets five bytes on
+  `127.0.0.1` and `ENOTCONN` on the `en0` address, with no MPI anywhere;
+  `socketfilterfw --listapps` shows it added to the block list by having run.
+  A wrapper-free MPI `hello world` under either 5.0.x goes from two singletons
+  to a real job when the variables are set, and stays a job at 2, 4, 8, 12 and
+  24-oversubscribed ranks through `Sendrecv`, the collectives, `MPI_Win`
+  and `MPI_Comm_spawn`. And this directory's own suite passes **13/13, two
+  ranks**, against both 5.0.6 and 5.0.10 with `-DMPI_ABI_TEST_USE_LAUNCHER=ON`,
+  where without the variables six of those thirteen fail.
+
+  **None of this generalizes.** The firewall being on is a setting on this
+  machine, `utun40` is an interface on this machine, and pinning MPI to
+  loopback is free only because this machine could not run a job across nodes
+  in any case. It says nothing about macOS in general, about other Open MPI
+  builds, or about any other host — which is why it is a script this repository
+  owns and each user opts into by name, rather than a line in
+  `~/.pmix/mca-params.conf` that would silently reshape every Open MPI run by
+  this account. Open MPI 6.1.0a1 needs none of it: its PMIx keeps loopback and
+  advertises `127.0.0.1` already. `build/mpi/` is where this repository's
+  `.gitignore` expects such prefixes to live.

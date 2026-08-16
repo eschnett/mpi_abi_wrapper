@@ -103,7 +103,8 @@ examples/          narrated excerpts of each shape; src/ is the reference
 gen/               committed generated output, never hand-edited
 src/mpi_abi/       hand-written: bootstrap, dlopen, vtable acquisition
 src/mpiwrapper/    hand-written: the ledger's bodies, trampolines, maps, conversion
-scripts/           the CI recipes, runnable locally
+scripts/           the CI recipes, runnable locally, plus host-env.sh
+  host-env.sh        the four variables this development machine needs; §12
 test/              our own tests
 test-consume/      a consumer project used by check-install.sh
 ```
@@ -354,19 +355,28 @@ used to make a red run green.
 
 | variant | expected failures | state |
 |---|---|---|
-| MPICH 4.3.1 | **41** (`wc -l` on `xfail-mpich.txt`) | fully triaged, every line with a cause |
-| Open MPI 4.1.6, on Linux | **168** (`xfail-openmpi.txt`) | about half attributed, the rest honest placeholders |
+| MPICH 4.3.1 | **41** in `xfail-mpich.txt` | fully triaged, every line with a cause |
+| Open MPI 4.1.6, on Linux | **168** in `xfail-openmpi.txt` | about half attributed, the rest honest placeholders |
+
+The authority for both is `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-*.txt`,
+which is also how `check-tap.py` reads them (it skips blanks and comments at
+line 85). Plain `wc -l` is *not* the number — these files are mostly reasons,
+119 and 230 lines of them — and an earlier version of this table said it was.
 
 The Open MPI row is dominated by MPI-4.0: that release provides 466 of the ABI's
 688 entry points, so sessions, partitioned communication, persistent collectives
 and the `_c` forms are stubs answering `MPI_ERR_UNSUPPORTED_OPERATION`. It runs
-in the container `ci-scripts/suite/linux-suite.sh` starts, because no Open MPI
-5.0.x launcher works on macOS 26.
+in the container `ci-scripts/suite/linux-suite.sh` starts. That was once a
+necessity — no Open MPI 5.0.x launcher would run a job on the development
+laptop — and is now a choice: `scripts/host-env.sh` makes both local 5.0.x
+prefixes launch (`HISTORY.md` §2.13), so a macOS Open MPI row of this suite has
+become possible. It has not been run, and until it is, this row is the Linux
+one.
 
 **The per-run test totals in these files disagree and should not be quoted until
 a run re-establishes them.** The headers say 1212 and 1231, the suite README
 says 1229 and 1231, and the counts moved twice without every copy following. The
-failure counts above are `wc -l` and are reliable; a total is only as good as
+failure counts above are a `grep -c` and are reliable; a total is only as good as
 the run that produced it, and `run-suite.sh` prints the three configure
 decisions that change it — including whether the `threads` directory exists at
 all, which the suite decides by *running* an MPI program.
@@ -379,13 +389,17 @@ learn what `test/README.md` already records.
 ## 11. Where it runs, as measured
 
 Isolation is a claim with a per-platform truth value, so this table says what
-has been *seen*, not what should happen.
+has been *seen*, not what should happen. Every macOS row is one development
+laptop, and on it MPICH 4.3.1, Open MPI 5.0.6 and Open MPI 5.0.10 each need
+`scripts/host-env.sh` in front of `ctest` or fail 6 of 13, for reasons §12
+attributes to the machine rather than to any of them.
 
 | configuration | mechanism | status |
 |---|---|---|
-| macOS, native MPICH 4.3.1 | `RTLD_LOCAL` + two-level namespace | **works**, 6/6 tests, two ranks |
-| macOS, native Open MPI 5.0.6 | same | **works**, 6/6, one rank (its launcher is broken here) |
-| macOS, native Open MPI 6.1.0a1 | same | **works**, 6/6, two ranks — despite 698 weak `MPI_*` |
+| macOS, native MPICH 4.3.1 | `RTLD_LOCAL` + two-level namespace | **works**, 6/6 tests, two ranks — under `scripts/host-env.sh` |
+| macOS, native Open MPI 5.0.6 | same | **works**, 6/6, two ranks — same script |
+| macOS, conda-forge Open MPI 5.0.10 | same | **works**, 6/6, two ranks — same script |
+| macOS, native Open MPI 6.1.0a1 | same | **works**, 6/6, two ranks — despite 698 weak `MPI_*`; needs no such script |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
 | macOS, an ABI-implementing MPI | none available | **refused at load**; dyld coalesces weak definitions |
 | Linux glibc, MPICH 4.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker) |
@@ -412,9 +426,25 @@ None is about this project.
   then fails with `OFI poll failed (default nic=utun0)`. `FI_PROVIDER=tcp`
   avoids it. Not set in `CMakeLists.txt`, since it is a property of the host —
   but it silently removes the suite's whole `threads` directory, which is why
-  `run-suite.sh` prints that decision.
-- **No Open MPI 5.0.x launcher works on macOS 26.** conda-forge's 5.0.10 and a
-  5.0.6 built from source behave identically, and identically *without* any of
-  this project: a wrapper-free hello world reports "rank 0 of 1" from both
-  processes and segfaults in `PMIx_Finalize`. Open MPI 6.1.0a1 works, so it is a
-  5.0.x-on-macOS-26 problem.
+  `run-suite.sh` prints that decision. `ctest` against MPICH fails 6 of 13
+  without it.
+- **Open MPI 5.0.x's launcher needs pinning to loopback on the development
+  laptop**, and its TCP BTL keeping off the same VPN interface. Without them,
+  conda-forge's 5.0.10 and a 5.0.6 built from source behave identically, and
+  identically *without* any of this project: a wrapper-free hello world reports
+  "rank 0 of 1" from both processes and segfaults in `PMIx_Finalize`. The cause
+  is that machine's application firewall, which blocks incoming connections to
+  `prte`; PMIx 5 has only a TCP client-server transport and advertises a
+  non-loopback address by default, so the ranks cannot reach their own launcher.
+  `test/README.md` has the attribution and the three measurements,
+  `HISTORY.md` §2.13 what this entry used to claim.
+
+**The two above are the same shape** — an MPI chooses a network interface and
+on this host chooses wrong — and `scripts/host-env.sh` carries all four
+variables that settle them, exported unconditionally because each is inert for
+the MPIs it is not addressed to. Measured, not assumed: with all four set,
+`test/`'s suite passes 13/13 against MPICH 4.3.1, Open MPI 5.0.6 and Open MPI
+5.0.10 alike. **Local to one host**, which is why they live in a script this
+repository owns rather than in an account-wide `mca-params.conf` or a shell
+profile, where they would reshape every MPI run by this account with nothing
+recording why.

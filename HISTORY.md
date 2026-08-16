@@ -559,6 +559,48 @@ The `mpiexec` filter's watchdog held the stdout pipe runtests reads to EOF, so
 each, all passing, which reads as a slow machine rather than as a bug.
 Redirecting the watchdog's own descriptors is the fix.
 
+### 2.13 "No Open MPI 5.0.x launcher works on macOS 26"
+
+Written down in four places, and wrong in each. The evidence was good and the
+inference was not: two independent 5.0.x prefixes — conda-forge's 5.0.10 for
+osx-arm64 and a 5.0.6 built from source — failed identically and failed with no
+part of this project loaded, while a 6.1.0a1 built from `main` worked. Two
+implementations of a version failing where a third version succeeds does look
+like a property of the version.
+
+It was a property of the **machine**, which the control had not isolated
+because both controls ran on the same one. The development laptop has the macOS
+application firewall enabled; `socketfilterfw --listapps` carries an explicit
+"Block incoming connections" entry for `build/mpi/*/bin/prte`, as it does for
+every locally built binary that has ever listened, because an unsigned or
+ad-hoc-signed executable earns a dialog no non-GUI session can answer and the
+default is deny. PMIx 5 removed its Unix-socket transport, so all client-server
+PMIx traffic is TCP, and PMIx drops loopback devices from its interface list by
+default — so `prterun` advertised the `en0` address, the ranks connected there,
+and the firewall killed each connection. 6.1.0a1's newer PMIx keeps loopback and
+advertises `127.0.0.1`, which is the whole of the difference the version
+comparison was reading.
+
+The measurement that settles it needs no MPI at all: a thirty-line C program
+that connects to its own listening socket gets its five bytes on `127.0.0.1`
+and `ENOTCONN` on the `en0` address — the same `error 57:Socket is not
+connected` that `prterun`'s handshake reports. `scripts/host-env.sh` carries the
+three variables that keep everything on loopback — alongside the `FI_PROVIDER`
+that MPICH on this host has needed all along, since both quirks are the same
+one — and both 5.0.x prefixes then pass `test/`'s suite 13/13 with two ranks.
+
+Two things this cost. The S1 results against Open MPI were taken as singletons
+under `-DMPI_ABI_TEST_USE_LAUNCHER=OFF` — sound, and weaker than they needed to
+be. And the MPICH suite's Open MPI row was moved into a Linux container for a
+reason that had stopped being true; it is still there, now by choice.
+
+The transferable part is not about firewalls. **Two implementations agreeing is
+not a control when they share a host**, and "identically without any of this
+project involved" only rules out this project — it does not rule out the
+environment both runs were made in. The cheap way to get the real control is to
+reproduce the failure with less and less of the stack until nothing recognizable
+is left, which here took one C file.
+
 ---
 
 ## 3. What each stage settled

@@ -10,11 +10,14 @@
 # writable directory under /tmp, since run-linux-docker.sh mounts the source
 # tree read-only (ci-scripts/README.md explains why that is worth keeping).
 #
-# The Open MPI row exists here and not on macOS, and that is not a preference:
-# no Open MPI 5.0.x launcher works on macOS 26 with or without this project
-# involved (test/README.md measured it), and a suite whose every test is a
-# launcher failure would be a list of 900 excuses rather than a result. In a
-# container Open MPI's launcher works, so the row is real.
+# The Open MPI row exists here and not on macOS, and when it was established
+# that was not a preference: no Open MPI 5.0.x launcher would run a job on the
+# development laptop, and a suite whose every test is a launcher failure would
+# be a list of 900 excuses rather than a result. In a container Open MPI's
+# launcher works, so the row is real. That laptop has since been fixed --
+# scripts/host-env.sh, and test/README.md's third environment quirk for why it
+# needed fixing -- so a macOS Open MPI row has become possible; it has not been
+# run, and this one is not waiting on it.
 #
 #   MPIABI_LINUX_SCRIPT=/src/ci-scripts/suite/linux-suite.sh \
 #     ci-scripts/run-linux-docker.sh openmpi

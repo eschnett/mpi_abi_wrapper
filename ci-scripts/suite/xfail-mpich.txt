@@ -6,7 +6,9 @@
 # unlisted failure fails the run, and so does a listed test that passed or
 # that did not run. A line with no reason after the colon fails the run too.
 #
-# These are the failures -- 41 of them, which is `wc -l` on this file. The
+# These are the failures -- 41 of them, which is the count of lines that are
+# neither blank nor comment (`grep -cvE '^\s*(#|$)'`), the same lines
+# check-tap.py reads; plain `wc -l` counts this header too. The
 # run's *total* is deliberately not recorded here: it changes with three
 # configure decisions run-suite.sh prints, and stale copies of it disagreed
 # across four documents before this note (ci-scripts/suite/README.md). Every
