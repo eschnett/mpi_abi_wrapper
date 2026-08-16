@@ -24,15 +24,15 @@
 # ci-scripts/suite/run-suite.sh --gate-only re-runs the comparison against a
 # TAP file already in hand.
 #
-# **Two provenance notes, so that a first re-run is not a mystery.** The run
-# this list was recorded from predates the last change to
-# src/mpiwrapper/status.c by minutes: pt2pt/rqstatus failed in it, for the
-# empty status of MPI-5.0 3.7.3, and that is fixed and verified over MPICH,
-# so the line is *not* here. And the three rma/linked_list_bench_* lines
-# below moved between two runs of this row on the same host, so they are
-# timing-dependent under load rather than deterministic; a quiet run that
-# passes them will fail this gate with "expected failure that passed", which
-# is the mechanism working -- delete the line when that happens.
+# **The rma/linked_list family is load-sensitive here, and the gate is what
+# established that.** Three runs of this row on the same host: under load all
+# four of rma/linked_list and rma/linked_list_bench_lock_{excl,shr,shr_nocheck}
+# failed with an RMA error from Open MPI itself; on a quiet run three of them
+# passed and the gate reported them as "expected failure that passed", which
+# is exactly the signal that mechanism exists for. Only the one that failed
+# in the confirming run is listed. If a loaded run puts the other three back,
+# they are that machine's, not this project's -- the same test under Open
+# MPI's own mpicc is the check.
 
 # --- entry points Open MPI 4.1.6 does not have (decision 6) ---------------
 
@@ -204,10 +204,7 @@ rma/baseattrwin 1 : not yet attributed. Observed: [8540333cec72:69107] *** An er
 rma/contig_displ 1 : not yet attributed. Observed: MPI function error returned an error | Error class 56 (MPI_ERR_WIN: invalid window)
 rma/fkeyvalwin 1 : not yet attributed. Observed: [8540333cec72:69122] *** An error occurred in MPI_Win_create | [8540333cec72:69122] *** reported by process [2945122305,281470681743360]
 rma/get_acc_local 1 : not yet attributed. Observed: [8540333cec72:70004] *** An error occurred in MPI_Win_create | [8540333cec72:70004] *** reported by process [3004760065,281470681743360]
-rma/linked_list 4 : not yet attributed. Observed: [8540333cec72:70022] *** An error occurred in MPI_Compare_and_swap | [8540333cec72:70022] *** reported by process [3003645953,281470681743363]
-rma/linked_list_bench_lock_excl 4 : not yet attributed. Observed: [8540333cec72:70946] *** An error occurred in MPI_Get | [8540333cec72:70946] *** reported by process [3077308417,281470681743363]
 rma/linked_list_bench_lock_shr 4 : not yet attributed. Observed: [8540333cec72:70970] *** An error occurred in MPI_Get_accumulate | [8540333cec72:70970] *** reported by process [3074686977,281470681743363]
-rma/linked_list_bench_lock_shr_nocheck 4 : not yet attributed. Observed: [8540333cec72:70994] *** An error occurred in MPI_Get_accumulate | [8540333cec72:70994] *** reported by process [3074162689,281470681743363]
 rma/rmanull 2 : not yet attributed. Observed: Lock beforePut: Error class 6 (MPI_ERR_RANK: invalid rank) | Unlock after Put: Error class 6 (MPI_ERR_RANK: invalid rank)
 rma/rmazero 2 : not yet attributed. Observed: [8540333cec72:69212] *** An error occurred in MPI_Win_create | [8540333cec72:69212] *** reported by process [2887843841,281470681743360]
 rma/selfrma 1 : not yet attributed. Observed: [8540333cec72:69137] *** An error occurred in MPI_Win_create | [8540333cec72:69137] *** reported by process [2893676545,281470681743360]

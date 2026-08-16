@@ -541,8 +541,9 @@ what the wrapper owes an erroneous program is a design question §5 has never
 had to answer, and it is written up in §3 rather than patched around here.
 
 **The two lists are in different states, deliberately.** `xfail-mpich.txt` is
-finished: 45 failures out of 1212, every one with a cause. `xfail-openmpi.txt`
-is 171 out of 1231 and about half of it is attributed — the entry points Open
+finished: 43 failures out of 1229, every one with a cause, and the gate passes
+against the run it was built from. `xfail-openmpi.txt` is 168 out of 1229 and
+about half of it is attributed — the entry points Open
 MPI 4.1.6 does not have, read out of the probe header rather than guessed, and
 the causes shared with the MPICH row — while the rest are placeholders that say
 what was observed and claim nothing more. That row is dominated by MPI-4.0:
@@ -552,6 +553,13 @@ answering `MPI_ERR_UNSUPPORTED_OPERATION`, which is decision 6 working. Finishin
 its triage is the next session's first task, and the method is the one this
 stage used throughout: build the same test with the implementation's own
 `mpicc` and see whether it passes without the wrapper.
+
+**A confirming run of the Open MPI row is what established which of its
+failures are load-sensitive**, and it did so through the gate rather than by
+inspection: three `rma/linked_list*` tests that failed under load came back as
+"expected failure that passed", which is the only signal that distinguishes a
+flaky line from a real one. One of the four still fails and is the only one
+listed.
 
 **Two rows this stage could not make honest, and said so rather than listing
 them.** `spawn` is excluded by default (`--with-spawn` to include) because

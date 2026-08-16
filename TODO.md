@@ -12,3 +12,7 @@
   functions `static inline`? requires changing the MPI ABI `mpi.h`.
 
 - why doesn't the status keep the error all the time?
+
+- status needs to be converted on both input and output so that "error
+  field is written" can be seen by the caller. (or maybe the current
+  implementation is correct and efficient too.)
