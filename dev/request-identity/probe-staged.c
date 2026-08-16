@@ -18,6 +18,7 @@
 #include <mpi.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 static unsigned long long h(MPI_Request r)
 {
@@ -91,11 +92,18 @@ int main(int argc, char **argv)
   show("Ialltoallw, counts 0, COMM_SELF x3", r, 3);
   for (int i = 0; i < 3; ++i) MPI_Wait(&r[i], MPI_STATUS_IGNORE);
 
+  /* The persistent collectives are MPI-4.0; Open MPI 4.1.x has none of them,
+   * and that is a version the project supports (NOTES.md #9). */
+#if MPI_VERSION >= 4
   for (int i = 0; i < 3; ++i)
     MPI_Alltoallw_init(MPI_IN_PLACE, NULL, NULL, NULL, rbuf, zero_i, zero_i,
                        types, MPI_COMM_SELF, MPI_INFO_NULL, &r[i]);
   show("Alltoallw_init IN_PLACE, counts 0 x3", r, 3);
   for (int i = 0; i < 3; ++i) MPI_Request_free(&r[i]);
+#else
+  printf("  %-46s (MPI-4.0, not in this implementation)\n",
+         "Alltoallw_init IN_PLACE, counts 0 x3");
+#endif
 
   MPI_Comm g;
   MPI_Dist_graph_create_adjacent(MPI_COMM_SELF, 0, NULL, NULL, 0, NULL, NULL,
@@ -106,12 +114,38 @@ int main(int argc, char **argv)
   show("Ineighbor_alltoallw, degree 0 x3", r, 3);
   for (int i = 0; i < 3; ++i) MPI_Wait(&r[i], MPI_STATUS_IGNORE);
 
+#if MPI_VERSION >= 4
   for (int i = 0; i < 3; ++i)
     MPI_Neighbor_alltoallw_init(sbuf, zero_i, zero_a, types, rbuf, zero_i,
                                 zero_a, types, g, MPI_INFO_NULL, &r[i]);
   show("Neighbor_alltoallw_init, degree 0 x3", r, 3);
   for (int i = 0; i < 3; ++i) MPI_Request_free(&r[i]);
+#else
+  printf("  %-46s (MPI-4.0, not in this implementation)\n",
+         "Neighbor_alltoallw_init, degree 0 x3");
+#endif
   MPI_Comm_free(&g);
+
+  /* Not a MPI_COMM_SELF curiosity: on a real communicator, a rank that
+   * exchanges nothing with anybody has an empty schedule too. Meaningful
+   * under mpirun -n 2 or more; harmless at one rank. */
+  {
+    int size, rank;
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int          *c = calloc(size, sizeof *c);
+    int          *d = calloc(size, sizeof *d);
+    MPI_Datatype *t = malloc(size * sizeof *t);
+    for (int i = 0; i < size; ++i) t[i] = MPI_INT;
+    for (int i = 0; i < 3; ++i)
+      MPI_Ialltoallw(sbuf, c, d, t, rbuf, c, d, t, MPI_COMM_WORLD, &r[i]);
+    printf("  rank %d of %d: ", rank, size);
+    show("Ialltoallw counts 0 on COMM_WORLD x3", r, 3);
+    MPI_Waitall(3, r, MPI_STATUSES_IGNORE);
+    free(c);
+    free(d);
+    free(t);
+  }
 
   printf("\nWhat does MPI_Request_get_status answer?\n");
 
@@ -131,6 +165,10 @@ int main(int argc, char **argv)
   MPI_Wait(&r[0], MPI_STATUS_IGNORE);
   MPI_Wait(&pending, MPI_STATUS_IGNORE);
 
+  /* The trap needs a persistent request; MPI-4.0's collective one where there
+   * is one, and MPI-1's MPI_Send_init where there is not -- #3.9 makes both
+   * inactive from creation, which is the whole point. */
+#if MPI_VERSION >= 4
   MPI_Alltoallw_init(sbuf, one_i, zero_i, types, rbuf, one_i, zero_i, types,
                      MPI_COMM_SELF, MPI_INFO_NULL, &r[0]);
   ask("persistent, fresh -- the trap (MPI-5.0 3.7.6)", r[0]);
@@ -138,6 +176,14 @@ int main(int argc, char **argv)
   ask("persistent, after MPI_Start", r[0]);
   MPI_Wait(&r[0], MPI_STATUS_IGNORE);
   MPI_Request_free(&r[0]);
+#else
+  MPI_Send_init(sbuf, 1, MPI_INT, MPI_PROC_NULL, 5, MPI_COMM_SELF, &r[0]);
+  ask("persistent, fresh -- the trap (MPI-5.0 3.7.6)", r[0]);
+  MPI_Start(&r[0]);
+  ask("persistent, after MPI_Start", r[0]);
+  MPI_Wait(&r[0], MPI_STATUS_IGNORE);
+  MPI_Request_free(&r[0]);
+#endif
 
   enum { N = 200000 };
   MPI_Isend(NULL, 0, MPI_INT, MPI_PROC_NULL, 0, MPI_COMM_SELF, &r[0]);

@@ -50,7 +50,11 @@ fail() { echo "FAILED: $*" >&2; status=1; }
 
 if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
-  pkgs="build-essential cmake python3 patch binutils"
+  # poppler-utils is for pdftotext, which the c-bindings cross-check shells out
+  # to: it reads MPI-5.0's Appendix A.3 out of doc/mpi50-report.pdf. Without it
+  # that test fails on a stock container with a FileNotFoundError, which is a
+  # missing package reported as a failing gate.
+  pkgs="build-essential cmake python3 patch binutils poppler-utils"
   case ${MPICC:+path}$which in
     mpich)   pkgs="$pkgs libmpich-dev mpich" ;;
     openmpi) pkgs="$pkgs libopenmpi-dev openmpi-bin" ;;

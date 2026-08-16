@@ -14,11 +14,17 @@
  *    global atomic count, so a completion call in an application that never
  *    uses those routines pays one relaxed load and a compare against zero
  *    (NOTES.md #6.3, decision 10).
+ *
+ * and one policy over the second of them, mpiwrapper_staged_keep, which is what
+ * the generated bodies actually call. The table itself only stores; deciding
+ * whether a block belongs in it at all, and what to do when it will not fit, is
+ * NOTES.md #13.2's (a), (b) and (c), and lives at the bottom of this file.
  */
 
 #include "internal.h"
 
 #include <stdatomic.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 void *mpiwrapper_stage(void *stackbuf, size_t stackbytes, size_t nmemb,
@@ -83,12 +89,18 @@ int mpiwrapper_staged_any(void)
   return atomic_load_explicit(&staged_live, memory_order_relaxed) != 0;
 }
 
-int mpiwrapper_staged_attach(MPI_Request request, void *block)
+enum mpiwrapper_staged_fate mpiwrapper_staged_attach(MPI_Request request,
+                                                     void       *block)
 {
   const uint64_t key  = MPIWRAPPER_BITS(request);
   size_t         slot = staged_home(key);
 
-  if (key == KEY_EMPTY || key == KEY_LOCKED || key == KEY_TOMB) return 0;
+  /* No implementation handle takes one of the three reserved values, so this
+   * is unreachable rather than a policy -- but a handle that did would corrupt
+   * the table, and DUPLICATE is the fate that leaks rather than errors.
+   */
+  if (key == KEY_EMPTY || key == KEY_LOCKED || key == KEY_TOMB)
+    return MPIWRAPPER_STAGED_DUPLICATE;
 
   for (size_t probe = 0; probe < MPIWRAPPER_STAGED_REQUEST_SLOTS;
        ++probe, slot = (slot + 1) % MPIWRAPPER_STAGED_REQUEST_SLOTS) {
@@ -102,18 +114,143 @@ int mpiwrapper_staged_attach(MPI_Request request, void *block)
         continue; /* someone else took it; keep probing */
       atomic_store_explicit(&e->block, block, memory_order_release);
       atomic_fetch_add_explicit(&staged_live, 1, memory_order_relaxed);
-      return 1;
+      return MPIWRAPPER_STAGED_STORED;
     }
     if (k == key) {
-      /* The implementation reused a request value we still hold state for.
-       * That would mean a completion we did not observe, and freeing the old
-       * block here would be a guess; refusing is the honest answer and the
-       * caller turns it into MPIABI_ERR_INTERN.
+      /* Two live operations are presenting one handle. Overwriting would lose
+       * the first block and freeing it would be a guess, so the table declines
+       * -- but declining is all it does; the caller must not turn this into an
+       * error, because the call was legal (NOTES.md #13.2).
        */
-      return 0;
+      return MPIWRAPPER_STAGED_DUPLICATE;
     }
   }
-  return 0; /* full: MPIWRAPPER_STAGED_REQUEST_SLOTS in flight at once */
+  return MPIWRAPPER_STAGED_FULL; /* SLOTS staged operations in flight at once */
+}
+
+/* ------------------------------------------------------------ the policy */
+
+/* Three rules, and each closes a way the table used to answer MPI_ERR_INTERN to
+ * a legal call (NOTES.md #13.2, where they are (a), (b) and (c)). They are here
+ * rather than in the generated bodies because they are a policy, and because
+ * one place to read them is worth more than eight copies of a branch.
+ */
+
+static atomic_ulong staged_leaks;
+
+unsigned long mpiwrapper_staged_leaked(void)
+{
+  return atomic_load_explicit(&staged_leaks, memory_order_relaxed);
+}
+
+/* (c) The table would not take the block, so the block is never freed.
+ *
+ * Whichever fate brought us here, leaking is forced: the operation is already
+ * in flight, it cannot be un-started, and the implementation may still be
+ * reading the block, so freeing it is a use-after-free. #6.2 already accepts
+ * "never reclaimed" for the callback pools and the attribute callbacks, so
+ * that much is not a new concession -- but it is worth counting, and the count
+ * is the oracle the selftest uses now that the error channel is narrower.
+ *
+ * What differs between the two fates is only what the *caller* is told, and
+ * that is decided in mpiwrapper_staged_keep, not here.
+ */
+static void staged_leak(void)
+{
+  const unsigned long n =
+      1u + atomic_fetch_add_explicit(&staged_leaks, 1u, memory_order_relaxed);
+#ifndef NDEBUG
+  /* Once, not per occurrence: the shape this fires in is a loop. */
+  if (n == 1)
+    fprintf(stderr,
+            "libmpiwrapper: leaked a staged array -- the request table would "
+            "not take it (duplicate key, or %d slots all in use). See "
+            "NOTES.md #13.2.\n",
+            MPIWRAPPER_STAGED_REQUEST_SLOTS);
+#else
+  (void)n;
+#endif
+}
+
+/* (b) Is the implementation finished with the arrays already?
+ *
+ * MPI-5.0 6.12 lets an implementation keep reading the counts, displacement and
+ * datatype arrays *until the operation completes* -- which is the whole reason
+ * the block outlives the call (#5.7). So if the operation is complete when it
+ * comes back, there is nothing to keep alive, and asking is exactly MPI-2.0's
+ * MPI_Request_get_status: "Sets flag = true if the operation is complete...
+ * However, unlike test or wait, it does not deallocate or inactivate the
+ * request."
+ *
+ * Only ever asked of a nonblocking form. The standard's very next sentence is
+ * the trap: an inactive request answers flag = true, and 3.9 makes a persistent
+ * request inactive from creation, so a fresh MPI_Alltoallw_init would say
+ * "complete" and freeing on that answer is a use-after-free at the first
+ * MPI_Start. That is measured on both implementations (dev/request-identity/),
+ * and it is why the caller passes the kind rather than this file guessing.
+ *
+ * Any answer but a clean flag = true means "attach", which is always safe.
+ */
+static int staged_is_complete(MPI_Request request)
+{
+#ifdef MPIWRAPPER_HAVE_MPI_Request_get_status
+  int flag = 0;
+  if (PMPI_Request_get_status(request, &flag, MPI_STATUS_IGNORE) != MPI_SUCCESS)
+    return 0;
+  return flag;
+#else
+  /* MPI-2.0, so below this project's MPI-3.0 floor and not reachable in a
+   * conforming implementation. The guard costs nothing and keeps the file
+   * honest about what it assumes.
+   */
+  (void)request;
+  return 0;
+#endif
+}
+
+int mpiwrapper_staged_keep(MPI_Request request, void *block, size_t nstaged,
+                           enum mpiwrapper_staged_kind kind)
+{
+  /* (a) Nothing was staged -- a degree-0 neighbourhood collective, whose send
+   * and receive arrays are both empty. There is no array for the
+   * implementation to read, so there is nothing to keep alive and no reason to
+   * spend a slot, let alone to collide in one. malloc(0) may still have
+   * returned a pointer, and it is ours to free.
+   */
+  if (nstaged == 0) {
+    free(block);
+    return 1;
+  }
+
+  /* (b) */
+  if (kind == MPIWRAPPER_STAGED_NONBLOCKING && staged_is_complete(request)) {
+    free(block);
+    return 1;
+  }
+
+  switch (mpiwrapper_staged_attach(request, block)) {
+  case MPIWRAPPER_STAGED_STORED:
+    return 1;
+  case MPIWRAPPER_STAGED_DUPLICATE:
+    /* (c) A legal call, and nothing the caller could have done differently:
+     * the implementation shared one request between two operations. Leak the
+     * array and succeed. Answering MPIABI_ERR_INTERN here is what #13.2 calls
+     * the conformance bug, and under the default error handler it aborted a
+     * correct program.
+     */
+    staged_leak();
+    return 1;
+  case MPIWRAPPER_STAGED_FULL:
+  default:
+    /* Not the same thing, and deliberately still an error: this is the
+     * capacity limit every fixed table in the design has (#13.2's first
+     * bullet), it names a build-time constant the user can raise, and
+     * degrading to a silent leak would take away both the diagnosis and the
+     * only oracle the release path has. The block leaks either way.
+     */
+    staged_leak();
+    return 0;
+  }
 }
 
 void mpiwrapper_staged_release(MPI_Request request)

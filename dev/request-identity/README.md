@@ -102,9 +102,10 @@ agree, but the file and line references below are 5.0.1's):
   MPICH in `posix_send.h`, `ofi_send.h`, `ucx_send.h` and `ch4_self.c`. So the
   release side is exercised at this key by everyday traffic, not rarely.
 
-### And the wrapper refuses
+### And the wrapper refused
 
-`reproduce.c`, against `build/openmpi/libmpiwrapper.*`, stock Open MPI 5.0.6:
+`reproduce.c`, against `build/openmpi/libmpiwrapper.*`, stock Open MPI 5.0.6,
+before NOTES.md #13.2's fix:
 
 ```
 two zero-work MPI_Ialltoallw, posted before either is waited on
@@ -115,11 +116,16 @@ two zero-work MPI_Ialltoallw, posted before either is waited on
 ```
 
 and the same for two degree-0 `MPI_Ineighbor_alltoallw` — where both extents
-are zero, so there is nothing to keep alive at all and the wrapper attaches a
-zero-length block only because the attach is unconditional. Against
-`build/mpich/libmpiwrapper.*` both cases are accepted. With the default error
-handler rather than this program's `MPI_ERRORS_RETURN`, the refusal aborts the
+are zero, so there was nothing to keep alive at all and the wrapper attached a
+zero-length block only because the attach was unconditional. Against
+`build/mpich/libmpiwrapper.*` both cases were accepted. With the default error
+handler rather than this program's `MPI_ERRORS_RETURN`, the refusal aborted the
 job.
+
+**This is a regression test now**, and it exits nonzero if either case is
+refused again. Green on both implementations, on macOS and on Linux under
+`ci-scripts/run-linux-docker.sh`. Keep it: the two cases are what (a) and (b)
+each close, and neither is reachable from `ctest`, which is single-rank.
 
 ### What `MPI_Request_get_status` answers
 
@@ -158,9 +164,12 @@ That is safe, and the reason is semantic rather than empirical: MPI requires
 every request to be independently testable and completable, so two *live*
 operations cannot share a handle. Sharing implies the handle carries no
 per-operation state, which implies both are already complete. So a block freed
-early is a block nobody is reading. What remains is not memory-unsafety but a
-legal program being told `MPI_ERR_INTERN` — which is no longer a hypothesis,
-per `reproduce.c`. NOTES.md #13.2 has the fix.
+early is a block nobody is reading. What remained was not memory-unsafety but a
+legal program being told `MPI_ERR_INTERN` — which `reproduce.c` showed was no
+hypothesis. NOTES.md #13.2's (b) closes that door from the other side: a shared
+built-in is only handed out for an operation already complete on return, and
+such an operation no longer attaches, so a shared key never enters the table for
+an unrelated completion to find.
 
 Mechanism 2 is why *every* completion entry point has to release, not just the
 ones an author happens to think of: a completion we fail to observe leaves a

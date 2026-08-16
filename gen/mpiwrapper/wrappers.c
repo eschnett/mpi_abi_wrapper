@@ -1516,7 +1516,8 @@ static int w_PMPI_Alltoallw_c(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
@@ -1621,7 +1622,8 @@ static int w_PMPI_Alltoallw_init(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
@@ -9541,7 +9543,8 @@ static int w_PMPI_Ialltoallv_c(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
@@ -9640,7 +9643,8 @@ static int w_PMPI_Ialltoallw(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
@@ -10919,7 +10923,8 @@ static int w_PMPI_Ineighbor_alltoallv_c(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
@@ -11017,7 +11022,8 @@ static int w_PMPI_Ineighbor_alltoallw(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
@@ -14132,7 +14138,8 @@ static int w_PMPI_Neighbor_alltoallw_c(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
@@ -14225,7 +14232,8 @@ static int w_PMPI_Neighbor_alltoallw_init(const void *abi_sendbuf,
     *abi_request = mpiwrapper_request_toabi(request);                          \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
                                                                                \
-    if (!mpiwrapper_staged_attach(request, block))                             \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }

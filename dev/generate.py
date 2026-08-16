@@ -1951,6 +1951,35 @@ def request_out(ep):
     return None
 
 
+def staged_kind(ep):
+    """MPIWRAPPER_STAGED_PERSISTENT or _NONBLOCKING, for a staging routine.
+
+    The distinction is not cosmetic: a nonblocking form's request may be
+    complete when it comes back, and NOTES.md #13.2's (b) then declines to
+    attach; a persistent form's is *inactive* from creation and answers
+    "complete" to every test there is, so asking it would free a block the
+    first MPI_Start still needs.
+
+    Taken from the signature rather than from the spelling, per #5.7: among the
+    routines that hand back a request and stage an in-direction array, the
+    persistent inits are exactly the ones that also take an MPI_Info. The name
+    is then cross-checked against it, so that a ninth entry point joining this
+    set cannot be misclassified in silence -- which for this predicate would be
+    a use-after-free rather than a redundant conversion.
+    """
+    has_info = any(p.cls in ("handle_in", "handle_inout") and p.kind == "INFO"
+                   for p in ep.params)
+    named_init = ep.name.removesuffix("_c").endswith("_init")
+    if has_info != named_init:
+        raise SystemExit(
+            f"{ep.name}: cannot tell whether this staging routine is "
+            f"persistent -- it {'takes' if has_info else 'does not take'} an "
+            f"MPI_Info but is {'' if named_init else 'not '}named _init. "
+            "NOTES.md #13.2's (b) turns on the answer; decide it by hand.")
+    return ("MPIWRAPPER_STAGED_PERSISTENT" if has_info
+            else "MPIWRAPPER_STAGED_NONBLOCKING")
+
+
 def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
              status_local, probes, pre, rejects, extent_post, maps, releases,
              late_decls=()):
@@ -2188,12 +2217,15 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
     body.append(ind + "if (mpiwrapper_take_handle_error()) "
                       "return MPIABI_ERR_INTERN;")
     body.append("")
-    # The operation is already in flight, so a table that cannot take the block
-    # leaves nothing safe to do: freeing it would be a use-after-free while the
-    # implementation reads it, and the operation cannot be un-started. Leaking
-    # it and saying so is the only honest answer, and the limit that produced
-    # it is a build-time constant.
-    body.append(ind + f"if (!mpiwrapper_staged_attach({name}, block))")
+    # Everything about the block's fate is one call, because all of it is
+    # policy: whether it needs keeping at all, whether the operation is already
+    # complete, and what to do when the table will not take it (staging.c,
+    # NOTES.md #13.2). It fails only for a full table, which is this design's
+    # usual capacity limit and names a build-time constant; the block leaks
+    # either way, because the operation is in flight and cannot be un-started.
+    body += wrap("if (!mpiwrapper_staged_keep",
+                 [name, "block", "nstaged", staged_kind(ep)], ")", ind,
+                 len(ind) + len("if (!mpiwrapper_staged_keep("))
     body.append(ind + "  return MPIABI_ERR_INTERN;")
     body.append(ind + "return MPIABI_SUCCESS;")
     body.append("  }")

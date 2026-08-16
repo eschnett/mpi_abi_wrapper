@@ -531,6 +531,15 @@ static void test_ialltoallw(void)
    * without releasing runs out and starts returning MPI_ERR_INTERN. Running the
    * cycle well past that capacity turns "the release path works" into something
    * this test can see.
+   *
+   * A full table is deliberately still an error, and this loop is why: it is
+   * the only black-box oracle the release path has. NOTES.md #13.2's (c)
+   * stopped erroring on a *duplicate* key, which is a different fate.
+   *
+   * The loop only bites at two ranks or more. At one rank the operation is
+   * complete when it returns, (b) frees the block instead of attaching it, and
+   * nothing ever enters the table -- which is correct, and is also why the
+   * one-rank run of this test proves less than it looks.
    */
   for (int i = 0; i < n; ++i) types[i] = MPI_INT;
   for (int round = 0; round < 1200; ++round) {

@@ -290,7 +290,10 @@ static void test_persistent_alltoallw(void)
   /* Whether the block is released at MPI_Request_free is not observable one
    * call at a time, and is in bulk: the staged-request table holds 1024
    * entries, so a body that never released would run it out. Same trick as
-   * abi_prototype_test's nonblocking round, aimed at the other lifetime.
+   * abi_prototype_test's nonblocking round, aimed at the other lifetime -- and
+   * unlike that one, this loop bites at any rank count, because a persistent
+   * request is never complete on return and so never takes NOTES.md #13.2's
+   * (b) exit. That is the property the round above checks directly.
    */
   for (int i = 0; i < n; ++i) types[i] = MPI_INT;
   for (int round = 0; round < 1200; ++round) {

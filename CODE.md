@@ -219,7 +219,7 @@ the rest hold the machinery those bodies and the generated ones share.
 | `handles.c` | the eleven classes' conversions, including the perfect-hash reverse map |
 | `constants.c` (generated) | every mapped integer family, as a switch over the implementation's own macros |
 | `status.c` | the 32-byte blob, both directions, plus the keep-`MPI_ERROR` variant |
-| `staging.c` | staged temporaries, and the request-keyed table for those outliving their call |
+| `staging.c` | staged temporaries, the request-keyed table for those outliving their call, and the policy over it (NOTES.md #13.2's (a), (b), (c)) |
 | `extents.c` | array extents `apis.json` records as `*`, asked of the implementation |
 | `serialize.c` | the intern table behind `_toint`/`_fromint` |
 | `keyvals.c` | the dynamic keyval registry |
@@ -323,8 +323,8 @@ gate in CI.
 | `c-bindings-cross-check` | no | all 688 signatures match MPI-5.0 Appendix A.3, or are one of 8 named exemptions |
 | `exported-symbols` | no | `libmpiwrapper` exports exactly one symbol; `libmpi_abi`'s exports are exactly the header's 1376, both directions; the application's only MPI dependency is `libmpi_abi` |
 | `isolation-check` | yes | an unisolated wrapper is refused at load, or crashes; a *successful* run of one is the failure |
-| `mpiwrapper_selftest` | one rank | white box: all 103 predefined handles both ways, every constant map, the status blob, staging, the staged-request table, the dynamic-handle collision probe, and the capacity behaviour of the maps that have no error channel |
-| `abi_prototype_test` | two ranks preferred | S1's 29 entry points as an ordinary application over the ABI header |
+| `mpiwrapper_selftest` | one rank | white box: all 103 predefined handles both ways, every constant map, the status blob, staging, the staged-request table **and the policy over it**, the dynamic-handle collision probe, and the capacity behaviour of the maps that have no error channel |
+| `abi_prototype_test` | **two ranks required** for the staged-request round | S1's 29 entry points as an ordinary application over the ABI header. At one rank the nonblocking `MPI_Ialltoallw` is complete on return, so #13.2's (b) frees its block and the table is never exercised |
 | `abi_arrays_test` | two ranks preferred | S3a's classes, and the **lifetime** no generator assertion can see: a persistent `MPI_Alltoallw` started three times, 1200 create/free cycles against a 1024-entry table |
 | `abi_tools_test` | two ranks preferred | S3b's classes, the five ABI-side entry points and their sentinels, and **`MPI_T`'s null OUT pointers** — every query called twice, once for everything and once for one field |
 | `abi_converters_test` | two ranks preferred | S4a's 70. Two checks are not round trips: `_toint` against the header's own constant, and a status through Fortran and back asked `MPI_Get_count` |

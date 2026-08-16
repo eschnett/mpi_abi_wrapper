@@ -1340,16 +1340,18 @@ rests on, and `dev/request-identity/` measures it false on both implementations
 (`HISTORY.md` §2.6, §2.6a): an operation already complete on return gets a
 *shared built-in* request, and a completed handle's value is reused immediately.
 
-**Both doors into the table are open, and the attach door was thought shut.**
+**Both doors into the table were open, and the attach door was thought shut.**
 Only eight entry points ever attach, and it was recorded here that the
-shared-request rows are therefore not attach collisions. That is false. Open
+shared-request rows are therefore not attach collisions. That was false. Open
 MPI answers *any* libnbc collective whose schedule turns out empty with
 `ompi_request_empty` — `NBC_Schedule_request`, one rule over all of them — and
 `a2aw_sched_linear` skips zero-span sends and receives, so an `MPI_Ialltoallw`
 in which this rank exchanges nothing with anybody has an empty schedule on a
 communicator of any size. Two of those posted before either is waited on hand
-the table one key twice. Measured in the default configuration, and the
-refusal reproduced end to end (`dev/request-identity/`, §13.2).
+the table one key twice. Measured in the default configuration, and the refusal
+reproduced end to end (`dev/request-identity/`). **§13.2's (b) shut that door**:
+a shared built-in is only ever handed out for an operation already complete on
+return, and such an operation no longer attaches at all.
 
 The release door is open as well and always was: **every completion call
 releases by handle value**, so a wait on a `MPI_PROC_NULL` `MPI_Isend` does look
@@ -1399,12 +1401,14 @@ unrelated completion to find. §13.2 has both.
 
 Hence the two rules the table follows:
 
-- It **refuses a second block for a key it already holds** rather than
-  overwriting — overwriting leaks the first block, and freeing it would be
-  indefensible even though the argument above says nothing is reading it. This
-  is safe but not free: it answers `MPI_ERR_INTERN` to a legal call, and that
-  call is reachable in Open MPI's default configuration. §13.2 has the fix,
-  which is designed and not implemented.
+- It **declines a second block for a key it already holds** rather than
+  overwriting — overwriting loses the first block, and freeing it would be
+  indefensible even though the argument above says nothing is reading it. The
+  table only declines, and says which of its two fates it is: a duplicate key
+  is the caller's bad luck and must not fail the call, while a full table is
+  this design's usual capacity limit and does. §13.2's (a), (b) and (c) are the
+  policy above it, and (a) and (b) are why the duplicate is not reached at all
+  on anything measured.
 - **Every completion entry point releases**, not just the ones an author happens
   to think of. That is by construction rather than by list: the generator emits
   the release wherever an entry point has an *inout request* parameter, which is
@@ -1917,12 +1921,11 @@ One is deliberately *not* closed by an edit, because an edit cannot close it:
 ### 13.2 Limitations that are real
 
 Each is a behaviour a user can hit, and all four should be in the release notes.
-Three are deliberate — the design chose them and §6.2 says why. **The
-built-in-request refusal is not: it is a conformance bug, it is reachable in
-Open MPI's default configuration, and it is the one item here that should block
-a release.** It is filed here rather than in §13.1 because no artifact
-contradicts itself, not because answering a legal call with an error is
-acceptable.
+All four are now deliberate — the design chose them, and §6.2 says why for the
+first two. The fourth used to be a conformance bug rather than a choice: a legal
+call answered with `MPI_ERR_INTERN`. That is fixed, and what is left in its
+place is a bounded leak, which is a limitation and not a bug. The history is
+kept under it because the wrong reading that hid it is worth not repeating.
 
 - **Fixed-capacity tables are exhaustible, and ordinary programs reach them.**
   1024 op trampolines per variant, 256 errhandler slots per class, 1024 keyval
@@ -1936,26 +1939,32 @@ acceptable.
   reimplementing buffered mode above the implementation — intercepting every
   `MPI_Bsend` to grow the buffer — which is a second implementation of the
   feature.
-- **A staged operation that gets a shared built-in request is refused with
-  `MPI_ERR_INTERN`**, and the call was legal. §6.3 explains the shape: two
-  zero-work staged operations posted before either is waited on hand the table
-  the same key twice, and it refuses rather than overwriting.
+- **A staged operation that gets a shared built-in request leaks its staged
+  array.** §6.3 has the shape: two zero-work staged operations posted before
+  either is waited on hand the request table the same key twice, and it can
+  hold only one block per key. The second block is never freed. Bounded by how
+  often that happens — never, on everything measured, once (a) and (b) below
+  are in the way — counted by `mpiwrapper_staged_leaked()`, and warned about
+  once per process in a debug build.
 
-  **Separate what is at stake, because only one of the three is broken and it
-  is not the one the wording used to soften.**
-  *Memory safety* is never at risk — that is what refusing buys, and it is why
-  §6.3 calls it safe. *Conformance* is broken when it fires: a legal call gets
-  an error the wrapped implementation would not have given, and the default
-  error handler turns that into an aborted job. *Reachability* **is not nil, and
-  this section said it was.** `dev/request-identity/reproduce.c` gets
-  `MPI_ERR_INTERN` out of the wrapper over stock Open MPI 5.0.6, no CVAR and no
-  MCA parameter, from two shapes:
+  **Until it was fixed this was a conformance bug, and this section said it was
+  unreachable.** Both halves of that are worth keeping.
+
+  *Memory safety* was never at risk — that is what declining bought, and it is
+  why §6.3 calls it safe. *Conformance* was broken whenever it fired: a legal
+  call got an error the wrapped implementation would not have given, and the
+  default error handler turned that into an aborted job. *Reachability* **was
+  not nil.** `dev/request-identity/reproduce.c` got `MPI_ERR_INTERN` out of the
+  wrapper over stock Open MPI 5.0.6, no CVAR and no MCA parameter, from two
+  shapes:
 
   - two `MPI_Ialltoallw` with all counts zero, posted before either is waited
     on;
   - two `MPI_Ineighbor_alltoallw` on a degree-0 topology — where both extents
-    are zero, so there is *nothing* to keep alive and the wrapper attaches a
-    zero-length block only because the attach is unconditional.
+    are zero, so there was *nothing* to keep alive and the wrapper attached a
+    zero-length block only because the attach was unconditional.
+
+  Both are green now, on both implementations and on macOS and Linux.
 
   What misled the earlier reading was `dev/request-identity/probe.c`'s
   `MPI_Ialltoallw` row, which reports distinct handles and is the one shape that
@@ -1982,8 +1991,11 @@ acceptable.
     request must be independently startable and freeable, so it cannot be a
     singleton. Measured distinct for both `_init` forms on both.
 
-  **The fix is designed and not implemented.** Five mechanisms have now been
-  considered; build (a), (b) and (c), in that order.
+  **The fix is implemented**: (a), (b) and (c) below, all three in
+  `mpiwrapper_staged_keep` (`src/mpiwrapper/staging.c`), which is the one call
+  the eight generated bodies make and the one place the policy is written down.
+  Five mechanisms were considered; the first two were not built and the reasons
+  are kept, because both are natural ideas that will occur again.
 
   - *Probe the built-in request values once at initialization* — a
     `MPI_PROC_NULL` `MPI_Isend` and an `MPI_Ibarrier` on `MPI_COMM_SELF` reveal
@@ -2007,17 +2019,19 @@ acceptable.
     refinement of (c)'s leak path.
   - **(a) Do not attach when there is nothing staged.** All four bodies compute
     `nstaged` and then `malloc(nstaged * …)`; with a degree-0 topology that is
-    `malloc(0)`, and the attach proceeds with the non-NULL pointer glibc and
-    macOS return. Guard the attach on `nstaged > 0`. One line in the generator,
-    removes the second reproducer outright, depends on nothing.
+    `malloc(0)`, and the attach proceeded with the non-NULL pointer glibc and
+    macOS return. Now the block is freed and no slot is spent. Depends on
+    nothing, and removes the degree-0 reproducer outright.
   - **(b) Do not attach an operation that is already complete.** MPI-5.0 §3.7.6
     ("Non-Destructive Test of status") gives `MPI_Request_get_status`: "Sets
     flag = true if the operation is complete... However, unlike test or wait, it
     does not deallocate or inactivate the request" — MPI-2.0, so below the
     floor. On the four `I*` forms, ask it after the call and `free(block)`
-    without an entry when the answer is true. The licence to free is the
-    sentence §5.7 already quotes: the implementation may read the arrays *until
-    the operation completes*, so once it has, there is nothing to preserve.
+    without an entry when the answer is true; any other answer, including an
+    error, attaches, because attaching is always safe. The licence to free is
+    the sentence §5.7 already quotes: the implementation may read the arrays
+    *until the operation completes*, so once it has, there is nothing to
+    preserve.
 
     **The trap is real and is why this is per-kind.** The standard's very next
     sentence — "One is allowed to call MPI_REQUEST_GET_STATUS with a null or
@@ -2026,9 +2040,19 @@ acceptable.
     *inactive* from creation, means a fresh `MPI_Alltoallw_init` request answers
     "complete", and freeing its block on that answer is a use-after-free on the
     first `MPI_Start`. Measured: `flag = 1` on both implementations. So the four
-    `_init` forms always attach and are never asked. That is not a per-kind rule
-    bought for nothing — the generator already knows which of the eight it is
-    emitting, and the split buys three things the demoted mechanism does not:
+    `_init` forms always attach and are never asked.
+
+    **The generator takes the split from the signature, not the spelling**, per
+    §5.7: among the routines that hand back a request and stage an in-direction
+    array, the persistent inits are exactly the ones that also take an
+    `MPI_Info`. `staged_kind` cross-checks that against the `_init` suffix and
+    raises if they disagree, so a ninth entry point joining this set cannot be
+    misclassified in silence — which here would be a use-after-free rather than
+    a redundant conversion.
+
+    That is not a per-kind rule bought for nothing — the generator already knows
+    which of the eight it is emitting, and the split buys three things the
+    demoted mechanism does not:
 
     1. It **keeps the detector**. A duplicate key still means a completion we
        failed to observe, and refusing is still the honest answer — the false
@@ -2054,21 +2078,43 @@ acceptable.
     Open MPI makes this exact move itself: `ompi_coll_base_retain_datatypes_w`,
     which attaches per-operation state to a request, opens with
     `if (REQUEST_COMPLETE(req)) return OMPI_SUCCESS;`.
-  - **(c) Never answer a legal call with `MPI_ERR_INTERN` from this table.**
-    Whatever survives (a), (b) and a false inference — and *also* the table-full
-    case, which is the same conformance bug and is not currently identified as
-    one — should leak the block and return success, with a counter and a
+  - **(c) A duplicate key leaks the block and succeeds.** Whatever survives (a),
+    (b) and a false inference is a legal call the caller could have done nothing
+    about, and the block cannot be freed — the operation is in flight and the
+    implementation may be reading it. So it leaks, counted, with a one-shot
     debug-build warning. Aborting a legal job to avoid leaking one array is the
     wrong trade, and §6.2 has already accepted "never reclaimed" for the
     callback pools and the attribute callbacks, so it is not a new kind of
-    concession. This is the piece that could ship on its own, before the rest.
+    concession.
 
-  Which tests move: `mpiwrapper_selftest`'s "a second block for the same request
-  must be refused" is a unit assertion on the table and survives (a) and (b)
-  unchanged — under them the table still refuses, the callers just stop
-  presenting duplicates — but it is exactly what the demoted mechanism would
-  invert. `dev/request-identity/reproduce.c` is the behavioural check for all of
-  them, and should end green rather than red.
+    **A full table is not the same thing and is deliberately still an error.**
+    An earlier draft of this section merged them; that was wrong twice over.
+    Capacity is the limit every fixed table in this design has, it names a
+    build-time constant the user can raise, and it is the *only* black-box
+    oracle the release path has — `abi_prototype_test` and `abi_arrays_test`
+    both detect a missing release by cycling 1200 staged operations through a
+    1024-entry table and watching for `MPI_ERR_INTERN`. Degrading that to a
+    silent leak would have taken away the diagnosis and the test in one move.
+    So `mpiwrapper_staged_attach` reports *which* fate, and only the duplicate
+    one is swallowed. The block leaks in both.
+
+  What the tests check now. `mpiwrapper_selftest` gained `test_staged_policy`,
+  which is the only place any of this is reachable: (a) and (b) are invisible
+  from outside when they work — they free a block and say nothing — and (c)'s
+  duplicate arm now succeeds, so the black-box oracle those cases had is gone by
+  design. It asserts (a) spends no slot, that the *persistent* kind attaches the
+  very request the nonblocking kind declines (the trap, as a one-argument
+  difference), and that a duplicate leaks exactly one block and counts it.
+  `mpiwrapper_staged_leaked()` is the counter it reads. `reproduce.c` is the
+  behavioural check and is green.
+
+  One coverage note worth keeping, because a passing run reads as more than it
+  is: `abi_prototype_test`'s nonblocking round only exercises the table **at two
+  ranks or more**. At one rank the `MPI_Ialltoallw` is complete on return, (b)
+  frees the block, and nothing enters the table at all — correct, and also why
+  `ctest` alone no longer covers the release path. `ci-scripts/linux-test.sh`
+  runs `ctest` single-rank; the two-rank runs are by hand
+  (`run-linux-docker.sh`, then `mpirun -n 2` on the test binaries).
 
   **Only (b) touches §6.3's inference**, and only by narrowing it; nothing here
   retires it. Attaches happen at 8 entry points and releases at 11, for *every*

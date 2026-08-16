@@ -694,9 +694,53 @@ void  mpiwrapper_unstage(void *p, void *stackbuf);
  * against zero when the application never uses those routines (NOTES.md #6.3,
  * decision 10).
  */
-int  mpiwrapper_staged_attach(MPI_Request request, void *block);
+/* Why attach reports *how* it failed: the two ways are not the same problem.
+ * A full table is the capacity limit every fixed table here has, answered with
+ * MPIABI_ERR_INTERN naming a build-time constant. A duplicate key is a
+ * conformance bug -- the call was legal and the implementation merely shared a
+ * request -- and must not fail the call (NOTES.md #13.2).
+ */
+enum mpiwrapper_staged_fate {
+  MPIWRAPPER_STAGED_STORED,
+  MPIWRAPPER_STAGED_DUPLICATE,
+  MPIWRAPPER_STAGED_FULL
+};
+
+enum mpiwrapper_staged_fate mpiwrapper_staged_attach(MPI_Request request,
+                                                     void       *block);
 void mpiwrapper_staged_release(MPI_Request request);
 int  mpiwrapper_staged_any(void);
+
+/* Whether a staged entry point's request can already be complete when it comes
+ * back. A nonblocking form's can, and both implementations then hand back a
+ * *shared built-in* request rather than allocating one; a persistent form's
+ * cannot, because MPI-5.0 3.9 makes it inactive from creation and an inactive
+ * request answers "complete" to every test there is. That difference is what
+ * mpiwrapper_staged_keep needs and what it must never guess (NOTES.md #13.2).
+ *
+ * The generator derives it from the *signature* -- the persistent inits are the
+ * ones that take an MPI_Info -- and cross-checks the name, so a ninth entry
+ * point cannot be misclassified silently (NOTES.md #5.7's rule about spelling).
+ */
+enum mpiwrapper_staged_kind {
+  MPIWRAPPER_STAGED_NONBLOCKING,
+  MPIWRAPPER_STAGED_PERSISTENT
+};
+
+/* What a staged entry point does with its block once the call has returned.
+ * The whole policy is here rather than in the emitted text because it is a
+ * policy: see staging.c. Returns 0 only for the one outcome that is still the
+ * caller's error, a full table.
+ */
+int mpiwrapper_staged_keep(MPI_Request request, void *block, size_t nstaged,
+                           enum mpiwrapper_staged_kind kind);
+
+/* How many blocks have been leaked because the table could not take them --
+ * either fate above. Zero in every run that has not hit one, and the oracle
+ * mpiwrapper_selftest uses for the capacity behaviour of a table whose error
+ * channel #13.2's (c) deliberately narrowed.
+ */
+unsigned long mpiwrapper_staged_leaked(void);
 
 /* ----------------------------------------------------------------- extents */
 

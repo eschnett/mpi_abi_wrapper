@@ -335,19 +335,23 @@ static void test_staged_requests(void)
     CHECK(PMPI_Send_init(&buf[i], 1, MPI_INT, 0, i, MPI_COMM_SELF,
                          &requests[i]) == MPI_SUCCESS,
           "Send_init");
-    CHECK(mpiwrapper_staged_attach(requests[i], malloc(16)),
+    CHECK(mpiwrapper_staged_attach(requests[i], malloc(16)) ==
+              MPIWRAPPER_STAGED_STORED,
           "attaching a block to request %d (0x%llx)", i,
           (unsigned long long)MPIWRAPPER_BITS(requests[i]));
   }
   CHECK(mpiwrapper_staged_any(), "the table reports itself non-empty");
 
-  /* A second block for a request that already has one is refused rather than
+  /* A second block for a request that already has one is declined rather than
    * silently replacing it: replacing would leak the first block, and freeing it
-   * would be a use-after-free if the implementation is still reading it.
+   * would be a use-after-free if the implementation is still reading it. The
+   * table only declines -- turning that into the caller's error is what
+   * NOTES.md #13.2's (c) stopped doing, and the fate says which one it is.
    */
   void *duplicate = malloc(16);
-  CHECK(!mpiwrapper_staged_attach(requests[0], duplicate),
-        "a second block for the same request must be refused");
+  CHECK(mpiwrapper_staged_attach(requests[0], duplicate) ==
+            MPIWRAPPER_STAGED_DUPLICATE,
+        "a second block for the same request must be declined as a duplicate");
   free(duplicate);
 
   for (int i = 0; i < N; ++i) {
@@ -367,7 +371,8 @@ static void test_staged_requests(void)
        ++round) {
     for (int i = 0; i < N; ++i) {
       PMPI_Send_init(&buf[i], 1, MPI_INT, 0, i, MPI_COMM_SELF, &requests[i]);
-      CHECK(mpiwrapper_staged_attach(requests[i], malloc(16)),
+      CHECK(mpiwrapper_staged_attach(requests[i], malloc(16)) ==
+                MPIWRAPPER_STAGED_STORED,
             "attach in round %d", round);
     }
     for (int i = 0; i < N; ++i) {
@@ -376,6 +381,84 @@ static void test_staged_requests(void)
     }
   }
   CHECK(!mpiwrapper_staged_any(), "the table is empty after cycling");
+}
+
+/* ------------------------------------------------ the staged-request policy */
+
+/* mpiwrapper_staged_keep is what the eight generated bodies actually call, and
+ * all three of NOTES.md #13.2's rules live in it. None is reachable from an
+ * ABI-side test: (a) and (b) are invisible when they work -- they free a block
+ * and say nothing -- and (c)'s duplicate arm now succeeds, so the black-box
+ * oracle those cases used to have (MPI_ERR_INTERN) is gone by design. The leak
+ * counter is the replacement, and this is the only place that can read it.
+ */
+static void test_staged_policy(void)
+{
+  MPI_Request req;
+  int         buf = 0;
+
+  CHECK(!mpiwrapper_staged_any(), "the policy test starts with an empty table");
+  const unsigned long leaked0 = mpiwrapper_staged_leaked();
+
+  /* (a) Nothing staged: no slot spent, whatever the request is. Passing a real
+   * malloc(0) is the point -- it is what a degree-0 neighbourhood collective
+   * hands over, and on this platform it is not NULL.
+   */
+  CHECK(PMPI_Send_init(&buf, 1, MPI_INT, 0, 1, MPI_COMM_SELF, &req) ==
+            MPI_SUCCESS,
+        "Send_init for the policy test");
+  CHECK(mpiwrapper_staged_keep(req, malloc(0), 0,
+                               MPIWRAPPER_STAGED_NONBLOCKING),
+        "an empty staging must succeed");
+  CHECK(!mpiwrapper_staged_any(), "(a) must not spend a slot");
+  CHECK(mpiwrapper_staged_leaked() == leaked0, "(a) must not leak");
+
+  /* (b) A persistent request is inactive from creation and answers "complete"
+   * to MPI_Request_get_status (MPI-5.0 3.7.6, measured on both implementations
+   * in dev/request-identity/). So the persistent kind must attach anyway --
+   * freeing here is the use-after-free the trap sets, and this is the check
+   * that a future edit cannot quietly drop the kind argument.
+   */
+  CHECK(mpiwrapper_staged_keep(req, malloc(16), 4,
+                               MPIWRAPPER_STAGED_PERSISTENT),
+        "a persistent staging must succeed");
+  CHECK(mpiwrapper_staged_any(),
+        "(b) must never decline to attach a persistent request, however "
+        "complete it claims to be");
+  mpiwrapper_staged_release(req);
+  CHECK(!mpiwrapper_staged_any(), "the release must empty the table again");
+  CHECK(mpiwrapper_staged_leaked() == leaked0, "the persistent path must not leak");
+
+  /* ... and the nonblocking kind, given the same already-complete request,
+   * must decline. This is the whole of (b): the same handle, the same block
+   * size, one argument different.
+   */
+  CHECK(mpiwrapper_staged_keep(req, malloc(16), 4,
+                               MPIWRAPPER_STAGED_NONBLOCKING),
+        "a complete nonblocking staging must still succeed");
+  CHECK(!mpiwrapper_staged_any(),
+        "(b) must not attach a block for an operation already complete");
+  CHECK(mpiwrapper_staged_leaked() == leaked0, "(b) must free, not leak");
+  CHECK(PMPI_Request_free(&req) == MPI_SUCCESS, "Request_free");
+
+  /* (c) A duplicate key succeeds and leaks, where it used to fail the call.
+   * Reached by handing the persistent kind the same request twice, since that
+   * kind never takes (b)'s exit.
+   */
+  CHECK(PMPI_Send_init(&buf, 1, MPI_INT, 0, 2, MPI_COMM_SELF, &req) ==
+            MPI_SUCCESS,
+        "Send_init for the duplicate case");
+  CHECK(mpiwrapper_staged_keep(req, malloc(16), 4,
+                               MPIWRAPPER_STAGED_PERSISTENT),
+        "the first block must be stored");
+  CHECK(mpiwrapper_staged_keep(req, malloc(16), 4,
+                               MPIWRAPPER_STAGED_PERSISTENT),
+        "a duplicate key must not fail a legal call");
+  CHECK(mpiwrapper_staged_leaked() == leaked0 + 1,
+        "a duplicate key must leak exactly one block, and count it");
+  mpiwrapper_staged_release(req);
+  CHECK(!mpiwrapper_staged_any(), "the table is empty after the policy test");
+  CHECK(PMPI_Request_free(&req) == MPI_SUCCESS, "Request_free");
 }
 
 /* ------------------------------------------------------ the keyval registry */
@@ -709,6 +792,7 @@ int main(int argc, char **argv)
     test_staging();
     test_dynamic_handles();
     test_staged_requests();
+    test_staged_policy();
     test_keyvals();
     test_error_codes();
     test_serialization();
