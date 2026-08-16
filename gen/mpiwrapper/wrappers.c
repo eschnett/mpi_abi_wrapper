@@ -6431,7 +6431,7 @@ static int w_PMPI_File_set_size(MPIABI_File abi_fh, MPIABI_Offset abi_size)
 #define BODY_MPI_File_set_view(TARGET)                                         \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
-    const MPI_Offset   disp     = abi_disp;                                    \
+    const MPI_Offset   disp     = mpiwrapper_displacement_fromabi(abi_disp);   \
     const MPI_Datatype etype    = mpiwrapper_datatype_fromabi(abi_etype);      \
     const MPI_Datatype filetype = mpiwrapper_datatype_fromabi(abi_filetype);   \
     const char *const  datarep  = abi_datarep;                                 \

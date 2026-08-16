@@ -84,10 +84,10 @@ A line is `<dir>/<program> <np> : why`, with runtests' own name for the test
 so the list can be compared with an unwrapped run by eye.
 
 **The two lists are in different states, and that is deliberate rather than
-unfinished-looking.** `xfail-mpich.txt` is fully triaged: 45 failures out of
-1212 tests, each with a cause, and three of them bugs of ours that S7 found
-(two fixed, one -- `MPI_DISPLACEMENT_CURRENT` -- diagnosed and left with the
-diagnosis on the line). `xfail-openmpi.txt` is 171 failures out of 1231, of
+unfinished-looking.** `xfail-mpich.txt` is fully triaged: 41 failures out of
+1229 tests, each with a cause. The three bugs of ours that this suite found
+are not in it, because all three were fixed -- the last of them,
+`MPI_DISPLACEMENT_CURRENT`, emptied a whole group out of the file. `xfail-openmpi.txt` is 171 failures out of 1231, of
 which the entry points Open MPI 4.1.6 simply does not have are attributed
 mechanically -- from the probe header that records what the implementation
 provides -- and about half are honest placeholders saying what was observed

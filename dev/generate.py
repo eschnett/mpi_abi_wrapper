@@ -719,6 +719,9 @@ OPTIONAL_CONSTANTS = {
     "MPI_COMM_TYPE_HW_GUIDED": "added in MPI-4.0",
     "MPI_COMM_TYPE_RESOURCE_GUIDED": "added in MPI-4.1",
     "MPI_COMBINER_VALUE_INDEX": "added in MPI-4.1",
+    "MPI_DISPLACEMENT_CURRENT":
+        "MPI-IO's, and an implementation built without it has neither the "
+        "constant nor MPI_File_set_view",
 }
 
 # The enforced floor is MPI-3.0 (decision 3), so a constant the header marks as
@@ -1116,6 +1119,26 @@ SWITCH_DEFAULT = {
                "mpiwrapper_keyval_dynamic_toabi(keyval)"),
 }
 
+# The one *integer* sentinel (S7). #5.3's rule is about pointers -- MPI_BOTTOM,
+# MPI_IN_PLACE, MPI_UNWEIGHTED -- because those are the parameters where a
+# distinguished value has to be told apart from an address. MPI_File_set_view's
+# `disp` is the same shape one type down: a byte displacement, an open numeric
+# domain, plus one value that means "wherever the shared file pointer is". The
+# ABI fixes it at (MPI_Offset)-1 and ROMIO -- which is what both MPICH and Open
+# MPI use for MPI-IO -- spells it -54278278, so passing it through hands the
+# implementation a displacement it rejects (MPICH's own io/setviewcur is what
+# found this).
+#
+# Keyed on the parameter rather than on its kind, and that is the whole reason
+# this table exists: apis.json gives `disp` kind OFFSET, which is also every
+# ordinary file offset in the library and MPI_File_get_view's *outgoing* disp,
+# where the value never means the sentinel. A family keyed on OFFSET would
+# convert all of those.
+DISPLACEMENT_SENTINEL = {
+    ("MPI_File_set_view", "disp"):
+        "MPI_DISPLACEMENT_CURRENT, legal here and nowhere else (MPI-5.0 14.3)",
+}
+
 # ---------------------------------------------------------------------------
 # MPI_T's six handle classes (S3b)
 # ---------------------------------------------------------------------------
@@ -1282,6 +1305,8 @@ def classify(ep, p):
                 "inout": "toolhandle_inout"}[direction]
     if kind == "TOOL_MPI_OBJ":
         return "tool_obj"
+    if (ep.name, p.name) in DISPLACEMENT_SENTINEL:
+        return "displacement_in"
     if kind in PASSTHROUGH_KIND:
         return "passthrough"
     if kind in SWITCH_KIND:
@@ -1806,6 +1831,10 @@ def emit_body(ep):
                     f"bounds {p.name!r}, and it is not a parameter")
             decls.append(array_row(p, name, abi) if p.suffix
                          else (local_type(p).rstrip() + "const", name, abi))
+            args.append(name)
+        elif cls == "displacement_in":
+            decls.append(("const " + p.base, name,
+                          f"mpiwrapper_displacement_fromabi({abi})"))
             args.append(name)
         elif cls == "color":
             decls.append(("const " + p.base, name,
@@ -3322,6 +3351,30 @@ void *mpiwrapper_recvbuf_inplace_fromabi(void *abi_buf)
  * The out form is MPI_Dist_graph_neighbors', where the caller passes
  * MPI_UNWEIGHTED to say it does not want the weights back.
  */
+/* The one sentinel that is an integer rather than a pointer (S7).
+ *
+ * MPI_File_set_view's `disp` is a byte displacement -- an open numeric domain
+ * that crosses unconverted -- with one distinguished value in it. The ABI
+ * fixes MPI_DISPLACEMENT_CURRENT at (MPI_Offset)-1; ROMIO, which is the MPI-IO
+ * of both implementations here, spells it -54278278. So this is the same
+ * one-compare shape as the pointer sentinels above and not the switch shape of
+ * a mapped family: nothing else about a displacement means anything to us, and
+ * MPI_File_get_view's outgoing `disp` is a real displacement rather than this
+ * value, so there is no reverse direction to emit.
+ *
+ * Guarded because the constant is MPI-IO's: an implementation built without it
+ * has neither this name nor MPI_File_set_view, and dev/probe_impl.py is what
+ * decides that per build rather than an #ifdef on the implementation's own
+ * spelling (decision 6).
+ */
+MPI_Offset mpiwrapper_displacement_fromabi(MPIABI_Offset abi_disp)
+{
+#ifdef MPIWRAPPER_HAVE_MPI_DISPLACEMENT_CURRENT
+  if (abi_disp == MPIABI_DISPLACEMENT_CURRENT) return MPI_DISPLACEMENT_CURRENT;
+#endif
+  return abi_disp;
+}
+
 const int *mpiwrapper_weights_fromabi(const int *abi_weights)
 {
   if (abi_weights == MPIABI_UNWEIGHTED) return MPI_UNWEIGHTED;

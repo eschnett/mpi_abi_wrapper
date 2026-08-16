@@ -1408,16 +1408,34 @@ OUT parameter, emitted by the generator, which is a stage of its own and one
 whose cost (a branch per OUT argument, on every call) belongs in a benchmark
 rather than in a paragraph.
 
-**One conversion class the suite found and this session did not fix.**
+**§5.3's sentinel rule was about pointers, and one sentinel is an integer.**
 `MPI_DISPLACEMENT_CURRENT` is `(MPI_Offset)-1` in the ABI header and
-`-54278278` in ROMIO, which is what both MPICH and Open MPI use for MPI-IO, so
-`MPI_File_set_view` with it answers `MPI_ERR_ARG`. §5.3's sentinel rule is
-about *pointer* sentinels — `MPI_BOTTOM`, `MPI_IN_PLACE`, `MPI_UNWEIGHTED` —
-and this is the one that is an integer, in the one parameter of one entry
-point. It is left as two xfail lines carrying the diagnosis rather than fixed
-in the last hour of a session whose gate is a full run of this suite: the fix
-is a per-parameter class in the generator, and the run that re-baselines it is
-40 minutes.
+`-54278278` in ROMIO, which is the MPI-IO of both implementations here, so
+`MPI_File_set_view` with it answered `MPI_ERR_ARG` (MPICH's `io/setviewcur`).
+The word "sentinel" in §5.3 does not mean "not a constant" — every one of them
+is a constant — it names the *role* a value plays in a parameter's domain, and
+the role is what picks the mechanism: a distinguished value inside a domain
+that is otherwise not converted at all, translated by one compare, against a
+mapped family's switch over a closed set. `disp` is the first case where that
+role belongs to an integer, and it needed a class of its own for three
+reasons, each visible in `dev/generate.py`'s `DISPLACEMENT_SENTINEL`:
+
+- **per parameter, not per kind.** `apis.json` gives `disp` kind `OFFSET`,
+  which is also every ordinary file offset in the library;
+- **in-direction only.** `MPI_File_get_view`'s outgoing `disp` has the same
+  kind and is a real displacement, so the symmetric `fromabi`/`toabi` pair a
+  family generates would emit a reverse mapping that means nothing;
+- **a compare, not a table**, since the rest of the domain is open.
+
+It was missed for four stages because the existing sentinels are pointers, and
+those parameters already have a conversion point in the emitted body
+(`mpiwrapper_sendbuf_fromabi` and its three relatives) that a case can be
+added to. An `OFFSET` scalar is emitted as a bare passthrough local: there was
+nothing to add a case *to*. `mpiwrapper_displacement_fromabi` is now that
+point, guarded on `MPIWRAPPER_HAVE_MPI_DISPLACEMENT_CURRENT` because the
+constant is MPI-IO's rather than the core's, and `test/mpiwrapper_selftest.c`
+checks both halves — that the value converts and that every other
+displacement, negative ones included, crosses untouched.
 
 **Two harness findings worth keeping, both measured rather than reasoned.**
 The `mpiexec` filter's watchdog was holding the stdout pipe runtests reads to

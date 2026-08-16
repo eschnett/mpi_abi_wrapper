@@ -1887,6 +1887,30 @@ void *mpiwrapper_recvbuf_inplace_fromabi(void *abi_buf)
  * The out form is MPI_Dist_graph_neighbors', where the caller passes
  * MPI_UNWEIGHTED to say it does not want the weights back.
  */
+/* The one sentinel that is an integer rather than a pointer (S7).
+ *
+ * MPI_File_set_view's `disp` is a byte displacement -- an open numeric domain
+ * that crosses unconverted -- with one distinguished value in it. The ABI
+ * fixes MPI_DISPLACEMENT_CURRENT at (MPI_Offset)-1; ROMIO, which is the MPI-IO
+ * of both implementations here, spells it -54278278. So this is the same
+ * one-compare shape as the pointer sentinels above and not the switch shape of
+ * a mapped family: nothing else about a displacement means anything to us, and
+ * MPI_File_get_view's outgoing `disp` is a real displacement rather than this
+ * value, so there is no reverse direction to emit.
+ *
+ * Guarded because the constant is MPI-IO's: an implementation built without it
+ * has neither this name nor MPI_File_set_view, and dev/probe_impl.py is what
+ * decides that per build rather than an #ifdef on the implementation's own
+ * spelling (decision 6).
+ */
+MPI_Offset mpiwrapper_displacement_fromabi(MPIABI_Offset abi_disp)
+{
+#ifdef MPIWRAPPER_HAVE_MPI_DISPLACEMENT_CURRENT
+  if (abi_disp == MPIABI_DISPLACEMENT_CURRENT) return MPI_DISPLACEMENT_CURRENT;
+#endif
+  return abi_disp;
+}
+
 const int *mpiwrapper_weights_fromabi(const int *abi_weights)
 {
   if (abi_weights == MPIABI_UNWEIGHTED) return MPI_UNWEIGHTED;

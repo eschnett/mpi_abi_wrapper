@@ -160,6 +160,26 @@ static void test_integers(void)
   CHECK(nocheck_as_file == 0 || nocheck_as_file != MPIABI_MODE_NOCHECK,
         "the file-mode mapper reproduced a window assert, which means the two "
         "families were not separated after all");
+
+  /* The one sentinel that is an integer (S7). Two properties, and the second
+   * is the one a mapper written as a family would break: the distinguished
+   * value converts, and every *other* displacement is left alone -- including
+   * negative ones, which are erroneous rather than special and must reach the
+   * implementation as themselves so that it can say so.
+   */
+#ifdef MPIWRAPPER_HAVE_MPI_DISPLACEMENT_CURRENT
+  CHECK(mpiwrapper_displacement_fromabi(MPIABI_DISPLACEMENT_CURRENT) ==
+            MPI_DISPLACEMENT_CURRENT,
+        "MPI_DISPLACEMENT_CURRENT converts to %lld, expected %lld",
+        (long long)mpiwrapper_displacement_fromabi(MPIABI_DISPLACEMENT_CURRENT),
+        (long long)MPI_DISPLACEMENT_CURRENT);
+#endif
+  const MPI_Offset displacements[] = {0, 1, 4096, (MPI_Offset)1 << 40, -2};
+  for (size_t i = 0; i < sizeof displacements / sizeof *displacements; ++i)
+    CHECK(mpiwrapper_displacement_fromabi(displacements[i]) ==
+              displacements[i],
+          "displacement %lld did not cross unconverted",
+          (long long)displacements[i]);
 }
 
 /* ------------------------------------------------------------------ status */

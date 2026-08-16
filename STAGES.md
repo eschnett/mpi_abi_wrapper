@@ -506,8 +506,8 @@ ABI header does not declare, plus MPICH's QMPI. Passing runtests' own
 naming the entry point the ABI omits is worth more than a skip.
 
 **What the oracle found, which is the point of the stage.** Three genuine
-conversion bugs, none of which any in-house check could have seen, and two of
-them fixed here:
+conversion bugs, none of which any in-house check could have seen, all three
+fixed here:
 
 - **An attribute's *value* is a converted class, and no signature says so.**
   `MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_HOST, ...)` returned MPICH's
@@ -525,11 +525,13 @@ them fixed here:
   13 tests caught it, and *our own* `abi_prototype_test` had asserted the wrong
   thing since S1. Fixed with a second conversion function
   (`mpiwrapper_status_toabi_keep_error`) and one emitter site.
-- **`MPI_DISPLACEMENT_CURRENT` is a sentinel and is not translated**, diagnosed
-  and **not** fixed here: it is `(MPI_Offset)-1` in the ABI and `-54278278` in
-  ROMIO, so `MPI_File_set_view` with it returns `MPI_ERR_ARG`. §5.3's sentinel
-  rule covers pointers; this is the one that is an integer. Two xfail lines
-  carry the diagnosis.
+- **`MPI_DISPLACEMENT_CURRENT` is a sentinel and was not translated**:
+  `(MPI_Offset)-1` in the ABI and `-54278278` in ROMIO, so
+  `MPI_File_set_view` with it returned `MPI_ERR_ARG`. §5.3's sentinel rule
+  covers pointers, and this is the one that is an integer — which is why it
+  needed a per-parameter class (`DISPLACEMENT_SENTINEL`) rather than a kind:
+  `apis.json` gives `disp` the same `OFFSET` kind as every file offset, and
+  `MPI_File_get_view` returns a real displacement through it.
 
 **And one finding that is bigger than a bug.** An *erroneous* argument that the
 implementation would have diagnosed becomes a **crash**, because conversion

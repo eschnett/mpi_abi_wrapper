@@ -480,6 +480,13 @@ int mpiwrapper_typeclass_toabi(int typeclass);
  * hands one of these back to an implementation, since the attribute is
  * read-only.
  */
+/* The one sentinel that is an integer (S7): MPI_DISPLACEMENT_CURRENT, which
+ * MPI_File_set_view's `disp` may be and no other OFFSET-kind parameter may.
+ * In the ABI it is (MPI_Offset)-1 and in ROMIO -54278278. Only the in
+ * direction exists -- MPI_File_get_view answers with a real displacement.
+ */
+MPI_Offset mpiwrapper_displacement_fromabi(MPIABI_Offset abi_disp);
+
 int mpiwrapper_winflavor_fromabi(int abi_winflavor);
 int mpiwrapper_winflavor_toabi(int winflavor);
 int mpiwrapper_winmodel_fromabi(int abi_winmodel);

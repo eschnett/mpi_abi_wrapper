@@ -17,13 +17,15 @@
 #       declare -- a build failure, and the right one;
 #   (d) an *erroneous* argument the implementation would have diagnosed, which
 #       conversion turns into a crash (NOTES.md #3, "What S7 settled");
-#   (e) a sentinel this project has not translated -- a diagnosed bug of ours;
-#   (f) a difference measured but not yet attributed.
+#   (f) a difference measured but not yet attributed;
+#   (g) timing, in this environment.
 #
-# Two bugs this suite found are *not* here, because S7 fixed them: an
-# attribute value whose class the keyval decides (attr/baseattr2, 2 tests) and
+# Three bugs this suite found are *not* here, because S7 fixed them: an
+# attribute value whose class the keyval decides (attr/baseattr2, 2 tests),
 # status.MPI_ERROR written where MPI-5.0 3.2.5 forbids it (pt2pt/mprobe and
-# the threaded probe tests, 13 tests).
+# the threaded probe tests, 13 tests), and MPI_DISPLACEMENT_CURRENT crossing
+# untranslated (io/setviewcur and io/i_setviewcur), which was listed here
+# under a group (e) that no longer has any members.
 
 # --- (a) version -----------------------------------------------------------
 
@@ -93,10 +95,6 @@ errors/group/group_union_nullarg 1 : NULL for MPI_Group_union's newgroup.
 errors/session/comm_create_from_group 1 : NULL for MPI_Comm_create_from_group's newcomm.
 errors/coll/reduce_local 1 : MPI_IN_PLACE passed to MPI_Reduce_local, where MPI-5.0 6.9.7 forbids it. NOTES.md #5.3 translates a sentinel only where it is legal for that parameter, so here the ABI's MPI_IN_PLACE reaches MPICH as an ordinary address and is dereferenced. Same shape as the nullargs above.
 
-# --- (e) a sentinel this project has not translated ------------------------
-
-io/setviewcur 4 : MPI_DISPLACEMENT_CURRENT is (MPI_Offset)-1 in the ABI header and -54278278 in ROMIO, which is what both MPICH and Open MPI use for MPI-IO, so MPI_File_set_view is handed -1 and answers "Invalid displacement argument". A bug of ours, diagnosed in S7 and not fixed there: #5.3's sentinel rule is about *pointer* sentinels and this is the one that is an integer, in one parameter of one entry point.
-io/i_setviewcur 4 : the same call, MPI_File_set_view -- there is no MPI_File_iset_view in MPI, and what is nonblocking in this test is the reading that follows.
 
 # --- (g) timing, in this environment ---------------------------------------
 #
