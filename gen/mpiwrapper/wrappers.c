@@ -2863,37 +2863,6 @@ static int w_MPI_Comm_free_keyval(int *abi_comm_keyval)
 static int w_PMPI_Comm_free_keyval(int *abi_comm_keyval)
     BODY_MPI_Comm_free_keyval(PMPI_Comm_free_keyval)
 
-/* ------------------------------------------------------ MPI_Comm_get_attr */
-
-#ifdef MPIWRAPPER_HAVE_MPI_Comm_get_attr
-#define BODY_MPI_Comm_get_attr(TARGET)                                         \
-  {                                                                            \
-    const MPI_Comm comm          = mpiwrapper_comm_fromabi(abi_comm);          \
-    const int      comm_keyval   = mpiwrapper_keyval_fromabi(abi_comm_keyval); \
-    void *const    attribute_val = abi_attribute_val;                          \
-    int *const     flag          = abi_flag;                                   \
-                                                                               \
-    const int ierror = TARGET(comm, comm_keyval, attribute_val, flag);         \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-#else
-#define BODY_MPI_Comm_get_attr(TARGET)                                         \
-  {                                                                            \
-    (void)abi_comm;                                                            \
-    (void)abi_comm_keyval;                                                     \
-    (void)abi_attribute_val;                                                   \
-    (void)abi_flag;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-#endif
-
-static int w_MPI_Comm_get_attr(MPIABI_Comm abi_comm, int abi_comm_keyval,
-                               void *abi_attribute_val, int *abi_flag)
-    BODY_MPI_Comm_get_attr(MPI_Comm_get_attr)
-static int w_PMPI_Comm_get_attr(MPIABI_Comm abi_comm, int abi_comm_keyval,
-                                void *abi_attribute_val, int *abi_flag)
-    BODY_MPI_Comm_get_attr(PMPI_Comm_get_attr)
-
 /* ------------------------------------------------ MPI_Comm_get_errhandler */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Comm_get_errhandler
@@ -5495,7 +5464,7 @@ static int w_PMPI_File_preallocate(MPIABI_File abi_fh, MPIABI_Offset abi_size)
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5535,7 +5504,7 @@ static int w_PMPI_File_read(MPIABI_File abi_fh, void *abi_buf, int abi_count,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5577,7 +5546,7 @@ static int w_PMPI_File_read_c(MPIABI_File abi_fh, void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5617,7 +5586,7 @@ static int w_PMPI_File_read_all(MPIABI_File abi_fh, void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5722,7 +5691,7 @@ static int w_PMPI_File_read_all_begin_c(MPIABI_File abi_fh, void *abi_buf,
     memset(&status, 0, sizeof status);                                         \
                                                                                \
     const int ierror = TARGET(fh, buf, ignore ? MPI_STATUS_IGNORE : &status);  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5760,7 +5729,7 @@ static int w_PMPI_File_read_all_end(MPIABI_File abi_fh, void *abi_buf,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5805,7 +5774,7 @@ static int w_PMPI_File_read_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5850,7 +5819,7 @@ static int w_PMPI_File_read_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -5895,7 +5864,7 @@ static int w_PMPI_File_read_at_all(MPIABI_File abi_fh,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6013,7 +5982,7 @@ static int w_PMPI_File_read_at_all_begin_c(MPIABI_File abi_fh,
     memset(&status, 0, sizeof status);                                         \
                                                                                \
     const int ierror = TARGET(fh, buf, ignore ? MPI_STATUS_IGNORE : &status);  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6049,7 +6018,7 @@ static int w_PMPI_File_read_at_all_end(MPIABI_File abi_fh, void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6090,7 +6059,7 @@ static int w_PMPI_File_read_ordered(MPIABI_File abi_fh, void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6195,7 +6164,7 @@ static int w_PMPI_File_read_ordered_begin_c(MPIABI_File abi_fh, void *abi_buf,
     memset(&status, 0, sizeof status);                                         \
                                                                                \
     const int ierror = TARGET(fh, buf, ignore ? MPI_STATUS_IGNORE : &status);  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6231,7 +6200,7 @@ static int w_PMPI_File_read_ordered_end(MPIABI_File abi_fh, void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6271,7 +6240,7 @@ static int w_PMPI_File_read_shared(MPIABI_File abi_fh, void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6534,7 +6503,7 @@ static int w_PMPI_File_sync(MPIABI_File abi_fh)
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6574,7 +6543,7 @@ static int w_PMPI_File_write(MPIABI_File abi_fh, const void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6616,7 +6585,7 @@ static int w_PMPI_File_write_c(MPIABI_File abi_fh, const void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6656,7 +6625,7 @@ static int w_PMPI_File_write_all(MPIABI_File abi_fh, const void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6763,7 +6732,7 @@ static int w_PMPI_File_write_all_begin_c(MPIABI_File abi_fh,
     memset(&status, 0, sizeof status);                                         \
                                                                                \
     const int ierror = TARGET(fh, buf, ignore ? MPI_STATUS_IGNORE : &status);  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6801,7 +6770,7 @@ static int w_PMPI_File_write_all_end(MPIABI_File abi_fh, const void *abi_buf,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6846,7 +6815,7 @@ static int w_PMPI_File_write_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6891,7 +6860,7 @@ static int w_PMPI_File_write_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -6938,7 +6907,7 @@ static int w_PMPI_File_write_at_all(MPIABI_File abi_fh,
     const int ierror =                                                         \
         TARGET(fh, offset, buf, count, datatype,                               \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -7058,7 +7027,7 @@ static int w_PMPI_File_write_at_all_begin_c(MPIABI_File abi_fh,
     memset(&status, 0, sizeof status);                                         \
                                                                                \
     const int ierror = TARGET(fh, buf, ignore ? MPI_STATUS_IGNORE : &status);  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -7095,7 +7064,7 @@ static int w_PMPI_File_write_at_all_end(MPIABI_File abi_fh,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -7137,7 +7106,7 @@ static int w_PMPI_File_write_ordered(MPIABI_File abi_fh, const void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -7244,7 +7213,7 @@ static int w_PMPI_File_write_ordered_begin_c(MPIABI_File abi_fh,
     memset(&status, 0, sizeof status);                                         \
                                                                                \
     const int ierror = TARGET(fh, buf, ignore ? MPI_STATUS_IGNORE : &status);  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -7282,7 +7251,7 @@ static int w_PMPI_File_write_ordered_end(MPIABI_File abi_fh,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -7323,7 +7292,7 @@ static int w_PMPI_File_write_shared(MPIABI_File abi_fh, const void *abi_buf,
                                                                                \
     const int ierror =                                                         \
         TARGET(fh, buf, count, datatype, ignore ? MPI_STATUS_IGNORE : &status);\
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -10285,7 +10254,7 @@ static int w_PMPI_Igatherv_c(const void *abi_sendbuf,
     *abi_message = (ierror == MPI_SUCCESS)                                     \
                        ? mpiwrapper_message_toabi(message)                     \
                        : MPIABI_MESSAGE_NULL;                                  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
@@ -11552,7 +11521,7 @@ static int w_PMPI_Intercomm_merge(MPIABI_Comm abi_intercomm, int abi_high,
                                                                                \
     const int ierror =                                                         \
         TARGET(source, tag, comm, flag, ignore ? MPI_STATUS_IGNORE : &status); \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -12890,7 +12859,7 @@ static int w_PMPI_Issend_c(const void *abi_buf, MPIABI_Count abi_count,
     *abi_message = (ierror == MPI_SUCCESS)                                     \
                        ? mpiwrapper_message_toabi(message)                     \
                        : MPIABI_MESSAGE_NULL;                                  \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
@@ -12933,7 +12902,7 @@ static int w_PMPI_Mprobe(int abi_source, int abi_tag, MPIABI_Comm abi_comm,
         TARGET(buf, count, datatype, &message,                                 \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
     *abi_message = mpiwrapper_message_toabi(message);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
@@ -12976,7 +12945,7 @@ static int w_PMPI_Mrecv(void *abi_buf, int abi_count,
         TARGET(buf, count, datatype, &message,                                 \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
     *abi_message = mpiwrapper_message_toabi(message);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
@@ -14824,7 +14793,7 @@ static int w_PMPI_Precv_init(void *abi_buf, int abi_partitions,
                                                                                \
     const int ierror =                                                         \
         TARGET(source, tag, comm, ignore ? MPI_STATUS_IGNORE : &status);       \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -15207,7 +15176,7 @@ static int w_PMPI_Raccumulate_c(const void *abi_origin_addr,
     const int ierror =                                                         \
         TARGET(buf, count, datatype, source, tag, comm,                        \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -15252,7 +15221,7 @@ static int w_PMPI_Recv(void *abi_buf, int abi_count,
     const int ierror =                                                         \
         TARGET(buf, count, datatype, source, tag, comm,                        \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -16094,7 +16063,7 @@ static int w_PMPI_Request_free(MPIABI_Request *abi_request)
                                                                                \
     const int ierror =                                                         \
         TARGET(request, flag, ignore ? MPI_STATUS_IGNORE : &status);           \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -16211,7 +16180,7 @@ static int w_PMPI_Request_get_status_all(int abi_count,
       const int ierror =                                                       \
           TARGET(count, requests, indx, flag,                                  \
                  ignore ? MPI_STATUS_IGNORE : &status);                        \
-      if (!ignore) mpiwrapper_status_toabi(&status, abi_status);               \
+      if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);    \
       abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
     }                                                                          \
                                                                                \
@@ -17718,7 +17687,7 @@ static int w_PMPI_Send_init_c(const void *abi_buf, MPIABI_Count abi_count,
         TARGET(sendbuf, sendcount, sendtype, dest, sendtag, recvbuf, recvcount,\
                recvtype, source, recvtag, comm,                                \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -17780,7 +17749,7 @@ static int w_PMPI_Sendrecv(const void *abi_sendbuf, int abi_sendcount,
         TARGET(sendbuf, sendcount, sendtype, dest, sendtag, recvbuf, recvcount,\
                recvtype, source, recvtag, comm,                                \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -17842,7 +17811,7 @@ static int w_PMPI_Sendrecv_c(const void *abi_sendbuf,
     const int ierror =                                                         \
         TARGET(buf, count, datatype, dest, sendtag, source, recvtag, comm,     \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -17895,7 +17864,7 @@ static int w_PMPI_Sendrecv_replace(void *abi_buf, int abi_count,
     const int ierror =                                                         \
         TARGET(buf, count, datatype, dest, sendtag, source, recvtag, comm,     \
                ignore ? MPI_STATUS_IGNORE : &status);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
 #else
@@ -18593,7 +18562,7 @@ static int w_PMPI_Status_set_tag(MPIABI_Status *abi_status, int abi_tag)
         TARGET(&request, flag, ignore ? MPI_STATUS_IGNORE : &status);          \
                                                                                \
     *abi_request = mpiwrapper_request_toabi(request);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
                                                                                \
     if (mpiwrapper_staged_any() && request == MPI_REQUEST_NULL &&              \
         request_before != MPI_REQUEST_NULL)                                    \
@@ -18724,7 +18693,7 @@ static int w_PMPI_Testall(int abi_count,
           TARGET(count, requests, indx, flag,                                  \
                  ignore ? MPI_STATUS_IGNORE : &status);                        \
                                                                                \
-      if (!ignore) mpiwrapper_status_toabi(&status, abi_status);               \
+      if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);    \
                                                                                \
       if (mpiwrapper_staged_any())                                             \
         for (int i = 0; i < count; ++i)                                        \
@@ -21124,7 +21093,7 @@ static int w_PMPI_Unpublish_name(const char *abi_service_name,
     const int ierror = TARGET(&request, ignore ? MPI_STATUS_IGNORE : &status); \
                                                                                \
     *abi_request = mpiwrapper_request_toabi(request);                          \
-    if (!ignore) mpiwrapper_status_toabi(&status, abi_status);                 \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
                                                                                \
     if (mpiwrapper_staged_any() && request == MPI_REQUEST_NULL &&              \
         request_before != MPI_REQUEST_NULL)                                    \
@@ -21249,7 +21218,7 @@ static int w_PMPI_Waitall(int abi_count,
       const int ierror =                                                       \
           TARGET(count, requests, indx, ignore ? MPI_STATUS_IGNORE : &status); \
                                                                                \
-      if (!ignore) mpiwrapper_status_toabi(&status, abi_status);               \
+      if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);    \
                                                                                \
       if (mpiwrapper_staged_any())                                             \
         for (int i = 0; i < count; ++i)                                        \
@@ -21968,37 +21937,6 @@ static int w_MPI_Win_free_keyval(int *abi_win_keyval)
     BODY_MPI_Win_free_keyval(MPI_Win_free_keyval)
 static int w_PMPI_Win_free_keyval(int *abi_win_keyval)
     BODY_MPI_Win_free_keyval(PMPI_Win_free_keyval)
-
-/* ------------------------------------------------------- MPI_Win_get_attr */
-
-#ifdef MPIWRAPPER_HAVE_MPI_Win_get_attr
-#define BODY_MPI_Win_get_attr(TARGET)                                          \
-  {                                                                            \
-    const MPI_Win win           = mpiwrapper_win_fromabi(abi_win);             \
-    const int     win_keyval    = mpiwrapper_keyval_fromabi(abi_win_keyval);   \
-    void *const   attribute_val = abi_attribute_val;                           \
-    int *const    flag          = abi_flag;                                    \
-                                                                               \
-    const int ierror = TARGET(win, win_keyval, attribute_val, flag);           \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-#else
-#define BODY_MPI_Win_get_attr(TARGET)                                          \
-  {                                                                            \
-    (void)abi_win;                                                             \
-    (void)abi_win_keyval;                                                      \
-    (void)abi_attribute_val;                                                   \
-    (void)abi_flag;                                                            \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-#endif
-
-static int w_MPI_Win_get_attr(MPIABI_Win abi_win, int abi_win_keyval,
-                              void *abi_attribute_val, int *abi_flag)
-    BODY_MPI_Win_get_attr(MPI_Win_get_attr)
-static int w_PMPI_Win_get_attr(MPIABI_Win abi_win, int abi_win_keyval,
-                               void *abi_attribute_val, int *abi_flag)
-    BODY_MPI_Win_get_attr(PMPI_Win_get_attr)
 
 /* ------------------------------------------------- MPI_Win_get_errhandler */
 
@@ -24422,8 +24360,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Comm_free                    = w_PMPI_Comm_free,
     .MPI_Comm_free_keyval              = w_MPI_Comm_free_keyval,
     .PMPI_Comm_free_keyval             = w_PMPI_Comm_free_keyval,
-    .MPI_Comm_get_attr                 = w_MPI_Comm_get_attr,
-    .PMPI_Comm_get_attr                = w_PMPI_Comm_get_attr,
+    .MPI_Comm_get_attr                 = mpiwrapper_w_MPI_Comm_get_attr,
+    .PMPI_Comm_get_attr                = mpiwrapper_w_PMPI_Comm_get_attr,
     .MPI_Comm_get_errhandler           = w_MPI_Comm_get_errhandler,
     .PMPI_Comm_get_errhandler          = w_PMPI_Comm_get_errhandler,
     .MPI_Comm_get_info                 = w_MPI_Comm_get_info,
@@ -25376,8 +25314,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Win_free                     = w_PMPI_Win_free,
     .MPI_Win_free_keyval               = w_MPI_Win_free_keyval,
     .PMPI_Win_free_keyval              = w_PMPI_Win_free_keyval,
-    .MPI_Win_get_attr                  = w_MPI_Win_get_attr,
-    .PMPI_Win_get_attr                 = w_PMPI_Win_get_attr,
+    .MPI_Win_get_attr                  = mpiwrapper_w_MPI_Win_get_attr,
+    .PMPI_Win_get_attr                 = mpiwrapper_w_PMPI_Win_get_attr,
     .MPI_Win_get_errhandler            = w_MPI_Win_get_errhandler,
     .PMPI_Win_get_errhandler           = w_PMPI_Win_get_errhandler,
     .MPI_Win_get_group                 = w_MPI_Win_get_group,

@@ -472,6 +472,19 @@ int mpiwrapper_topology_toabi(int topology);
 int mpiwrapper_typeclass_fromabi(int abi_typeclass);
 int mpiwrapper_typeclass_toabi(int typeclass);
 
+/* The two families no parameter has (S7). MPI_WIN_CREATE_FLAVOR and
+ * MPI_WIN_MODEL reach an application only as the *value* of a window
+ * attribute, which is a void * in every signature that carries one, so
+ * apis.json marks nothing and only src/mpiwrapper/hw_attr.c calls these. The
+ * fromabi halves exist because the generator emits families in pairs; nothing
+ * hands one of these back to an implementation, since the attribute is
+ * read-only.
+ */
+int mpiwrapper_winflavor_fromabi(int abi_winflavor);
+int mpiwrapper_winflavor_toabi(int winflavor);
+int mpiwrapper_winmodel_fromabi(int abi_winmodel);
+int mpiwrapper_winmodel_toabi(int winmodel);
+
 /* MPI_T's six enumerated families. Every case is guarded, because the whole
  * tool interface is optional; a family whose members are all absent still
  * compiles, as a function whose switch is only its default arm.
@@ -537,6 +550,13 @@ int mpiwrapper_keyval_add(int keyval, int *abi_keyval);
 int mpiwrapper_errorcode_add(int ierror, int *abi_ierror);
 int mpiwrapper_errorcode_dynamic_toabi(int ierror);
 int mpiwrapper_errorcode_dynamic_fromabi(int abi_ierror);
+
+/* What MPI_LASTUSEDCODE answers (S7): the largest error code this library can
+ * hand an application, which is this table's business rather than the
+ * implementation's, since every code the application sees has been through
+ * the conversion above. src/mpiwrapper/hw_attr.c is the only caller.
+ */
+int mpiwrapper_errorcode_lastused(void);
 
 /* ------------------------------------------------- the attached buffer ---- */
 
@@ -642,6 +662,12 @@ int       *mpiwrapper_weights_out_fromabi(int *abi_weights);
 /* ------------------------------------------------------------------ status */
 
 void mpiwrapper_status_toabi(const MPI_Status *st, MPIABI_Status *abi);
+/* The same, leaving the ABI status's MPI_ERROR alone: MPI-5.0 3.2.5 says the
+ * error field is set only by the multiple-completion calls, so a single OUT
+ * status must come back with the caller's value intact (S7).
+ */
+void mpiwrapper_status_toabi_keep_error(const MPI_Status *st,
+                                        MPIABI_Status *abi);
 void mpiwrapper_status_fromabi(const MPIABI_Status *abi, MPI_Status *st);
 
 /* ----------------------------------------------------------------- staging */

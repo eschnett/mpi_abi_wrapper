@@ -1334,6 +1334,103 @@ the spawn case is behind `-DMPI_ABI_TEST_SPAWN=ON`, off by default, because a
 test that hangs is worse than one that skips. These three are the weak rows of
 S4b's exit check and S7's suite is the next thing that can strengthen them.
 
+### What S7 settled
+
+S7 ran MPICH's own C test suite — around 900 programs that know only the MPI
+standard — against this project over MPICH, through the wrapper's `mpicc` and
+`libmpi_abi` and nothing else. Four things it settled were not in the plan,
+and the first is the one that matters.
+
+**There is a conversion class no signature can show, and four stages of
+checking could not have found it.** Every rule in §5 keys on a parameter's
+*type*: a handle converts because it is `MPI_Comm`, a rank because
+`apis.json` says the parameter's kind is `RANK`. `MPI_Comm_get_attr` hands
+back a `void *` whose meaning is whatever the *keyval* says it is, and for
+five of the thirteen predefined keys that meaning is a family this library
+maps — `MPI_HOST` and `MPI_IO` are ranks, `MPI_LASTUSEDCODE` is an error code,
+`MPI_WIN_CREATE_FLAVOR` and `MPI_WIN_MODEL` are enumerations. Generated, the
+body forwarded the caller's pointer to the implementation, which wrote its own
+numbering into it: `attr/baseattr2` asked for `MPI_HOST`, got MPICH's
+`MPI_PROC_NULL` (-1), and read it as the ABI's `MPI_ANY_SOURCE`. A window made
+by `MPI_Win_create` reported flavour 1, which is not one of the ABI's four.
+Nothing in the generator's assertions could see any of it — the emitted text
+passes "no ABI-typed parameter reaches the implementation call", the call
+returns `MPI_SUCCESS`, and the frozen tallies are unmoved. So the two getters
+left the generator for `src/mpiwrapper/hw_attr.c` (ledger 118 → 120), the
+constants generator grew two families no parameter has, and
+`test/abi_tools_test.c` now checks the five values rather than only the two
+whose *presence* it checked before.
+
+That also closes the gap §5.6 named and could not close from the registry:
+`MPI_LASTUSEDCODE` is answered from `mpiwrapper_errorcode_lastused()` — the
+largest code this library can hand out — rather than by mapping the
+implementation's maximum, which would be a number in our range that bounds
+nothing.
+
+**The fixed-capacity tables are reached by ordinary programs, and §6.2 now
+says so with numbers.** `attr/fkeyvaltype` creates 32,768 keyvals in one
+process against 1024 slots; `coll/nonblocking3` creates several thousand user
+ops against 1024 trampolines, and frees each one while a nonblocking reduction
+using it is still in flight — which is exactly the case §6.2's table calls
+"none observable". Both are expected failures with the reason on the line.
+Neither is fixable by raising the number: the op pool is *code*, and the
+keyval rule that forbids reclamation is the standard's.
+
+**The suite tests us as a generic MPI, and that is decided by a macro.** Its
+configure compiles `return 1 + MPICH;` against the header it was given and
+answers "Is the MPI derived from MPICH... no", because the ABI header defines
+no such macro. Everything MPICH-specific in the suite is gated on that answer,
+so wrapping MPICH does not quietly turn its own suite into a friendlier one.
+STAGES.md expected build failures "where a test reaches for MPICH internals or
+`MPIX_*`", and there are eleven — but the reason is a different one: they are
+the MPI-1 entry points **MPI-3.0 deleted** (`MPI_LB`, `MPI_UB`,
+`MPI_Type_extent`, `MPI_Errhandler_create`), which an MPI-5.0 ABI header does
+not declare, plus MPICH's QMPI. They do not appear in the bulk `make` at all,
+because `--enable-strictmpi` drops them from `noinst_PROGRAMS` while leaving
+them in the testlists; runtests' own per-test `make` is what reports them.
+
+**The wrapper turns an erroneous argument into a crash, and that is a design
+question rather than a bug.** `MPI_Comm_create(comm, group, NULL)` is
+`MPI_ERR_ARG` on MPICH and a segfault through this wrapper: the generated body
+passes a local of its own to the implementation and writes the converted
+result back through the caller's pointer, so the implementation never sees the
+null and cannot diagnose it. Twenty tests in the suite's `errors/` directory
+are exactly this shape, and `MPI_IN_PLACE` handed to a parameter where the
+standard forbids it (`errors/coll/reduce_local`) is the same thing one level
+up: §5.3 translates a sentinel only where it is *legal*, so where it is not,
+the ABI's value reaches the implementation as an ordinary address. Every one
+of these programs is erroneous and MPI grants an implementation licence to do
+anything at all with it — but "anything" here is a crash where the wrapped
+implementation had a diagnosis, and interposition is what took the diagnosis
+away. Deciding what this layer owes an erroneous program is a question §5 has
+never had to answer; what would answer it is a null check per written-through
+OUT parameter, emitted by the generator, which is a stage of its own and one
+whose cost (a branch per OUT argument, on every call) belongs in a benchmark
+rather than in a paragraph.
+
+**One conversion class the suite found and this session did not fix.**
+`MPI_DISPLACEMENT_CURRENT` is `(MPI_Offset)-1` in the ABI header and
+`-54278278` in ROMIO, which is what both MPICH and Open MPI use for MPI-IO, so
+`MPI_File_set_view` with it answers `MPI_ERR_ARG`. §5.3's sentinel rule is
+about *pointer* sentinels — `MPI_BOTTOM`, `MPI_IN_PLACE`, `MPI_UNWEIGHTED` —
+and this is the one that is an integer, in the one parameter of one entry
+point. It is left as two xfail lines carrying the diagnosis rather than fixed
+in the last hour of a session whose gate is a full run of this suite: the fix
+is a per-parameter class in the generator, and the run that re-baselines it is
+40 minutes.
+
+**Two harness findings worth keeping, both measured rather than reasoned.**
+The `mpiexec` filter's watchdog was holding the stdout pipe runtests reads to
+EOF, so *every* test appeared to take exactly the timeout — three tests at 195
+seconds each, all passing, which reads as a slow machine rather than as a bug.
+Redirecting the watchdog's own descriptors is the fix. And the suite's
+configure decides whether the `threads` directory exists at all by *running*
+an MPI program: on a host where `MPI_Finalize` fails for an unrelated reason
+(§9's `FI_PROVIDER` note), the probe reports no `MPI_THREAD_MULTIPLE` and 8
+tests silently stop existing. `run-suite.sh` prints that decision with the
+other two for exactly this reason — a green run that covered less than the
+last one is the failure mode a test count cannot show.
+
 ### The five entry points MPI-3.0 deleted, and why they are not slots
 
 S3b's own exit check passed on every implementation and the *identity*
@@ -1745,11 +1842,20 @@ collide with ABI predefined values.
   numbers, in §3's "What S4b settled". A code the table never issued still
   answers `MPI_ERR_OTHER`, which is also what a full table falls back to.
 
-  One gap this cannot close, and it is worth naming rather than discovering
-  later: `MPI_LASTUSEDCODE` comes back through `MPI_Comm_get_attr` as an `int`
-  the implementation owns, and neither the generator nor the registry can see
-  that it is an error class rather than any other attribute value. An
-  application reading that attribute gets the implementation's number.
+  One gap this could not close from here, named when the registry was built
+  and **closed in S7**: `MPI_LASTUSEDCODE` comes back through
+  `MPI_Comm_get_attr` as an `int`, and neither the generator nor the registry
+  can see from a signature that it is an error class rather than any other
+  attribute value -- the *keyval* says so, and a keyval is a value rather than
+  a type. What can see it is a body that knows which keyval was asked for, so
+  `MPI_Comm_get_attr` left the generator for `src/mpiwrapper/hw_attr.c`
+  (§3's "What S7 settled"). What it answers is not a conversion of the
+  implementation's number but `mpiwrapper_errorcode_lastused()`: every code an
+  application can be handed here has been through the mapping above, so the
+  largest one in use is a property of *this* table, and interning the
+  implementation's maximum would produce a value in our range that is not an
+  upper bound of anything. An empty registry answers `MPI_ERR_LASTCODE`
+  exactly, which is the floor MPI-5.0 §9.5 requires.
 
 Generalized requests and datarep names were listed here as needing the same
 treatment. **They do not**, and S4b settled it: both registrars take an
@@ -2102,6 +2208,24 @@ Consequences:
   registrations in a loop would fill a map it never asked for. What that
   reclamation is *not* is tested — no implementation available here raises an
   event at all (§3, "What S4b settled").
+
+**S7 put numbers on "not reclaimed", and they are lower than they read.**
+MPICH's own C suite exhausts two of these tables with programs that do nothing
+unusual, which is worth recording because "a documented limit" sounds like a
+corner and this is not one. `attr/fkeyvaltype` creates 32 keyvals per
+iteration over 1024 datatype-pool objects — 32,768 in one process against
+1024 slots — and `coll/nonblocking3` creates and frees several thousand user
+ops in a loop against 1024 trampolines, which is the case the table above
+calls "none observable" and the test demonstrates why: it frees the op while
+a nonblocking reduction using it is still in flight. Both are expected
+failures of the suite with the reason on the line
+(`ci-scripts/suite/xfail-mpich.txt`), and neither is a bug to fix by raising
+the number: the op pool is *code*, 1024 static trampolines per variant, and
+32,768 keyval slots would only move the same wall. What would remove it is a
+reclamation rule, and the standard is what says there is none. The honest
+statement is therefore the one in the table — a process that creates
+unboundedly many ops or keyvals over its lifetime is outside what this design
+serves — and S7 is where that stopped being hypothetical.
 
 ### 6.3 Concurrency
 
@@ -2650,8 +2774,15 @@ admissibility:
 - **Status round-trips** — through arrays, `MPI_STATUS_IGNORE`, and a generalized
   request.
 - **MPICH's C test suite** against both implementations, with a per-variant
-  expected-failure list carrying reasons. Expect some expected failures to be
-  *build* failures where a test reaches for MPICH internals or `MPIX_*`.
+  expected-failure list carrying reasons. **S7 built it**
+  (`ci-scripts/suite/`), and what it is worth is settled rather than
+  predicted: 1230 tests over MPICH 4.3.1, of which the failures are ~30, and
+  three of those were conversion bugs no oracle above could see — an
+  attribute value whose class the keyval decides, `status.MPI_ERROR` written
+  where MPI-5.0 §3.2.5 forbids it, and `MPI_DISPLACEMENT_CURRENT`. The
+  expected build failures are there too, though for a different reason than
+  the one predicted (§3, "What S7 settled"). The gate is `check-tap.py`, which
+  reads the list in both directions and rejects a line with no reason.
 - **The cross test, the headline property:** one `libmpi_abi`, one test binary, run
   against an MPICH wrapper and an Open MPI wrapper by changing only the environment
   variable. mpif's `cross` stage rebuilds against each implementation; ours

@@ -74,13 +74,13 @@ FROZEN = {
     "handle classes": 11,
     "predefined handles": 103,
     "error classes": 80,
-    "generated": 565,
-    "hand-written": 118,
+    "generated": 563,
+    "hand-written": 120,
     # S4b's exit check as a tally rather than an assertion: every ledger entry
     # has a body in src/mpiwrapper/, counted from handwritten.h. A body that
     # disappears -- or a new ledger entry nobody wrote -- fails here rather
     # than becoming one more run-time-reporting stub.
-    "hand-written bodies": 118,
+    "hand-written bodies": 120,
     # The five MPI-3.0 deleted from the standard, answered by libmpi_abi in
     # terms of their replacements rather than forwarded to an implementation
     # that need not have them. Frozen, because a sixth is a decision.
@@ -212,6 +212,17 @@ _ledger(
       for cls in ("Comm", "Errhandler", "File", "Group", "Info", "Message",
                   "Op", "Request", "Session", "Type", "Win")
       for conv in ("c2f", "f2c", "toint", "fromint")],
+)
+_ledger(
+    # S7, and the only ledger entry found by running something rather than by
+    # reading apis.json: MPICH's attr/baseattr2 asks for MPI_HOST and gets the
+    # implementation's MPI_PROC_NULL, which is the ABI's MPI_ANY_SOURCE. The
+    # class of an attribute value is not in the signature -- it is whatever
+    # the keyval means -- so no parameter kind marks it and no assertion over
+    # the emitted text can see it (NOTES.md #5.1).
+    "attribute value whose class the keyval decides, not the signature "
+    "(NOTES.md #5.4, #5.6)",
+    "MPI_Comm_get_attr", "MPI_Win_get_attr",
 )
 _ledger(
     "output string buffer with no length argument: truncate or error is a "
@@ -1081,6 +1092,18 @@ SWITCH_FAMILY_MEMBERS = {
     "tscope": r"^MPI_T_SCOPE_",
 }
 
+# Two families that no *parameter* has and that exist anyway, because an
+# attribute *value* can carry one: MPI_Win_get_attr answers MPI_WIN_CREATE_FLAVOR
+# and MPI_WIN_MODEL with an enumerator whose ABI numbering is 311-314 and
+# 321-322 and whose MPICH and Open MPI numbering is 1-4 and 1-2. Nothing in
+# apis.json marks that, since the parameter is a void * (S7, NOTES.md #5.1);
+# src/mpiwrapper/hw_attr.c is what calls these.
+ATTRIBUTE_VALUE_FAMILIES = {
+    "winflavor": r"^MPI_WIN_FLAVOR_",
+    "winmodel":  r"^MPI_WIN_(UNIFIED|SEPARATE)$",
+}
+SWITCH_FAMILY_MEMBERS.update(ATTRIBUTE_VALUE_FAMILIES)
+
 # Families whose default arm is not "pass the value through". Only keyvals:
 # every other family here is a closed set of predefined names, so a value that
 # matched no case is one the implementation will reject and passing it on is
@@ -1795,7 +1818,14 @@ def emit_body(ep):
             decls.append(("const int", "ignore",
                           f"{abi} == MPIABI_STATUS_IGNORE"))
             args.append("ignore ? MPI_STATUS_IGNORE : &status")
-            post.append((f"if (!ignore) mpiwrapper_status_toabi(&status, {abi});",))
+            # _keep_error: a single OUT status must come back with the
+            # caller's MPI_ERROR untouched (MPI-5.0 3.2.5 -- only the
+            # multiple-completion calls of 3.7.5 set it, and those take an
+            # array, which is the other site below). The implementation
+            # cannot honour that itself, because what it is handed is a
+            # temporary of ours (S7).
+            post.append((f"if (!ignore) "
+                         f"mpiwrapper_status_toabi_keep_error(&status, {abi});",))
             status_local = True
         elif cls in ("array_convert_in", "array_stage_inout",
                      "array_stage_out", "array_status_out"):
@@ -2980,7 +3010,8 @@ def emit_constants_c(classes, handles, enums):
     # --- the remaining integer families -------------------------------------
     out.append(INTFAMILY_COMMENT)
     deprecated = {n for n, (_, note) in enums.items() if "deprecated:" in note}
-    for family in sorted(set(SWITCH_KIND.values())):
+    for family in sorted(set(SWITCH_KIND.values())
+                         | set(ATTRIBUTE_VALUE_FAMILIES)):
         members = [n for n in enums
                    if re.match(SWITCH_FAMILY_MEMBERS[family], n)]
         if not members:

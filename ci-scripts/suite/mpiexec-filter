@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+
+# The `mpiexec` the MPICH test suite sees (STAGES.md S7, NOTES.md #10).
+#
+# This project ships no launcher and never will: the MPI ABI is a library
+# ABI, so a program built against `libmpi_abi` is started by the *wrapped*
+# implementation's own launcher, which lives in a different prefix from the
+# `mpicc` the suite was configured with. The suite has one name for that
+# program -- `mpiexec`, taken from the prefix it configured against -- so
+# something has to stand in that place and forward. That is this script, and
+# once it exists there are four more jobs it is the only place to do:
+#
+#   1. Route to the real launcher.  MPIEXEC_FILTER_LAUNCHER names it. The
+#      suite's own configure runs `$MPIEXEC --version | grep -i hydra`, so
+#      --version forwards too, verbatim: what the suite decides from it must
+#      describe the launcher that will actually run the tests.
+#
+#   2. Drop launcher-specific arguments the target launcher does not have.
+#      testlists carry them literally -- `errors/comm/testlist` passes
+#      `-disable-auto-cleanup` to three tests, which is hydra's spelling and
+#      nothing else's. Passed to prterun it is not a different behaviour but
+#      an immediate usage error, so the whole test fails for a reason that
+#      has nothing to do with this project. Unknown arguments are therefore
+#      dropped for launchers that do not take them, and what was dropped is
+#      announced on stderr when MPIEXEC_FILTER_VERBOSE is set.
+#
+#   3. Forward the environment.  runtests communicates a testlist's `env=`
+#      settings, and its per-test timeout, by putting them in *this*
+#      process's environment and trusting the launcher to pass them on.
+#      Hydra does. Open MPI's launcher forwards almost nothing without being
+#      told, so the variables that matter are re-stated as `-x` arguments.
+#      MPI_ABI_WRAPPER_LIB is in that set, which is what lets one test binary
+#      be run against a different wrapper (NOTES.md #10's cross test).
+#
+#   4. Enforce the timeout itself.  runtests sets MPIEXEC_TIMEOUT and expects
+#      the launcher to honour it; hydra does, prterun does not, and a launcher
+#      that hangs before it starts anything honours nothing. A test that hangs
+#      costs the whole run, so the watchdog here is unconditional -- the
+#      launcher's own timeout, where it has one, is the first line and this is
+#      the backstop. MPI_Comm_spawn hanging under hydra on macOS (test/
+#      README.md) is exactly the case that needs it.
+#
+# Environment:
+#   MPIEXEC_FILTER_LAUNCHER    path to the real launcher (required)
+#   MPIEXEC_FILTER_KIND        hydra | prte | other; default: ask --version
+#   MPIEXEC_FILTER_ARGS        extra arguments, always passed
+#   MPIEXEC_FILTER_ENV_RE      env vars to forward explicitly to launchers
+#                              that do not forward by default
+#   MPIEXEC_FILTER_VERBOSE     announce the translated command line
+#   MPIEXEC_TIMEOUT            per-test timeout in seconds, set by runtests
+
+set -uo pipefail
+
+launcher=${MPIEXEC_FILTER_LAUNCHER:-}
+if [ -z "$launcher" ]; then
+  echo "mpiexec-filter: MPIEXEC_FILTER_LAUNCHER is not set" >&2
+  exit 2
+fi
+
+kind=${MPIEXEC_FILTER_KIND:-}
+if [ -z "$kind" ]; then
+  version=$("$launcher" --version 2>&1)
+  case $version in
+    *[Hh][Yy][Dd][Rr][Aa]*) kind=hydra ;;
+    *[Oo]pen*[Mm][Pp][Ii]*|*prte*|*PRTE*) kind=prte ;;
+    *) kind=other ;;
+  esac
+fi
+
+# `mpiexec --version` is not a run: the suite's configure asks it to decide
+# what the launcher is, so the answer has to be the real launcher's.
+if [ $# = 1 ] && { [ "$1" = --version ] || [ "$1" = -version ]; }; then
+  exec "$launcher" --version
+fi
+
+# ------------------------------------------------------------ argument split
+#
+# runtests builds the command as
+#     mpiexec -n <np> <extra args> <testlist's mpiexecarg=s> <program> <args>
+# so every token up to the program is an option or an option's value. The
+# program is the first token that is neither.
+
+np=""
+launcher_args=()
+prog=()
+dropped=()
+
+# The options this filter understands, by arity. Anything else that starts
+# with a dash is a launcher-specific argument, handled per launcher below.
+while [ $# -gt 0 ]; do
+  case $1 in
+    -n|-np|--n|--np)
+      np=$2; shift 2 ;;
+    -x)
+      launcher_args+=("$1" "$2"); shift 2 ;;
+    -genv|-env)
+      # hydra spells a single variable's export this way; prterun wants -x.
+      if [ "$kind" = prte ]; then
+        launcher_args+=(-x "$2=$3")
+      else
+        launcher_args+=("$1" "$2" "$3")
+      fi
+      shift 3 ;;
+    -ppn|-t|--timeout|-timeout)
+      launcher_args+=("$1" "$2"); shift 2 ;;
+    -*)
+      case $kind in
+        hydra) launcher_args+=("$1") ;;
+        *)     dropped+=("$1") ;;
+      esac
+      shift ;;
+    *)
+      prog=("$@"); break ;;
+  esac
+done
+
+if [ ${#prog[@]} = 0 ]; then
+  echo "mpiexec-filter: no program in: $*" >&2
+  exit 2
+fi
+[ -n "$np" ] || np=1
+
+# ------------------------------------------------------- per-launcher shaping
+
+case $kind in
+  hydra)
+    launcher_args=(-n "$np" "${launcher_args[@]+"${launcher_args[@]}"}")
+    ;;
+  prte)
+    # --oversubscribe: the suite asks for up to 10 ranks and a CI runner may
+    # have fewer cores; hydra oversubscribes without being asked and Open MPI
+    # refuses to start at all, which would be read as a failure of the test.
+    launcher_args=(-n "$np" --oversubscribe
+                   "${launcher_args[@]+"${launcher_args[@]}"}")
+    [ "$(id -u)" = 0 ] && launcher_args+=(--allow-run-as-root)
+    # Job 3: state the environment explicitly, since prterun forwards none of
+    # it. The default pattern covers what this project and the testlists set.
+    env_re=${MPIEXEC_FILTER_ENV_RE:-^(MPI_ABI_[A-Z_]*|MPIABI_[A-Z_]*|MPIR_CVAR_[A-Z_0-9]*|MPIEXEC_TIMEOUT|FI_[A-Z_]*)=}
+    while IFS= read -r assignment; do
+      launcher_args+=(-x "${assignment%%=*}")
+    done < <(env | grep -E "$env_re" || true)
+    ;;
+  *)
+    launcher_args=(-n "$np" "${launcher_args[@]+"${launcher_args[@]}"}")
+    ;;
+esac
+
+if [ -n "${MPIEXEC_FILTER_ARGS:-}" ]; then
+  # shellcheck disable=SC2206
+  launcher_args+=($MPIEXEC_FILTER_ARGS)
+fi
+
+if [ -n "${MPIEXEC_FILTER_VERBOSE:-}" ]; then
+  echo "mpiexec-filter[$kind]: $launcher ${launcher_args[*]} ${prog[*]}" >&2
+  [ ${#dropped[@]} = 0 ] || echo "mpiexec-filter: dropped ${dropped[*]}" >&2
+fi
+
+# --------------------------------------------------------------- job 4: run
+#
+# The watchdog kills the launcher's whole process group, not just the
+# launcher: a hung MPI rank is a child of it (hydra) or of a daemon it
+# started (prterun), and killing the front end alone leaves the ranks running
+# and the next test contending with them.
+
+timeout=${MPIEXEC_TIMEOUT:-0}
+case $timeout in ''|*[!0-9]*) timeout=0 ;; esac
+[ "$timeout" -gt 0 ] && timeout=$((timeout + 15))   # after the launcher's own
+
+if [ "$timeout" = 0 ]; then
+  exec "$launcher" "${launcher_args[@]}" "${prog[@]}"
+fi
+
+set -m                       # give the launcher a process group of its own
+"$launcher" "${launcher_args[@]}" "${prog[@]}" &
+child=$!
+set +m
+
+# The redirections are not tidiness: runtests reads this process's stdout to
+# EOF and only then looks at the exit status, and a background subshell
+# inherits that pipe. A watchdog holding the write end keeps the pipe open
+# for its whole sleep, so *every* test appears to take exactly the timeout no
+# matter how fast it ran -- measured, three tests at 195 seconds each, all of
+# them passing.
+(
+  sleep "$timeout"
+  kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
+  sleep 5
+  kill -KILL -"$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null
+) </dev/null >/dev/null 2>&1 &
+watchdog=$!
+
+wait "$child"
+status=$?
+kill "$watchdog" 2>/dev/null
+wait "$watchdog" 2>/dev/null
+exit $status

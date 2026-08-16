@@ -111,6 +111,17 @@ REWRITES = [
     (re.compile(r"default: return MPI_ERR_OTHER;"),
      "default: return mpiwrapper_errorcode_dynamic_fromabi(abi_ierror);",
      "The same change in the other direction."),
+    (re.compile(r"mpiwrapper_status_toabi\(&status,"),
+     "mpiwrapper_status_toabi_keep_error(&status,",
+     "S1 converted a single OUT status with the whole-status function, error "
+     "field included. MPI-5.0 3.2.5 says that field is set only by the "
+     "multiple-completion calls of 3.7.5, which take an *array* of statuses; "
+     "a single one must come back carrying the caller's value. The "
+     "implementation cannot honour that on its own here, since what it fills "
+     "in is a temporary of ours. S7 split the function in two "
+     "(src/mpiwrapper/status.c) and this is the call every single-status body "
+     "makes now; the array sites still call the whole-status form, and the "
+     "conversion itself is compared exactly as before."),
 ]
 
 

@@ -1,7 +1,16 @@
 # `test/`
 
 Our own tests (NOTES.md §9), as opposed to the MPICH suite in
-`ci-scripts/suite/`.
+`ci-scripts/suite/`, which S7 built and which is the first oracle here that
+nothing in this repository wrote.
+
+Two of the tests below carry checks that exist because that suite found what
+they were missing: `abi_tools_test` now checks the *values* of the five
+predefined attributes whose class the keyval decides (`MPI_HOST` and `MPI_IO`
+are ranks, `MPI_LASTUSEDCODE` an error code, `MPI_WIN_CREATE_FLAVOR` and
+`MPI_WIN_MODEL` enumerations), and `abi_prototype_test` now presets
+`status.MPI_ERROR` and requires it back unchanged, which is what MPI-5.0
+§3.2.5 says and the opposite of what it asserted from S1 until S7.
 
 | test | needs an MPI? | what it establishes |
 |---|---|---|
@@ -67,7 +76,14 @@ twice.
 ## Linux
 
 `ci-scripts/run-linux-docker.sh` builds and runs all of this on Linux against
-MPICH and Open MPI, from a macOS host with Docker. Worth doing early and often:
+MPICH and Open MPI, from a macOS host with Docker. It also runs S7's suite
+there, which is where the Open MPI row of that suite lives:
+
+```sh
+MPIABI_LINUX_SCRIPT=/src/ci-scripts/suite/linux-suite.sh \
+  MPIABI_LINUX_OUT=$PWD/build/linux-out \
+  ci-scripts/run-linux-docker.sh openmpi
+``` Worth doing early and often:
 the first Linux build needed four fixes that macOS could not have surfaced, and
 one of them was in the S0 header generator rather than in any of this stage's
 code.

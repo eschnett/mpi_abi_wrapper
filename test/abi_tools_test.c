@@ -110,6 +110,56 @@ static void test_predefined_keyvals(void)
   CHECK_MPI(MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_WTIME_IS_GLOBAL, &value,
                               &flag));
 
+  /* S7, and the sharpest checks here: three of the thirteen predefined keys
+   * have a *value* this library has to convert, which the keyval says and the
+   * signature does not (src/mpiwrapper/hw_attr.c). Everything above passes
+   * whether or not that happens; these do not.
+   *
+   * MPI_HOST and MPI_IO are ranks (NOTES.md #5.4). MPICH answers
+   * MPI_PROC_NULL and MPI_ANY_SOURCE, which are -1 and -2 in its numbering
+   * and -3 and -1 in the ABI's -- so a forwarded MPI_HOST arrives as the
+   * ABI's MPI_ANY_SOURCE, a legal-looking number that is the wrong sentinel.
+   * That is what MPICH's own attr/baseattr2 caught and what this now keeps
+   * caught.
+   */
+  flag  = 0;
+  value = NULL;
+  CHECK_MPI(MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_HOST, &value, &flag));
+  if (flag) {
+    const int host = *(int *)value;
+    CHECK(host == MPI_PROC_NULL || (host >= 0 && host < size),
+          "MPI_HOST is %d, neither a rank of MPI_COMM_WORLD nor MPI_PROC_NULL",
+          host);
+  }
+
+  flag  = 0;
+  value = NULL;
+  CHECK_MPI(MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_IO, &value, &flag));
+  if (flag) {
+    const int io = *(int *)value;
+    CHECK(io == MPI_PROC_NULL || io == MPI_ANY_SOURCE
+              || (io >= 0 && io < size),
+          "MPI_IO is %d, none of a rank, MPI_ANY_SOURCE or MPI_PROC_NULL", io);
+  }
+
+  /* An error code, and one whose answer is the wrapper's rather than the
+   * implementation's: every code an application sees here has been mapped,
+   * so the largest one in use is a property of the wrapper's registry. The
+   * standard requires at least MPI_ERR_LASTCODE; MPICH's own value is
+   * 0x3fffffff, which is above the ABI's MPI_ERR_LASTCODE by five orders of
+   * magnitude and would be a code the ABI header says cannot exist.
+   */
+  flag  = 0;
+  value = NULL;
+  CHECK_MPI(MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_LASTUSEDCODE, &value,
+                              &flag));
+  if (flag) {
+    const int lastused = *(int *)value;
+    CHECK(lastused >= MPI_ERR_LASTCODE,
+          "MPI_LASTUSEDCODE is %d, below MPI_ERR_LASTCODE (%d)", lastused,
+          MPI_ERR_LASTCODE);
+  }
+
   /* The window keys live in the ABI's second range (601+) and are set by
    * MPI_Win_create rather than by the implementation's startup, so these are
    * the only ones of the thirteen whose values we know independently.
@@ -156,6 +206,32 @@ static void test_predefined_keyvals(void)
     if (flag)
       CHECK(*(int *)value == (int)sizeof(int), "MPI_WIN_DISP_UNIT is %d",
             *(int *)value);
+
+    /* The other half of S7's attribute-value class, and the one with an exact
+     * expected answer: MPI_WIN_CREATE_FLAVOR must be MPI_WIN_FLAVOR_CREATE
+     * for a window made by MPI_Win_create. The ABI numbers the flavours
+     * 311-314 and the memory models 321-322; MPICH and Open MPI both number
+     * them from 1, so a forwarded value is not merely a different spelling of
+     * the right answer -- 1 is not any of the ABI's four flavours.
+     */
+    flag  = 0;
+    value = NULL;
+    CHECK_MPI(MPI_Win_get_attr(win, MPI_WIN_CREATE_FLAVOR, &value, &flag));
+    CHECK(flag, "MPI_WIN_CREATE_FLAVOR is required to be set on a window");
+    if (flag)
+      CHECK(*(int *)value == MPI_WIN_FLAVOR_CREATE,
+            "MPI_WIN_CREATE_FLAVOR is %d, expected MPI_WIN_FLAVOR_CREATE (%d)",
+            *(int *)value, MPI_WIN_FLAVOR_CREATE);
+
+    flag  = 0;
+    value = NULL;
+    CHECK_MPI(MPI_Win_get_attr(win, MPI_WIN_MODEL, &value, &flag));
+    CHECK(flag, "MPI_WIN_MODEL is required to be set on a window");
+    if (flag)
+      CHECK(*(int *)value == MPI_WIN_UNIFIED || *(int *)value == MPI_WIN_SEPARATE,
+            "MPI_WIN_MODEL is %d, neither MPI_WIN_UNIFIED (%d) nor "
+            "MPI_WIN_SEPARATE (%d)",
+            *(int *)value, MPI_WIN_UNIFIED, MPI_WIN_SEPARATE);
 
     CHECK_MPI(MPI_Win_free(&win));
   }

@@ -1800,6 +1800,46 @@ int mpiwrapper_typeclass_toabi(int typeclass)
   }
 }
 
+int mpiwrapper_winflavor_fromabi(int abi_winflavor)
+{
+  switch (abi_winflavor) {
+  case MPIABI_WIN_FLAVOR_CREATE:   return MPI_WIN_FLAVOR_CREATE;
+  case MPIABI_WIN_FLAVOR_ALLOCATE: return MPI_WIN_FLAVOR_ALLOCATE;
+  case MPIABI_WIN_FLAVOR_DYNAMIC:  return MPI_WIN_FLAVOR_DYNAMIC;
+  case MPIABI_WIN_FLAVOR_SHARED:   return MPI_WIN_FLAVOR_SHARED;
+  default:                    return abi_winflavor;
+  }
+}
+
+int mpiwrapper_winflavor_toabi(int winflavor)
+{
+  switch (winflavor) {
+  case MPI_WIN_FLAVOR_CREATE:   return MPIABI_WIN_FLAVOR_CREATE;
+  case MPI_WIN_FLAVOR_ALLOCATE: return MPIABI_WIN_FLAVOR_ALLOCATE;
+  case MPI_WIN_FLAVOR_DYNAMIC:  return MPIABI_WIN_FLAVOR_DYNAMIC;
+  case MPI_WIN_FLAVOR_SHARED:   return MPIABI_WIN_FLAVOR_SHARED;
+  default:                 return winflavor;
+  }
+}
+
+int mpiwrapper_winmodel_fromabi(int abi_winmodel)
+{
+  switch (abi_winmodel) {
+  case MPIABI_WIN_UNIFIED:  return MPI_WIN_UNIFIED;
+  case MPIABI_WIN_SEPARATE: return MPI_WIN_SEPARATE;
+  default:             return abi_winmodel;
+  }
+}
+
+int mpiwrapper_winmodel_toabi(int winmodel)
+{
+  switch (winmodel) {
+  case MPI_WIN_UNIFIED:  return MPIABI_WIN_UNIFIED;
+  case MPI_WIN_SEPARATE: return MPIABI_WIN_SEPARATE;
+  default:          return winmodel;
+  }
+}
+
 
 /* Sentinels. MPI_BOTTOM is (void *)0 in the ABI and in both implementations,
  * so that arm is an identity today -- it is emitted anyway, because the ABI

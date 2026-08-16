@@ -389,6 +389,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     src/mpiwrapper/hw_status.c
     src/mpiwrapper/hw_strings.c
     src/mpiwrapper/hw_abi.c
+    src/mpiwrapper/hw_attr.c
   )
 
   set(MPIABI_IMPL_CONFIG ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_impl_config.h)

@@ -467,7 +467,7 @@ another implementation entirely — as its one argument, which it does.
 
 **Model: Sonnet.** Much of it is transposable from mpif's `ci-scripts/`.
 
-### S7 — MPICH C test suite
+### S7 — MPICH C test suite *(done: 1212 tests over MPICH and 1231 over Open MPI, the harness in `ci-scripts/suite/`)*
 
 Runner, `mpiexec` filter, per-variant expected-failure list with a reason on every
 line. Expect some expected failures to be *build* failures where a test reaches for
@@ -476,9 +476,97 @@ MPICH internals or `MPIX_*`.
 **Exit check.** The suite runs against both implementations; the xfail list is
 committed with reasons; a variant's result matching its list is the gate.
 
+`ci-scripts/suite/run-suite.sh` is that runner: it builds and installs this
+project, configures MPICH 4.3.1's `test/mpi` **against the wrapper's prefix**
+rather than an MPI's, builds the tests, runs them through
+`ci-scripts/suite/mpiexec-filter`, and gates the TAP output against
+`xfail-<variant>.txt` with `check-tap.py`. The gate runs in both directions,
+the discipline S5 and S2's checks already use: an unlisted failure fails, a
+listed failure that *passed* fails, a listed test that did not run fails, and
+a line with no reason fails — so `--update-xfail`, which writes bare lines,
+cannot be used to make a red run green.
+
+**Four things the plan did not name, all in `NOTES.md` §3's "What S7
+settled".** The suite's own configure answers **"Is the MPI derived from
+MPICH... no"**, because the ABI header defines no `MPICH` macro, so wrapping
+MPICH does not quietly turn its suite into a friendlier one. The `mpiexec`
+filter is **four jobs rather than one** — route to the real launcher, drop
+launcher-specific arguments the testlists carry literally, restate the
+environment for a launcher that forwards none of it, and enforce the timeout
+itself — and its watchdog's own file descriptors are load-bearing: holding the
+pipe runtests reads made *every* test appear to take exactly the timeout, three
+tests at 195 seconds each, all passing. The suite decides whether the `threads`
+directory exists at all by **running** an MPI program, so a host where
+`MPI_Finalize` fails for an unrelated reason silently drops 8 tests rather than
+failing; `run-suite.sh` prints that decision. And the build failures STAGES
+expected are here, but not for the reason it gave: they are the MPI-1 entry
+points **MPI-3.0 deleted** (`MPI_LB`, `MPI_UB`, `MPI_Type_extent`), which the
+ABI header does not declare, plus MPICH's QMPI. Passing runtests' own
+`-strict` would skip them; the runner deliberately does not, because a line
+naming the entry point the ABI omits is worth more than a skip.
+
+**What the oracle found, which is the point of the stage.** Three genuine
+conversion bugs, none of which any in-house check could have seen, and two of
+them fixed here:
+
+- **An attribute's *value* is a converted class, and no signature says so.**
+  `MPI_Comm_get_attr(MPI_COMM_WORLD, MPI_HOST, ...)` returned MPICH's
+  `MPI_PROC_NULL`, which is the ABI's `MPI_ANY_SOURCE`; a window reported
+  create-flavour 1, which is not one of the ABI's four. The class is decided by
+  the *keyval*, so `apis.json` marks nothing and the generated body forwarded
+  the caller's pointer. `MPI_Comm_get_attr` and `MPI_Win_get_attr` are now
+  ledger entries (`src/mpiwrapper/hw_attr.c`, ledger 118 → 120) and
+  `test/abi_tools_test.c` checks the five values. This also closed the
+  `MPI_LASTUSEDCODE` gap §5.6 had named and could not close from the registry.
+- **A single completion must not touch `status.MPI_ERROR`** (MPI-5.0 §3.2.5;
+  only the multiple-completion calls of §3.7.5 set it). The wrapper hands the
+  implementation a status temporary of its own, so the implementation cannot
+  honour the rule for it — the field came back as whatever the temporary held.
+  13 tests caught it, and *our own* `abi_prototype_test` had asserted the wrong
+  thing since S1. Fixed with a second conversion function
+  (`mpiwrapper_status_toabi_keep_error`) and one emitter site.
+- **`MPI_DISPLACEMENT_CURRENT` is a sentinel and is not translated**, diagnosed
+  and **not** fixed here: it is `(MPI_Offset)-1` in the ABI and `-54278278` in
+  ROMIO, so `MPI_File_set_view` with it returns `MPI_ERR_ARG`. §5.3's sentinel
+  rule covers pointers; this is the one that is an integer. Two xfail lines
+  carry the diagnosis.
+
+**And one finding that is bigger than a bug.** An *erroneous* argument that the
+implementation would have diagnosed becomes a **crash**, because conversion
+interposes a local: `MPI_Comm_create(comm, group, NULL)` is `MPI_ERR_ARG` on
+MPICH and a segfault through the wrapper, since the body writes the converted
+handle through the caller's null pointer. Twenty tests in `errors/` are exactly
+this, and `MPI_IN_PLACE` passed where it is illegal is the same shape. Deciding
+what the wrapper owes an erroneous program is a design question §5 has never
+had to answer, and it is written up in §3 rather than patched around here.
+
+**The two lists are in different states, deliberately.** `xfail-mpich.txt` is
+finished: 45 failures out of 1212, every one with a cause. `xfail-openmpi.txt`
+is 171 out of 1231 and about half of it is attributed — the entry points Open
+MPI 4.1.6 does not have, read out of the probe header rather than guessed, and
+the causes shared with the MPICH row — while the rest are placeholders that say
+what was observed and claim nothing more. That row is dominated by MPI-4.0:
+Open MPI 4.1.6 provides 466 of the ABI's 688 entry points, so sessions,
+partitioned communication, persistent collectives and the `_c` forms are stubs
+answering `MPI_ERR_UNSUPPORTED_OPERATION`, which is decision 6 working. Finishing
+its triage is the next session's first task, and the method is the one this
+stage used throughout: build the same test with the implementation's own
+`mpicc` and see whether it passes without the wrapper.
+
+**Two rows this stage could not make honest, and said so rather than listing
+them.** `spawn` is excluded by default (`--with-spawn` to include) because
+`MPI_Comm_spawn` hangs under hydra on macOS with no wrapper involved, and
+`errors/spawn` and `threads/spawn` are excluded with it — 31 tests reaching a
+180-second timeout costs an hour to learn what `test/README.md` already
+recorded. And the **Open MPI row runs on Linux**, in the container
+`ci-scripts/suite/linux-suite.sh` starts, because no Open MPI 5.0.x launcher
+works on macOS 26.
+
 **Model: Sonnet** for the harness, **Opus** for triage once real failures appear —
 the harness is mechanical, deciding whether a failure is our bug or the test's
-assumption is not.
+assumption is not. **That split held exactly:** the harness took one pass, and
+every hour after it went into deciding whether a failure was ours, the test's
+assumption, or the implementation's.
 
 ### S8 — Consumer integration
 

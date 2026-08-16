@@ -1,0 +1,118 @@
+# Expected failures of MPICH's C test suite over this project, wrapping MPICH
+# 4.3.1 (STAGES.md S7). One line per test, `<dir>/<program> <np> : why`, in
+# runtests' own naming so a line can be compared with an unwrapped run by eye.
+#
+# ci-scripts/suite/check-tap.py enforces this list in both directions: an
+# unlisted failure fails the run, and so does a listed test that passed or
+# that did not run. A line with no reason after the colon fails the run too.
+#
+# 1212 tests; these are the failures. Every reason is one of six kinds, and
+# the kind matters more than the count:
+#
+#   (a) the ABI's version is the header's and the semantics are the wrapped
+#       implementation's, which no wrapper can reconcile;
+#   (b) a fixed-capacity table this design chose deliberately (NOTES.md #6.2),
+#       exhausted by a test that creates and frees in a loop;
+#   (c) an entry point MPI-3.0 *deleted*, which an MPI-5.0 ABI header does not
+#       declare -- a build failure, and the right one;
+#   (d) an *erroneous* argument the implementation would have diagnosed, which
+#       conversion turns into a crash (NOTES.md #3, "What S7 settled");
+#   (e) a sentinel this project has not translated -- a diagnosed bug of ours;
+#   (f) a difference measured but not yet attributed.
+#
+# Two bugs this suite found are *not* here, because S7 fixed them: an
+# attribute value whose class the keyval decides (attr/baseattr2, 2 tests) and
+# status.MPI_ERROR written where MPI-5.0 3.2.5 forbids it (pt2pt/mprobe and
+# the threaded probe tests, 13 tests).
+
+# --- (a) version -----------------------------------------------------------
+
+init/version 1 : MPI_Get_version forwards the implementation's answer (MPICH 4.3.1 says 4.1) while the ABI header is fixed at MPI-5.0, and the test compares the two. Forwarding is the honest half: an application told 5.0 would believe entry points work that this wrapper answers with MPI_ERR_UNSUPPORTED_OPERATION. The two can agree only over an implementation that is itself MPI-5.0.
+
+# --- (b) fixed-capacity tables, exhausted ----------------------------------
+
+attr/fkeyvaltype 1 : 32 keyvals per iteration over 1024 datatype-pool objects is 32,768 in one process, against a 1024-slot table. MPIWRAPPER_KEYVAL_SLOTS is fixed and its entries are never reclaimed, because MPI-5.0 7.7 keeps a freed keyval usable by attributes not yet deleted, so no point is known-dead (NOTES.md #6.2). MPICH itself recycles the integer and has no such ceiling.
+
+coll/nonblocking3 1 : one MPI_User_function trampoline slot per MPI_Op_create, never reclaimed (NOTES.md #6.2: the implementation may still be running the op after MPI_Op_free -- which is precisely what this test does). MPIWRAPPER_OP_SLOTS is 1024 static trampolines and this test creates several thousand ops; MPI_Op_create then answers MPI_ERR_INTERN, the test ignores the return value, and MPI_OP_NULL reaches MPI_Ireduce.
+coll/nonblocking3 4 : the same, and at more than one rank the ranks that hit the exhausted pool abort while the rest wait, so the test times out rather than failing.
+coll/nonblocking3 5 : the same.
+coll/nonblocking3 10 : the same.
+
+errhan/commcall 2 : 2000 MPI_Comm_create_errhandler calls against MPIWRAPPER_ERRHANDLER_SLOTS, which is 256 and is never reclaimed -- an errhandler is deallocated only after every object it was set on (MPI-5.0 9.4), which the wrapper cannot observe. Measured: 3490 of the test's 4000 handler invocations never reach the application's function.
+rma/wincall 2 : the same table for windows: the test loops MPI_Win_create_errhandler and MPI_Win_set_errhandler 1000 times, and past 256 the wrapper has no slot, so MPI_ERRHANDLER_NULL reaches MPI_Win_set_errhandler.
+
+# --- (c) entry points MPI-3.0 deleted: build failures, and the right ones ---
+#
+# The ABI header is MPI-5.0's, so MPI_LB, MPI_UB, MPI_Type_extent,
+# MPI_Type_lb/ub, MPI_Errhandler_create and MPI_Address are simply not
+# declared. runtests' own -strict would skip these (the testlists mark them
+# strict=FALSE); ci-scripts/suite/run-suite.sh does not pass it, because a
+# line naming what the ABI omits is worth more than a skip.
+
+datatype/lbub_oldapi 1 : uses MPI_LB and MPI_UB, deleted by MPI-3.0 and absent from an MPI-5.0 header.
+datatype/transpose_pack_oldapi 1 : uses MPI_Type_extent and MPI_Type_hvector, deleted by MPI-3.0.
+datatype/typename_oldapi 1 : uses the deleted MPI-1 datatype constructors.
+datatype/indexed_misc_oldapi 1 : uses MPI_Type_hindexed, deleted by MPI-3.0.
+datatype/simple_size_extent_oldapi 1 : uses MPI_Type_extent and MPI_Type_lb, deleted by MPI-3.0.
+datatype/struct_no_real_types 1 : builds a struct type out of MPI_LB and MPI_UB alone, both deleted by MPI-3.0.
+errhan/commcall_oldapi 2 : uses MPI_Errhandler_create/_set, deleted by MPI-3.0.
+errors/datatype/type_extent_nullarg 1 : MPI_Type_extent, deleted by MPI-3.0.
+errors/datatype/type_lb_nullarg 1 : MPI_Type_lb, deleted by MPI-3.0.
+errors/datatype/type_ub_nullarg 1 : MPI_Type_ub, deleted by MPI-3.0.
+mpi_t/qmpi_test 2 : QMPI is MPICH's own tool interface, not standard MPI: QMPI_Context is not a type an MPI-5.0 header declares.
+
+# --- (d) an erroneous argument the implementation would have diagnosed -----
+#
+# Every one of these passes NULL where MPI requires a valid OUT pointer (or
+# MPI_IN_PLACE where the standard forbids it) and expects MPI_ERR_ARG /
+# MPI_ERR_BUFFER back. MPICH's error checking gives exactly that. Through this
+# wrapper the implementation never sees the argument: the generated body hands
+# it a local of its own and writes the converted result back through the
+# caller's pointer, so the wrapper dereferences the null first and the process
+# dies with SIGSEGV. The program is erroneous either way and MPI grants an
+# implementation licence to do anything; what is lost is a diagnosis the
+# wrapped implementation had. NOTES.md #3 records what closing this would
+# cost, since it is a null check per written-through OUT parameter across 563
+# generated bodies rather than a fix to any one of them.
+
+errors/comm/comm_create_nullarg 1 : NULL for MPI_Comm_create's newcomm.
+errors/comm/comm_create_group_nullarg 1 : NULL for MPI_Comm_create_group's newcomm.
+errors/comm/comm_get_info_nullarg 1 : NULL for MPI_Comm_get_info's info_used.
+errors/comm/comm_group_nullarg 1 : NULL for MPI_Comm_group's group.
+errors/comm/comm_split_nullarg 1 : NULL for MPI_Comm_split's newcomm.
+errors/comm/comm_split_type_nullarg 1 : NULL for MPI_Comm_split_type's newcomm.
+errors/comm/intercomm_create_nullarg 1 : NULL for MPI_Intercomm_create's newintercomm.
+errors/datatype/type_contiguous_nullarg 1 : NULL for MPI_Type_contiguous's newtype.
+errors/datatype/type_vector_nullarg 1 : NULL for MPI_Type_vector's newtype.
+errors/group/group_difference_nullarg 1 : NULL for MPI_Group_difference's newgroup.
+errors/group/group_intersection_nullarg 1 : NULL for MPI_Group_intersection's newgroup.
+errors/group/group_range_excl_nullarg 1 : NULL for MPI_Group_range_excl's newgroup.
+errors/group/group_range_incl_nullarg 1 : NULL for MPI_Group_range_incl's newgroup.
+errors/group/group_rank_nullarg 1 : NULL for MPI_Group_rank's rank.
+errors/group/group_union_nullarg 1 : NULL for MPI_Group_union's newgroup.
+errors/session/comm_create_from_group 1 : NULL for MPI_Comm_create_from_group's newcomm.
+errors/coll/reduce_local 1 : MPI_IN_PLACE passed to MPI_Reduce_local, where MPI-5.0 6.9.7 forbids it. NOTES.md #5.3 translates a sentinel only where it is legal for that parameter, so here the ABI's MPI_IN_PLACE reaches MPICH as an ordinary address and is dereferenced. Same shape as the nullargs above.
+
+# --- (e) a sentinel this project has not translated ------------------------
+
+io/setviewcur 4 : MPI_DISPLACEMENT_CURRENT is (MPI_Offset)-1 in the ABI header and -54278278 in ROMIO, which is what both MPICH and Open MPI use for MPI-IO, so MPI_File_set_view is handed -1 and answers "Invalid displacement argument". A bug of ours, diagnosed in S7 and not fixed there: #5.3's sentinel rule is about *pointer* sentinels and this is the one that is an integer, in one parameter of one entry point.
+io/i_setviewcur 4 : the same, through MPI_File_iset_view.
+
+# --- (g) timing, in this environment ---------------------------------------
+#
+# Each of these passes when run on its own on this host, with the same
+# arguments and the same launcher, and fails inside a full run. They are here
+# because a list that gates has to describe the run it gates, not the run one
+# would prefer; MPITEST_TIMEOUT_MULTIPLIER (see run-suite.sh) is the knob for
+# a slower machine, and a quiet run that passes them will fail this gate with
+# "expected failure that passed", which is the mechanism asking for the line
+# to be deleted.
+
+threads/comm/dup_leak_test 2 : 12345 MPI_Comm_dup/MPI_Comm_free pairs across threads, which takes 150 seconds of the suite's 180-second limit on this host and exceeds it under any other load. Verified to pass standalone at the same iteration count.
+errors/comm/subcomm_abort2 6 : MPI_Abort on a sub-communicator with hydra's -disable-auto-cleanup; the surviving ranks are meant to keep running, and here the job reaches the 180-second limit instead. Passes standalone.
+errors/comm/intercomm_abort 6 : the same test one communicator further out, and this one fails in five seconds rather than timing out. Passes standalone, which is the whole of what is known: the difference between the two invocations is the rest of the suite having run first.
+
+# --- (f) measured, not yet attributed --------------------------------------
+
+errors/coll/noalias2 4 : four of the test's aliasing checks -- the rooted ones, MPI_Gather, MPI_Gatherv, MPI_Scatter and MPI_Scatterv with sendbuf == recvbuf -- return MPI_SUCCESS through the wrapper where MPICH answers MPI_ERR_BUFFER, while the six unrooted checks in the same test do fire. The same binary built with MPICH's own mpicc passes. Nothing in the wrapper touches either buffer pointer, so what differs is not yet known; the next step is to compare what MPICH's error-checking layer is handed in the two cases.
+errors/coll/noalias3 4 : the same four checks, in the large-count (_c) forms.

@@ -48,7 +48,20 @@ _Static_assert(offsetof(MPI_Status, MPI_ERROR) == IMPL_NAMED_OFF + 2 * sizeof(in
 _Static_assert(IMPL_HEAD_LEN + IMPL_TAIL_LEN <= ABI_SCRATCH,
                "MPI_Status: private part exceeds the ABI's 20 scratch bytes");
 
-void mpiwrapper_status_toabi(const MPI_Status *st, MPIABI_Status *abi)
+/* The one shape both directions of the out-conversion share. `with_error` is
+ * the whole difference, and it is MPI-5.0 3.2.5: "the error field ... is never
+ * modified" except by the multiple-completion calls of 3.7.5, which are
+ * exactly the ones taking an array of statuses. A single-status body therefore
+ * must not touch the field, and the reason it is a *problem* here rather than
+ * free is that the implementation is handed a temporary of ours: whatever it
+ * leaves in that temporary's error field -- zero, since the generated bodies
+ * clear it -- would otherwise be copied over the caller's value.
+ *
+ * Found by MPICH's own pt2pt/mprobe and its threaded relatives, which preset
+ * the field to MPI_ERR_DIMS and require it back (S7, NOTES.md #3).
+ */
+static void status_toabi(const MPI_Status *st, MPIABI_Status *abi,
+                         int with_error)
 {
   const unsigned char *src = (const unsigned char *)st;
 
@@ -70,8 +83,46 @@ void mpiwrapper_status_toabi(const MPI_Status *st, MPIABI_Status *abi)
    */
   abi->MPI_SOURCE = mpiwrapper_rank_toabi(st->MPI_SOURCE);
   abi->MPI_TAG    = mpiwrapper_tag_toabi(st->MPI_TAG);
-  abi->MPI_ERROR  = mpiwrapper_errorcode_toabi(st->MPI_ERROR);
+
+  /* The *empty* status is the exception to 3.2.5, and it is one the standard
+   * spells out: MPI-5.0 3.7.3 defines an empty status as MPI_SOURCE =
+   * MPI_ANY_SOURCE, MPI_TAG = MPI_ANY_TAG, MPI_ERROR = MPI_SUCCESS and a
+   * count of zero, which MPI_Wait on MPI_REQUEST_NULL returns. So the error
+   * field is part of *that* status's value and has to be copied, while for
+   * an ordinary completion it must not be.
+   *
+   * The two cases are told apart by the status the implementation filled in,
+   * and MPI_ANY_SOURCE is what does it: a completed receive always reports a
+   * definite rank, and a receive from MPI_PROC_NULL -- which does have
+   * MPI_TAG = MPI_ANY_TAG (3.11) and whose error field MPICH's own
+   * pt2pt/mprobe requires *preserved* -- reports MPI_PROC_NULL rather than
+   * MPI_ANY_SOURCE. Found by pt2pt/rqstatus, which is the test for the empty
+   * status and the one that fails if this rule is written as the simple one.
+   */
+  const int empty = st->MPI_SOURCE == MPI_ANY_SOURCE
+                    && st->MPI_TAG == MPI_ANY_TAG;
+  if (with_error || empty)
+    abi->MPI_ERROR = mpiwrapper_errorcode_toabi(st->MPI_ERROR);
   memcpy(abi->MPI_internal, blob, sizeof blob);
+}
+
+/* The whole status, error field included: the multiple-completion calls, and
+ * the four Fortran status converters, where the field is part of the object
+ * being converted rather than an output of a call.
+ */
+void mpiwrapper_status_toabi(const MPI_Status *st, MPIABI_Status *abi)
+{
+  status_toabi(st, abi, 1);
+}
+
+/* Everything but the error field, for a single OUT status -- except when the
+ * implementation filled in an empty status, whose error field is part of its
+ * definition. See status_toabi above.
+ */
+void mpiwrapper_status_toabi_keep_error(const MPI_Status *st,
+                                        MPIABI_Status *abi)
+{
+  status_toabi(st, abi, 0);
 }
 
 void mpiwrapper_status_fromabi(const MPIABI_Status *abi, MPI_Status *st)

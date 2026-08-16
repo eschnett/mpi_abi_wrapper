@@ -1,0 +1,229 @@
+# Expected failures of MPICH's C test suite over this project, wrapping the
+# Open MPI 4.1.6 that Ubuntu 24.04 ships (STAGES.md S7). One line per test,
+# `<dir>/<program> <np> : why`, in runtests' own naming.
+#
+# This row runs on Linux, in the container ci-scripts/suite/linux-suite.sh
+# starts, because no Open MPI 5.0.x launcher works on macOS 26 with or
+# without this project (test/README.md). 1231 tests, and the failures below.
+#
+# **The list is version-specific and most of it is not about this project.**
+# Open MPI 4.1.6 provides 466 of the ABI's 688 entry points, so everything
+# MPI-4.0 added -- sessions, partitioned communication, persistent
+# collectives, the large-count `_c` forms, MPI_Isendrecv, MPI_Info_get_string
+# -- is a stub answering MPI_ERR_UNSUPPORTED_OPERATION, which is what
+# decision 6 requires and what an application over this wrapper will see. A
+# newer Open MPI moves those lines, which is why the variant is what selects
+# the file.
+#
+# **Triage here is partial, and the lines say which is which.** The first
+# three groups are attributed mechanically -- from the probe header that
+# records what this implementation has, and from the compiler's own message.
+# The fourth is shared with the MPICH row, so its cause is already known. The
+# last two are honest placeholders: what was observed, and nothing claimed
+# beyond it. Finishing them is the first task of whoever picks this up, and
+# ci-scripts/suite/run-suite.sh --gate-only re-runs the comparison against a
+# TAP file already in hand.
+#
+# **Two provenance notes, so that a first re-run is not a mystery.** The run
+# this list was recorded from predates the last change to
+# src/mpiwrapper/status.c by minutes: pt2pt/rqstatus failed in it, for the
+# empty status of MPI-5.0 3.7.3, and that is fixed and verified over MPICH,
+# so the line is *not* here. And the three rma/linked_list_bench_* lines
+# below moved between two runs of this row on the same host, so they are
+# timing-dependent under load rather than deterministic; a quiet run that
+# passes them will fail this gate with "expected failure that passed", which
+# is the mechanism working -- delete the line when that happens.
+
+# --- entry points Open MPI 4.1.6 does not have (decision 6) ---------------
+
+coll/coll_large 4 : Open MPI 4.1.6 has no MPI_Allgather_c, MPI_Allgatherv_c, MPI_Allreduce_c, MPI_Alltoall_c (and 29 more), so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/nonblocking3 1 : Open MPI 4.1.6 has no MPI_Request_get_status_all, MPI_Request_get_status_any, MPI_Request_get_status_some, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/nonblocking3 4 : Open MPI 4.1.6 has no MPI_Request_get_status_all, MPI_Request_get_status_any, MPI_Request_get_status_some, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/nonblocking3 5 : Open MPI 4.1.6 has no MPI_Request_get_status_all, MPI_Request_get_status_any, MPI_Request_get_status_some, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/nonblocking3 10 : Open MPI 4.1.6 has no MPI_Request_get_status_all, MPI_Request_get_status_any, MPI_Request_get_status_some, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_allgather 10 : Open MPI 4.1.6 has no MPI_Allgather_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_allgatherv 10 : Open MPI 4.1.6 has no MPI_Allgatherv_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_allred 4 : Open MPI 4.1.6 has no MPI_Allreduce_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_alltoall 8 : Open MPI 4.1.6 has no MPI_Alltoall_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_alltoallv 10 : Open MPI 4.1.6 has no MPI_Alltoallv_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_alltoallw 10 : Open MPI 4.1.6 has no MPI_Alltoallw_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_barrier 2 : Open MPI 4.1.6 has no MPI_Barrier_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_bcast 4 : Open MPI 4.1.6 has no MPI_Bcast_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_bcast2 8 : Open MPI 4.1.6 has no MPI_Bcast_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_exscan 5 : Open MPI 4.1.6 has no MPI_Exscan_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_gather 4 : Open MPI 4.1.6 has no MPI_Gather_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_gatherv 5 : Open MPI 4.1.6 has no MPI_Gatherv_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_inactive 1 : Open MPI 4.1.6 has no MPI_Bcast_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_order 2 : Open MPI 4.1.6 has no MPI_Barrier_init, MPI_Bcast_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_red 4 : Open MPI 4.1.6 has no MPI_Reduce_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_red_scat_block 4 : Open MPI 4.1.6 has no MPI_Reduce_scatter_block_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_redscat 4 : Open MPI 4.1.6 has no MPI_Reduce_scatter_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_scan 4 : Open MPI 4.1.6 has no MPI_Scan_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_scatter 4 : Open MPI 4.1.6 has no MPI_Scatter_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+coll/p_scatterv 4 : Open MPI 4.1.6 has no MPI_Scatterv_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+comm/ic1 4 : Open MPI 4.1.6 has no MPI_Intercomm_create_from_groups, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+comm/idup_with_info 2 : Open MPI 4.1.6 has no MPI_Comm_idup_with_info, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+comm/idup_with_info 4 : Open MPI 4.1.6 has no MPI_Comm_idup_with_info, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+comm/idup_with_info 8 : Open MPI 4.1.6 has no MPI_Comm_idup_with_info, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+datatype/type_large 1 : Open MPI 4.1.6 has no MPI_Type_contiguous_c, MPI_Type_create_hindexed_c, MPI_Type_create_indexed_block_c, MPI_Type_get_true_extent_c (and 1 more), so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+errhan/sessioncall 1 : Open MPI 4.1.6 has no MPI_Session_call_errhandler, MPI_Session_set_errhandler, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+errors/session/comm_create_from_group 1 : Open MPI 4.1.6 has no MPI_Comm_create_from_group, MPI_Group_from_session_pset, MPI_Session_set_errhandler, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+errors/session/getnthpset 1 : Open MPI 4.1.6 has no MPI_Session_get_nth_pset, MPI_Session_get_num_psets, MPI_Session_set_errhandler, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+errors/session/getpsetinfo 1 : Open MPI 4.1.6 has no MPI_Session_get_pset_info, MPI_Session_set_errhandler, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+errors/session/sessioninit 1 : Open MPI 4.1.6 has no MPI_Session_set_errhandler, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+info/info_no_init 1 : Open MPI 4.1.6 has no MPI_Info_get_string, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+info/infocreateenv 1 : Open MPI 4.1.6 has no MPI_Info_create_env, MPI_Info_get_string, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+info/infogetstring 1 : Open MPI 4.1.6 has no MPI_Info_get_string, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+mpi_t/getindex 1 : Open MPI 4.1.6 has no MPI_T_event_get_index, MPI_T_event_get_info, MPI_T_event_get_num, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+mpi_t/mpit_vars 1 : Open MPI 4.1.6 has no MPI_T_event_get_info, MPI_T_event_get_num, MPI_T_source_get_info, MPI_T_source_get_num, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+part/multipart 2 : Open MPI 4.1.6 has no MPI_Pready_range, MPI_Precv_init, MPI_Psend_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+part/no_start 2 : Open MPI 4.1.6 has no MPI_Precv_init, MPI_Psend_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+part/nonblocking_pready 2 : Open MPI 4.1.6 has no MPI_Pready, MPI_Precv_init, MPI_Psend_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+part/parrived 2 : Open MPI 4.1.6 has no MPI_Parrived, MPI_Pready, MPI_Precv_init, MPI_Psend_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+part/pingping 2 : Open MPI 4.1.6 has no MPI_Pready, MPI_Precv_init, MPI_Psend_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+part/start_pready 2 : Open MPI 4.1.6 has no MPI_Pready, MPI_Pready_list, MPI_Pready_range, MPI_Precv_init (and 1 more), so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+pt2pt/isendrecv 4 : Open MPI 4.1.6 has no MPI_Isendrecv, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+pt2pt/isendrecv_replace 4 : Open MPI 4.1.6 has no MPI_Isendrecv_replace, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+pt2pt/pt2pt_large 2 : Open MPI 4.1.6 has no MPI_Recv_c, MPI_Send_c, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+session/session 4 : Open MPI 4.1.6 has no MPI_Comm_create_from_group, MPI_Group_from_session_pset, MPI_Session_get_info, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+session/session_bsend 2 : Open MPI 4.1.6 has no MPI_Comm_create_from_group, MPI_Group_from_session_pset, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+session/session_psets 1 : Open MPI 4.1.6 has no MPI_Group_from_session_pset, MPI_Session_get_nth_pset, MPI_Session_get_num_psets, MPI_Session_get_pset_info, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+session/session_self 1 : Open MPI 4.1.6 has no MPI_Comm_create_from_group, MPI_Group_from_session_pset, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+threads/init/mult_session 4 : Open MPI 4.1.6 has no MPI_Comm_create_from_group, MPI_Group_from_session_pset, MPI_Session_get_info, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+threads/part/parrived_wait 2 : Open MPI 4.1.6 has no MPI_Parrived, MPI_Pready_range, MPI_Precv_init, MPI_Psend_init, so the wrapper answers MPI_ERR_UNSUPPORTED_OPERATION as decision 6 requires and the test carries on regardless
+datatype/indexed_misc_oldapi 1 : does not build
+datatype/simple_size_extent_oldapi 1 : does not build
+datatype/transpose_pack_oldapi 1 : does not build
+errhan/commcall_oldapi 2 : does not build
+errors/datatype/type_extent_nullarg 1 : does not build
+errors/datatype/type_lb_nullarg 1 : does not build
+errors/datatype/type_ub_nullarg 1 : does not build
+
+# --- build failures: entry points MPI-3.0 deleted -------------------------
+
+datatype/lbub_oldapi 1 : uses MPI_LB, MPI_UB, which an MPI-5.0 ABI header does not declare (MPI-3.0 deleted them)
+datatype/struct_no_real_types 1 : uses MPI_LB, which an MPI-5.0 ABI header does not declare (MPI-3.0 deleted them)
+datatype/typename_oldapi 1 : uses MPI_LB, MPI_UB, which an MPI-5.0 ABI header does not declare (MPI-3.0 deleted them)
+mpi_t/qmpi_test 2 : uses MPI_FINALIZE_T, MPI_INIT_THREAD_T, MPI_RECV_T, MPI_SEND_T, QMPI_Context, QMPI_Finalize_t, QMPI_Recv_t, QMPI_Send_t, Test_Finalize, Test_Init_Thread, Test_Recv, Test_Send, which an MPI-5.0 ABI header does not declare (MPI-3.0 deleted them)
+
+# --- the same causes as the MPICH row ------------------------------------
+#
+# Each of these fails over MPICH too and for a reason established there;
+# ci-scripts/suite/xfail-mpich.txt is where the reasoning lives.
+
+attr/fkeyvaltype 1 : 32 keyvals per iteration over 1024 datatype-pool objects is 32,768 in one process, against a 1024-slot table. MPIWRAPPER_KEYVAL_SLOTS is fixed and its entries are never reclaimed, because MPI-5.0 7.7 keeps a freed keyval usable by attributes not yet deleted, so no point is known-dead (NOTES.md #6.2). MPICH itself recycles the integer and has no such ceiling.
+errhan/commcall 2 : 2000 MPI_Comm_create_errhandler calls against MPIWRAPPER_ERRHANDLER_SLOTS, which is 256 and is never reclaimed -- an errhandler is deallocated only after every object it was set on (MPI-5.0 9.4), which the wrapper cannot observe. Measured: 3490 of the test's 4000 handler invocations never reach the application's function.
+errors/coll/noalias2 4 : four of the test's aliasing checks -- the rooted ones, MPI_Gather, MPI_Gatherv, MPI_Scatter and MPI_Scatterv with sendbuf == recvbuf -- return MPI_SUCCESS through the wrapper where MPICH answers MPI_ERR_BUFFER, while the six unrooted checks in the same test do fire. The same binary built with MPICH's own mpicc passes. Nothing in the wrapper touches either buffer pointer, so what differs is not yet known; the next step is to compare what MPICH's error-checking layer is handed in the two cases.
+errors/coll/noalias3 4 : the same four checks, in the large-count (_c) forms.
+errors/coll/reduce_local 1 : MPI_IN_PLACE passed to MPI_Reduce_local, where MPI-5.0 6.9.7 forbids it. NOTES.md #5.3 translates a sentinel only where it is legal for that parameter, so here the ABI's MPI_IN_PLACE reaches MPICH as an ordinary address and is dereferenced. Same shape as the nullargs above.
+errors/comm/comm_create_group_nullarg 1 : NULL for MPI_Comm_create_group's newcomm.
+errors/comm/comm_create_nullarg 1 : NULL for MPI_Comm_create's newcomm.
+errors/comm/comm_get_info_nullarg 1 : NULL for MPI_Comm_get_info's info_used.
+errors/comm/comm_group_nullarg 1 : NULL for MPI_Comm_group's group.
+errors/comm/comm_split_nullarg 1 : NULL for MPI_Comm_split's newcomm.
+errors/comm/comm_split_type_nullarg 1 : NULL for MPI_Comm_split_type's newcomm.
+errors/comm/intercomm_create_nullarg 1 : NULL for MPI_Intercomm_create's newintercomm.
+errors/datatype/type_contiguous_nullarg 1 : NULL for MPI_Type_contiguous's newtype.
+errors/datatype/type_vector_nullarg 1 : NULL for MPI_Type_vector's newtype.
+errors/group/group_difference_nullarg 1 : NULL for MPI_Group_difference's newgroup.
+errors/group/group_intersection_nullarg 1 : NULL for MPI_Group_intersection's newgroup.
+errors/group/group_range_excl_nullarg 1 : NULL for MPI_Group_range_excl's newgroup.
+errors/group/group_range_incl_nullarg 1 : NULL for MPI_Group_range_incl's newgroup.
+errors/group/group_rank_nullarg 1 : NULL for MPI_Group_rank's rank.
+errors/group/group_union_nullarg 1 : NULL for MPI_Group_union's newgroup.
+init/version 1 : MPI_Get_version forwards the implementation's answer (MPICH 4.3.1 says 4.1) while the ABI header is fixed at MPI-5.0, and the test compares the two. Forwarding is the honest half: an application told 5.0 would believe entry points work that this wrapper answers with MPI_ERR_UNSUPPORTED_OPERATION. The two can agree only over an implementation that is itself MPI-5.0.
+io/i_setviewcur 4 : the same, through MPI_File_iset_view.
+io/setviewcur 4 : MPI_DISPLACEMENT_CURRENT is (MPI_Offset)-1 in the ABI header and -54278278 in ROMIO, which is what both MPICH and Open MPI use for MPI-IO, so MPI_File_set_view is handed -1 and answers "Invalid displacement argument". A bug of ours, diagnosed in S7 and not fixed there: #5.3's sentinel rule is about *pointer* sentinels and this is the one that is an integer, in one parameter of one entry point.
+rma/wincall 2 : the same table for windows: the test loops MPI_Win_create_errhandler and MPI_Win_set_errhandler 1000 times, and past 256 the wrapper has no slot, so MPI_ERRHANDLER_NULL reaches MPI_Win_set_errhandler.
+
+# --- the container, not this project -------------------------------------
+
+comm/comm_idup_isend 6 : a property of the container this row runs in rather than of the wrapper -- Open MPI's own message, with no MPI call of ours in it. Observed: -------------------------------------------------------------------------- | The user-provided time limit for job execution has been reached:
+comm/comm_idup_nb 6 : a property of the container this row runs in rather than of the wrapper -- Open MPI's own message, with no MPI call of ours in it. Observed: -------------------------------------------------------------------------- | The user-provided time limit for job execution has been reached:
+errors/comm/too_many_comms2 4 : a property of the container this row runs in rather than of the wrapper -- Open MPI's own message, with no MPI call of ours in it. Observed: -------------------------------------------------------------------------- | The user-provided time limit for job execution has been reached:
+rma/win_large_shm 4 : a property of the container this row runs in rather than of the wrapper -- Open MPI's own message, with no MPI call of ours in it. Observed: -------------------------------------------------------------------------- | It appears as if there is not enough space for /dev/shm/osc_rdma.8540333cec72.b3640001.4 (the
+rma/win_large_shm 3 : a property of the container this row runs in rather than of the wrapper -- Open MPI's own message, with no MPI call of ours in it. Observed: -------------------------------------------------------------------------- | It appears as if there is not enough space for /dev/shm/osc_rdma.8540333cec72.b3640001.4 (the
+threads/comm/idup_deadlock 4 : a property of the container this row runs in rather than of the wrapper -- Open MPI's own message, with no MPI call of ours in it. Observed: -------------------------------------------------------------------------- | The user-provided time limit for job execution has been reached:
+
+# --- observed, not yet attributed ----------------------------------------
+#
+# Neither the probe nor the MPICH row explains these. The evidence on each
+# line is the first of the test's own output; the next step for each is the
+# comparison this stage used everywhere else -- build the same test with Open
+# MPI's own mpicc and see whether it passes without the wrapper.
+
+attr/keyval_double_free 1 : not yet attributed. Observed: [8540333cec72:53471] *** An error occurred in MPI_Comm_free_keyval | [8540333cec72:53471] *** reported by process [1923940353,0]
+attr/keyval_double_free_comm 1 : not yet attributed. Observed: [8540333cec72:53486] *** An error occurred in MPI_Comm_free_keyval | [8540333cec72:53486] *** reported by process [1922957313,0]
+attr/keyval_double_free_type 1 : not yet attributed. Observed: [8540333cec72:53501] *** An error occurred in MPI_Type_free_keyval | [8540333cec72:53501] *** reported by process [1921974273,0]
+attr/keyval_double_free_win 1 : not yet attributed. Observed: [8540333cec72:53516] *** An error occurred in MPI_Win_create | [8540333cec72:53516] *** reported by process [1936719873,281470681743360]
+comm/cmsplit_type 4 : not yet attributed. Observed: [8540333cec72:61248] *** An error occurred in MPI_Comm_split_type | [8540333cec72:61248] *** reported by process [1296957441,2]
+comm/commname 4 : not yet attributed. Observed: [8540333cec72:60770] *** An error occurred in MPI_Comm_get_name | [8540333cec72:60770] *** reported by process [1328480257,3]
+datatype/get_elements_pairtype 1 : not yet attributed. Observed: Found 1 errors | --------------------------------------------------------------------------
+datatype/large_count 1 : not yet attributed. Observed: check failed: (elements == (int) expected), line 46 | check failed: (elements_x == expected), line 47
+datatype/pack_external 1 : not yet attributed. Observed: MPI_Pack_external_size of MPI_LONG: returns 16, expect 8 | MPI_Pack_external MPI_LONG: updated pos to 8, expect 16
+errhan/adderr 1 : not yet attributed. Observed: Error class 0 is not a valid error code e 4fc0 | Error class 1 is not a valid error code e 4fc6
+errors/attr/keyvalmis 1 : not yet attributed. Observed: [8540333cec72:78199] *** An error occurred in MPI_Win_create | [8540333cec72:78199] *** reported by process [2466512897,281470681743360]
+errors/coll/nb_noalias 2 : not yet attributed. Observed: Did not detect aliased arguments in MPI_Allreduce | Did not detect aliased arguments in MPI_Gather
+errors/coll/nb_rerr 2 : not yet attributed. Observed: Did not detect invalid type/op pair (byte,max) in Allreduce | Did not detect invalid type/op pair (byte,max) in Allreduce
+errors/coll/noalias 2 : not yet attributed. Observed: Did not detect aliased arguments in MPI_Allreduce | Did not detect aliased arguments in MPI_Gather
+errors/coll/rerr 2 : not yet attributed. Observed: Did not detect invalid type/op pair (byte,max) in Allreduce | Found 2 errors
+errors/comm/ccreate1 8 : not yet attributed. Observed: Did not detect group of high ranks in low comm | Did not detect group of high ranks in low comm
+errors/comm/cfree 4 : not yet attributed. Observed: [8540333cec72:78350] *** Process received signal *** | [8540333cec72:78350] Signal: Segmentation fault (11)
+errors/comm/intercomm_abort 6 : not yet attributed. Observed: -------------------------------------------------------------------------- | MPI_ABORT was invoked on rank 0 in communicator <Unknown>
+errors/comm/subcomm_abort 4 : not yet attributed. Observed: (no output captured)
+errors/comm/subcomm_abort2 6 : not yet attributed. Observed: (no output captured)
+errors/comm/too_many_comms3 4 : not yet attributed. Observed: Found 4 errors | --------------------------------------------------------------------------
+errors/comm/unmatched 2 : not yet attributed. Observed: Found 1 errors | --------------------------------------------------------------------------
+errors/comm/userdup 4 : not yet attributed. Observed: Unexpected error class = 14, expected user-defined class 16384 | Unexpected error class = 14, expected user-defined class 16384
+errors/group/group_translate_ranks_nullarg 1 : not yet attributed. Observed: Found 1 errors
+errors/io/fileerrret 1 : not yet attributed. Observed: Returned error from open (should have called error handler instead) | Found 1 errors
+errors/pt2pt/truncmsg2 2 : not yet attributed. Observed: MPI_Recv succeeded with non-matching datatype signature | Found 1 errors
+errors/rma/cas_type_check 2 : not yet attributed. Observed: cas_type_check: /tmp/suite-src/mpich-4.3.1/test/mpi/errors/rma/cas_type_check.c:72: main: Assertion `err_class == MPI_ERR_TYPE' failed. | [8540333cec72:79748] *** Process
+errors/rma/win_sync_complete 2 : not yet attributed. Observed: 0: Operation succeeded, when it should have failed | Found 2 errors
+errors/rma/win_sync_free_at 2 : not yet attributed. Observed: 1: Operation succeeded, when it should have failed | 0: Operation succeeded, when it should have failed
+errors/rma/win_sync_free_pt 2 : not yet attributed. Observed: [8540333cec72:79785] *** An error occurred in MPI_Win_unlock | [8540333cec72:79785] *** reported by process [2513764353,187647121162241]
+errors/rma/win_sync_lock_pt 2 : not yet attributed. Observed: 0: Operation succeeded, when it should have failed | Found 2 errors
+init/exitst1 2 : not yet attributed. Observed: (no output captured)
+init/exitst2 4 : not yet attributed. Observed: (no output captured)
+io/rd_end 2 : not yet attributed. Observed: 1: count was 10; expected 5 | 0: count was 10; expected 5
+io/tst_fileview 1 : not yet attributed. Observed: Error at line 101: expect MPI_ERR_IO but got MPI_ERR_TYPE: invalid datatype | Error at line 118: expect MPI_ERR_IO but got MPI_ERR_TYPE: invalid datatype
+mpi_t/cvarwrite 1 : not yet attributed. Observed: Found 93 errors | --------------------------------------------------------------------------
+mpi_t/mpi_t_str 1 : not yet attributed. Observed: check failed: ((strlen(desc) + 1) == min(desc_len, STR_SZ)), line 86 | check failed: ((strlen(desc) + 1) == min(desc_len, STR_SZ)), line 86
+part/parrived_pready_out_of_order 2 : not yet attributed. Observed: [8540333cec72:67491] [[42453,0],0] ORTE_ERROR_LOG: Out of resource in file ../../../orte/util/show_help.c at line 501 | [8540333cec72:67491] [[42453,0],0] ORTE_ERROR_LOG:
+part/parrived_strided 2 : not yet attributed. Observed: [8540333cec72:67551] *** An error occurred in MPI_Start | [8540333cec72:67551] *** reported by process [2779709441,187647121162241]
+part/parrived_wait 2 : not yet attributed. Observed: [8540333cec72:67334] *** An error occurred in MPI_Start | [8540333cec72:67334] *** reported by process [2776039425,187647121162240]
+part/start_pready_list 2 : not yet attributed. Observed: [8540333cec72:67137] *** An error occurred in MPI_Start | [8540333cec72:67137] *** reported by process [2756509697,187647121162241]
+part/start_pready_list_non_consecutive 2 : not yet attributed. Observed: [8540333cec72:67149] [[42043,0],0] ORTE_ERROR_LOG: Data unpack would read past end of buffer in file ../../../orte/util/show_help.c at line 513 | [8540333cec72:67149] [[4
+part/start_pready_range 2 : not yet attributed. Observed: [8540333cec72:67119] *** An error occurred in MPI_Start | [8540333cec72:67119] *** reported by process [2757689345,187647121162241]
+part/start_pready_wait 2 : not yet attributed. Observed: [8540333cec72:66987] [[42973,0],0] ORTE_ERROR_LOG: Data unpack had inadequate space in file ../../../orte/util/show_help.c at line 513 | [8540333cec72:66987] [[42973,0],0
+pt2pt/recvnull 1 : not yet attributed. Observed: [8540333cec72:65097] [[23614,0],0] ORTE_ERROR_LOG: Data unpack would read past end of buffer in file ../../../orte/util/show_help.c at line 513
+pt2pt/rqfree 4 : not yet attributed. Observed: [8540333cec72:64947] Read -1, expected 40000, errno = 14 | [8540333cec72:64947] *** Process received signal ***
+rma/attrorderwin 1 : not yet attributed. Observed: [8540333cec72:69074] *** An error occurred in MPI_Win_create | [8540333cec72:69074] *** reported by process [2948268033,281470681743360]
+rma/badrma 2 : not yet attributed. Observed: [8540333cec72:71147] *** An error occurred in MPI_Accumulate | [8540333cec72:71147] *** reported by process [3079667713,281470681743360]
+rma/baseattrwin 1 : not yet attributed. Observed: [8540333cec72:69107] *** An error occurred in MPI_Win_create | [8540333cec72:69107] *** reported by process [2945974273,281470681743360]
+rma/contig_displ 1 : not yet attributed. Observed: MPI function error returned an error | Error class 56 (MPI_ERR_WIN: invalid window)
+rma/fkeyvalwin 1 : not yet attributed. Observed: [8540333cec72:69122] *** An error occurred in MPI_Win_create | [8540333cec72:69122] *** reported by process [2945122305,281470681743360]
+rma/get_acc_local 1 : not yet attributed. Observed: [8540333cec72:70004] *** An error occurred in MPI_Win_create | [8540333cec72:70004] *** reported by process [3004760065,281470681743360]
+rma/linked_list 4 : not yet attributed. Observed: [8540333cec72:70022] *** An error occurred in MPI_Compare_and_swap | [8540333cec72:70022] *** reported by process [3003645953,281470681743363]
+rma/linked_list_bench_lock_excl 4 : not yet attributed. Observed: [8540333cec72:70946] *** An error occurred in MPI_Get | [8540333cec72:70946] *** reported by process [3077308417,281470681743363]
+rma/linked_list_bench_lock_shr 4 : not yet attributed. Observed: [8540333cec72:70970] *** An error occurred in MPI_Get_accumulate | [8540333cec72:70970] *** reported by process [3074686977,281470681743363]
+rma/linked_list_bench_lock_shr_nocheck 4 : not yet attributed. Observed: [8540333cec72:70994] *** An error occurred in MPI_Get_accumulate | [8540333cec72:70994] *** reported by process [3074162689,281470681743363]
+rma/rmanull 2 : not yet attributed. Observed: Lock beforePut: Error class 6 (MPI_ERR_RANK: invalid rank) | Unlock after Put: Error class 6 (MPI_ERR_RANK: invalid rank)
+rma/rmazero 2 : not yet attributed. Observed: [8540333cec72:69212] *** An error occurred in MPI_Win_create | [8540333cec72:69212] *** reported by process [2887843841,281470681743360]
+rma/selfrma 1 : not yet attributed. Observed: [8540333cec72:69137] *** An error occurred in MPI_Win_create | [8540333cec72:69137] *** reported by process [2893676545,281470681743360]
+rma/transpose6 1 : not yet attributed. Observed: [8540333cec72:68345] *** An error occurred in MPI_Win_create | [8540333cec72:68345] *** reported by process [2827091969,281470681743360]
+rma/win_dynamic_rma_flush_get 2 : not yet attributed. Observed: [8540333cec72:71857] *** An error occurred in MPI_Put | [8540333cec72:71857] *** reported by process [3134849025,281470681743360]
+rma/win_dynamic_rma_flush_get_collattach 2 : not yet attributed. Observed: [8540333cec72:72002] *** An error occurred in MPI_Put | [8540333cec72:72002] *** reported by process [3142189057,281470681743361]
+rma/win_shared_query 4 : not yet attributed. Observed: [8540333cec72:69818] *** An error occurred in MPI_Win_shared_query | [8540333cec72:69818] *** reported by process [2999189505,3]
+rma/window_attach 4 : not yet attributed. Observed: [8540333cec72:69465] *** An error occurred in MPI_Win_attach | [8540333cec72:69465] *** reported by process [2904883201,281470681743361]
+rma/window_attach_collattach 4 : not yet attributed. Observed: [8540333cec72:69488] *** An error occurred in MPI_Win_attach | [8540333cec72:69488] *** reported by process [2904358913,281470681743360]
+rma/winname 2 : not yet attributed. Observed: [8540333cec72:68127] *** An error occurred in MPI_Win_get_name | [8540333cec72:68127] *** reported by process [2825846785,187647121162241]
+session/session_mult_init 4 : not yet attributed. Observed: [8540333cec72:76355] *** An error occurred in MPI_Comm_size | [8540333cec72:76355] *** reported by process [2286419969,0]
+session/session_re_init 4 : not yet attributed. Observed: *** The MPI_Info_create() function was called before MPI_INIT was invoked. | *** This is disallowed by the MPI standard.
+threads/comm/idup_comm_gen 4 : not yet attributed. Observed: [8540333cec72:22726] *** Process received signal *** | [8540333cec72:22726] Signal: Segmentation fault (11)
+threads/comm/idup_nb 4 : not yet attributed. Observed: MPI Error in NBC subrequest 0xaaaaf8341e80 : 15 | NBC_Progress: an error 15 was found during schedule 0xffff8c00b280 at row-offset 93 - aborting the schedule
+threads/mpi_t/mpit_threading 1 : not yet attributed. Observed: [8540333cec72:22834] *** Process received signal *** | [8540333cec72:22834] Signal: Segmentation fault (11)
+topo/cartmap1 4 : not yet attributed. Observed: rank outside of input communicator not UNDEFINED | rank outside of input communicator not UNDEFINED
+topo/cartsuball 4 : not yet attributed. Observed: cart sub to size 0 did not give null | cart sub to size 0 did not give null
+topo/dims5 1 : not yet attributed. Observed: 72 in 2d: 12 x 6 != 9 x 8 | 180 in 2d: 18 x 10 != 15 x 12
+topo/graphmap1 4 : not yet attributed. Observed: Graph map with no local nodes did not return MPI_UNDEFINED | Graph map with no local nodes did not return MPI_UNDEFINED

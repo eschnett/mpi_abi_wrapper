@@ -13,14 +13,14 @@ Frozen tallies
   handle classes         11
   predefined handles     103
   error classes          80
-  generated              565
-  hand-written           118
-  hand-written bodies    118
+  generated              563
+  hand-written           120
+  hand-written bodies    120
   deferred to S3         0
   ABI-side aliases       5
   staged past return     8
 
-Generated (565)
+Generated (563)
 ----------------------------------------
   MPI_Accumulate
   MPI_Accumulate_c
@@ -87,7 +87,6 @@ Generated (565)
   MPI_Comm_flush_buffer
   MPI_Comm_free
   MPI_Comm_free_keyval
-  MPI_Comm_get_attr
   MPI_Comm_get_errhandler
   MPI_Comm_get_info
   MPI_Comm_get_parent
@@ -566,7 +565,6 @@ Generated (565)
   MPI_Win_flush_local_all
   MPI_Win_free
   MPI_Win_free_keyval
-  MPI_Win_get_attr
   MPI_Win_get_errhandler
   MPI_Win_get_group
   MPI_Win_get_info
@@ -588,7 +586,7 @@ Generated (565)
   MPI_Wtick
   MPI_Wtime
 
-Hand-written (118)
+Hand-written (120)
 ----------------------------------------
   An entry point with a body in src/mpiwrapper/ is marked [done]. All
   of them are: S1 wrote eight, S4a the converter face (the handle and
@@ -624,6 +622,10 @@ Hand-written (118)
     [done] MPI_Status_c2f08
     [done] MPI_Status_f082c
     [done] MPI_Status_f2c
+
+  attribute value whose class the keyval decides, not the signature (NOTES.md #5.4, #5.6)
+    [done] MPI_Comm_get_attr
+    [done] MPI_Win_get_attr
 
   buffer attach/detach: MPI_BUFFER_AUTOMATIC and the buffer's ownership
     [done] MPI_Buffer_attach

@@ -81,7 +81,15 @@ static void test_sendrecv(void)
   int sendbuf[4] = {rank, rank + 1, rank + 2, rank + 3};
   int recvbuf[4] = {-1, -1, -1, -1};
 
+  /* MPI_ERROR is preset and expected back unchanged: MPI-5.0 3.2.5 says the
+   * error field "is never modified" except by the multiple-completion calls
+   * of 3.7.5, which take an array of statuses and are not what this is. S1
+   * asserted MPI_SUCCESS here instead, which was the wrong assertion and
+   * passed only because the wrapper was writing the field -- S7 found it from
+   * the other side, in MPICH's own pt2pt/mprobe.
+   */
   MPI_Status status;
+  status.MPI_ERROR = MPI_ERR_DIMS;
   exchange(sendbuf, recvbuf, 4, MPI_INT, tag, &status);
 
   for (int i = 0; i < 4; ++i)
@@ -95,8 +103,10 @@ static void test_sendrecv(void)
         status.MPI_SOURCE, peer);
   CHECK(status.MPI_TAG == tag, "status.MPI_TAG is %d, expected %d",
         status.MPI_TAG, tag);
-  CHECK(status.MPI_ERROR == MPI_SUCCESS || status.MPI_ERROR == 0,
-        "status.MPI_ERROR is %d", status.MPI_ERROR);
+  CHECK(status.MPI_ERROR == MPI_ERR_DIMS,
+        "status.MPI_ERROR is %d, and a single completion must leave it at the "
+        "MPI_ERR_DIMS (%d) it was set to",
+        status.MPI_ERROR, MPI_ERR_DIMS);
 
   int count = -1;
   CHECK_MPI(MPI_Get_count(&status, MPI_INT, &count));

@@ -5,6 +5,18 @@
 #   ci-scripts/run-linux-docker.sh mpich        # one
 #   MPIABI_IMAGE=debian:13 ci-scripts/run-linux-docker.sh
 #
+# MPIABI_LINUX_SCRIPT names what runs inside; it defaults to linux-test.sh
+# (build and ctest) and S7's suite runner is the other one:
+#
+#   MPIABI_LINUX_SCRIPT=/src/ci-scripts/suite/linux-suite.sh \
+#     MPIABI_LINUX_OUT=$PWD/build/linux-out \
+#     ci-scripts/run-linux-docker.sh openmpi
+#
+# MPIABI_LINUX_OUT, if set, is mounted read-write at /out and is where the
+# inner script puts anything worth keeping -- the suite's TAP file and its
+# logs, which are otherwise destroyed with the container and are exactly what
+# triaging a failure needs.
+#
 # This exists because the developers' machines are macOS and the failure modes
 # are not the same: the first Linux build of this project needed four fixes that
 # macOS could not have shown, from _GNU_SOURCE to a GNU-vs-BSD difference in
@@ -18,6 +30,7 @@
 set -euo pipefail
 
 image=${MPIABI_IMAGE:-ubuntu:24.04}
+inner=${MPIABI_LINUX_SCRIPT:-/src/ci-scripts/linux-test.sh}
 src=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mpis=("$@")
 [ ${#mpis[@]} -gt 0 ] || mpis=(mpich openmpi)
@@ -29,8 +42,9 @@ for mpi in "${mpis[@]}"; do
   printf '\n########## %s on %s ##########\n' "$mpi" "$image"
   docker run --rm \
     -v "$src:/src:ro" \
+    ${MPIABI_LINUX_OUT:+-v "$MPIABI_LINUX_OUT:/out"} \
     -e SRC=/src \
-    "$image" bash /src/ci-scripts/linux-test.sh "$mpi" || status=1
+    "$image" bash "$inner" "$mpi" ${MPIABI_LINUX_ARGS:-} || status=1
 done
 
 printf '\n########## %s\n' \

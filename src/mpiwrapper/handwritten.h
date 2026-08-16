@@ -17,7 +17,9 @@
  * lifecycle (hw_lifecycle.c), the fifteen callback registrars
  * (hw_callbacks.c), the twelve buffer forms (hw_buffers.c), the six dynamic
  * error-code forms (hw_errors.c), the two spawn forms (hw_spawn.c) and
- * MPI_Pcontrol (hw_pcontrol.c). All 118 ledger entries have a body, which
+ * MPI_Pcontrol (hw_pcontrol.c). S7 added the two attribute getters whose
+ * *value* is a converted class (hw_attr.c), found by the MPICH suite rather
+ * than by any assertion here. All 120 ledger entries have a body, which
  * dev/generate.py freezes as a tally of its own (NOTES.md #8).
  *
  * S1's handwritten.c is gone: each of its eight bodies belongs to a family
@@ -575,5 +577,17 @@ int mpiwrapper_w_MPI_Abi_set_fortran_booleans(int abi_logical_size,
 int mpiwrapper_w_PMPI_Abi_set_fortran_booleans(int abi_logical_size,
                                                void *abi_logical_true,
                                                void *abi_logical_false);
+
+/* ------------------- attribute values that convert (hw_attr.c) ----------- */
+
+int mpiwrapper_w_MPI_Comm_get_attr(MPIABI_Comm abi_comm, int abi_comm_keyval,
+                                   void *abi_attribute_val, int *abi_flag);
+int mpiwrapper_w_PMPI_Comm_get_attr(MPIABI_Comm abi_comm, int abi_comm_keyval,
+                                    void *abi_attribute_val, int *abi_flag);
+
+int mpiwrapper_w_MPI_Win_get_attr(MPIABI_Win abi_win, int abi_win_keyval,
+                                  void *abi_attribute_val, int *abi_flag);
+int mpiwrapper_w_PMPI_Win_get_attr(MPIABI_Win abi_win, int abi_win_keyval,
+                                   void *abi_attribute_val, int *abi_flag);
 
 #endif /* MPIWRAPPER_HANDWRITTEN_H */

@@ -10,3 +10,5 @@
 
 - remove the call overhead in the `mpi_abi` entrypoints: define the
   functions `static inline`? requires changing the MPI ABI `mpi.h`.
+
+- why doesn't the status keep the error all the time?

@@ -62,12 +62,16 @@
  * user-defined error codes and classes", so this base cannot collide with a
  * later ABI revision's predefined set either.
  *
- * MPI_LASTUSEDCODE, the attribute that reports the current maximum, is a
- * different matter and is not this file's to answer: it comes back through
- * MPI_Comm_get_attr as an int the implementation owns, and neither the
- * generator nor this registry can see that it is an error class rather than
- * any other attribute value. That is recorded in NOTES.md #5.6 as a known gap
- * rather than papered over here.
+ * MPI_LASTUSEDCODE, the attribute that reports the current maximum, was a
+ * known gap here until S7: it comes back through MPI_Comm_get_attr as an int,
+ * and neither the generator nor this registry can see from the signature that
+ * it is an error class rather than any other attribute value -- the keyval
+ * says so, and the keyval is a value rather than a type.
+ * src/mpiwrapper/hw_attr.c is the body that can see it, and what it asks for
+ * is mpiwrapper_errorcode_lastused() below rather than a conversion of the
+ * implementation's answer: the question is "what is the largest error code an
+ * application can be handed here", and after mapping that is a property of
+ * *this* table, not of the implementation's numbering.
  */
 #define MPIWRAPPER_ERRORCODE_ABI_BASE (MPIABI_ERR_LASTCODE + 1)
 
@@ -100,6 +104,24 @@ int mpiwrapper_errorcode_add(int ierror, int *abi_ierror)
   atomic_store_explicit(&errorcode_impl[slot], ierror, memory_order_release);
   *abi_ierror = MPIWRAPPER_ERRORCODE_ABI_BASE + slot;
   return 1;
+}
+
+/* MPI_LASTUSEDCODE's answer (S7). Every code an application can see came out
+ * of mpiwrapper_errorcode_toabi, so it is either predefined -- at most
+ * MPIABI_ERR_LASTCODE -- or one this table issued, and the largest of those
+ * is the last slot claimed. MPI-5.0 9.5 requires the attribute to be at least
+ * MPI_ERR_LASTCODE, which the empty table answers exactly.
+ */
+int mpiwrapper_errorcode_lastused(void)
+{
+  const int count = atomic_load_explicit(&errorcode_count,
+                                         memory_order_relaxed);
+  const int used  = count < MPIWRAPPER_ERRORCODE_SLOTS
+                        ? count
+                        : MPIWRAPPER_ERRORCODE_SLOTS;
+
+  return used > 0 ? MPIWRAPPER_ERRORCODE_ABI_BASE + used - 1
+                  : MPIABI_ERR_LASTCODE;
 }
 
 /* The ABI value *is* the index, so this direction needs no search. */
