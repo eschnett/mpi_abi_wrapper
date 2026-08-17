@@ -156,6 +156,16 @@ runner is 5–25× *faster* below np 4 and 4.7–7× slower above it, MPICH's pr
 engine busy-polling once ranks exceed cores — and the workflow sets
 `MPITEST_TIMEOUT_MULTIPLIER: 2` on that row for it.
 
+**A second run (32076414204) separated the flakes from the facts**, and it is
+worth knowing which is which before touching either list. Reproducible: all six
+new Open MPI failures, identically, and both `io/` lines passing again. Not
+reproducible: the `rma/linked_list` family swapped which member failed. Moving in
+one direction only: `errors/comm/intercomm_abort 6` passed too, so across the two
+runs **all three** of group (g) have passed here at least once. And the multiplier
+priced itself — `pt2pt/sendflood 8` still timed out, at 360 s, so that one
+collapses rather than slows and no multiplier reaches it, while `coll/reduce 10`
+came in at 179.7 s and would have been a fresh timeout without it.
+
 The Open MPI row's nine are not: `io/setviewcur 4` and `io/i_setviewcur 4` pass
 now, the `MPI_DISPLACEMENT_CURRENT` fix having emptied that group out of the
 MPICH list and never out of this one; `rma/linked_list_bench_lock_shr 4` is the

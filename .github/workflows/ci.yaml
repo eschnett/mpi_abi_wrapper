@@ -754,10 +754,27 @@ jobs:
   #            settling it is S7's throughout -- build the same test with the
   #            implementation's own mpicc and see whether it passes unwrapped.
   #
+  # **Run 32076414204 repeated both rows and is what separates the flakes from
+  # the facts.** Reproducible: the six Open MPI failures, all six, identically;
+  # both io/ lines passing again. Not reproducible: the rma/linked_list family
+  # swapped which member failed, which is the load-sensitivity its own list
+  # already claims. And moving in one direction only: errors/comm/intercomm_abort
+  # 6 passed this time too, so across the two runs *all three* of group (g) have
+  # passed here at least once.
+  #
+  # It also priced the multiplier honestly. pt2pt/sendflood 8 did not come back
+  # under a doubled limit -- it spent 360 s where the calibration machine spends
+  # 2.6 -- so at 8 ranks on 4 vCPUs that test collapses rather than merely
+  # slowing, and no multiplier reaches it. What the setting did buy is coll/reduce
+  # 10 at 179.7 s, which at multiplier 1 would have been this run's new timeout.
+  #
   # So what is left before either can gate is a list decision rather than a CI
-  # one: one file per variant cannot describe two hosts, and the honest
-  # resolutions are to retriage the timing group against this runner, to delete
-  # the two io/ lines a fix made stale, and to attribute the six. Deleting
+  # one: one file per variant cannot describe two hosts. For MPICH that is now
+  # exact -- delete group (g)'s three lines, add pt2pt/sendflood 8 with a reason
+  # naming the rank count against the core count -- with the consequence that the
+  # file then describes this runner and the calibration machine goes red on four
+  # lines. A larger runner is the other way to buy it back. For Open MPI it is to
+  # delete the two io/ lines a fix made stale and to attribute the six. Deleting
   # `continue-on-error` is what makes a row gate.
   #
   # Neither job caches the suite's source. It is one tarball fetched from
