@@ -401,15 +401,17 @@ jobs:
   # layer, the 1366 slots and every hand-written body sit on the other side of
   # that switch. Those are what a third compiler has an opinion about.
   #
-  # -Wall -Wextra -Wpedantic -Werror is on for every target here, so any
-  # diagnostic these compilers have that gcc and clang do not is a failure. That
-  # is the point of the row and also why it is **report-only until green**: an
-  # unreviewed -Werror against a compiler nobody has built this with is an
-  # expected red, not a regression.
+  # -Werror is on for every target here, so any diagnostic these compilers have
+  # that gcc and clang do not is a failure. That is the point of the row.
+  #
+  # **It gates.** It started report-only, on the rule that a row nobody has ever
+  # seen green cannot tell a regression from the thing it was added to find, and
+  # it went green once nvc's four objections were dealt with -- two in the
+  # availability probe, one in the warning flags, and the int/enum conversions
+  # of HISTORY.md #3's S6b. Everything it now reports is a change since then.
   compile:
     name: compile / ${{ matrix.name }}
     runs-on: ubuntu-24.04
-    continue-on-error: true
     timeout-minutes: 60
     strategy:
       fail-fast: false

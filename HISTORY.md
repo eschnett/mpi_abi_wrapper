@@ -1153,11 +1153,21 @@ and say why, rather than load and silently do the wrong thing.
 **Where the rows stand.** Green and gating: both Linux arches on distro and
 pinned-from-source MPIs, i386, macOS on both Homebrew MPIs, the no-MPI checks,
 the sanitizer row, and `icx` — which built the whole project under `-Werror`
-first try. Report-only: `nvc`, which reaches the conversion layer and reports
-`branch_past_initialization` in `abi_arrays_test.c` and `mixed_enum_type` in
-`toolevents.c`. Those are nvc's own stylistic diagnostics rather than standard
-violations, and triaging them is the next session's work, not this one's — a
-row gates once it has been green.
+first try, and `nvc`, which took four fixes to get there and gates now: two in
+the availability probe (§3's list above), one in the warning flags, and the
+int/enum conversions its `mixed_enum_type` diagnostic found. It started
+report-only on the rule that a row nobody has seen green cannot tell a
+regression from the thing it was added to find; it has been green, so it
+gates.
+
+**What nvc found in our own code was worth having.** Legal C that gcc and clang
+accept silently: a `goto` over an initializer in `abi_arrays_test.c`, and seven
+sites converting implicitly between `int` and the two MPI_T enum families that
+§2 of `NOTES.md` renames *deliberately* to make distinct. The generator's own
+comment had called that conversion free — "the mappers take and return int, and
+C converts in both directions at the call site" — and it was free only in the
+sense that two compilers said nothing. `ENUM_TYPED_FAMILIES` in
+`dev/generate.py` is the rule now, and the seven sites are explicit.
 
 **And one row was added, answered its question, and was removed.** FreeBSD is
 not supportable (§2.16), so its row could only ever be red, and a permanently
