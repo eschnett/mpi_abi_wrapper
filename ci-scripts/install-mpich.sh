@@ -47,6 +47,14 @@ cleanup_src=0
 if [ -z "$src_dir" ]; then
   src_dir=$(mktemp -d "${TMPDIR:-/tmp}/mpich-src.XXXXXX")
   cleanup_src=1
+else
+  # mktemp creates its directory and a caller-supplied one may not exist, so
+  # the two branches disagreed about whose job this was and the answer was
+  # nobody's: curl -o into a missing directory fails with "Failure writing
+  # output to destination" (exit 23), which reads like a network fault rather
+  # than a missing mkdir. Only ever hit on the path this script's own header
+  # invites CI to take, which is why it survived until a workflow took it.
+  mkdir -p "$src_dir"
 fi
 cleanup() { [ "$cleanup_src" = 1 ] && rm -rf "$src_dir"; }
 trap cleanup EXIT

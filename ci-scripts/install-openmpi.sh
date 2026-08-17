@@ -36,6 +36,11 @@ cleanup_src=0
 if [ -z "$src_dir" ]; then
   src_dir=$(mktemp -d "${TMPDIR:-/tmp}/openmpi-src.XXXXXX")
   cleanup_src=1
+else
+  # See install-mpich.sh: mktemp creates its directory, a caller-supplied one
+  # may not exist, and curl -o into a missing directory fails with exit 23,
+  # which reads as a network fault.
+  mkdir -p "$src_dir"
 fi
 cleanup() { [ "$cleanup_src" = 1 ] && rm -rf "$src_dir"; }
 trap cleanup EXIT
