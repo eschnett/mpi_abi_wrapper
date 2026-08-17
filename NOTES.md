@@ -1879,6 +1879,13 @@ not.
   Eleven have been wrong, each one `grep` from being right. `CODE.md` carries an
   authority column for this reason; if a number is worth writing down, write
   down how to re-derive it.
+- **Commit message subjects are imperative.** "Add the FreeBSD row", not "The
+  FreeBSD row, added" — the subject completes *if applied, this commit will
+  ___*, so `git log --oneline` reads as a list of what each commit does. Only
+  the subject's mood is fixed by this; the body keeps the style the rest of
+  this file asks for, which is the reason for the change, the measurement
+  behind any claim in it, and what was verified. The history is mixed because
+  this was not written down until late.
 - **End committed and green.** Work that leaves the tree red has not produced
   something the next session can build on.
 
