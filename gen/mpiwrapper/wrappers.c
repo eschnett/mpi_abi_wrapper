@@ -24095,7 +24095,7 @@ static int w_PMPI_T_pvar_write(MPIABI_T_pvar_session abi_session,
     MPI_Count *const ticks_per_second = (MPI_Count *)abi_ticks_per_second;     \
     MPI_Count *const max_ticks        = (MPI_Count *)abi_max_ticks;            \
                                                                                \
-    MPI_T_source_order        ordering   = 0;                                  \
+    MPI_T_source_order        ordering   = (MPI_T_source_order)0;              \
     MPI_T_source_order *const ordering_p = abi_ordering ? &ordering : NULL;    \
     MPI_Info                  info       = MPI_INFO_NULL;                      \
     MPI_Info *const           info_p     = abi_info ? &info : NULL;            \

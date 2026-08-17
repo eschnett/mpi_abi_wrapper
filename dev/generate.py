@@ -1787,7 +1787,12 @@ def emit_body(ep):
             # the enum rather than the implementation's.
             cast = (f"({abi_type(p.pointee())})"
                     if fam in ENUM_TYPED_FAMILIES else "")
-            outs.append((p.pointee(), name, "0" if nullable else None))
+            # The placeholder a nullable OUT local starts at, so that an
+            # implementation which writes nothing leaves a defined value rather
+            # than stack garbage. A bare `0` in an enum is the same int -> enum
+            # conversion as the mappers', and nvc reports it in the same breath.
+            zero = f"({p.pointee()})0" if fam in ENUM_TYPED_FAMILIES else "0"
+            outs.append((p.pointee(), name, zero if nullable else None))
             post.append(writeback(abi, f"*{abi} = {cast}{fn}_toabi({name});"))
             args.append(out_pointer(p, name, abi) if nullable else "&" + name)
         elif cls == "switch_inout":
