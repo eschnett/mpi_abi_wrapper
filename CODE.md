@@ -399,10 +399,18 @@ learn what `test/README.md` already records.
 ## 11. Where it runs, as measured
 
 Isolation is a claim with a per-platform truth value, so this table says what
-has been *seen*, not what should happen. Every macOS row is one development
-laptop, and on it MPICH 4.3.1, Open MPI 5.0.6 and Open MPI 5.0.10 each need
-`scripts/host-env.sh` in front of `ctest` or fail 6 of 13, for reasons §12
-attributes to the machine rather than to any of them.
+has been *seen*, not what should happen.
+
+**The macOS rows now come from two machines, and the difference between them is
+the point.** On the one development laptop, MPICH 4.3.1, Open MPI 5.0.6 and Open
+MPI 5.0.10 each need `scripts/host-env.sh` in front of `ctest` or fail 6 of 13.
+On GitHub's `macos-15` runners the same implementations need none of it. That is
+§12's attribution — the machine, not the MPI — measured on a second machine
+rather than argued from one.
+
+**Rows quoting 13/13 ran the whole of `ctest`** under
+`.github/workflows/ci.yaml`; the 6/6 rows quote only the tests that need an MPI,
+which are six of those thirteen. Both are green runs, counted differently.
 
 **"two ranks" in this table is now checked rather than asserted.** It used to be
 neither: the tests accept one rank as well as two, so a launcher that answered
@@ -421,11 +429,15 @@ their old evidence.
 | macOS, native Open MPI 5.0.6 | same | **works**, 6/6, two ranks — same script |
 | macOS, conda-forge Open MPI 5.0.10 | same | **works**, 6/6, two ranks — same script |
 | macOS, native Open MPI 6.1.0a1 | same | **works**, 6/6, two ranks — despite 698 weak `MPI_*`; needs no such script |
+| macOS 15 arm64, Homebrew MPICH 5.0.1 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`. The first MPI-5.0 implementation this has run against (`mpicc` reports `MPI 5.0`); whether that installation also ships the standard ABI, which §2 says cannot be wrapped on macOS, is *not* established here — the wrapper links what `mpicc` links, which is `libmpich` |
+| macOS 15 arm64, Homebrew Open MPI 5.0.9 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`; reports `MPI 3.1` |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
 | macOS, an ABI-implementing MPI | none available | **refused at load**; dyld coalesces weak definitions |
-| Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker) |
+| Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker); and 13/13, two ranks on **x86_64** (Debian 13 container, GitHub Actions, `MPI 4.1`) |
 | Linux glibc, MPICH 4.2.0 | same | **cannot run two ranks** (Ubuntu 24.04): PMIx-only `libmpi`, PMI-1 hydra, so `-n 2` is two singletons. `HISTORY.md` §2.14 |
-| Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker) |
+| Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker); and 13/13, two ranks on **x86_64** (Ubuntu 24.04 container, GitHub Actions, `MPI 3.1`) |
+| Linux glibc x86_64, MPICH 4.3.1 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-mpich.sh`, GitHub Actions. The primary MPICH row of `NOTES.md` #9's version table, and the only one providing the `_c` surface |
+| Linux glibc x86_64, Open MPI 5.0.6 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-openmpi.sh`, GitHub Actions. The only Open MPI 5.x row on Linux |
 | Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6, two ranks — the configure floor, verified. `run-linux-docker.sh floor`, built from source on Ubuntu 20.04 / gcc 9, the newest gfortran its configure accepts |
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI** (`NOTES.md` #2) |
