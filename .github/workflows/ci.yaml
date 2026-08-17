@@ -383,6 +383,104 @@ jobs:
           cache-from: type=gha,scope=mpich-i386
           cache-to: type=gha,mode=max,scope=mpich-i386
 
+  # ------------------------------------------------- third-party compilers
+  # TODO.md's "test with Intel and Nvidia compilers". Compile, do not run: the
+  # question these answer is whether the *generated* code is portable across
+  # compilers, and that is settled at build time. Running would drag in Ubuntu's
+  # MPICH launcher, which cannot start two ranks (see the distro rows), and
+  # answer a question nobody asked here.
+  #
+  # The wrapper is built, not just libmpi_abi. -DMPI_ABI_BUILD_WRAPPER=OFF would
+  # be the easy row -- no MPI needed -- and close to worthless for this purpose:
+  # it compiles bootstrap.c and one generated file, while the whole conversion
+  # layer, the 1366 slots and every hand-written body sit on the other side of
+  # that switch. Those are what a third compiler has an opinion about.
+  #
+  # -Wall -Wextra -Wpedantic -Werror is on for every target here, so any
+  # diagnostic these compilers have that gcc and clang do not is a failure. That
+  # is the point of the row and also why it is **report-only until green**: an
+  # unreviewed -Werror against a compiler nobody has built this with is an
+  # expected red, not a regression.
+  compile:
+    name: compile / ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [icx, nvc]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install MPICH and the build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+              build-essential cmake python3 patch binutils libmpich-dev mpich
+
+      # Intel's oneAPI compilers come from Intel's own apt repository, and the
+      # environment they need comes from setvars.sh rather than from PATH alone.
+      - name: Install the Intel oneAPI compilers
+        if: matrix.name == 'icx'
+        run: |
+          curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+              | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+              | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update
+          sudo apt-get install -y intel-oneapi-compiler-dpcpp-cpp
+          set +u
+          source /opt/intel/oneapi/setvars.sh
+          set -u
+          {
+              echo "CC=icx"
+              echo "PATH=${PATH}"
+              echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-}"
+          } >>"${GITHUB_ENV}"
+
+      # Several GB, so the runner's preinstalled toolchains go first. The
+      # package name carries the release, which would rot if written down, so
+      # the newest the repository offers is what gets installed and the step
+      # prints which that was.
+      - name: Install the NVIDIA HPC SDK
+        if: matrix.name == 'nvc'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
+              | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
+          echo 'deb [signed-by=/usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg] https://developer.download.nvidia.com/hpc-sdk/ubuntu/amd64 /' \
+              | sudo tee /etc/apt/sources.list.d/nvhpc.list
+          sudo apt-get update
+          package=$(apt-cache search --names-only '^nvhpc-[0-9]+-[0-9]+$' \
+              | cut -d' ' -f1 | sort -V | tail -1)
+          echo "installing ${package}"
+          sudo apt-get install -y "${package}"
+          bindir=$(dirname "$(find /opt/nvidia/hpc_sdk -name nvc -type f \
+              -path '*/compilers/bin/*' | sort -V | tail -1)")
+          echo "CC=${bindir}/nvc" >>"${GITHUB_ENV}"
+
+      # CMAKE_C_COMPILER is what compiles; MPI_C_COMPILER is only interrogated
+      # by FindMPI for the flags. The two are deliberately different here --
+      # Debian's mpicc wraps gcc, and what is under test is the compiler.
+      - name: Configure and build with ${{ matrix.name }}
+        run: |
+          "${CC}" --version | head -3
+          cmake -S . -B build \
+              -DCMAKE_C_COMPILER="${CC}" \
+              -DMPI_C_COMPILER="$(command -v mpicc.mpich || command -v mpicc)"
+          cmake --build build -j"$(nproc)"
+
+      - name: Show CMake's check logs
+        if: failure()
+        run: |
+          for log in build/CMakeFiles/CMakeConfigureLog.yaml \
+                     build/CMakeFiles/CMakeError.log; do
+              if [[ -f ${log} ]]; then
+                  echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
+              fi
+          done
+
   # ------------------------------------------------------------ sanitizers
   # NOTES.md #11's S9. Runs in the debian:13 container for the same reason the
   # MPICH row above does -- Ubuntu's MPICH answers `-n 2` with two singletons --
@@ -435,13 +533,40 @@ jobs:
               build-essential cmake python3 patch binutils poppler-utils \
               libmpich-dev mpich
 
-      - name: Configure, build and test with -fsanitize=${{ matrix.sanitize }}
+      - name: Configure and build with -fsanitize=${{ matrix.sanitize }}
         run: |
           cmake -S . -B build \
               -DMPI_C_COMPILER="$(command -v mpicc.mpich || command -v mpicc)" \
               -DMPI_ABI_SANITIZE=${{ matrix.sanitize }}
           cmake --build build -j"$(nproc)"
-          ctest --test-dir build --output-on-failure --no-tests=error --timeout 600
+
+      # **ASan and RTLD_DEEPBIND are incompatible**, and this row is what
+      # established it. NOTES.md #12 asked for exactly this measurement --
+      # "whether RTLD_DEEPBIND survives ASan, which is the case it is most
+      # likely to disturb. Measure before assuming" -- and the answer, from the
+      # first run, is that the sanitizer runtime refuses the load outright:
+      #
+      #   You are trying to dlopen ... with RTLD_DEEPBIND flag which is
+      #   incompatible with sanitizer runtime (google/sanitizers#611)
+      #
+      # So the five tests that load a wrapper cannot run here, on any MPI, and
+      # no flag of ours changes that. #11's S9 lists three ways forward and this
+      # is the third: "accept that the sanitizer jobs cover libmpi_abi and the
+      # conversion layer rather than the loaded configuration." What is left is
+      # not thin -- mpiwrapper_selftest compiles the whole conversion runtime
+      # into itself precisely so it can be exercised without a dlopen, and it is
+      # the test that walks the handle maps in both directions.
+      #
+      # isolation-check is excluded for a subtler reason: it treats a refused
+      # load as a pass, so under ASan it would pass for the wrong cause and
+      # report nothing about isolation.
+      #
+      # The exclusion is by name and will therefore fail loudly if a test is
+      # renamed, rather than silently covering less.
+      - name: Test what a sanitizer can reach
+        run: |
+          ctest --test-dir build --output-on-failure --no-tests=error \
+              --timeout 600 -E '^abi_|^isolation-check$'
 
   # --------------------------------------------------------------- FreeBSD
   # A third operating system, and the only one here whose isolation mechanism

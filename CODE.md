@@ -445,7 +445,8 @@ their old evidence.
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI** (`NOTES.md` #2) |
 | Linux musl | neither mechanism exists | expected to be refused at load; no Alpine support |
-| FreeBSD | `RTLD_DEEPBIND` | unverified |
+| Linux glibc i386 (32-bit) | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 13/13, two ranks (`debian:13` i386, GitHub Actions). The only row where an ABI handle is 32 bits, so the only one where §5.1's dynamic-handle collision probe is a real test |
+| FreeBSD 14.3 | `RTLD_DEEPBIND` accepted and ignored | **refused at load**, and correctly: it builds, it `dlopen`s, and the outward-resolution check catches the capture and says so. `NOTES.md` #13.4. Report-only row |
 | Windows | — | open |
 
 32-bit (i386, arm32v7) has been run for the loader probe and the type-identity

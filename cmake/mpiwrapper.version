@@ -1,0 +1,25 @@
+# GNU ld/gold/lld version script for libmpiwrapper, the sibling of
+# cmake/mpi_abi.version. NOTES.md #9 asks for "-fvisibility=hidden plus an
+# explicit export macro, *and* a version script on ELF", and says why both
+# halves are needed: the visibility preset reaches every symbol this project
+# writes and not the handful the linker inserts into every shared object.
+#
+# libmpiwrapper had only the first half, and on GNU/Linux that was enough by
+# accident. FreeBSD's linker is where it stopped being enough -- the first run
+# of that row reported
+#
+#   libmpiwrapper must export exactly mpiwrapper_get_vtable, but exports:
+#   _fini;_init;mpiwrapper_get_vtable
+#
+# which is oracle 2 catching a real gap rather than a FreeBSD quirk: the design
+# said this library exports exactly one symbol, and on that platform it did not.
+#
+# No Mach-O counterpart is needed. There the dynamic table carries no such
+# linker-inserted globals, which the macOS rows demonstrate by passing the same
+# check with visibility alone.
+MPIWRAPPER_1 {
+  global:
+    mpiwrapper_get_vtable;
+  local:
+    *;
+};

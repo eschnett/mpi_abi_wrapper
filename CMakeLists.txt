@@ -460,6 +460,18 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # Exactly one exported symbol, enforced by -fvisibility=hidden plus the
   # explicit attribute in mpiwrapper_vtable.h, and checked by the nm test below.
   set_target_properties(mpiwrapper PROPERTIES C_VISIBILITY_PRESET hidden)
+  # The other half of NOTES.md #9's rule, which this target was missing while
+  # libmpi_abi had it: visibility cannot touch the symbols the linker inserts
+  # into every shared object. On GNU/Linux hidden visibility alone happened to
+  # be enough; on FreeBSD it was not, and `exported-symbols` reported
+  # libmpiwrapper exporting _init and _fini beside mpiwrapper_get_vtable.
+  # Mach-O needs no counterpart -- see the comment in the script.
+  if(NOT APPLE)
+    target_link_options(mpiwrapper PRIVATE
+      "-Wl,--version-script=${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version")
+    set_target_properties(mpiwrapper PROPERTIES
+      LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version)
+  endif()
   # This library is never linked, only dlopen'd (MPI-5.0 20.2.1), so nothing
   # ever asks the loader to resolve *it* by rpath -- but it still has to
   # resolve its own MPI_C_LIBRARIES at the moment it is dlopen'd, and once

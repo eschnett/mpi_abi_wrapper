@@ -57,9 +57,18 @@ endfunction()
 
 set(errors 0)
 
+# The one name a version script always adds to the dynamic table: an absolute
+# symbol for its own version node, not a leak of anything this project wrote.
+# One per script, so one per library that has one, and neither appears on macOS,
+# which has no version scripts. cmake/mpiwrapper.version is newer than
+# cmake/mpi_abi.version -- it was added when FreeBSD showed libmpiwrapper
+# exporting _init and _fini -- and it brought MPIWRAPPER_1 with it.
+set(LINKER_PROVIDED MPIABI_1 MPIWRAPPER_1)
+
 # --- libmpiwrapper: exactly one symbol -------------------------------------
 if(WRAPPER_LIB)
   exported_symbols(wrapper_syms ${WRAPPER_LIB})
+  list(REMOVE_ITEM wrapper_syms ${LINKER_PROVIDED})
   if(NOT "${wrapper_syms}" STREQUAL "mpiwrapper_get_vtable")
     message(SEND_ERROR
       "libmpiwrapper must export exactly mpiwrapper_get_vtable, but exports: "
@@ -76,10 +85,7 @@ exported_symbols(abi_syms ${ABI_LIB})
 # than being tolerated by a list this test has to keep in sync with whichever
 # ones a given libc/binutils happens to emit.
 #
-# MPIABI_1 is the one name a version script itself always adds: an absolute
-# symbol for its own version node, not a leak of anything this project wrote.
-# It does not appear on macOS, which has no version scripts.
-set(LINKER_PROVIDED MPIABI_1)
+# LINKER_PROVIDED is set once above, both libraries' version nodes together.
 
 file(STRINGS ${ENTRYPOINTS} bases)
 set(expected)

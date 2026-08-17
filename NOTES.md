@@ -1806,13 +1806,23 @@ ASan/UBSan with a suppression file documenting the by-design leaks (op slots,
 errhandler slots, keyval pairs, datarep state); an `MPI_THREAD_MULTIPLE` stress
 test over the pools and maps; the 32-bit row.
 
-**`dlmopen` is not the fallback it was planned to be** (§2). The options that
-remain, in the order worth trying: measure whether `RTLD_DEEPBIND` really does
-disturb the sanitizers rather than assuming it; build the MPI under test with
-its components static, so nothing is `dlopen`ed at run time — which
-`HISTORY.md` §1.5's MPICH 3.1.4 result says would also make `dlmopen` work; or
-accept that the sanitizer jobs cover `libmpi_abi` and the conversion layer
-rather than the loaded configuration.
+**`dlmopen` is not the fallback it was planned to be** (§2), and **the first of
+the three options below has now been measured away.** `RTLD_DEEPBIND` really
+does disturb the sanitizers: ASan's runtime refuses the `dlopen` rather than
+degrading, so a wrapper cannot be loaded at all under it (§12). That leaves:
+build the MPI under test with its components static, so nothing is `dlopen`ed at
+run time — which `HISTORY.md` §1.5's MPICH 3.1.4 result says would also make
+`dlmopen` work; or accept that the sanitizer jobs cover `libmpi_abi` and the
+conversion layer rather than the loaded configuration.
+
+**The third is what CI does today**, and it is less thin than it sounds:
+`mpiwrapper_selftest` compiles the conversion runtime into itself precisely so
+that it can be exercised without a `dlopen`, so the handle maps, the constant
+maps, the status blob and the staging policy are all instrumented. What is not
+covered is the loaded configuration — the vtable handshake, the bootstrap, and
+the lifetime rules across the boundary — which is exactly the half oracle 5 was
+introduced for. Making the second option work is the way to get it back, and it
+is a change to how CI provisions its MPI rather than to anything here.
 
 **Exit check.** Sanitizer jobs green with every suppression entry explained; the
 thread stress test passes repeatedly; the 32-bit variant passes the same gates.
@@ -1880,9 +1890,15 @@ not.
   ABI handle without colliding with `0x20`..`0x2eb`. Probably yes for both
   implementations (§5.1), but the probe has to be a runtime test, not a
   configure-time one — and it exists, in `mpiwrapper_selftest`.
-- Whether `RTLD_DEEPBIND` survives ASan, which is the case it is most likely to
-  disturb. **Measure before assuming**, and note that the answer no longer
-  selects `dlmopen`, which is not available for this (§2, §11's S9).
+- ~~Whether `RTLD_DEEPBIND` survives ASan.~~ **Measured, and it does not.** The
+  sanitizer runtime refuses the load outright — "you are trying to dlopen ...
+  with RTLD_DEEPBIND flag which is incompatible with sanitizer runtime"
+  (google/sanitizers#611) — so the five tests that load a wrapper cannot run
+  under ASan on any MPI, and no flag of ours changes it. The measurement is the
+  `sanitize` job of `.github/workflows/ci.yaml`, which took one run to answer a
+  question that had been open since S9 was written. What it costs is in §11's
+  S9; the short version is that the third of its three options is now the only
+  one, since `dlmopen` was already unavailable.
 - musl: no `dlmopen`, and `RTLD_DEEPBIND` is accepted but ignored. Neither
   mechanism is available, so the probe needs a musl row before anyone claims
   Alpine support.
@@ -2238,7 +2254,31 @@ kept under it because the wrong reading that hid it is worth not repeating.
   not settled which MPI is even the target there.
 - **musl / Alpine**: neither isolation mechanism exists (§12). Expected to be
   refused at load, which is the correct outcome but not support.
-- **FreeBSD**: `RTLD_DEEPBIND` is the intended mechanism and is unverified.
+- **FreeBSD**: **measured, and `RTLD_DEEPBIND` does not isolate there.** It is
+  no longer the intended mechanism so much as a flag the platform accepts and
+  ignores — the same shape as musl in §12, and now the same status. The build
+  itself is fine: the whole project compiles, `RTLD_DEEPBIND` exists, the
+  `dlopen` succeeds, and everything that does not cross the wrapper boundary
+  passes. What happens next is the design working as designed — the wrapper's
+  own outward-resolution check catches the capture and refuses:
+
+  ```
+  libmpi_abi: cannot initialize: wrapper rejected this libmpi_abi: symbol
+  resolution captured: this libmpiwrapper's MPI_* calls resolve back into
+  libmpi_abi
+  ```
+
+  That is §2's reliability property holding on a platform nothing had ever run
+  on: it refuses to start and says why, rather than loading and silently doing
+  the wrong thing. Support would need a mechanism FreeBSD's rtld actually has,
+  and none is known; the `PMPI_*` routing of §2 is the option that exists, at
+  decision 7's cost. The row is `ci-scripts/freebsd-test.sh`, report-only.
+
+  It also found a real defect on the way, which is the argument for the row:
+  `libmpiwrapper` had `-fvisibility=hidden` and **no version script**, so it
+  exported `_init` and `_fini` beside `mpiwrapper_get_vtable` there. §9 says
+  both halves are needed and only `libmpi_abi` had both; `cmake/mpiwrapper.version`
+  is the missing one.
 - **32-bit**: exercised for the loader probe and the type-identity probe, not
   for the library. S9's row.
 - **Static libraries**: §9.

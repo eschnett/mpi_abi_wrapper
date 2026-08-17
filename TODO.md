@@ -18,3 +18,7 @@
 - add MPICH C test to CI
 
 - test on aarch64
+
+- update README
+
+- add badges to README
