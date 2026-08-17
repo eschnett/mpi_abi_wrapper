@@ -651,13 +651,63 @@ choosing the weaker one reads exactly like a pass. This is the same discipline
 as `check-tap.py`'s both-directions gate — an expected failure that passes is a
 failure — arrived at from the opposite end.
 
+### 2.15 "`RTLD_DEEPBIND` and a sanitizer can coexist"
+
+`NOTES.md` §12 listed this as a risk to measure and §11's S9 made it the first
+of three options, on the reading that `RTLD_DEEPBIND` might *disturb* ASan.
+It does not disturb it; ASan refuses outright, on the first run of the
+`sanitize` job:
+
+```
+You are trying to dlopen .../libmpiwrapper.so shared library with
+RTLD_DEEPBIND flag which is incompatible with sanitizer runtime
+(see https://github.com/google/sanitizers/issues/611 for details).
+```
+
+Not a degradation, a refusal: the load fails, so every test that reaches the
+implementation through a wrapper fails with it — five of the thirteen, on any
+MPI, with no flag of ours able to change it. `dlmopen` was already unavailable
+(§1.5), so S9's three options are down to one, and CI takes it: the sanitizer
+row covers `libmpi_abi` and the conversion layer and not the loaded
+configuration. `mpiwrapper_selftest` is what makes that worth running at all,
+since it compiles the conversion runtime into itself precisely so it can be
+walked without a `dlopen`.
+
+The reason to keep this is the shape of the wrong guess, not the flag: the
+question was framed as "does A disturb B", and the answer was "B declines to
+run at all in A's presence", which no amount of tuning A reaches.
+
+### 2.16 "`RTLD_DEEPBIND` is FreeBSD's isolation mechanism"
+
+`NOTES.md` §13.4 said so — "`RTLD_DEEPBIND` is the intended mechanism and is
+unverified" — and `src/mpi_abi/bootstrap.c` reaches for it on every non-Apple
+platform. The first FreeBSD row settled it, and the belief was two-thirds
+right in the way that hides the last third: the flag *exists*, the project
+builds, and the `dlopen` *succeeds*. It simply does not isolate.
+
+```
+libmpi_abi: loaded ... with dlopen(RTLD_LOCAL | RTLD_DEEPBIND)
+libmpi_abi: cannot initialize: wrapper rejected this libmpi_abi: symbol
+resolution captured: this libmpiwrapper's MPI_* calls resolve back into
+libmpi_abi
+```
+
+Accepted and ignored, which is the shape §12 already records for musl and is
+now FreeBSD's status too. What the run demonstrates is the property §2 of
+`NOTES.md` claims and had never been tested on an unknown platform: it refused
+to start and said why, rather than loading and silently doing the wrong thing.
+The outward-resolution check earned its place here rather than in the
+configuration it was written for.
+
 ---
 
 ## 3. What each stage settled
 
-Eight stages ran. The plan was ten sessions; S3 and S4 took two each and S7's
-triage dominated its own. Each entry below records what the stage delivered and
-what it settled that its plan did not name. Live rules have moved into
+Eight stages ran, and S6 gained a second half long after its first: S6 wrote the
+CI recipes, S6b is the workflow that runs them and the platforms that widening
+reached. The plan was ten sessions; S3 and S4 took two each and S7's triage
+dominated its own. Each entry below records what the stage delivered and what it
+settled that its plan did not name. Live rules have moved into
 `NOTES.md`; the numbers here are as of that stage and are superseded by
 `CODE.md`.
 
@@ -1014,6 +1064,93 @@ standard's.
 **The model split held exactly.** The harness took one pass; every hour after it
 went into deciding whether a failure was ours, the test's assumption, or the
 implementation's.
+
+### S6b — GitHub Actions, and the platforms S6 could not reach
+
+S6 built the recipes and never wired them to anything: `ci-scripts/` had the
+installers, the container rows and the six-leg consumption check, `NOTES.md` §9
+and §10 said what CI owed, and there was no `.github/` at all. This stage is the
+workflow, then the matrix widened past what a laptop and Docker Desktop could
+run — both Linux arches, i386, FreeBSD, sanitizers, and the Intel and NVIDIA
+compilers `TODO.md` had asked for. Eight jobs, sixteen legs. Every job calls an
+existing `ci-scripts/` entry point rather than restating its recipe in YAML,
+which is why the drift `HISTORY.md` §5 collects has nowhere to start.
+
+**It found seven defects, and the shape of them is the argument for the stage.**
+Not one was found by a test that already existed; each needed a platform, a
+compiler or an execution path that nothing had ever run.
+
+- **Two latent bugs in the installers, on the one path their own headers
+  advertise to CI.** `MPI_SRC_DIR` never created the directory it names, so
+  `curl -o` into it failed with exit 23 — which reads as a network fault. Behind
+  it, `cleanup() { [ "$cleanup_src" = 1 ] && rm -rf "$src_dir"; }` returns the
+  failed test's 1 when there is nothing to clean, and under `set -e` an EXIT
+  trap's status becomes the script's, so a *successful* install exited 1 after
+  printing that it had succeeded. Both fire only when `MPI_SRC_DIR` is set;
+  every prior run, by hand and through `run-linux-docker.sh`, took the `mktemp`
+  branch. The first masked the second.
+- **Oracle 1 was the most expensive job in CI, not the cheapest.**
+  `add_test(exported-symbols)` sat inside `if(MPI_ABI_BUILD_WRAPPER)`, so the
+  check that `libmpi_abi` exports exactly the header's 1376 names did not report
+  until an MPI had been found — and on the from-source rows, until one had been
+  built. Its subject never needed an MPI. `CODE.md` §10's table had said "needs
+  an MPI? no" the whole time; the code now agrees with it.
+- **`libmpiwrapper` had no version script**, so on FreeBSD it exported `_init`
+  and `_fini` beside `mpiwrapper_get_vtable`. §9 requires visibility *and* a
+  version script and says why; only `libmpi_abi` had both, and GNU/Linux had
+  been passing that check by accident. Adding one then broke the same check for
+  the reason its own comment predicts — a version script contributes its version
+  node — so the exemption that was written for one library is now the pair.
+- **`dev/probe_impl.py` assumed two things about compilers**, and nvc has
+  neither. `-fsyntax-only` is GCC's and Clang's spelling for "compile, do not
+  link"; §3 keeps the probe compile-only so cross-compiling works and says
+  nothing about which compiler runs it, so the requirement was always "do not
+  link" and `-c` is the spelling everything has. Deeper: the probe reads *which
+  line* a compiler complained about, and nvc emits EDG's `"file", line N:`
+  rather than `file:N:`. Not recognising it did not make the probe wrong, it
+  made it stop — a diagnostic it cannot place is a hard error meaning "a real
+  build problem rather than a missing entry point", which is what nvc produced
+  for seven names genuinely absent from MPICH.
+- **`MPIABI_WARNINGS` was GNU flags handed to whatever compiler turned up.**
+  nvc accepts them and then fails on its own `<stdatomic.h>`, every
+  `atomic_fetch_add_explicit` drawing `nonstd_ellipsis_only_param` under
+  `-Wpedantic` and `-Werror`. No line of this project is implicated.
+- **Two of the four "by-design leaks" §10 names for the suppression file are
+  not heap allocations.** The op and errhandler pools are
+  `static ... [MPIWRAPPER_*_SLOTS]` arrays, process-lifetime by construction and
+  invisible to LeakSanitizer; entries for them would have been dead lines. What
+  is on the heap and never freed is the three attribute-pair families and the
+  two datarep ones.
+- **The MPI cache key was broader than its reason.** It hashed all of
+  `ci-scripts/`, so adding a script that cannot change a byte of an installed
+  MPI would have rebuilt four of them. `ci-scripts/install-*.sh` is what both
+  documents always said.
+
+**Two beliefs measured false**, each on the first run of the row that tested it:
+§2.15 (ASan refuses `RTLD_DEEPBIND` outright) and §2.16 (FreeBSD accepts it and
+ignores it). The second also demonstrated §2 of `NOTES.md`'s reliability
+property on a platform nothing had run on: refuse and say why, rather than load
+and silently do the wrong thing.
+
+**Where the rows stand.** Green and gating: both Linux arches on distro and
+pinned-from-source MPIs, i386, macOS on both Homebrew MPIs, the no-MPI checks,
+the sanitizer row, and `icx` — which built the whole project under `-Werror`
+first try. Report-only: FreeBSD, which cannot be supported and now says so
+correctly, and `nvc`, which reaches the conversion layer and reports
+`branch_past_initialization` in `abi_arrays_test.c` and `mixed_enum_type` in
+`toolevents.c`. Those are nvc's own stylistic diagnostics rather than standard
+violations, and triaging them is the next session's work, not this one's — a
+row gates once it has been green.
+
+**It takes two of S9's three rows** — the sanitizers and 32-bit — without
+closing it: the `MPI_THREAD_MULTIPLE` stress test remains, and §2.15 means the
+sanitizer coverage stops at the wrapper boundary rather than crossing it.
+
+**Model: mixed, and the split was the usual one.** Writing sixteen job
+definitions is mechanical. Deciding that `--ti` was a truncated command line
+rather than a CMake bug, that exit 23 was a missing `mkdir` rather than a
+network fault, and that nvc's first three failures were about Ubuntu, EDG and
+`<stdatomic.h>` rather than about this project, was not.
 
 ---
 

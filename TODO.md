@@ -22,3 +22,5 @@
 - update README
 
 - add badges to README
+
+- what is the FreeBSD problem?
