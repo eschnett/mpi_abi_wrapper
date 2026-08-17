@@ -56,7 +56,17 @@ else
   # invites CI to take, which is why it survived until a workflow took it.
   mkdir -p "$src_dir"
 fi
-cleanup() { [ "$cleanup_src" = 1 ] && rm -rf "$src_dir"; }
+# An `if` rather than `[ ... ] && rm`, and the reason is the whole bug: with
+# cleanup_src=0 the test is false, `&&` short-circuits, the function returns the
+# test's 1, and under `set -e` a non-zero EXIT trap becomes the script's exit
+# status. So a completely successful install exited 1 -- after printing that it
+# had succeeded -- on exactly the runs that set MPI_SRC_DIR, which is the CI
+# path and the one nothing had taken.
+cleanup() {
+  if [ "$cleanup_src" = 1 ]; then
+    rm -rf "$src_dir"
+  fi
+}
 trap cleanup EXIT
 
 tarball="$src_dir/mpich-$version.tar.gz"

@@ -42,7 +42,14 @@ else
   # which reads as a network fault.
   mkdir -p "$src_dir"
 fi
-cleanup() { [ "$cleanup_src" = 1 ] && rm -rf "$src_dir"; }
+# See install-mpich.sh: `[ ... ] && rm` as the whole body returns 1 when the
+# test is false, and under `set -e` that EXIT trap status becomes the script's,
+# so a successful install exited 1 whenever MPI_SRC_DIR was set.
+cleanup() {
+  if [ "$cleanup_src" = 1 ]; then
+    rm -rf "$src_dir"
+  fi
+}
 trap cleanup EXIT
 
 tarball="$src_dir/openmpi-$version.tar.bz2"
