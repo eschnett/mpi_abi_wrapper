@@ -318,14 +318,23 @@ static void test_persistent_alltoallw(void)
    * IN_PLACE_IGNORES records the measurement), so this is what a wrapper that
    * dereferenced them would segfault on.
    */
-  for (int i = 0; i < n; ++i) recvbuf[i] = rank * 100 + i;
-  const int e = MPI_Alltoallw(MPI_IN_PLACE, NULL, NULL, NULL, recvbuf, counts,
-                              displs, types, MPI_COMM_WORLD);
-  CHECK(e == MPI_SUCCESS, "in-place MPI_Alltoallw returned %d", e);
-  for (int i = 0; i < n; ++i)
-    CHECK(recvbuf[i] == i * 100 + rank,
-          "in-place MPI_Alltoallw: recvbuf[%d] is %d, expected %d", i,
-          recvbuf[i], i * 100 + rank);
+  /* Braced so that `e` does not live across `done:`. The two `goto done` above
+   * jump forward past this initialization, which C permits -- `e` would simply
+   * be indeterminate at the label, and nothing there reads it -- but nvc
+   * reports it as branch_past_initialization, and it is right that a jump over
+   * an initializer is worth not writing. An inner scope the jump does not
+   * enter says the same thing to every compiler.
+   */
+  {
+    for (int i = 0; i < n; ++i) recvbuf[i] = rank * 100 + i;
+    const int e = MPI_Alltoallw(MPI_IN_PLACE, NULL, NULL, NULL, recvbuf, counts,
+                                displs, types, MPI_COMM_WORLD);
+    CHECK(e == MPI_SUCCESS, "in-place MPI_Alltoallw returned %d", e);
+    for (int i = 0; i < n; ++i)
+      CHECK(recvbuf[i] == i * 100 + rank,
+            "in-place MPI_Alltoallw: recvbuf[%d] is %d, expected %d", i,
+            recvbuf[i], i * 100 + rank);
+  }
 
 done:
   free(types);

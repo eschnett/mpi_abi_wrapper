@@ -1,10 +1,4 @@
-# Erik's open review questions
-
-- test against MVAPICH as well
-
-- test with Intel and Nvidia compilers
-
-- test FreeBSD
+# Erik's open tasks
 
 - add a licence (same as mpif)
 
@@ -13,14 +7,8 @@
 
 - add more tests: cross-tests, sanitizer, 32 bit architecture
 
-- add those tests to CI
-
 - add MPICH C test to CI
 
-- test on aarch64
-
-- update README
+- add README
 
 - add badges to README
-
-- what is the FreeBSD problem?

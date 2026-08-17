@@ -189,8 +189,14 @@ void mpiwrapper_t_event_cb_tramp(MPI_T_event_instance     event_instance,
       atomic_load_explicit(&e->cb[level], memory_order_acquire);
   if (!fn) return;
 
+  /* The cast is the one NOTES.md #2 says is correct here: MPIABI_T_cb_safety
+   * is a renamed *enum*, deliberately distinct from the implementation's, and
+   * the conversion helpers speak `int` across that boundary. Implicit int ->
+   * enum is legal C and silent under gcc and clang; nvc reports it as
+   * mixed_enum_type, which is a fair thing to want said out loud. */
   fn(mpiwrapper_t_event_instance_toabi(event_instance),
-     mpiwrapper_t_event_registration_toabi(event_registration), abi_cb_safety,
+     mpiwrapper_t_event_registration_toabi(event_registration),
+     (MPIABI_T_cb_safety)abi_cb_safety,
      atomic_load_explicit(&e->cb_data[level], memory_order_acquire));
 }
 #  endif
@@ -214,7 +220,7 @@ void mpiwrapper_t_event_dropped_tramp(
 
   fn((MPIABI_Count)count,
      mpiwrapper_t_event_registration_toabi(event_registration), source_index,
-     abi_cb_safety,
+     (MPIABI_T_cb_safety)abi_cb_safety,
      level < 0 ? NULL
                : atomic_load_explicit(&e->cb_data[level],
                                       memory_order_acquire));
@@ -234,7 +240,7 @@ void mpiwrapper_t_event_free_tramp(MPI_T_event_registration event_registration,
       atomic_load_explicit(&e->free_fn, memory_order_acquire);
   if (fn)
     fn(mpiwrapper_t_event_registration_toabi(event_registration),
-       mpiwrapper_tcbsafety_toabi(cb_safety),
+       (MPIABI_T_cb_safety)mpiwrapper_tcbsafety_toabi(cb_safety),
        atomic_load_explicit(&e->free_data, memory_order_acquire));
 
   /* #6.2's reclamation point. Released after the user's callback has run and
