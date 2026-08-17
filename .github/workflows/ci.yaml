@@ -413,11 +413,48 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install MPICH and the build tools
+      - name: Install the build tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-              build-essential cmake python3 patch binutils libmpich-dev mpich
+              build-essential gfortran cmake python3 patch binutils curl \
+              ca-certificates
+
+      - name: Set up paths
+        run: |
+          {
+              echo "PREFIX=${RUNNER_TEMP}/opt/mpi-mpich"
+              echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-mpich"
+          } >>"${GITHUB_ENV}"
+
+      # The *pinned* MPICH rather than the distro's, and not for the version.
+      # Debian and Ubuntu build their mpicc wrapper to pass the distro's own
+      # hardening and LTO flags, and FindMPI interrogates that wrapper and then
+      # compiles a probe with them -- so with nvc the configure died on
+      #
+      #   nvc-Error-Unknown switch: -flto=auto
+      #   nvc-Error-Unknown switch: -ffat-lto-objects
+      #
+      # before a line of this project was compiled. That is a property of a
+      # packaging choice meeting a third compiler, not something a row about our
+      # portability should be reporting. install-mpich.sh runs a stock
+      # configure, so its wrapper names only what MPICH itself needs. icx
+      # swallowed the distro flags happily, which is exactly why the row that
+      # did not is the informative one.
+      #
+      # Restore-only, sharing the key the linux-source rows save under: this job
+      # never writes that cache, so the two cannot race over it. A miss simply
+      # builds, which costs this row alone.
+      - name: Restore the MPI installation
+        id: cache-mpi
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/opt/mpi-mpich
+          key: mpi1-mpich-4.3.1-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+
+      - name: Build and install MPICH 4.3.1
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        run: ci-scripts/install-mpich.sh "${PREFIX}" 4.3.1
 
       # Intel's oneAPI compilers come from Intel's own apt repository, and the
       # environment they need comes from setvars.sh rather than from PATH alone.
@@ -462,13 +499,13 @@ jobs:
 
       # CMAKE_C_COMPILER is what compiles; MPI_C_COMPILER is only interrogated
       # by FindMPI for the flags. The two are deliberately different here --
-      # Debian's mpicc wraps gcc, and what is under test is the compiler.
+      # MPICH's wrapper names gcc, and what is under test is the compiler.
       - name: Configure and build with ${{ matrix.name }}
         run: |
           "${CC}" --version | head -3
           cmake -S . -B build \
               -DCMAKE_C_COMPILER="${CC}" \
-              -DMPI_C_COMPILER="$(command -v mpicc.mpich || command -v mpicc)"
+              -DMPI_C_COMPILER="${PREFIX}/bin/mpicc"
           cmake --build build -j"$(nproc)"
 
       - name: Show CMake's check logs
