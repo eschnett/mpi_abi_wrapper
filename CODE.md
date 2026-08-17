@@ -429,10 +429,10 @@ their old evidence.
 | macOS, native Open MPI 5.0.6 | same | **works**, 6/6, two ranks — same script |
 | macOS, conda-forge Open MPI 5.0.10 | same | **works**, 6/6, two ranks — same script |
 | macOS, native Open MPI 6.1.0a1 | same | **works**, 6/6, two ranks — despite 698 weak `MPI_*`; needs no such script |
-| macOS 15 arm64, Homebrew MPICH 5.0.1 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`. The first MPI-5.0 implementation this has run against (`mpicc` reports `MPI 5.0`); whether that installation also ships the standard ABI, which §2 says cannot be wrapped on macOS, is *not* established here — the wrapper links what `mpicc` links, which is `libmpich` |
+| macOS 15 arm64, Homebrew MPICH 5.0.1 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`. The first MPI-5.0 implementation this has run against (`mpicc` reports `MPI 5.0`), and it does **not** ship the standard ABI, so it is an ordinary wrapped implementation like every other row here |
 | macOS 15 arm64, Homebrew Open MPI 5.0.9 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`; reports `MPI 3.1` |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
-| macOS, an ABI-implementing MPI | none available | **refused at load**; dyld coalesces weak definitions |
+| macOS, an ABI-implementing MPI | none available | **refused at load**; dyld coalesces weak definitions. Still *none available*, and the MPICH 5.0.1 row above is why that is worth saying twice: implementing MPI-5.0 and shipping the standard ABI are different things, and that one is the former without the latter |
 | Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker); and 13/13, two ranks on **x86_64** (Debian 13 container, GitHub Actions, `MPI 4.1`) |
 | Linux glibc, MPICH 4.2.0 | same | **cannot run two ranks** (Ubuntu 24.04): PMIx-only `libmpi`, PMI-1 hydra, so `-n 2` is two singletons. `HISTORY.md` §2.14 |
 | Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker); and 13/13, two ranks on **x86_64** (Ubuntu 24.04 container, GitHub Actions, `MPI 3.1`) |
