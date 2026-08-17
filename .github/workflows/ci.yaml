@@ -727,18 +727,38 @@ jobs:
   # container -- for the same reason linux-source and linux-distro are two jobs.
   #
   # **Both are report-only until they have been green**, the rule the compile job
-  # above records: the suite has never run on a GitHub runner, and parts of both
-  # lists are properties of the host they were calibrated on rather than of this
-  # project. Either direction of the gate can fire for that reason alone --
-  # xfail-mpich.txt's group (g) is three tests that pass standalone and exceed
-  # the suite's 180-second limit inside a full run, and xfail-openmpi.txt's
-  # header records the rma/linked_list family passing on a quiet run and failing
-  # under load on one machine. A new timeout reads as an unexpected failure and a
-  # (g) line that stops timing out reads as an expected failure that passed;
-  # neither is a regression, and the first run here is what says which of them
-  # this runner produces. MPITEST_TIMEOUT_MULTIPLIER (run-suite.sh documents what
-  # it costs the gate) is the knob for the first, retriaging a line is the knob
-  # for the second, and deleting `continue-on-error` is what makes a row gate.
+  # above records: parts of both lists are properties of the host they were
+  # calibrated on rather than of this project, and either direction of the gate
+  # can fire for that reason alone. **Run 32069590099 was the first run here, and
+  # it is what these two rows now describe rather than predict:**
+  #
+  #   mpich    39 min, 847 tests, 795 passed, 39 of the 41 listed failures fired.
+  #            Three differences, every one of them timing and none a conversion
+  #            difference: pt2pt/sendflood 8 timed out where the laptop runs it in
+  #            2.6 s, and two of group (g)'s three -- errors/comm/subcomm_abort2 6
+  #            and threads/comm/dup_leak_test 2 -- passed here in under 2 seconds,
+  #            which is that group saying it describes one laptop.
+  #   openmpi  75 min, 847 tests, 664 passed, 165 of the 168 listed failures
+  #            fired. Nine differences, and unlike the MPICH row these are not
+  #            timing: io/setviewcur 4 and io/i_setviewcur 4 pass now, the
+  #            MPI_DISPLACEMENT_CURRENT fix of HISTORY.md #3's S7 having emptied
+  #            that group out of the MPICH list and never out of this one;
+  #            rma/linked_list_bench_lock_shr 4 is the load-sensitive family this
+  #            list's own header describes; and six failures are new -- coll/allred
+  #            4 answering 512 wrong results for MPI_SUM over the 8-bit integer
+  #            types, and five threads/pt2pt/mt_*probe* tests, four of them dying
+  #            in MPI_Recv with MPI_ERR_COUNT. **They are unattributed.** The
+  #            difference from the calibration run that is known is the
+  #            architecture: that one was aarch64 under Docker Desktop, this is
+  #            x86_64 (ci-scripts/README.md already flags the gap). The method for
+  #            settling it is S7's throughout -- build the same test with the
+  #            implementation's own mpicc and see whether it passes unwrapped.
+  #
+  # So what is left before either can gate is a list decision rather than a CI
+  # one: one file per variant cannot describe two hosts, and the honest
+  # resolutions are to retriage the timing group against this runner, to delete
+  # the two io/ lines a fix made stale, and to attribute the six. Deleting
+  # `continue-on-error` is what makes a row gate.
   #
   # Neither job caches the suite's source. It is one tarball fetched from
   # mpich.org and unpacked to test/mpi, which is the same trade the linux-source
@@ -760,6 +780,23 @@ jobs:
     runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 150
+    env:
+      # run-suite.sh's documented knob for a slower machine, and this runner is
+      # one in the only place that matters. Median runner/laptop time ratio by
+      # rank count on run 32069590099: 0.04-0.22x at np <= 4 -- the runner is
+      # 5-25x *faster* -- against 4.7x at np 5, 7.0x at np 8 and 4.8x at np 10.
+      # Four vCPUs and a progress engine that busy-polls, so a test asking for
+      # more ranks than there are cores collapses. That is what put
+      # pt2pt/sendflood 8 into the 180-second limit, and it left coll/reduce 10
+      # and coll/bcast_comm_world_only 10 finishing 7 and 28 seconds under it,
+      # which is a flake waiting for a busier runner.
+      #
+      # Nearly free here, which is why it is set: exactly one test reached the
+      # limit in that run, so doubling it costs that one test's wait rather than
+      # the run's. The Open MPI row deliberately does not set it -- nine of its
+      # tests reach the limit and they are hangs, where a multiplier buys nothing
+      # and pays 180 seconds nine times over.
+      MPITEST_TIMEOUT_MULTIPLIER: 2
     steps:
       - uses: actions/checkout@v6
 
@@ -850,19 +887,38 @@ jobs:
       - name: Run the suite over MPICH
         run: ci-scripts/suite/run-suite.sh "${PREFIX}/bin/mpicc" --variant=mpich
 
-      # if: always(), because a *green* run's TAP file is worth as much as a red
-      # one's: `run-suite.sh --gate-only` re-runs the comparison against a file
-      # already in hand, which is how a host-dependent line gets retriaged, and
-      # how NOTES.md #11's S8 finishes the Open MPI list's placeholders, without
-      # anyone paying for the run twice. summary.xml is left out as redundant.
+      # Staged into the workspace first, and uploaded by a **relative** path.
+      # `${{ runner.temp }}` inside a `with:` block does not mean what the shell
+      # means by RUNNER_TEMP once a container is involved: on run 32069590099 the
+      # expression gave the host's /home/runner/work/_temp while the container's
+      # shell had /__w/_temp, and the Open MPI row uploaded one file of six --
+      # summary.tap resolved through the mount, the *.log pattern did not, and the
+      # artifact's root came out as `/`. Losing exactly the logs that attribute a
+      # failure, on the row that produced six unattributed ones. A relative path
+      # is resolved against GITHUB_WORKSPACE by the action and by the shell alike,
+      # so it means one thing in both job shapes; the copy is what crosses the
+      # boundary, and it runs where the files are.
+      #
+      # if: always() on both steps, because a *green* run's TAP file is worth as
+      # much as a red one's: `run-suite.sh --gate-only` re-runs the comparison
+      # against a file already in hand, which is how a host-dependent line gets
+      # retriaged and how NOTES.md #11's S8 finishes the Open MPI list's
+      # placeholders, without anyone paying for the run twice. summary.xml is
+      # left out as redundant with the TAP.
+      - name: Collect the TAP file and the suite's logs
+        if: always()
+        run: |
+          mkdir -p suite-artifact
+          cp -f "${MPIABI_SUITE_WORK}/summary.tap" suite-artifact/ || true
+          cp -f "${MPIABI_SUITE_WORK}"/*.log suite-artifact/ || true
+          ls -l suite-artifact
+
       - name: Keep the TAP file and the suite's logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: suite-mpich
-          path: |
-            ${{ runner.temp }}/suite-mpich/summary.tap
-            ${{ runner.temp }}/suite-mpich/*.log
+          path: suite-artifact
           retention-days: 30
 
   # Open MPI 4.1.6, which is what ubuntu:24.04 ships and what xfail-openmpi.txt
@@ -914,12 +970,21 @@ jobs:
       - name: Run the suite over Open MPI
         run: bash ci-scripts/suite/linux-suite.sh openmpi
 
+      # The relative-path staging the MPICH row explains, and this is the row
+      # that needed it: run 32069590099 kept summary.tap here and lost all five
+      # logs to the container's path mapping.
+      - name: Collect the TAP file and the suite's logs
+        if: always()
+        run: |
+          mkdir -p suite-artifact
+          cp -f "${MPIABI_SUITE_WORK}/summary.tap" suite-artifact/ || true
+          cp -f "${MPIABI_SUITE_WORK}"/*.log suite-artifact/ || true
+          ls -l suite-artifact
+
       - name: Keep the TAP file and the suite's logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: suite-openmpi
-          path: |
-            ${{ runner.temp }}/suite-openmpi/summary.tap
-            ${{ runner.temp }}/suite-openmpi/*.log
+          path: suite-artifact
           retention-days: 30

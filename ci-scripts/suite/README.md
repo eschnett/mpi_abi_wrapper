@@ -137,10 +137,33 @@ Open MPI 4.1.6 `xfail-openmpi.txt` is calibrated against.
 
 **Both are report-only there until they have been green**, which is the rule that
 workflow's `compile` job records: a row nobody has seen pass cannot tell a
-regression from the thing it was added to find. Neither list has ever been gated
-on a GitHub runner, and the host-dependent lines above are exactly what a first
-run on a new machine moves — a new timeout reads as an unlisted failure, and a
-group (g) line that stops timing out reads as an expected failure that passed.
-Each job keeps `summary.tap` and the logs as an artifact whether it passed or
-not, because `--gate-only` retriages from a TAP file in hand rather than from a
-fresh 40-minute run. Deleting `continue-on-error` is what makes a row gate.
+regression from the thing it was added to find. Each job keeps `summary.tap` and
+the logs as an artifact whether it passed or not, because `--gate-only` retriages
+from a TAP file in hand rather than from a fresh 40-minute run. Deleting
+`continue-on-error` is what makes a row gate.
+
+**What the first run there (32069590099) found**, which is why neither gates yet:
+
+| | wall | tests | listed failures that fired | differences |
+|---|---|---|---|---|
+| `suite-mpich` | 39 min | 847, 795 passed | 39 of 41 | 3, every one timing |
+| `suite-openmpi` | 75 min | 847, 664 passed | 165 of 168 | 9, none timing |
+
+The MPICH row's three are the host: `pt2pt/sendflood 8` spent the whole
+180-second limit against 2.6 s on the calibration machine, and two of group (g)'s
+three passed here in under two seconds. The cause is measured — at four vCPUs the
+runner is 5–25× *faster* below np 4 and 4.7–7× slower above it, MPICH's progress
+engine busy-polling once ranks exceed cores — and the workflow sets
+`MPITEST_TIMEOUT_MULTIPLIER: 2` on that row for it.
+
+The Open MPI row's nine are not: `io/setviewcur 4` and `io/i_setviewcur 4` pass
+now, the `MPI_DISPLACEMENT_CURRENT` fix having emptied that group out of the
+MPICH list and never out of this one; `rma/linked_list_bench_lock_shr 4` is the
+load-sensitive family this list's header already describes; and **six are new and
+unattributed** — `coll/allred 4` answering 512 wrong results for `MPI_SUM` over
+the 8-bit integer types, and five `threads/pt2pt/mt_*probe*` tests, four of them
+dying in `MPI_Recv` with `MPI_ERR_COUNT`. The known difference from the run this
+list was calibrated on is the architecture: that one was aarch64 under Docker
+Desktop, the runner is x86_64. Attributing them is this stage's next task and the
+method is S7's throughout — build the same test with Open MPI's own `mpicc` and
+see whether it passes unwrapped.
