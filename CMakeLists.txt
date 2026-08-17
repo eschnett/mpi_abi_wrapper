@@ -51,7 +51,28 @@ else()
   set(MPIABI_WRAPPER_SUFFIX .so)
 endif()
 
-set(MPIABI_WARNINGS -Wall -Wextra -Wpedantic -Werror)
+# These are GNU spellings, and were applied to whatever compiler turned up. That
+# held while the compilers were gcc and clang; the NVIDIA row is what showed it
+# does not generalize. nvc accepts the flags and then fails on its *own*
+# <stdatomic.h>: every atomic_fetch_add_explicit here draws
+#
+#   error: ellipsis with no explicit parameters is nonstandard
+#          [nonstd_ellipsis_only_param]
+#
+# which is nvc's pedantic diagnostic firing on nvc's header, turned into an
+# error by our -Werror. Nothing about this project's code is involved, and no
+# edit to it can help.
+#
+# So the strict set is asked for by name where it is known to mean what it says,
+# and elsewhere the useful half is kept without -Wpedantic, whose reading of
+# "nonstandard" is the compiler's own and here indicts its own headers. -Werror
+# stays everywhere: a warning nobody fails on is a warning nobody reads.
+if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|IntelLLVM|Intel)$")
+  set(MPIABI_WARNINGS -Wall -Wextra -Wpedantic -Werror)
+else()
+  set(MPIABI_WARNINGS -Wall -Werror)
+endif()
+message(STATUS "Warning flags for ${CMAKE_C_COMPILER_ID}: ${MPIABI_WARNINGS}")
 
 # NOTES.md #11's S9. A string rather than a bool so the set is the caller's
 # choice -- `address`, `undefined`, `address,undefined`, `thread` -- and empty
