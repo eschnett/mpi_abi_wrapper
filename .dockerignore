@@ -1,0 +1,9 @@
+# The i386 row copies the whole tree into its image (docker/*.dockerfile), so
+# keep out what a build does not read. `build/` matters most: it is where the
+# development machine's own build trees and its MPI prefixes live, hundreds of
+# megabytes of host-specific binaries that would be copied into a 32-bit image
+# to be ignored.
+build/
+.git/
+out/
+*~

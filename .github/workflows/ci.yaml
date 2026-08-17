@@ -105,8 +105,8 @@ jobs:
   # catch is untested; and GitHub's runners are x86_64 while the local rows
   # were measured on aarch64.
   linux-distro:
-    name: linux / ${{ matrix.mpi }} (${{ matrix.image }})
-    runs-on: ubuntu-24.04
+    name: linux / ${{ matrix.mpi }} / ${{ matrix.arch }} (${{ matrix.image }})
+    runs-on: ${{ matrix.os }}
     container: ${{ matrix.image }}
     # Also the only backstop against a hung launcher: linux-test.sh calls ctest
     # with no --timeout and ctest's own default is 1500 s per test. These rows
@@ -123,8 +123,20 @@ jobs:
           # job -- with nothing of this project involved. Debian 13's MPICH
           # 4.2.1 links no libpmix and speaks the PMI-1 its hydra serves.
           # test/README.md "Linux" has the measurement.
+          #
+          # Both arches, because the two are not the same test: aarch64 is
+          # where CODE.md #11's Linux rows were originally measured (Docker
+          # Desktop on the development laptop) and x86_64 is what GitHub's
+          # default runners are, and they differ in compiler, libc build and
+          # seccomp profile.
           - mpi: mpich
             image: debian:13
+            os: ubuntu-24.04
+            arch: x86_64
+          - mpi: mpich
+            image: debian:13
+            os: ubuntu-24.04-arm
+            arch: aarch64
           # Open MPI stays on Ubuntu 24.04 because ci-scripts/suite's
           # expected-failure list is calibrated line by line against the Open
           # MPI 4.1.6 that image ships. That suite is not run here yet, but the
@@ -133,6 +145,12 @@ jobs:
           # exercised: it provides 466 of the ABI's 688 entry points.
           - mpi: openmpi
             image: ubuntu:24.04
+            os: ubuntu-24.04
+            arch: x86_64
+          - mpi: openmpi
+            image: ubuntu:24.04
+            os: ubuntu-24.04-arm
+            arch: aarch64
     steps:
       # Before checkout, deliberately. The base images carry no git, which
       # sends actions/checkout down its REST-tarball fallback -- it works, and
@@ -155,8 +173,8 @@ jobs:
   # the installers' own defaults, restated here so they are visible and can
   # enter the cache key.
   linux-source:
-    name: linux / ${{ matrix.mpi }} ${{ matrix.version }} (from source)
-    runs-on: ubuntu-24.04
+    name: linux / ${{ matrix.mpi }} ${{ matrix.version }} / ${{ matrix.arch }} (from source)
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -164,8 +182,20 @@ jobs:
         include:
           - mpi: mpich
             version: 4.3.1
+            os: ubuntu-24.04
+            arch: x86_64
+          - mpi: mpich
+            version: 4.3.1
+            os: ubuntu-24.04-arm
+            arch: aarch64
           - mpi: openmpi
             version: 5.0.6
+            os: ubuntu-24.04
+            arch: x86_64
+          - mpi: openmpi
+            version: 5.0.6
+            os: ubuntu-24.04-arm
+            arch: aarch64
     steps:
       - uses: actions/checkout@v6
 
@@ -222,7 +252,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-${{ matrix.mpi }}
-          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/**', '!ci-scripts/suite/**', '!ci-scripts/README.md') }}
+          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/**', '!ci-scripts/suite/**', '!ci-scripts/README.md') }}
 
       - name: Build and install ${{ matrix.mpi }} ${{ matrix.version }}
         if: steps.cache-mpi.outputs.cache-hit != 'true'
@@ -307,6 +337,117 @@ jobs:
                   echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
               fi
           done
+
+  # ------------------------------------------------------------------ i386
+  # The 32-bit row, and the only one where an ABI handle is not 64 bits.
+  # NOTES.md #4.1: handles are *pointer-sized*, so ILP32 is the one place the
+  # "no spare high bits to tag with" constraint is visible, and #5.1's
+  # dynamic-handle collision probe in mpiwrapper_selftest is a real test here
+  # rather than a formality.
+  #
+  # A matrix row cannot express this -- it is a different architecture of the
+  # same kernel, not a different runner -- so the image build *is* the test:
+  # every step of docker/mpich-i386.dockerfile is a RUN, and a successful build
+  # is a passed run. Nothing is pushed or loaded.
+  linux-i386:
+    name: linux / mpich / i386 (debian:13)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      # For the GitHub Actions cache backend below, which the default `docker`
+      # driver does not support.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # The layer worth reusing is the apt install, which is why mode=max: the
+      # final image is thrown away. The dockerfile is ordered for it, packages
+      # before the source copy, so an ordinary source edit reuses that layer.
+      - name: Build and test in a linux/386 container
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/mpich-i386.dockerfile
+          platforms: linux/386
+          push: false
+          cache-from: type=gha,scope=mpich-i386
+          cache-to: type=gha,mode=max,scope=mpich-i386
+
+  # --------------------------------------------------------------- FreeBSD
+  # A third operating system, and the only one here whose isolation mechanism
+  # NOTES.md #13.4 lists as *unverified*: `RTLD_DEEPBIND` is what
+  # src/mpi_abi/bootstrap.c reaches for on every non-Apple platform, and whether
+  # FreeBSD's rtld has it at all is the question this row exists to answer. A
+  # compile error naming RTLD_DEEPBIND is a real result, not a broken job.
+  #
+  # GitHub has no FreeBSD runner, so an Ubuntu runner boots one under qemu.
+  #
+  # **Report-only until it has been green**, per the sibling project's rule. It
+  # is here to produce a measurement, and a row that has never passed cannot
+  # tell a regression from the thing it was added to discover.
+  freebsd:
+    name: freebsd / mpich (VM)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build and test in a FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          # Pinned rather than left to the action's default, so that a release
+          # bump is somebody's decision -- the same reason the runner labels and
+          # container images above are pinned.
+          release: "14.3"
+          # The default shell is tcsh, which none of this is written in. It is
+          # also why ci-scripts/ spells its shebangs `#!/usr/bin/env bash`.
+          usesh: true
+          # Nothing here produces an artifact the host wants, and the build tree
+          # would otherwise be rsync'ed back at the end.
+          copyback: false
+          prepare: |
+            # The image's hostname resolves to nothing, and that is not a
+            # curiosity: MPICH's tcp netmod resolves the host's own name to
+            # build its business card, so without this every multi-rank
+            # MPI_Init dies in gethostbyname. Measured in the sibling project,
+            # where it failed exactly the tests using two or more ranks.
+            printf '127.0.0.1 %s\n' "$(hostname)" >>/etc/hosts
+            # binutils is for objdump, which test/check_exports.cmake uses on
+            # every non-Mach-O platform and which the base system does not have;
+            # poppler-utils is pdftotext for the c-bindings cross-check.
+            pkg install -y bash binutils cmake mpich poppler-utils python3
+          run: |
+            set -e
+            freebsd-version
+            uname -a
+
+            # The same gate the other self-provisioning rows use, and it earns
+            # its place most here: on a platform nothing has run on, "MPICH
+            # cannot launch two ranks" and "the wrapper is broken" are
+            # otherwise the same red ctest.
+            cat >/tmp/hello.c <<'EOF'
+            #include <mpi.h>
+            #include <stdio.h>
+            int main(int argc, char **argv) {
+                int size = -1, rank = -1;
+                MPI_Init(&argc, &argv);
+                MPI_Comm_size(MPI_COMM_WORLD, &size);
+                MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+                printf("rank %d of %d\n", rank, size);
+                MPI_Finalize();
+                return size == 2 ? 0 : 1;
+            }
+            EOF
+            /usr/local/bin/mpicc -o /tmp/hello /tmp/hello.c
+            /usr/local/bin/mpiexec -n 2 /tmp/hello
+
+            # ci-scripts/linux-test.sh is not usable here: nproc, `nm -D` and
+            # .so globs are all GNU/Linux. Same three commands it would run.
+            cmake -S . -B /tmp/build -DMPI_C_COMPILER=/usr/local/bin/mpicc
+            cmake --build /tmp/build -j"$(sysctl -n hw.ncpu)"
+            ctest --test-dir /tmp/build --output-on-failure --no-tests=error --timeout 300
 
   # ----------------------------------------------------------------- macOS
   # Required by NOTES.md #1's portability constraint and not redundant with
