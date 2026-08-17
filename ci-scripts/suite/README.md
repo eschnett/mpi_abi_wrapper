@@ -125,3 +125,22 @@ container it works, so `linux-suite.sh` is where that row lives. That laptop has
 since been fixed (`scripts/host-env.sh`, and test/README.md's third environment
 quirk for why it needed fixing), so a macOS Open MPI row is now possible rather
 than impossible — but it has not been run, and this row is the one that exists.
+
+## In CI
+
+`.github/workflows/ci.yaml` runs both rows, one job each: `suite-mpich` over the
+pinned MPICH 4.3.1 that `ci-scripts/install-mpich.sh` builds — restored from the
+cache the `linux-source` rows save, and 4.3.1 because that is the version
+`xfail-mpich.txt` is calibrated against where the distro rows' 4.2.1 is not — and
+`suite-openmpi` through `linux-suite.sh` in the `ubuntu:24.04` container whose
+Open MPI 4.1.6 `xfail-openmpi.txt` is calibrated against.
+
+**Both are report-only there until they have been green**, which is the rule that
+workflow's `compile` job records: a row nobody has seen pass cannot tell a
+regression from the thing it was added to find. Neither list has ever been gated
+on a GitHub runner, and the host-dependent lines above are exactly what a first
+run on a new machine moves — a new timeout reads as an unlisted failure, and a
+group (g) line that stops timing out reads as an expected failure that passed.
+Each job keeps `summary.tap` and the logs as an artifact whether it passed or
+not, because `--gate-only` retriages from a TAP file in hand rather than from a
+fresh 40-minute run. Deleting `continue-on-error` is what makes a row gate.

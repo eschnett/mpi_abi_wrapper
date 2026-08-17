@@ -93,7 +93,7 @@ run.
 
 ## What GitHub Actions runs
 
-`.github/workflows/ci.yaml` holds seven jobs over sixteen legs, and each one
+`.github/workflows/ci.yaml` holds nine jobs over seventeen legs, and each one
 calls a script from this directory wherever a script exists rather than
 repeating its recipe in YAML. That is the point of the split: the reasons live
 here, next to the code they are about, and stay runnable by hand.
@@ -107,6 +107,20 @@ here, next to the code they are about, and stay runnable by hand.
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
+| `suite-mpich` | `suite/run-suite.sh <mpicc> --variant=mpich` | the pinned MPICH 4.3.1, restored from `linux-source`'s cache — the version `suite/xfail-mpich.txt` is calibrated against, which the distro's 4.2.1 is not |
+| `suite-openmpi` | `suite/linux-suite.sh openmpi` in `container: ubuntu:24.04` | the 4.1.6 that image ships, installed by the script itself as root — the same pin `suite/xfail-openmpi.txt` is calibrated against |
+
+**The two suite rows are report-only**, `continue-on-error: true`, on the rule
+the `compile` job established: a row nobody has ever seen green cannot tell a
+regression from the thing it was added to find. Neither list has ever been
+gated on a GitHub runner, and both carry lines that are properties of the host
+they were recorded on — `xfail-mpich.txt`'s group (g) is three tests that pass
+standalone and exceed the suite's 180-second limit inside a full run, and
+`xfail-openmpi.txt`'s header records the `rma/linked_list` family passing on a
+quiet run and failing under load. Both directions of the gate can fire for that
+reason alone. Each row keeps `summary.tap` and its logs as an artifact whether
+it passed or not, which is what `run-suite.sh --gate-only` needs to retriage a
+line without a fresh 40-minute run.
 
 **FreeBSD had a row and no longer does.** It established that the platform
 cannot be supported — `RTLD_DEEPBIND` there promotes only the loaded library's
@@ -145,5 +159,5 @@ the source tree read-only, so the `patch -o -` property that mount was written
 to catch is untested; and its runners are x86_64, while every Linux row in
 `CODE.md` §11 was measured on aarch64 under Docker Desktop.
 
-The rows this repository has scripts for and that workflow does **not** run:
-`floor`, and everything under `suite/`.
+The row this repository has a script for and that workflow does **not** run:
+`floor`.

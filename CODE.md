@@ -369,6 +369,16 @@ used to make a red run green.
 | MPICH 4.3.1 | **41** in `xfail-mpich.txt` | fully triaged, every line with a cause |
 | Open MPI 4.1.6, on Linux | **168** in `xfail-openmpi.txt` | about half attributed, the rest honest placeholders |
 
+**Both rows run in `.github/workflows/ci.yaml`**, as `suite-mpich` (the pinned
+4.3.1, restored from the cache `linux-source` saves — the version the list is
+calibrated against, where the distro rows' 4.2.1 is not) and `suite-openmpi`
+(`linux-suite.sh` in the `ubuntu:24.04` container the other list is calibrated
+against). Both are **report-only**, `continue-on-error: true`, until a run there
+has been green: neither list has been gated on a GitHub runner, and both carry
+lines that describe the host they were recorded on, which either direction of the
+gate reports as a failure. Each job keeps `summary.tap` and the run's logs as an
+artifact whether it passed or not, which is what `--gate-only` retriages from.
+
 The authority for both is `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-*.txt`,
 which is also how `check-tap.py` reads them (it skips blanks and comments at
 line 85). Plain `wc -l` is *not* the number — these files are mostly reasons,

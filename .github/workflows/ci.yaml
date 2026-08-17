@@ -9,13 +9,15 @@
 #   #9 decision 19   the three consumption routes "exercised by CI rather than
 #                    merely parsed" -- each must build *and run* a program
 #   #9               MPI provisioned from pinned released tarballs, cached
+#   #10              MPICH's C test suite, "the first oracle nothing in this
+#                    repository wrote", over both implementations, each gated on
+#                    its own committed expected-failure list
 #
 # Not here, deliberately, though the design calls for them: the MPI-3.0 floor
-# row (ci-scripts/linux-floor.sh, some fifteen minutes), the MPICH C suite
-# (ci-scripts/suite/), and the cross test. Excluding the floor row also removes
-# the only coverage of the *toolchain* floor -- CMake 3.20, Python 3.8, gcc 9 --
-# which is the kind of drift HISTORY.md #3's S6 entry records as invisible
-# everywhere else.
+# row (ci-scripts/linux-floor.sh, some fifteen minutes) and the cross test.
+# Excluding the floor row also removes the only coverage of the *toolchain*
+# floor -- CMake 3.20, Python 3.8, gcc 9 -- which is the kind of drift
+# HISTORY.md #3's S6 entry records as invisible everywhere else.
 #
 # Not here because the platform is not supported: FreeBSD. The row existed long
 # enough to establish why (NOTES.md #13.4, HISTORY.md #2.16) and was dropped
@@ -144,8 +146,9 @@ jobs:
             arch: aarch64
           # Open MPI stays on Ubuntu 24.04 because ci-scripts/suite's
           # expected-failure list is calibrated line by line against the Open
-          # MPI 4.1.6 that image ships. That suite is not run here yet, but the
-          # pin is the documented one and moving it would invalidate the file.
+          # MPI 4.1.6 that image ships. The suite-openmpi job below runs that
+          # list on this same image, so the two rows share one pin and moving it
+          # here would invalidate that file.
           # 4.1.6 is also the only place the unsupported-operation paths are
           # exercised: it provides 466 of the ABI's 688 entry points.
           - mpi: openmpi
@@ -707,3 +710,216 @@ jobs:
                   echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
               fi
           done
+
+  # ------------------------------------------------- MPICH's C test suite
+  # NOTES.md #10's behavioural oracle that nothing in this repository wrote:
+  # some 900 programs that know only the MPI standard, compiled with the
+  # wrapper's mpicc and linked against libmpi_abi, exactly as HDF5 or PETSc will
+  # be in #11's S8. It found three conversion bugs no in-house check could have
+  # seen (HISTORY.md #3, S7), and its gate reads the expected-failure list in
+  # both directions -- an unlisted failure fails, a listed failure that *passed*
+  # fails, a listed test that did not run fails, and a line with no reason fails.
+  #
+  # ci-scripts/suite/ holds the whole recipe and both lists; these two jobs
+  # provide an MPI, a runner, and somewhere to keep the TAP file. One job per
+  # implementation rather than a matrix, because the two rows are different
+  # shapes -- a pinned tarball on the runner against a distro package in a
+  # container -- for the same reason linux-source and linux-distro are two jobs.
+  #
+  # **Both are report-only until they have been green**, the rule the compile job
+  # above records: the suite has never run on a GitHub runner, and parts of both
+  # lists are properties of the host they were calibrated on rather than of this
+  # project. Either direction of the gate can fire for that reason alone --
+  # xfail-mpich.txt's group (g) is three tests that pass standalone and exceed
+  # the suite's 180-second limit inside a full run, and xfail-openmpi.txt's
+  # header records the rma/linked_list family passing on a quiet run and failing
+  # under load on one machine. A new timeout reads as an unexpected failure and a
+  # (g) line that stops timing out reads as an expected failure that passed;
+  # neither is a regression, and the first run here is what says which of them
+  # this runner produces. MPITEST_TIMEOUT_MULTIPLIER (run-suite.sh documents what
+  # it costs the gate) is the knob for the first, retriaging a line is the knob
+  # for the second, and deleting `continue-on-error` is what makes a row gate.
+  #
+  # Neither job caches the suite's source. It is one tarball fetched from
+  # mpich.org and unpacked to test/mpi, which is the same trade the linux-source
+  # rows make for the MPI source they do not cache: a couple of hundred
+  # megabytes of cache budget against a twenty-second download.
+  #
+  # **Where timeout-minutes: 150 comes from.** The suite alone was some 40
+  # minutes over MPICH on the machine its list was calibrated on -- five of its
+  # invocations spend a 180-second limit each, and every one of the five is a
+  # listed expected failure rather than a surprise -- and the wrapper build, the
+  # suite's own configure and 900-odd test programs come on top of that, as does
+  # a cache miss on the MPI. A test *total* is deliberately not written here:
+  # ci-scripts/suite/README.md records four documents disagreeing about it, and
+  # three of the suite's configure decisions change it. `--no-dtp` is the shorter
+  # run and gives up most of the value, testlist.dtp being the same call over
+  # hundreds of generated derived datatypes.
+  suite-mpich:
+    name: suite / mpich 4.3.1 (from source)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+
+      # The linux-source set, minus poppler-utils because this job installs the
+      # wrapper rather than running ctest over it, plus perl -- which is what
+      # runtests is written in, named rather than assumed even though the runner
+      # image carries it. gfortran is for the cache-miss path only:
+      # install-mpich.sh runs a stock configure, which needs a Fortran compiler
+      # present (linux-source has what --disable-fortran would silently cost).
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+              build-essential gfortran cmake python3 patch binutils \
+              curl ca-certificates perl
+
+      # Everything writable is under RUNNER_TEMP rather than in the checkout:
+      # run-suite.sh's own defaults put the wrapper prefix, the suite build and
+      # the tarball under build/, and the artifact step below wants one path
+      # that does not move.
+      - name: Set up paths
+        run: |
+          {
+              echo "PREFIX=${RUNNER_TEMP}/opt/mpi-mpich"
+              echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-mpich"
+              echo "MPIABI_SUITE_WORK=${RUNNER_TEMP}/suite-mpich"
+              echo "MPIABI_SUITE_SRC=${RUNNER_TEMP}/suite-src"
+          } >>"${GITHUB_ENV}"
+
+      # **4.3.1 is the list's calibration, not a preference.** xfail-mpich.txt
+      # records one implementation's answers line by line, so the distro rows'
+      # MPICH 4.2.1 would report differences that belong to the version -- and
+      # `init/version` in that file names 4.3.1's answer explicitly. It is the
+      # same pinned tarball the linux-source rows build, restored from the cache
+      # they save under: restore-only, exactly as the compile job does, so the
+      # two jobs cannot race over that key. A miss simply builds, at the cost of
+      # this row alone.
+      #
+      # It is also, by coincidence rather than by requirement, the release
+      # run-suite.sh takes test/mpi from. The two versions are set separately
+      # (--suite=VERSION is the other one) and only this one is what gets wrapped.
+      - name: Restore the MPI installation
+        id: cache-mpi
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/opt/mpi-mpich
+          key: mpi1-mpich-4.3.1-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+
+      - name: Build and install MPICH 4.3.1
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        run: ci-scripts/install-mpich.sh "${PREFIX}" 4.3.1
+
+      # The same gate as the other rows that provision their own MPI, and here it
+      # separates "this runner cannot launch a job" from a suite result: a
+      # launcher answering `-n 2` with two singletons would run the whole suite
+      # at a job size nobody asked for, and the gate would report the difference
+      # as ours. The suite has no rank check of its own -- test/expect_ranks.h is
+      # in our tests, not in MPICH's.
+      - name: Two ranks, with no wrapper involved
+        run: |
+          cat >"${RUNNER_TEMP}/hello.c" <<'EOF'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(int argc, char **argv) {
+              int size = -1, rank = -1;
+              MPI_Init(&argc, &argv);
+              MPI_Comm_size(MPI_COMM_WORLD, &size);
+              MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+              printf("rank %d of %d\n", rank, size);
+              MPI_Finalize();
+              return size == 2 ? 0 : 1;
+          }
+          EOF
+          "${PREFIX}/bin/mpicc" -o "${RUNNER_TEMP}/hello" "${RUNNER_TEMP}/hello.c"
+          if ! "${PREFIX}/bin/mpiexec" -n 2 "${RUNNER_TEMP}/hello"; then
+              echo "::error::MPICH 4.3.1 cannot launch two ranks on this runner; the suite below would have blamed the wrapper"
+              exit 1
+          fi
+
+      # --variant=mpich rather than leaving it to be detected. run-suite.sh asks
+      # the launcher and would answer the same, but the variant is what selects
+      # the list this row is gated on, and that is worth reading off the YAML.
+      #
+      # FI_PROVIDER is deliberately unset: ch4:ofi choosing a bad interface is a
+      # property of a host, and run-suite.sh's header says why it is left to the
+      # host to set. If this row shows MPI_Finalize failing across the board,
+      # FI_PROVIDER=tcp is the knob and test/README.md has the measurement.
+      - name: Run the suite over MPICH
+        run: ci-scripts/suite/run-suite.sh "${PREFIX}/bin/mpicc" --variant=mpich
+
+      # if: always(), because a *green* run's TAP file is worth as much as a red
+      # one's: `run-suite.sh --gate-only` re-runs the comparison against a file
+      # already in hand, which is how a host-dependent line gets retriaged, and
+      # how NOTES.md #11's S8 finishes the Open MPI list's placeholders, without
+      # anyone paying for the run twice. summary.xml is left out as redundant.
+      - name: Keep the TAP file and the suite's logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-mpich
+          path: |
+            ${{ runner.temp }}/suite-mpich/summary.tap
+            ${{ runner.temp }}/suite-mpich/*.log
+          retention-days: 30
+
+  # Open MPI 4.1.6, which is what ubuntu:24.04 ships and what xfail-openmpi.txt
+  # is calibrated line by line against -- the same image and package as the
+  # linux-distro row above, and the reason that row's pin is not free to move.
+  #
+  # In a container, and through ci-scripts/suite/linux-suite.sh, because that is
+  # the documented entry point for this row: it installs the packages, puts
+  # everything writable outside the source tree, and sets the two variables Open
+  # MPI needs to run as root. The container's original reason was that the
+  # developers' machines are macOS and no Open MPI 5.0.x launcher would start a
+  # job on one; here the runner is already this image, and what the container
+  # keeps is the calibrated 4.1.6 rather than whatever the runner ships next.
+  #
+  # This row is dominated by MPI-4.0: Open MPI 4.1.6 provides 466 of the ABI's
+  # 688 entry points, so sessions, partitioned communication, persistent
+  # collectives and the `_c` forms are stubs answering
+  # MPI_ERR_UNSUPPORTED_OPERATION. That is decision 6 working as specified and it
+  # is most of the 168 lines in the list -- the same reason the linux-distro Open
+  # MPI rows are on this image, at some 900 programs' worth of breadth.
+  suite-openmpi:
+    name: suite / openmpi 4.1.6 (ubuntu:24.04)
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    continue-on-error: true
+    timeout-minutes: 150
+    steps:
+      # Before checkout, for the reason the linux-distro rows give: the base
+      # image carries no git, which sends actions/checkout down its REST-tarball
+      # fallback. Everything else this row needs, linux-suite.sh installs.
+      - name: Install git for actions/checkout
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v6
+
+      # linux-suite.sh takes ${MPIABI_SUITE_WORK:-...} and would otherwise work
+      # in /tmp, which the artifact step cannot name portably. A step rather than
+      # a job-level env: block, because runner.temp is not available there (see
+      # linux-source).
+      - name: Set up paths
+        run: |
+          {
+              echo "MPIABI_SUITE_WORK=${RUNNER_TEMP}/suite-openmpi"
+              echo "MPIABI_SUITE_SRC=${RUNNER_TEMP}/suite-src"
+          } >>"${GITHUB_ENV}"
+
+      - name: Run the suite over Open MPI
+        run: bash ci-scripts/suite/linux-suite.sh openmpi
+
+      - name: Keep the TAP file and the suite's logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-openmpi
+          path: |
+            ${{ runner.temp }}/suite-openmpi/summary.tap
+            ${{ runner.temp }}/suite-openmpi/*.log
+          retention-days: 30

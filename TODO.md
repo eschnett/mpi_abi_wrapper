@@ -7,7 +7,8 @@
 
 - add more tests: cross-tests, sanitizer, 32 bit architecture
 
-- add MPICH C test to CI
+- let the MPICH C suite CI rows gate: they are report-only
+  (`continue-on-error`) until a run on a GitHub runner has been green
 
 - add README
 
