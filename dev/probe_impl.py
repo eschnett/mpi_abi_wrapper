@@ -41,7 +41,9 @@ permanently-taken `#else` branch that reports
 MPI_ERR_UNSUPPORTED_OPERATION for an entry point the implementation has.
 
 **How, and what it costs.** All of them go into *one* translation unit, one
-probe per line, compiled `-fsyntax-only` -- not one configure test per name.
+probe per line, compiled without linking -- not one configure test per name.
+`-fsyntax-only` where the compiler has it and `-c` where it does not, decided
+by `compile_only_flags` below rather than assumed; nvc has no `-fsyntax-only`.
 A name that is a macro answers `#ifdef`. Anything else has to be declared for
 its probe to compile, and the probe differs by what the name is: `sizeof &name`
 for an entry point, which is a function, and `sizeof(name)` for a constant,
@@ -112,10 +114,46 @@ def probe_source(names):
     return "\n".join(lines) + "\n", where
 
 
+_compile_only = None
+
+
+def compile_only_flags(cc, workdir):
+    """How to ask *this* compiler to compile without linking.
+
+    `-fsyntax-only` is GCC's spelling and Clang's, and is the cheapest: it
+    stops before code generation. It is not universal. NVIDIA's nvc has no
+    such switch and stops with
+
+        nvc-Error-Unknown switch: -fsyntax-only
+
+    which was a portability defect in this probe rather than in the
+    implementation it was probing -- NOTES.md #3 keeps the probe compile-only
+    so that the build stays cross-compilable, and says nothing about which
+    compiler runs it. `-c` is the spelling every C compiler has, so it is the
+    fallback, and the object goes to the caller's temporary directory rather
+    than to /dev/null, which not every toolchain accepts as an output path.
+
+    Probed once and remembered: the answer cannot change within a run, and the
+    probe below compiles one translation unit per bisection step.
+    """
+    global _compile_only
+    if _compile_only is None:
+        src = Path(workdir) / "flagprobe.c"
+        src.write_text("int main(void) { return 0; }\n")
+        proc = subprocess.run([cc, "-fsyntax-only", str(src)],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if proc.returncode == 0:
+            _compile_only = ["-fsyntax-only"]
+        else:
+            _compile_only = ["-c", "-o", str(Path(workdir) / "flagprobe.o")]
+    return _compile_only
+
+
 def compile_ok(cc, flags, text, workdir):
     src = Path(workdir) / "probe.c"
     src.write_text(text)
-    proc = subprocess.run([cc, "-fsyntax-only", *flags, str(src)],
+    proc = subprocess.run([cc, *compile_only_flags(cc, workdir), *flags,
+                           str(src)],
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return proc.returncode == 0, proc.stdout.decode("utf-8", "replace")
 
