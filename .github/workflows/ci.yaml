@@ -229,14 +229,23 @@ jobs:
               echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-${{ matrix.mpi }}"
           } >>"${GITHUB_ENV}"
 
-      # The key hashes ci-scripts/ and must NOT hash ci-scripts/suite/'s
-      # expected-failure lists, or every edit to a reason rebuilds MPI on every
-      # variant -- ci-scripts/README.md and CODE.md #3 both state the rule.
-      # `ci-scripts/**` with explicit negations, never `ci-scripts/*`:
-      # @actions/glob expands a matched directory to all of its descendants, so
-      # the shorter pattern would put the suite back in the key. The cache step
-      # prints the key it used, so if a suite-only commit ever changes that
-      # hash, this is wrong again.
+      # The key hashes **the install scripts**, which is what
+      # ci-scripts/README.md and CODE.md #3 actually say, and what determines
+      # the bytes in the prefix: install-mpich.sh and install-openmpi.sh are the
+      # only files that build one. It was `ci-scripts/**` minus the suite, which
+      # honoured the letter of the rule and was broader than its reason -- every
+      # edit to linux-test.sh or check-install.sh, neither of which can change a
+      # single byte of an installed MPI, rebuilt four of them.
+      #
+      # A glob rather than the two names: a third installer added later joins
+      # the key by existing, where a list of names would silently serve an MPI
+      # built without it.
+      #
+      # The suite is excluded by construction now rather than by a negation.
+      # Keep it that way: `ci-scripts/*` would NOT have worked, because
+      # @actions/glob expands a matched directory to all of its descendants. The
+      # cache step prints the key it used, so a commit that changes only a
+      # reason in ci-scripts/suite/ and moves that hash means this is wrong.
       #
       # The version is in the key because it is a matrix value rather than a
       # file: the installer's own default is hashed, but the argument passed
@@ -252,7 +261,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-${{ matrix.mpi }}
-          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/**', '!ci-scripts/suite/**', '!ci-scripts/README.md') }}
+          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
 
       - name: Build and install ${{ matrix.mpi }} ${{ matrix.version }}
         if: steps.cache-mpi.outputs.cache-hit != 'true'
@@ -374,6 +383,66 @@ jobs:
           cache-from: type=gha,scope=mpich-i386
           cache-to: type=gha,mode=max,scope=mpich-i386
 
+  # ------------------------------------------------------------ sanitizers
+  # NOTES.md #11's S9. Runs in the debian:13 container for the same reason the
+  # MPICH row above does -- Ubuntu's MPICH answers `-n 2` with two singletons --
+  # and inline rather than through linux-test.sh, which takes no cmake flags.
+  #
+  # This job is also the measurement #12 asks for and does not have: "whether
+  # RTLD_DEEPBIND survives ASan, which is the case it is most likely to disturb.
+  # **Measure before assuming**." The wrapper is dlopen'd with RTLD_DEEPBIND
+  # under an ASan-instrumented process here, so a green run is that answer and a
+  # red one is the finding.
+  sanitize:
+    name: sanitize / ${{ matrix.sanitize }} / mpich
+    runs-on: ubuntu-24.04
+    container: debian:13
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # Quoted, and one leg. Unquoted `[address,undefined]` is a YAML flow
+        # sequence of *two* items, which would silently build ASan and UBSan
+        # separately rather than the combined set S9 asks for. A matrix of one
+        # so that `thread` -- S9's other half, the MPI_THREAD_MULTIPLE stress --
+        # is a line rather than a restructure.
+        sanitize: ["address,undefined"]
+    env:
+      # LeakSanitizer is on by default under Linux, and what it would report
+      # first is the wrapped MPI's own allocations surviving MPI_Finalize --
+      # this job being an instrumented process standing next to an
+      # uninstrumented library, which #12 predicts is "mostly triage of noise
+      # that has nothing to do with this code". test/lsan.supp carries the
+      # by-design leaks that are ours; the implementation's share is the triage
+      # nobody has done, so leak detection is off rather than pretending the
+      # file is complete. Turning it on is one word here plus that work.
+      ASAN_OPTIONS: detect_leaks=0
+      LSAN_OPTIONS: suppressions=test/lsan.supp
+      # UBSan *warns and continues* by default, which would make this row green
+      # while printing its findings into a log nobody reads.
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - name: Install git for actions/checkout
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends git ca-certificates
+
+      - uses: actions/checkout@v6
+
+      - name: Install packages
+        run: |
+          apt-get install -y -qq --no-install-recommends \
+              build-essential cmake python3 patch binutils poppler-utils \
+              libmpich-dev mpich
+
+      - name: Configure, build and test with -fsanitize=${{ matrix.sanitize }}
+        run: |
+          cmake -S . -B build \
+              -DMPI_C_COMPILER="$(command -v mpicc.mpich || command -v mpicc)" \
+              -DMPI_ABI_SANITIZE=${{ matrix.sanitize }}
+          cmake --build build -j"$(nproc)"
+          ctest --test-dir build --output-on-failure --no-tests=error --timeout 600
+
   # --------------------------------------------------------------- FreeBSD
   # A third operating system, and the only one here whose isolation mechanism
   # NOTES.md #13.4 lists as *unverified*: `RTLD_DEEPBIND` is what
@@ -418,36 +487,15 @@ jobs:
             # every non-Mach-O platform and which the base system does not have;
             # poppler-utils is pdftotext for the c-bindings cross-check.
             pkg install -y bash binutils cmake mpich poppler-utils python3
+          # One short line, and that is not a style choice. This block is handed
+          # to the VM over ssh, and a long line does not survive intact: the
+          # first run of this row died on `CMake Error: Unknown argument: --ti`,
+          # which is `ctest ... --timeout 300` truncated mid-flag, after the
+          # whole project had already built. A line this short cannot be
+          # truncated into a different one, and the recipe is now runnable by
+          # hand on a FreeBSD box.
           run: |
-            set -e
-            freebsd-version
-            uname -a
-
-            # The same gate the other self-provisioning rows use, and it earns
-            # its place most here: on a platform nothing has run on, "MPICH
-            # cannot launch two ranks" and "the wrapper is broken" are
-            # otherwise the same red ctest.
-            cat >/tmp/hello.c <<'EOF'
-            #include <mpi.h>
-            #include <stdio.h>
-            int main(int argc, char **argv) {
-                int size = -1, rank = -1;
-                MPI_Init(&argc, &argv);
-                MPI_Comm_size(MPI_COMM_WORLD, &size);
-                MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-                printf("rank %d of %d\n", rank, size);
-                MPI_Finalize();
-                return size == 2 ? 0 : 1;
-            }
-            EOF
-            /usr/local/bin/mpicc -o /tmp/hello /tmp/hello.c
-            /usr/local/bin/mpiexec -n 2 /tmp/hello
-
-            # ci-scripts/linux-test.sh is not usable here: nproc, `nm -D` and
-            # .so globs are all GNU/Linux. Same three commands it would run.
-            cmake -S . -B /tmp/build -DMPI_C_COMPILER=/usr/local/bin/mpicc
-            cmake --build /tmp/build -j"$(sysctl -n hw.ncpu)"
-            ctest --test-dir /tmp/build --output-on-failure --no-tests=error --timeout 300
+            bash ci-scripts/freebsd-test.sh mpich
 
   # ----------------------------------------------------------------- macOS
   # Required by NOTES.md #1's portability constraint and not redundant with

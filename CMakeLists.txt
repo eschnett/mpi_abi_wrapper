@@ -53,6 +53,25 @@ endif()
 
 set(MPIABI_WARNINGS -Wall -Wextra -Wpedantic -Werror)
 
+# NOTES.md #11's S9. A string rather than a bool so the set is the caller's
+# choice -- `address`, `undefined`, `address,undefined`, `thread` -- and empty
+# by default, which is every build that does not ask.
+#
+# Directory-wide rather than per-target on purpose: the instrumentation has to
+# reach libmpi_abi, libmpiwrapper and the test executables alike, since the
+# thing worth catching lives on the boundary between them. The wrapped MPI is
+# *not* instrumented, which is the arrangement this runs in and the reason
+# LeakSanitizer needs a suppression file rather than a clean slate.
+set(MPI_ABI_SANITIZE "" CACHE STRING
+  "Sanitizers to build with, e.g. address,undefined (empty: none)")
+if(MPI_ABI_SANITIZE)
+  message(STATUS "Building with -fsanitize=${MPI_ABI_SANITIZE}")
+  # -g and a frame pointer so a report names lines rather than addresses; both
+  # are what makes the output triage-able, and neither changes what is caught.
+  add_compile_options(-fsanitize=${MPI_ABI_SANITIZE} -fno-omit-frame-pointer -g)
+  add_link_options(-fsanitize=${MPI_ABI_SANITIZE})
+endif()
+
 # Generated output is committed (NOTES.md #9): `regenerate` writes it, and is
 # never part of the default build. CI instead runs the check tests below, which
 # fail on any drift between the committed files and a fresh generation.
@@ -681,3 +700,18 @@ add_test(NAME exported-symbols
     -DENTRYPOINTS=${CMAKE_SOURCE_DIR}/dev/entrypoints.txt
     ${MPIABI_EXPORTS_WRAPPER_ARGS}
     -P ${CMAKE_SOURCE_DIR}/test/check_exports.cmake)
+
+# Only in a sanitizer build, and it is not ceremony: an uninstrumented build
+# passes every other test in this file, so nothing else can tell one from a
+# correctly instrumented one. Reads the object code.
+if(MPI_ABI_SANITIZE)
+  set(MPIABI_SANITIZE_LIBS $<TARGET_FILE:mpi_abi>)
+  if(MPI_ABI_BUILD_WRAPPER)
+    list(APPEND MPIABI_SANITIZE_LIBS $<TARGET_FILE:mpiwrapper>)
+  endif()
+  add_test(NAME sanitizer-instrumented
+    COMMAND ${CMAKE_COMMAND}
+      "-DLIBS=${MPIABI_SANITIZE_LIBS}"
+      -DSANITIZE=${MPI_ABI_SANITIZE}
+      -P ${CMAKE_SOURCE_DIR}/test/check_sanitizer.cmake)
+endif()

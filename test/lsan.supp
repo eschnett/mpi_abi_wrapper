@@ -1,0 +1,37 @@
+# LeakSanitizer suppressions. NOTES.md #10: "The suppression file is part of the
+# design record ... so an unexplained entry means the design changed." Every
+# entry below therefore names the rule in #6.2 that makes it a leak on purpose,
+# and an entry that stops firing is as much a finding as a new report.
+#
+# **Two of the four things #10 names are not heap allocations at all**, and
+# writing suppressions for them would be writing dead lines. The op trampoline
+# pool is `static MPI_User_function *const op_tramps[]` and the errhandler pool
+# is the same shape (src/mpiwrapper/callbacks.c) -- generated code and static
+# arrays, process-lifetime by construction, never malloc'd and so never visible
+# to LeakSanitizer. What is actually on the heap and deliberately never freed is
+# the attribute-callback pairs and the datarep state, both below.
+#
+# The wrapped MPI is not instrumented but its allocations still go through the
+# intercepted malloc, so a run with detect_leaks=1 also reports whatever the
+# implementation keeps past MPI_Finalize. NOTES.md #12 predicts that -- "expect
+# the first ASan run over Open MPI to be mostly triage of noise that has nothing
+# to do with this code" -- and it is why the CI job runs with detect_leaks=0 for
+# now. This file is what a leak-detecting run would need, and is not yet the
+# whole of it: the implementation's own entries are the triage that has not been
+# done.
+
+# #6.2, and the standard's rule rather than a choice of ours: MPI-5.0 §7.7 lets
+# an implementation invoke a keyval's copy and delete callbacks during
+# MPI_Comm_dup, MPI_Comm_free and MPI_Finalize, so the {user_fn, user_extra}
+# pair must outlive everything the user holds. There is no point at which it is
+# safe to free one. #13.3 keeps "whether anything better is possible at
+# finalize" open.
+leak:mpiwrapper_comm_attr_fns
+leak:mpiwrapper_type_attr_fns
+leak:mpiwrapper_win_attr_fns
+
+# #6.2: a datarep is registered once per process and can never be unregistered
+# -- MPI provides no MPI_Unregister_datarep -- so the conversion-function state
+# has no deallocation point either.
+leak:mpiwrapper_datarep_fns
+leak:mpiwrapper_datarep_c_fns

@@ -21,6 +21,7 @@ do not fail the same way.
 | `install-mpich.sh <prefix> [<version>]` | anywhere | downloads, configures (stock, no patches), builds and installs a pinned MPICH release |
 | `install-openmpi.sh <prefix> [<version>]` | anywhere | the same for Open MPI |
 | `check-install.sh mpich\|openmpi\|/path/to/mpicc` | anywhere | S6's exit check: configure, build and install this project into a prefix of its own, then build and run a program through each of the three consumption routes (NOTES.md #9) with the loader's search path cleared |
+| `freebsd-test.sh [mpich]` | inside FreeBSD | `linux-test.sh`'s sibling for the one platform whose isolation NOTES.md #13.4 lists as unverified. A separate file because that script is GNU/Linux throughout — `nproc`, `nm -D`, `.so` globs, apt |
 
 Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, these two are a stock
 `configure && make && make install` with nothing carried: mpif needs an MPI
@@ -107,12 +108,17 @@ runnable by hand.
 
 Three things about it that are decisions rather than defaults:
 
-- **The MPI cache key is where this file's split is cashed in.** It is
-  `hashFiles('ci-scripts/**', '!ci-scripts/suite/**', '!ci-scripts/README.md')`
-  — `**` with explicit negations, never `ci-scripts/*`, for the `@actions/glob`
-  reason above. The version is in the key too, because it is passed as a matrix
-  argument rather than read from a file, so the installer's own default is
-  hashed and the value actually used is not.
+- **The MPI cache key hashes the install scripts, and only those.** It is
+  `hashFiles('ci-scripts/install-*.sh')`: those two files are what put bytes in
+  a prefix, so they are what can invalidate one. It began as `ci-scripts/**`
+  minus the suite, which honoured the letter of the rule above and was broader
+  than its reason — an edit to `linux-test.sh`, which cannot change a byte of an
+  installed MPI, rebuilt four of them. A glob rather than the two names, so a
+  third installer joins the key by existing. The version is in the key too,
+  because it is passed as a matrix argument rather than read from a file, so the
+  installer's own default is hashed and the value actually used is not.
+  (`ci-scripts/*` would still be the wrong spelling if the broad form ever comes
+  back, for the `@actions/glob` reason above.)
 - **The MPI is saved to the cache immediately after it installs**, through the
   `actions/cache/restore` + `save` pair rather than plain `actions/cache`, whose
   post step is `post-if: success()` — a failing test later in the job would
