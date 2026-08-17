@@ -80,8 +80,27 @@ DEFAULT_SOURCES = ([ROOT / "gen" / "mpiwrapper" / "wrappers.c",
                     ROOT / "gen" / "mpiwrapper" / "constants.c"]
                    + sorted((ROOT / "src" / "mpiwrapper").glob("*.c")))
 
-_LINE_RE = re.compile(r"^[^\s].*?:(\d+):(?:\d+:)?\s*(?:fatal\s+)?error:",
-                      re.MULTILINE)
+# Two diagnostic shapes, because this probe works by reading *which line* the
+# compiler complained about, and compilers do not agree on how to say it:
+#
+#   gcc, clang   probe.c:10:5: error: ...
+#   nvc          "probe.c", line 10: error: ...
+#
+# The second is the EDG frontend's, which nvc uses and Cray's compiler and the
+# classic icc do too. Not recognising it does not make the probe wrong, it
+# makes it *stop*: a diagnostic it cannot place reads as "no diagnostic pointed
+# at a probe line", which is the hard error below, and nvc produced exactly
+# that for seven names that were simply absent from MPICH -- MPI_ERR_ABI,
+# MPIX_TYPECLASS_LOGICAL and the five sized MPI_LOGICAL* types.
+#
+# The two patterns cannot match each other's output: the first needs a colon
+# immediately before the line number, and EDG puts a space there.
+_LINE_RES = (
+    re.compile(r"^[^\s].*?:(\d+):(?:\d+:)?\s*(?:fatal\s+)?error:",
+               re.MULTILINE),
+    re.compile(r'^"[^"]*",\s*line\s+(\d+):\s*(?:\w+\s+)?error:',
+               re.MULTILINE),
+)
 
 
 def probe_source(names):
@@ -179,7 +198,9 @@ def probe(cc, flags, names):
             ok, output = compile_ok(cc, flags, text, workdir)
             if ok:
                 return {name for name, _ in present}
-            bad = {where[int(m.group(1))] for m in _LINE_RE.finditer(output)
+            bad = {where[int(m.group(1))]
+                   for line_re in _LINE_RES
+                   for m in line_re.finditer(output)
                    if int(m.group(1)) in where}
             if not bad:
                 sys.stderr.write(output)
