@@ -2277,9 +2277,28 @@ kept under it because the wrong reading that hid it is worth not repeating.
 
   That is §2's reliability property holding on a platform nothing had ever run
   on: it refuses to start and says why, rather than loading and silently doing
-  the wrong thing. Support would need a mechanism FreeBSD's rtld actually has,
-  and none is known; the `PMPI_*` routing of §2 is the option that exists, at
-  decision 7's cost. The row is `ci-scripts/freebsd-test.sh`, report-only.
+  the wrong thing. The row is `ci-scripts/freebsd-test.sh`, report-only.
+
+  **`PMPI_*` routing is not the fix here, and an earlier draft of this entry
+  said it was.** That fix belongs to the *macOS* failure in §2, which is
+  weak-definition coalescing: there the wrapper's references are already bound
+  to `libmpi` at link time and only dyld's preference for a strong definition
+  over a weak one captures them, so calling a name the implementation defines
+  strongly escapes it. FreeBSD's failure is the other one — **scope order** —
+  and §2 already says why the same move cannot work against it: "calling
+  `PMPI_*` internally does not save the implementation: we export those too, so
+  both names are captured." `libmpi_abi` exports all 1376 names, and the global
+  scope is searched before the loaded object's own dependencies, so the wrapper
+  is captured whichever of the two it calls. The mistake was importing a remedy
+  from the wrong failure mode; the two look alike from a distance and are not.
+
+  What would actually work has to stop the wrapper's `MPI_*` references from
+  being resolved at run time at all. The candidate is linking the
+  implementation **statically** into `libmpiwrapper` with `-Bsymbolic`, so that
+  those names are *defined* inside it and bind locally — the same shape as
+  §11's S9 option of building the MPI with its components static, and untested
+  here. Anything relying on the loader's scope rules needs a mechanism
+  FreeBSD's rtld has, and none is known.
 
   It also found a real defect on the way, which is the argument for the row:
   `libmpiwrapper` had `-fvisibility=hidden` and **no version script**, so it
