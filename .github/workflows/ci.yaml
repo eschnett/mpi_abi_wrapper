@@ -12,10 +12,15 @@
 #
 # Not here, deliberately, though the design calls for them: the MPI-3.0 floor
 # row (ci-scripts/linux-floor.sh, some fifteen minutes), the MPICH C suite
-# (ci-scripts/suite/), the cross test, sanitizers and the 32-bit row. Excluding
-# the floor row also removes the only coverage of the *toolchain* floor --
-# CMake 3.20, Python 3.8, gcc 9 -- which is the kind of drift HISTORY.md #3's
-# S6 entry records as invisible everywhere else.
+# (ci-scripts/suite/), and the cross test. Excluding the floor row also removes
+# the only coverage of the *toolchain* floor -- CMake 3.20, Python 3.8, gcc 9 --
+# which is the kind of drift HISTORY.md #3's S6 entry records as invisible
+# everywhere else.
+#
+# Not here because the platform is not supported: FreeBSD. The row existed long
+# enough to establish why (NOTES.md #13.4, HISTORY.md #2.16) and was dropped
+# rather than left red -- a permanently failing row teaches nothing after the
+# first run. `git show 236b99a` has the recipe if it is ever worth revisiting.
 
 name: CI
 
@@ -604,60 +609,6 @@ jobs:
         run: |
           ctest --test-dir build --output-on-failure --no-tests=error \
               --timeout 600 -E '^abi_|^isolation-check$'
-
-  # --------------------------------------------------------------- FreeBSD
-  # A third operating system, and the only one here whose isolation mechanism
-  # NOTES.md #13.4 lists as *unverified*: `RTLD_DEEPBIND` is what
-  # src/mpi_abi/bootstrap.c reaches for on every non-Apple platform, and whether
-  # FreeBSD's rtld has it at all is the question this row exists to answer. A
-  # compile error naming RTLD_DEEPBIND is a real result, not a broken job.
-  #
-  # GitHub has no FreeBSD runner, so an Ubuntu runner boots one under qemu.
-  #
-  # **Report-only until it has been green**, per the sibling project's rule. It
-  # is here to produce a measurement, and a row that has never passed cannot
-  # tell a regression from the thing it was added to discover.
-  freebsd:
-    name: freebsd / mpich (VM)
-    runs-on: ubuntu-24.04
-    continue-on-error: true
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Build and test in a FreeBSD VM
-        uses: vmactions/freebsd-vm@v1
-        with:
-          # Pinned rather than left to the action's default, so that a release
-          # bump is somebody's decision -- the same reason the runner labels and
-          # container images above are pinned.
-          release: "14.3"
-          # The default shell is tcsh, which none of this is written in. It is
-          # also why ci-scripts/ spells its shebangs `#!/usr/bin/env bash`.
-          usesh: true
-          # Nothing here produces an artifact the host wants, and the build tree
-          # would otherwise be rsync'ed back at the end.
-          copyback: false
-          prepare: |
-            # The image's hostname resolves to nothing, and that is not a
-            # curiosity: MPICH's tcp netmod resolves the host's own name to
-            # build its business card, so without this every multi-rank
-            # MPI_Init dies in gethostbyname. Measured in the sibling project,
-            # where it failed exactly the tests using two or more ranks.
-            printf '127.0.0.1 %s\n' "$(hostname)" >>/etc/hosts
-            # binutils is for objdump, which test/check_exports.cmake uses on
-            # every non-Mach-O platform and which the base system does not have;
-            # poppler-utils is pdftotext for the c-bindings cross-check.
-            pkg install -y bash binutils cmake mpich poppler-utils python3
-          # One short line, and that is not a style choice. This block is handed
-          # to the VM over ssh, and a long line does not survive intact: the
-          # first run of this row died on `CMake Error: Unknown argument: --ti`,
-          # which is `ctest ... --timeout 300` truncated mid-flag, after the
-          # whole project had already built. A line this short cannot be
-          # truncated into a different one, and the recipe is now runnable by
-          # hand on a FreeBSD box.
-          run: |
-            bash ci-scripts/freebsd-test.sh mpich
 
   # ----------------------------------------------------------------- macOS
   # Required by NOTES.md #1's portability constraint and not redundant with

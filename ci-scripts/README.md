@@ -21,7 +21,6 @@ do not fail the same way.
 | `install-mpich.sh <prefix> [<version>]` | anywhere | downloads, configures (stock, no patches), builds and installs a pinned MPICH release |
 | `install-openmpi.sh <prefix> [<version>]` | anywhere | the same for Open MPI |
 | `check-install.sh mpich\|openmpi\|/path/to/mpicc` | anywhere | S6's exit check: configure, build and install this project into a prefix of its own, then build and run a program through each of the three consumption routes (NOTES.md #9) with the loader's search path cleared |
-| `freebsd-test.sh [mpich]` | inside FreeBSD | `linux-test.sh`'s sibling for the one platform whose isolation NOTES.md #13.4 lists as unverified. A separate file because that script is GNU/Linux throughout — `nproc`, `nm -D`, `.so` globs, apt |
 
 Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, these two are a stock
 `configure && make && make install` with nothing carried: mpif needs an MPI
@@ -94,17 +93,26 @@ run.
 
 ## What GitHub Actions runs
 
-`.github/workflows/ci.yaml` holds four gating jobs, and each one calls a script
-from this directory rather than repeating its recipe in YAML. That is the point
-of the split: the reasons live here, next to the code they are about, and stay
-runnable by hand.
+`.github/workflows/ci.yaml` holds seven jobs over sixteen legs, and each one
+calls a script from this directory wherever a script exists rather than
+repeating its recipe in YAML. That is the point of the split: the reasons live
+here, next to the code they are about, and stay runnable by hand.
 
 | job | calls | provides its own MPI? |
 |---|---|---|
 | `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks, plus `exported-symbols`, which is oracle 1 |
-| `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root |
-| `linux-source` | `install-{mpich,openmpi}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached |
-| `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew |
+| `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root. Both arches |
+| `linux-source` | `install-{mpich,openmpi}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches |
+| `linux-i386` | `docker/mpich-i386.dockerfile`, whose last `RUN` is `linux-test.sh` | Debian i386's. The only 32-bit row, and the only one where an ABI handle is not 64 bits |
+| `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
+| `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
+| `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
+
+**FreeBSD had a row and no longer does.** It established that the platform
+cannot be supported — `RTLD_DEEPBIND` there promotes only the loaded library's
+own symbols, not its dependencies', so the wrapper is captured and refuses at
+load (NOTES.md #13.4). A row that can only ever be red teaches nothing after the
+first run. `git show 236b99a` has the recipe.
 
 Three things about it that are decisions rather than defaults:
 

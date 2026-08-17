@@ -2261,50 +2261,33 @@ kept under it because the wrong reading that hid it is worth not repeating.
   not settled which MPI is even the target there.
 - **musl / Alpine**: neither isolation mechanism exists (§12). Expected to be
   refused at load, which is the correct outcome but not support.
-- **FreeBSD**: **measured, and `RTLD_DEEPBIND` does not isolate there.** It is
-  no longer the intended mechanism so much as a flag the platform accepts and
-  ignores — the same shape as musl in §12, and now the same status. The build
-  itself is fine: the whole project compiles, `RTLD_DEEPBIND` exists, the
-  `dlopen` succeeds, and everything that does not cross the wrapper boundary
-  passes. What happens next is the design working as designed — the wrapper's
-  own outward-resolution check catches the capture and refuses:
+- **FreeBSD**: **not supported.** Measured on 14.3, and the reason is
+  structural rather than a bug of ours. The whole project builds,
+  `RTLD_DEEPBIND` is declared, and the `dlopen` succeeds — but the wrapper's
+  `MPI_*` calls still resolve back into `libmpi_abi`, and the outward-resolution
+  check refuses at load, which is §2's reliability property working.
 
-  ```
-  libmpi_abi: cannot initialize: wrapper rejected this libmpi_abi: symbol
-  resolution captured: this libmpiwrapper's MPI_* calls resolve back into
-  libmpi_abi
-  ```
+  The flag is implemented there, and more narrowly than on glibc. FreeBSD's
+  `dlopen(3)` says it puts "symbols **from the loaded library**" before global
+  ones; glibc's puts "the lookup scope of the symbols in this shared object"
+  ahead, and that scope includes the object's `DT_NEEDED` subtree — which is why
+  `dev/dlopen-probe/` measured it applying transitively (§2). We need
+  `libmpiwrapper`'s `MPI_Send` to reach **`libmpi`**, a dependency;
+  `libmpiwrapper` defines no such symbol itself, so the narrower rule has
+  nothing to promote and the global scope wins. Identical wording in 14.3 and
+  15.1, so this is not a release that will age out. **Not the same as musl**,
+  which ignores the flag outright; an earlier draft said it was.
 
-  That is §2's reliability property holding on a platform nothing had ever run
-  on: it refuses to start and says why, rather than loading and silently doing
-  the wrong thing. The row is `ci-scripts/freebsd-test.sh`, report-only.
+  `PMPI_*` routing is not the escape — §2: "we export those too, so both names
+  are captured". The only untested candidate is linking the implementation
+  statically into `libmpiwrapper` with `-Bsymbolic`, so the names are defined
+  inside it and bind locally; that is §11's S9 option in another costume.
 
-  **`PMPI_*` routing is not the fix here, and an earlier draft of this entry
-  said it was.** That fix belongs to the *macOS* failure in §2, which is
-  weak-definition coalescing: there the wrapper's references are already bound
-  to `libmpi` at link time and only dyld's preference for a strong definition
-  over a weak one captures them, so calling a name the implementation defines
-  strongly escapes it. FreeBSD's failure is the other one — **scope order** —
-  and §2 already says why the same move cannot work against it: "calling
-  `PMPI_*` internally does not save the implementation: we export those too, so
-  both names are captured." `libmpi_abi` exports all 1376 names, and the global
-  scope is searched before the loaded object's own dependencies, so the wrapper
-  is captured whichever of the two it calls. The mistake was importing a remedy
-  from the wrong failure mode; the two look alike from a distance and are not.
-
-  What would actually work has to stop the wrapper's `MPI_*` references from
-  being resolved at run time at all. The candidate is linking the
-  implementation **statically** into `libmpiwrapper` with `-Bsymbolic`, so that
-  those names are *defined* inside it and bind locally — the same shape as
-  §11's S9 option of building the MPI with its components static, and untested
-  here. Anything relying on the loader's scope rules needs a mechanism
-  FreeBSD's rtld has, and none is known.
-
-  It also found a real defect on the way, which is the argument for the row:
-  `libmpiwrapper` had `-fvisibility=hidden` and **no version script**, so it
-  exported `_init` and `_fini` beside `mpiwrapper_get_vtable` there. §9 says
-  both halves are needed and only `libmpi_abi` had both; `cmake/mpiwrapper.version`
-  is the missing one.
+  **The CI row is dropped**, having established this: a permanently red row
+  teaches nothing after the first run. `git show 236b99a` is the recipe, and
+  what would settle the mechanism beyond the man page is a FreeBSD
+  `dev/dlopen-probe/` — a library whose *dependency* defines a symbol a global
+  object also defines.
 - **32-bit**: exercised for the loader probe and the type-identity probe, not
   for the library. S9's row.
 - **Static libraries**: §9.

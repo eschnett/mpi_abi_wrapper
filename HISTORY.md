@@ -679,11 +679,11 @@ run at all in A's presence", which no amount of tuning A reaches.
 
 ### 2.16 "`RTLD_DEEPBIND` is FreeBSD's isolation mechanism"
 
-`NOTES.md` §13.4 said so — "`RTLD_DEEPBIND` is the intended mechanism and is
-unverified" — and `src/mpi_abi/bootstrap.c` reaches for it on every non-Apple
-platform. The first FreeBSD row settled it, and the belief was two-thirds
-right in the way that hides the last third: the flag *exists*, the project
-builds, and the `dlopen` *succeeds*. It simply does not isolate.
+`NOTES.md` §13.4 said so — "the intended mechanism and is unverified" — and
+`bootstrap.c` reaches for it on every non-Apple platform. The first FreeBSD row
+settled it, and the belief was two-thirds right in the way that hides the last
+third: the flag *exists*, the project builds, and the `dlopen` *succeeds*. It
+simply does not isolate.
 
 ```
 libmpi_abi: loaded ... with dlopen(RTLD_LOCAL | RTLD_DEEPBIND)
@@ -692,12 +692,30 @@ resolution captured: this libmpiwrapper's MPI_* calls resolve back into
 libmpi_abi
 ```
 
-Accepted and ignored, which is the shape §12 already records for musl and is
-now FreeBSD's status too. What the run demonstrates is the property §2 of
-`NOTES.md` claims and had never been tested on an unknown platform: it refused
-to start and said why, rather than loading and silently doing the wrong thing.
-The outward-resolution check earned its place here rather than in the
-configuration it was written for.
+**The first reading of that was also wrong, and is worth keeping for its
+shape.** It looked like the flag being accepted and ignored — musl's behaviour,
+recorded in §12 — and the entry said so. The documentation says otherwise:
+FreeBSD's `dlopen(3)` puts "symbols **from the loaded library**" before global
+ones, where glibc's puts "the lookup scope of the symbols in this shared
+object" ahead, and *that* scope includes the object's `DT_NEEDED` subtree —
+which is exactly why `dev/dlopen-probe/` measured glibc's applying transitively
+(§2). The symbol we need is `libmpi`'s, and `libmpi` is a dependency of
+`libmpiwrapper` rather than `libmpiwrapper` itself, so the narrower rule has
+nothing to promote and the global scope keeps it. Implemented, and too narrow
+for this — not ignored.
+
+Identical wording in the 14.3 and 15.1 man pages, so it is not a release that
+will age out. What would settle the mechanism past the documentation is a
+FreeBSD `dev/dlopen-probe/`: a library whose *dependency* defines a symbol some
+global object also defines.
+
+Two things the row is worth remembering for. It demonstrated `NOTES.md` §2's
+reliability property on a platform nothing had ever run on — refuse and say
+why, rather than load and silently do the wrong thing. And it found the missing
+version script on `libmpiwrapper` (§3's S6b), which GNU/Linux had been passing
+by accident. The row itself was then dropped: a permanently red row teaches
+nothing after the first run, and `NOTES.md` §13.4 now records the platform as
+unsupported.
 
 ---
 
@@ -1127,20 +1145,27 @@ compiler or an execution path that nothing had ever run.
   documents always said.
 
 **Two beliefs measured false**, each on the first run of the row that tested it:
-§2.15 (ASan refuses `RTLD_DEEPBIND` outright) and §2.16 (FreeBSD accepts it and
-ignores it). The second also demonstrated §2 of `NOTES.md`'s reliability
-property on a platform nothing had run on: refuse and say why, rather than load
-and silently do the wrong thing.
+§2.15 (ASan refuses `RTLD_DEEPBIND` outright) and §2.16 (FreeBSD implements it
+too narrowly to reach a dependency's symbols). The second also demonstrated §2
+of `NOTES.md`'s reliability property on a platform nothing had run on: refuse
+and say why, rather than load and silently do the wrong thing.
 
 **Where the rows stand.** Green and gating: both Linux arches on distro and
 pinned-from-source MPIs, i386, macOS on both Homebrew MPIs, the no-MPI checks,
 the sanitizer row, and `icx` — which built the whole project under `-Werror`
-first try. Report-only: FreeBSD, which cannot be supported and now says so
-correctly, and `nvc`, which reaches the conversion layer and reports
+first try. Report-only: `nvc`, which reaches the conversion layer and reports
 `branch_past_initialization` in `abi_arrays_test.c` and `mixed_enum_type` in
 `toolevents.c`. Those are nvc's own stylistic diagnostics rather than standard
 violations, and triaging them is the next session's work, not this one's — a
 row gates once it has been green.
+
+**And one row was added, answered its question, and was removed.** FreeBSD is
+not supportable (§2.16), so its row could only ever be red, and a permanently
+red row teaches nothing after the first run. It is recorded in `NOTES.md`
+§13.4, and `git show 236b99a` has the recipe for anyone who revisits it. That
+is the intended lifecycle of an exploratory row rather than a failure of one:
+it cost two commits and bought a platform verdict and the version-script defect
+above.
 
 **It takes two of S9's three rows** — the sanitizers and 32-bit — without
 closing it: the `MPI_THREAD_MULTIPLE` stress test remains, and §2.15 means the

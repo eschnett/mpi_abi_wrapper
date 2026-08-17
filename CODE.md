@@ -86,8 +86,6 @@ ci-scripts/        MPI install and build-shape checks
   check-install.sh   the five-leg installed-prefix consumption test
   install-mpich.sh, install-openmpi.sh
   linux-test.sh, run-linux-docker.sh
-  freebsd-test.sh    linux-test.sh's sibling for FreeBSD, which shares none of
-                       its GNU-isms (§11)
   linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
                        to linux-test.sh (§11)
   suite/             MPICH C suite runner, xfail lists, mpiexec filter, TAP gate
@@ -446,7 +444,7 @@ their old evidence.
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI** (`NOTES.md` #2) |
 | Linux musl | neither mechanism exists | expected to be refused at load; no Alpine support |
 | Linux glibc i386 (32-bit) | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 13/13, two ranks (`debian:13` i386, GitHub Actions). The only row where an ABI handle is 32 bits, so the only one where §5.1's dynamic-handle collision probe is a real test |
-| FreeBSD 14.3 | `RTLD_DEEPBIND` accepted and ignored | **refused at load**, and correctly: it builds, it `dlopen`s, and the outward-resolution check catches the capture and says so. `NOTES.md` #13.4. Report-only row |
+| FreeBSD 14.3 | `RTLD_DEEPBIND`, narrower there than on glibc | **not supported**, and **refused at load**, which is the correct outcome: it builds, it `dlopen`s, and the outward-resolution check catches the capture and says so. FreeBSD promotes only the loaded library's own symbols, not its dependencies', and the symbol we need is a dependency's. `NOTES.md` #13.4. **No CI row** — dropped once it had established this |
 | Windows | — | open |
 
 32-bit (i386, arm32v7) has been run for the loader probe and the type-identity
