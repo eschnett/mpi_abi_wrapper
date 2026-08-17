@@ -23117,7 +23117,7 @@ static int w_PMPI_T_enum_get_item(MPIABI_T_enum abi_enumtype, int abi_indx,
     const MPI_T_event_registration event_registration =                        \
         mpiwrapper_t_event_registration_fromabi(abi_event_registration);       \
     const MPI_T_cb_safety          cb_safety          =                        \
-        mpiwrapper_tcbsafety_fromabi(abi_cb_safety);                           \
+        (MPI_T_cb_safety)mpiwrapper_tcbsafety_fromabi(abi_cb_safety);          \
                                                                                \
     MPI_Info  info_used;                                                       \
     const int ierror = TARGET(event_registration, cb_safety, &info_used);      \
@@ -23156,7 +23156,7 @@ static int w_PMPI_T_event_callback_get_info(
     const MPI_T_event_registration event_registration =                        \
         mpiwrapper_t_event_registration_fromabi(abi_event_registration);       \
     const MPI_T_cb_safety          cb_safety          =                        \
-        mpiwrapper_tcbsafety_fromabi(abi_cb_safety);                           \
+        (MPI_T_cb_safety)mpiwrapper_tcbsafety_fromabi(abi_cb_safety);          \
     const MPI_Info                 info               =                        \
         mpiwrapper_info_fromabi(abi_info);                                     \
                                                                                \
@@ -24104,7 +24104,7 @@ static int w_PMPI_T_pvar_write(MPIABI_T_pvar_session abi_session,
                ticks_per_second, max_ticks, info_p);                           \
                                                                                \
     if (abi_ordering)                                                          \
-      *abi_ordering = mpiwrapper_tsourceorder_toabi(ordering);                 \
+      *abi_ordering = (MPIABI_T_source_order)mpiwrapper_tsourceorder_toabi(ordering); \
     if (abi_info)                                                              \
       *abi_info = (ierror == MPI_SUCCESS)                                      \
                       ? mpiwrapper_info_toabi(info)                            \

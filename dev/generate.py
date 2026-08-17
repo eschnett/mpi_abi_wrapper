@@ -1059,8 +1059,11 @@ SWITCH_KIND = {
     "KEYVAL": "keyval",
     # S3b: MPI_T's six enumerated families. Two of them -- cbsafety and
     # sourceorder -- are spelled as enum *types* in the ABI header rather than
-    # as ints, which costs nothing here: the mappers take and return int, and C
-    # converts in both directions at the call site.
+    # as ints. That was recorded here as costing nothing, "the mappers take and
+    # return int, and C converts in both directions at the call site", and the
+    # conversion is indeed legal and silent under gcc and clang. nvc reports it
+    # as mixed_enum_type, so ENUM_TYPED_FAMILIES below makes the conversion
+    # explicit instead.
     "BIND_TYPE": "tbind",
     "CALLBACK_SAFETY": "tcbsafety",
     "PVAR_CLASS": "tpvarclass",
@@ -1068,6 +1071,22 @@ SWITCH_KIND = {
     "TOOL_VAR_VERBOSITY": "tverbosity",
     "VARIABLE_SCOPE": "tscope",
 }
+
+# The mapped families whose two spellings are enum *types* rather than ints, on
+# both sides of the boundary -- so a conversion through the `int`-valued mappers
+# lands an int in an enum, or an enum in an int parameter, at every site.
+#
+# That is legal C and silent under gcc and clang. nvc says `mixed_enum_type`,
+# and it has a point: NOTES.md #2 renames these two deliberately, breaking the
+# tag identity their handles keep, so the ABI type and the implementation type
+# really are distinct and a conversion between them really is a conversion. An
+# explicit cast is what #2 already calls correct for the same pair in
+# entrypoints.c.
+#
+# A named table rather than a test on the family name, per NOTES.md #3: a
+# seventh MPI_T family that is enum-typed joins by being listed, and one that is
+# not stays out, without either being a spelling accident.
+ENUM_TYPED_FAMILIES = frozenset({"tcbsafety", "tsourceorder"})
 
 SWITCH_FAMILY_MEMBERS = {
     "combiner": r"^MPI_COMBINER_",
@@ -1753,14 +1772,23 @@ def emit_body(ep):
             handle_out = True
         elif cls in ("rank_in", "tag_in", "errorcode_in", "switch_in",
                      "bitmask_in"):
-            fn = "mpiwrapper_" + scalar_family(p, cls)
-            decls.append(("const " + p.base, name, f"{fn}_fromabi({abi})"))
+            fam = scalar_family(p, cls)
+            fn = "mpiwrapper_" + fam
+            # ENUM_TYPED_FAMILIES: the mappers are int-valued, and for these two
+            # the local being initialized is an enum.
+            cast = f"({p.base})" if fam in ENUM_TYPED_FAMILIES else ""
+            decls.append(("const " + p.base, name, f"{cast}{fn}_fromabi({abi})"))
             args.append(name)
         elif cls in ("rank_out", "tag_out", "errorcode_out", "switch_out",
                      "bitmask_out"):
-            fn = "mpiwrapper_" + scalar_family(p, cls)
+            fam = scalar_family(p, cls)
+            fn = "mpiwrapper_" + fam
+            # The other direction, and the destination is the *ABI* spelling of
+            # the enum rather than the implementation's.
+            cast = (f"({abi_type(p.pointee())})"
+                    if fam in ENUM_TYPED_FAMILIES else "")
             outs.append((p.pointee(), name, "0" if nullable else None))
-            post.append(writeback(abi, f"*{abi} = {fn}_toabi({name});"))
+            post.append(writeback(abi, f"*{abi} = {cast}{fn}_toabi({name});"))
             args.append(out_pointer(p, name, abi) if nullable else "&" + name)
         elif cls == "switch_inout":
             # The keyval of MPI_*_free_keyval, and nothing else so far: the
@@ -1768,9 +1796,17 @@ def emit_body(ep):
             # MPI_KEYVAL_INVALID back through the same pointer, so both halves
             # of the conversion are needed and the local must start as the
             # caller's value rather than as whatever the stack held.
-            fn = "mpiwrapper_" + scalar_family(p, cls)
-            decls.append((p.pointee(), name, f"{fn}_fromabi(*{abi})"))
-            post.append((f"*{abi} = {fn}_toabi({name});",))
+            fam = scalar_family(p, cls)
+            fn = "mpiwrapper_" + fam
+            # keyval is not enum-typed, so these two casts are empty today.
+            # They are here so that the three switch_* arms say the same thing:
+            # an enum-typed family arriving in this one later should not depend
+            # on somebody noticing this arm was the exception.
+            in_cast = f"({p.pointee()})" if fam in ENUM_TYPED_FAMILIES else ""
+            out_cast = (f"({abi_type(p.pointee())})"
+                        if fam in ENUM_TYPED_FAMILIES else "")
+            decls.append((p.pointee(), name, f"{in_cast}{fn}_fromabi(*{abi})"))
+            post.append((f"*{abi} = {out_cast}{fn}_toabi({name});",))
             args.append("&" + name)
         elif cls == "toolhandle_in":
             fam = TOOL_HANDLE_KIND[p.kind]

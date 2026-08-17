@@ -513,7 +513,7 @@ int mpiwrapper_w_PMPI_Register_datarep_c(
       const MPI_T_event_registration event_registration =                      \
           mpiwrapper_t_event_registration_fromabi(abi_event_registration);     \
       const MPI_T_cb_safety cb_safety =                                        \
-          mpiwrapper_tcbsafety_fromabi(abi_cb_safety);                         \
+          (MPI_T_cb_safety)mpiwrapper_tcbsafety_fromabi(abi_cb_safety);        \
       const MPI_Info info = mpiwrapper_info_fromabi(abi_info);                 \
                                                                                \
       if (!mpiwrapper_t_event_set_cb(event_registration, abi_cb_safety,        \
