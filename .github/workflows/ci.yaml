@@ -768,8 +768,8 @@ jobs:
   # what the lists get written from, and each row keeps its TAP file and logs as
   # an artifact for exactly that.
   suite:
-    name: suite / ${{ matrix.mpi }} ${{ matrix.version }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.os }}
+    name: suite / ${{ matrix.leg.mpi }} ${{ matrix.leg.version }} / ${{ matrix.leg.arch }} / ${{ matrix.shard.name }}
+    runs-on: ${{ matrix.leg.os }}
     # **Per leg, because the two implementations are at different stages.** The
     # MPICH legs gate: run 32155423441 produced 842 tests, 789 passed and 41
     # failed on both architectures, the 41 identical test for test, and
@@ -778,20 +778,34 @@ jobs:
     # failures" is what this implements. The Open MPI legs stay report-only:
     # their lists are still empty because no Open MPI leg has yet run to
     # completion here.
-    continue-on-error: ${{ matrix.report_only }}
-    # The suite alone was 39 minutes over MPICH and 75 over Open MPI on a runner,
-    # and this adds an MPI build from source in front of it on a cold cache.
-    timeout-minutes: 180
+    continue-on-error: ${{ matrix.leg.report_only }}
+    # A shard is a quarter of the suite plus the fixed cost every job pays: the
+    # MPI restore, the wrapper build and the suite's own configure. Well under
+    # the ceiling described above, and far enough under that a slow shard is
+    # visible as a slow shard rather than as a dead runner.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
+      # **Two dimensions, crossed: the environment and the slice of the suite.**
+      # Sharding is not for parallelism, it is what makes three of these legs
+      # finishable at all -- ci-scripts/suite/README.md has the table of a run
+      # where everything past about 45 minutes was killed mid-suite with a runner
+      # shutdown signal. The slices come from measured per-directory cost rather
+      # than from dividing the alphabet:
+      #
+      #                        MPICH 5.0.1   Open MPI (4.1.6, the shape)
+      #   coll                    9.8 min       4.6 min
+      #   rma                     3.8 min      37.1 min
+      #   threads+pt2pt+part     11.8 min      19.3 min
+      #   everything else         0.6 min      16.6 min
+      #
+      # rma is alone because on Open MPI it is half the suite by time -- one
+      # directory bigger than the whole budget -- and isolating it is what makes
+      # the other three safe rather than what makes rma safe. If the rma shard is
+      # still killed, that is now a fact about one directory instead of about the
+      # row, which is progress a single job could not produce.
       matrix:
-        include:
-          # MPICH doubles the suite's per-test time limit and Open MPI does not,
-          # and that asymmetry is measured rather than cautious. On the MPICH row
-          # exactly one test reached the limit and two more finished within 30
-          # seconds of it, so doubling costs one test's wait and removes a flake;
-          # on the Open MPI row nine tests reached it and they were hangs, where
-          # doubling pays the limit twice over and buys nothing.
+        leg:
           - mpi: mpich
             version: 5.0.1
             os: ubuntu-24.04
@@ -820,10 +834,22 @@ jobs:
             launcher: prte
             timeout_multiplier: 1
             report_only: true
+        # The last shard is the *complement* of the other three rather than a
+        # fourth list, so a directory a later suite release adds is covered by
+        # construction instead of by somebody remembering to add it here.
+        shard:
+          - name: coll
+            args: "--dirs=coll"
+          - name: rma
+            args: "--dirs=rma"
+          - name: p2p
+            args: "--dirs=threads,pt2pt,part"
+          - name: rest
+            args: "--skip-dirs=coll,rma,threads,pt2pt,part"
     env:
       # The matrix context is available in a job's env: block where the runner
       # context is not, which is why the paths below are a step and this is not.
-      MPITEST_TIMEOUT_MULTIPLIER: ${{ matrix.timeout_multiplier }}
+      MPITEST_TIMEOUT_MULTIPLIER: ${{ matrix.leg.timeout_multiplier }}
       # Stated rather than left to run-suite.sh's inspection of `mpiexec
       # --version`, because this row knows and the failure mode is quiet: `prte`
       # is what makes mpiexec-filter pass --oversubscribe, and without it Open
@@ -831,7 +857,7 @@ jobs:
       # cores -- a whole category of the suite failing to launch, on a row that
       # takes 75 minutes to tell you. Open MPI 4.1.8 answers "mpiexec (OpenRTE)
       # 4.1.8", which is the spelling that made this worth pinning down.
-      MPIEXEC_FILTER_KIND: ${{ matrix.launcher }}
+      MPIEXEC_FILTER_KIND: ${{ matrix.leg.launcher }}
     steps:
       - uses: actions/checkout@v6
 
@@ -858,8 +884,8 @@ jobs:
       - name: Set up paths
         run: |
           {
-              echo "PREFIX=${RUNNER_TEMP}/opt/mpi-${{ matrix.mpi }}"
-              echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-${{ matrix.mpi }}"
+              echo "PREFIX=${RUNNER_TEMP}/opt/mpi-${{ matrix.leg.mpi }}"
+              echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-${{ matrix.leg.mpi }}"
               echo "MPIABI_SUITE_WORK=${RUNNER_TEMP}/suite-work"
               echo "MPIABI_SUITE_SRC=${RUNNER_TEMP}/suite-src"
               echo "CCACHE_DIR=${RUNNER_TEMP}/ccache"
@@ -872,8 +898,8 @@ jobs:
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/opt/mpi-${{ matrix.mpi }}
-          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+          path: ${{ runner.temp }}/opt/mpi-${{ matrix.leg.mpi }}
+          key: mpi1-${{ matrix.leg.mpi }}-${{ matrix.leg.version }}-${{ matrix.leg.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
 
       # mpif's idea, and it earns its place on the run where the prefix cache
       # misses but the compiler cache does not -- a version bump invalidates the
@@ -886,18 +912,18 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/ccache
-          key: ccache-suite-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-${{ github.run_id }}
-          restore-keys: ccache-suite-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-
+          key: ccache-suite-${{ matrix.leg.mpi }}-${{ matrix.leg.version }}-${{ matrix.leg.os }}-${{ github.run_id }}
+          restore-keys: ccache-suite-${{ matrix.leg.mpi }}-${{ matrix.leg.version }}-${{ matrix.leg.os }}-
 
       # /usr/lib/ccache holds gcc, g++ and gfortran shims, so putting it first on
       # PATH is the whole of the wiring -- the installers run a stock configure
       # and pick the compilers up by name.
-      - name: Build and install ${{ matrix.mpi }} ${{ matrix.version }}
+      - name: Build and install ${{ matrix.leg.mpi }} ${{ matrix.leg.version }}
         if: steps.cache-mpi.outputs.cache-hit != 'true'
         run: |
           export PATH=/usr/lib/ccache:${PATH}
           ccache --zero-stats
-          ci-scripts/install-${{ matrix.mpi }}.sh "${PREFIX}" "${{ matrix.version }}"
+          ci-scripts/install-${{ matrix.leg.mpi }}.sh "${PREFIX}" "${{ matrix.leg.version }}"
           ccache --show-stats
 
       - name: Save ccache
@@ -931,7 +957,7 @@ jobs:
           EOF
           "${PREFIX}/bin/mpicc" -o "${RUNNER_TEMP}/hello" "${RUNNER_TEMP}/hello.c"
           if ! "${PREFIX}/bin/mpiexec" -n 2 "${RUNNER_TEMP}/hello"; then
-              echo "::error::${{ matrix.mpi }} ${{ matrix.version }} cannot launch two ranks on this runner; the suite below would have blamed the wrapper"
+              echo "::error::${{ matrix.leg.mpi }} ${{ matrix.leg.version }} cannot launch two ranks on this runner; the suite below would have blamed the wrapper"
               exit 1
           fi
 
@@ -947,9 +973,10 @@ jobs:
       - name: Run the suite
         run: |
           ci-scripts/suite/run-suite.sh "${PREFIX}/bin/mpicc" \
-              --variant=ci-${{ matrix.mpi }}-${{ matrix.arch }} \
-              --xfail=xfail-ci-${{ matrix.mpi }}.txt \
-              --xfail=xfail-ci-${{ matrix.mpi }}-${{ matrix.arch }}.txt
+              --variant=ci-${{ matrix.leg.mpi }}-${{ matrix.leg.arch }} \
+              --xfail=xfail-ci-${{ matrix.leg.mpi }}.txt \
+              --xfail=xfail-ci-${{ matrix.leg.mpi }}-${{ matrix.leg.arch }}.txt \
+              ${{ matrix.shard.args }}
 
       # Staged into the workspace first, and uploaded by a **relative** path.
       # `${{ runner.temp }}` inside a `with:` block does not mean what the shell
@@ -977,7 +1004,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: suite-${{ matrix.mpi }}-${{ matrix.arch }}
+          name: suite-${{ matrix.leg.mpi }}-${{ matrix.leg.arch }}-${{ matrix.shard.name }}
           path: suite-artifact
           retention-days: 30
 
@@ -1003,12 +1030,32 @@ jobs:
   # linux/386 is native on an x86_64 kernel, so this costs about what the 64-bit
   # rows cost and needs no qemu.
   suite-i386:
-    name: suite / mpich 5.0.1 / i386 (linux/386 container)
+    name: suite / mpich 5.0.1 / i386 / ${{ matrix.shard.name }}
     runs-on: ubuntu-24.04
     continue-on-error: true
-    # Longer than the others: this row builds its own MPICH inside the container
-    # on a cache miss, and nothing else can build it for them.
-    timeout-minutes: 240
+    # This row builds its own MPICH inside the container on a cache miss, which
+    # the shards cannot share -- they are four jobs on four runners, so a cold
+    # cache costs four 32-bit builds in parallel. That is runner time rather than
+    # wall time, it happens only when install-mpich.sh changes, and the
+    # alternative is mpif's prefix-as-artifact pattern with a build job in front.
+    # Worth knowing that sharding is what would make that pattern pay here: the
+    # reason it was not adopted is that each prefix had exactly one consumer, and
+    # now the i386 prefix has four.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      # The same four slices the 64-bit legs use, for the same reason and so the
+      # two cannot drift; ci-scripts/suite/README.md has the measured costs.
+      matrix:
+        shard:
+          - name: coll
+            args: "--dirs=coll"
+          - name: rma
+            args: "--dirs=rma"
+          - name: p2p
+            args: "--dirs=threads,pt2pt,part"
+          - name: rest
+            args: "--skip-dirs=coll,rma,threads,pt2pt,part"
     steps:
       - uses: actions/checkout@v6
 
@@ -1059,7 +1106,7 @@ jobs:
           MPIABI_IMAGE: i386/debian:trixie-slim
           MPIABI_LINUX_SCRIPT: /src/ci-scripts/suite/i386-suite.sh
           MPIABI_LINUX_OUT: ${{ runner.temp }}/suite-i386
-          MPIABI_LINUX_ARGS: --xfail=xfail-ci-mpich.txt --xfail=xfail-ci-mpich-i386.txt
+          MPIABI_LINUX_ARGS: --xfail=xfail-ci-mpich.txt --xfail=xfail-ci-mpich-i386.txt ${{ matrix.shard.args }}
         run: ci-scripts/run-linux-docker.sh mpich
 
       - name: What was left afterwards
@@ -1103,6 +1150,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: suite-mpich-i386
+          name: suite-mpich-i386-${{ matrix.shard.name }}
           path: suite-artifact
           retention-days: 30

@@ -79,9 +79,10 @@ check.
 ## 3. Repository layout
 
 ```
-.github/workflows/ ci.yaml -- nine CI jobs over twenty legs, each calling a
+.github/workflows/ ci.yaml -- nine CI jobs over thirty-five legs, each calling a
                      ci-scripts entry point rather than repeating its recipe.
-                     Five of those legs are the MPICH C suite, report-only
+                     Twenty of those legs are the MPICH C suite: five
+                     environments x four shards, the MPICH ones gating
 bin/               mpicc.in, mpicxx.in -- the compiler wrappers, configured at install
 ci-scripts/        MPI install and build-shape checks
   check-install.sh   the five-leg installed-prefix consumption test

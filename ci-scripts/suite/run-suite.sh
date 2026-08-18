@@ -73,6 +73,7 @@ suite_version=5.0.1          # the pinned MPICH release the suite comes from
 variant=""
 prefix=""
 dirs=""
+skip_dirs=""
 np=""
 jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 with_spawn=0
@@ -95,6 +96,11 @@ usage: $(basename "$0") mpich|openmpi|/path/to/mpicc [options]
                    filename is looked for in ci-scripts/suite/
   --suite=VERSION  MPICH release to take test/mpi from (default $suite_version)
   --dirs=a,b,c     run only these test directories
+  --skip-dirs=a,b,c
+                   run every directory *except* these -- the complement of
+                   --dirs, and what the last shard of a sharded run wants: a
+                   directory a later suite release adds lands in it by
+                   construction rather than by somebody remembering to add it
   --np=N           default rank count (runtests -np; the suite's own is 2)
   --jobs=N         parallelism for both builds (default $jobs)
   --with-spawn     include the spawn directory. Off by default: MPI_Comm_spawn
@@ -131,6 +137,7 @@ for arg in "$@"; do
     --xfail=*)     xfail_args+=("${arg#*=}") ;;
     --suite=*)     suite_version=${arg#*=} ;;
     --dirs=*)      dirs=${arg#*=} ;;
+    --skip-dirs=*) skip_dirs=${arg#*=} ;;
     --np=*)        np=${arg#*=} ;;
     --jobs=*)      jobs=${arg#*=} ;;
     --with-spawn)  with_spawn=1 ;;
@@ -361,14 +368,22 @@ step "the directories this run covers"
         if [ "$with_spawn" = 1 ]; then echo "$entry"
         else echo "# spawn: --with-spawn to include; hangs under hydra on macOS with no wrapper involved (test/README.md)"; fi ;;
       *)
+        # --dirs is a whitelist and --skip-dirs a blacklist, applied in that
+        # order, so the two compose: a shard names either the directories it
+        # takes or the ones the other shards already took.
+        keep=1
         if [ -n "$dirs" ]; then
           case ",$dirs," in
-            *",$name,"*) echo "$entry" ;;
-            *) echo "# $name: not in --dirs" ;;
+            *",$name,"*) ;;
+            *) keep=0; why="not in --dirs" ;;
           esac
-        else
-          echo "$entry"
-        fi ;;
+        fi
+        if [ "$keep" = 1 ] && [ -n "$skip_dirs" ]; then
+          case ",$skip_dirs," in
+            *",$name,"*) keep=0; why="in --skip-dirs" ;;
+          esac
+        fi
+        if [ "$keep" = 1 ]; then echo "$entry"; else echo "# $name: $why"; fi ;;
     esac
   done < "$configured_list"
 } > "$work/build/testlist"

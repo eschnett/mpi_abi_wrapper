@@ -21,6 +21,7 @@ README): editing a reason here must not invalidate the MPI-install cache.
 ```sh
 ci-scripts/suite/run-suite.sh mpich                     # a distro or PATH mpicc
 ci-scripts/suite/run-suite.sh /path/to/mpicc --dirs=pt2pt,coll
+ci-scripts/suite/run-suite.sh /path/to/mpicc --skip-dirs=coll,rma   # the complement
 MPIABI_LINUX_SCRIPT=/src/ci-scripts/suite/linux-suite.sh \
   ci-scripts/run-linux-docker.sh openmpi                # the Open MPI row
 ```
@@ -78,8 +79,9 @@ discipline `dev/check-c-bindings.py` and `dev/check_prototype.py` already apply:
 - a listed failure that **passed** fails the run, because an expectation that
   has stopped firing is either fixed or was never about what it says;
 - a listed test that did not run at all fails the run, so a line cannot
-  outlive the test it names — unless the run did not cover that directory,
-  which the script is told rather than left to guess;
+  outlive the test it names — unless the run did not cover that directory, which
+  the script is told with `--dirs` and otherwise derives from the TAP, a
+  directory that produced no result at all not being one this run can judge;
 - **a line with no reason fails the run.** `--update-xfail` writes exactly
   such lines, so a run that discovers new failures cannot be made green by
   re-running with it;
@@ -140,13 +142,38 @@ than impossible — but it has not been run, and this row is the one that exists
 `.github/workflows/ci.yaml` runs **five environments**, and each has its own
 expected-failure list:
 
-| leg | MPI | list(s) it gates against |
+| environment | MPI | gates? | list(s) it gates against |
+|---|---|---|---|
+| `suite` × x86_64 | MPICH 5.0.1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
+| `suite` × aarch64 | MPICH 5.0.1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
+| `suite` × x86_64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
+| `suite` × aarch64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
+| `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | not yet | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
+
+**Each of those five runs as four jobs**, one per shard of the suite — twenty legs
+in all. The shards are `coll`, `rma`, `threads+pt2pt+part`, and the complement of
+those three, and they exist so that the slow legs can finish at all rather than
+for parallelism. Measured per-directory cost is what picked them:
+
+| shard | MPICH 5.0.1 | Open MPI (4.1.6, for shape) |
 |---|---|---|
-| `suite` × x86_64 | MPICH 5.0.1, from source | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
-| `suite` × aarch64 | MPICH 5.0.1, from source | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
-| `suite` × x86_64 | Open MPI 5.0.10, from source | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
-| `suite` × aarch64 | Open MPI 5.0.10, from source | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
-| `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
+| `coll` | 9.8 min | 4.6 min |
+| `rma` | 3.8 min | **37.1 min** |
+| `p2p` = threads, pt2pt, part | 11.8 min | 19.3 min |
+| `rest` = everything else | 0.6 min | 16.6 min |
+
+`rma` is alone because over Open MPI it is half the suite by time — one directory
+larger than the whole budget — so isolating it is what makes the other three safe
+rather than what makes `rma` safe. If the `rma` shard is still killed, that is a
+fact about one directory instead of about the row.
+
+The last shard is `--skip-dirs=coll,rma,threads,pt2pt,part` rather than a fourth
+list of names, so a directory a later suite release adds lands in it by
+construction. `check-tap.py` needs no telling which shard it is looking at: it
+derives the covered directories from the TAP itself, so a line for a directory
+this shard skipped counts as "not run" rather than as a stale entry. Verified
+against a real run before it was wired up — the four shards of the aarch64 TAP
+gate at exit 0 individually and their failures sum to the same 41.
 
 The shared file holds what every architecture of that implementation sees and the
 delta holds the rest; `check-tap.py` reads them as one and rejects a test listed
@@ -206,11 +233,11 @@ spending real time, and they are the only ones that hit the wall. On a stock
 GitHub runner the job limit is six hours and these legs took 39 and 75 minutes,
 so this is a property of where they ran and not of the suite.
 
-The MPICH 64-bit legs come in under it and are gated. What the other three need
-is to be brought under it too, and the harness already has the mechanism:
-`--dirs=a,b,c` runs a subset, and `check-tap.py` is *told* which directories a
-run covered, so a line for a directory this shard skipped counts as "not run"
-rather than as a stale entry. Three shards put every leg near 15–25 minutes.
+That is what the sharding above is for. The MPICH 64-bit legs came in under the
+ceiling even unsharded and are gated; the other three did not, so every leg is now
+four jobs and each carries a quarter of the suite. `rma` over Open MPI is the one
+that may still not fit, and it is deliberately alone so that the answer is about
+`rma` rather than about the row.
 
 ## What the previous pins measured, and why the split exists
 

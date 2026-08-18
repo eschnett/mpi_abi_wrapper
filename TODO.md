@@ -17,3 +17,5 @@
 - use separate xfail lists for local runs and github ci. do not ignore mpich failures (not report-only).
 
 - add test with MPI 3.0? or 3.1?
+
+- speed up github CI (slow runs only on merge, or when manually triggered; PRs remain fast)

@@ -97,7 +97,7 @@ run.
 
 ## What GitHub Actions runs
 
-`.github/workflows/ci.yaml` holds nine jobs over twenty legs, and each one
+`.github/workflows/ci.yaml` holds nine jobs over thirty-five legs, and each one
 calls a script from this directory wherever a script exists rather than
 repeating its recipe in YAML. That is the point of the split: the reasons live
 here, next to the code they are about, and stay runnable by hand.
@@ -111,22 +111,35 @@ here, next to the code they are about, and stay runnable by hand.
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
-| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=…` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. Four legs: both implementations on x86_64 and aarch64 |
-| `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.1, built from source *inside* a `linux/386` container and cached by the 64-bit host |
+| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Sixteen legs**: two implementations × x86_64/aarch64 × four shards of the suite |
+| `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.1, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
 
-**The five suite legs are report-only**, `continue-on-error: true`, on the rule
-the `compile` job established: a row nobody has ever seen green cannot tell a
-regression from the thing it was added to find. Each leg gates against a shared
-per-implementation list plus a per-architecture delta
-(`suite/xfail-ci-<mpi>.txt` and `suite/xfail-ci-<mpi>-<arch>.txt`), and every one
-of those files is empty as this lands — which states that nothing has been
-triaged for these environments yet, not that the runs are clean. The version jump
-is why: the previous lists were calibrated against MPICH 4.3.1 and the Open MPI
-4.1.6 Ubuntu ships, and MPICH 5.0.1 answers `init/version` correctly and fills in
-the entry points those lists' largest group was about. Each leg keeps
-`summary.tap` and its logs as an artifact whether it passed or not, which is what
-`run-suite.sh --gate-only` needs to write the lists without paying for five more
-runs.
+**The MPICH legs gate; the Open MPI legs are still report-only.** That is per
+leg, not per job: `continue-on-error: ${{ matrix.leg.report_only }}`. The rule the
+`compile` job established is that a row nobody has ever seen green cannot tell a
+regression from the thing it was added to find, and the MPICH rows have now been
+green twice — 842 tests, 789 passed, 41 failed, the 41 identical on both
+architectures and matched in both directions by `suite/xfail-ci-mpich.txt`. The
+Open MPI lists are still empty because no Open MPI leg has run to completion in
+this CI environment; `suite/README.md` has the durations and what killed them.
+
+Each leg gates against a shared per-implementation list plus a per-architecture
+delta (`suite/xfail-ci-<mpi>.txt` and `suite/xfail-ci-<mpi>-<arch>.txt`). The
+per-architecture files for MPICH are empty *by measurement*: x86_64 and aarch64
+produced the same 41 failures test for test. Each leg keeps `summary.tap` and its
+logs as an artifact whether it passed or not, which is what `run-suite.sh
+--gate-only` needs to write a list without paying for another run.
+
+**The suite is sharded by test directory, and that is what makes the slow legs
+finishable rather than merely parallel.** Four shards — `coll`, `rma`,
+`threads+pt2pt+part`, and the complement of those — chosen from measured
+per-directory cost. `rma` is alone because over Open MPI it is 37 of the suite's
+78 minutes, one directory larger than the whole budget, so isolating it is what
+makes the other three safe. The last shard is expressed as `--skip-dirs` rather
+than a fourth list, so a directory a later suite release adds is covered by
+construction. `check-tap.py` needs no telling: it derives the directories a run
+covered from the TAP itself, so a line for a directory this shard skipped counts
+as "not run" rather than as a stale entry.
 
 **Why one list per implementation *and* one per architecture.** Three runs of the
 previous arrangement established that a single file cannot describe two machines.
