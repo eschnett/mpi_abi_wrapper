@@ -13,7 +13,9 @@ README): editing a reason here must not invalidate the MPI-install cache.
 | `run-suite.sh` | the runner: build and install this project, fetch and configure the suite against it, build the tests, run them, gate the result |
 | `mpiexec-filter` | the `mpiexec` the suite sees, since a wrapper prefix has no launcher of its own |
 | `check-tap.py` | the gate: runtests' TAP output against this variant's expected-failure list, in both directions |
-| `xfail-mpich.txt`, `xfail-openmpi.txt` | the expected failures, one reason per line |
+| `xfail-mpich.txt`, `xfail-openmpi.txt` | the **local** expected failures, one reason per line |
+| `xfail-ci-<mpi>.txt`, `xfail-ci-<mpi>-<arch>.txt` | the **CI** expected failures: what every architecture of an implementation sees, plus a per-architecture delta beside it |
+| `i386-suite.sh` | the 32-bit leg: builds MPICH inside a `linux/386` container, asserts pointers really are 4 bytes, then runs the suite |
 | `linux-suite.sh` | the same, inside a container: packages, `/tmp` for everything writable |
 
 ```sh
@@ -52,7 +54,9 @@ Everything in the suite's own top-level testlist except two directories, each
 excluded in one place with its reason printed at the start of every run:
 
 - **`impls`** — MPICH's own PMI, hydra and `MPIX_` tests. Not standard MPI, so
-  not this project's to pass.
+  not this project's to pass. MPICH 5.0.1's own testlist no longer carries that
+  directory at all, so against the current pin this exclusion is a no-op that
+  costs nothing and still covers 4.3.x.
 - **`spawn`** — off by default, `--with-spawn` to include, and with it the
   `spawn` subdirectories of `errors/` and `threads/`, which the top-level
   exclusion does not reach. `MPI_Comm_spawn` hangs under hydra on macOS with
@@ -66,9 +70,9 @@ run. `--no-dtp` leaves it out for a quick pass.
 
 ## The gate
 
-`check-tap.py` compares the TAP output against `xfail-<variant>.txt` **in both
-directions**, which is the discipline `dev/check-c-bindings.py` and
-`dev/check_prototype.py` already apply:
+`check-tap.py` compares the TAP output against `xfail-<variant>.txt`, or against
+however many lists `--xfail=` named, **in both directions** — which is the
+discipline `dev/check-c-bindings.py` and `dev/check_prototype.py` already apply:
 
 - a failure that is not listed fails the run;
 - a listed failure that **passed** fails the run, because an expectation that
@@ -78,13 +82,18 @@ directions**, which is the discipline `dev/check-c-bindings.py` and
   which the script is told rather than left to guess;
 - **a line with no reason fails the run.** `--update-xfail` writes exactly
   such lines, so a run that discovers new failures cannot be made green by
-  re-running with it.
+  re-running with it;
+- **a test listed in two of the files fails the run.** Several lists are read as
+  one, and a test named in both the shared and the per-architecture file would
+  mean two reasons for one test, one of which nobody maintains.
 
 A line is `<dir>/<program> <np> : why`, with runtests' own name for the test
 so the list can be compared with an unwrapped run by eye.
 
-**The two lists are in different states, and that is deliberate rather than
-unfinished-looking.** `xfail-mpich.txt` is fully triaged: **41** failures, each
+**The two local lists are in different states, and that is deliberate rather
+than unfinished-looking.** (Both describe the development laptop against the
+older pair of MPIs; the CI lists are further down and are empty.)
+`xfail-mpich.txt` is fully triaged: **41** failures, each
 with a cause. The three bugs of ours that this suite found are not in it,
 because all three were fixed -- the last of them, `MPI_DISPLACEMENT_CURRENT`,
 emptied a whole group out of the file. `xfail-openmpi.txt` is **168**, of
@@ -128,52 +137,76 @@ than impossible — but it has not been run, and this row is the one that exists
 
 ## In CI
 
-`.github/workflows/ci.yaml` runs both rows, one job each: `suite-mpich` over the
-pinned MPICH 4.3.1 that `ci-scripts/install-mpich.sh` builds — restored from the
-cache the `linux-source` rows save, and 4.3.1 because that is the version
-`xfail-mpich.txt` is calibrated against where the distro rows' 4.2.1 is not — and
-`suite-openmpi` through `linux-suite.sh` in the `ubuntu:24.04` container whose
-Open MPI 4.1.6 `xfail-openmpi.txt` is calibrated against.
+`.github/workflows/ci.yaml` runs **five environments**, and each has its own
+expected-failure list:
 
-**Both are report-only there until they have been green**, which is the rule that
+| leg | MPI | list(s) it gates against |
+|---|---|---|
+| `suite` × x86_64 | MPICH 5.0.1, from source | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
+| `suite` × aarch64 | MPICH 5.0.1, from source | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
+| `suite` × x86_64 | Open MPI 5.0.10, from source | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
+| `suite` × aarch64 | Open MPI 5.0.10, from source | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
+| `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
+
+The shared file holds what every architecture of that implementation sees and the
+delta holds the rest; `check-tap.py` reads them as one and rejects a test listed
+in both. **Why the split exists is measured, not tidiness** — see the two runs
+below. The laptop's own `xfail-mpich.txt` and `xfail-openmpi.txt` stay where they
+are and describe that machine, pinned to the older pair of MPIs and to the 4.3.1
+suite.
+
+The two implementations are not symmetric and the lists should not be expected to
+look alike. MPICH 5.0.1 is the first release that is a complete MPI-5.0 — its own
+header says `MPI_VERSION 5` / `MPI_SUBVERSION 0` — so it provides the ABI's whole
+surface including the `_c` large-count forms. Open MPI 5.0.10 still declares
+`MPI_VERSION 3` / `MPI_SUBVERSION 1` and still has no `_c` entry point at all, so
+that half of the ABI is decision 6's stubs on its legs. MPICH 5.0.1 can implement
+the standard ABI itself, and these legs deliberately do not ask it to: that is
+behind `--enable-mpi-abi` and a separate `mpicc_abi`, and wrapping a library that
+already exports the ABI is a *different* oracle, the one that refuses at load on
+macOS by design.
+
+**All five are report-only until they have been green**, which is the rule that
 workflow's `compile` job records: a row nobody has seen pass cannot tell a
-regression from the thing it was added to find. Each job keeps `summary.tap` and
-the logs as an artifact whether it passed or not, because `--gate-only` retriages
-from a TAP file in hand rather than from a fresh 40-minute run. Deleting
-`continue-on-error` is what makes a row gate.
+regression from the thing it was added to find. Every CI list is empty as this
+lands, which states that nothing has been triaged for these five environments
+rather than that the runs are clean — MPICH 5.0.1 answers `init/version`
+correctly and fills in the entry points the older lists' largest group was about,
+so those lines could not simply be carried over. Each leg keeps `summary.tap` and
+its logs as an artifact whether it passed or not, because `--gate-only` writes a
+list from a TAP file in hand rather than from a fresh 40-minute run. Deleting
+`continue-on-error` is what makes a leg gate.
 
-**What the first run there (32069590099) found**, which is why neither gates yet:
+## What the previous pins measured, and why the split exists
+
+Three runs over **MPICH 4.3.1 and the Open MPI 4.1.6 Ubuntu 24.04 ships**, with
+the 4.3.1 suite. Neither pair is what CI provisions any more, and the numbers are
+kept because they are what the per-environment split is built on rather than
+because they describe the current rows.
 
 | | wall | tests | listed failures that fired | differences |
 |---|---|---|---|---|
-| `suite-mpich` | 39 min | 847, 795 passed | 39 of 41 | 3, every one timing |
-| `suite-openmpi` | 75 min | 847, 664 passed | 165 of 168 | 9, none timing |
+| MPICH | 39–43 min | 847, 795–796 passed | 38–39 of 41 | 4, every one timing |
+| Open MPI | 75–80 min | 847, 663–665 passed | 165 of 168 | 10 tests, 5 failing every run |
 
-The MPICH row's three are the host: `pt2pt/sendflood 8` spent the whole
-180-second limit against 2.6 s on the calibration machine, and two of group (g)'s
-three passed here in under two seconds. The cause is measured — at four vCPUs the
-runner is 5–25× *faster* below np 4 and 4.7–7× slower above it, MPICH's progress
-engine busy-polling once ranks exceed cores — and the workflow sets
-`MPITEST_TIMEOUT_MULTIPLIER: 2` on that row for it.
+**The MPICH differences were all the machine.** `pt2pt/sendflood 8` spent the
+whole limit where the laptop runs it in 2.6 s, and all three of the timing group
+passed on the runner at least once. The cause was measured: at four vCPUs the
+runner is 5–25× *faster* at four ranks or fewer and 4.7–7× slower above that,
+MPICH's progress engine busy-polling once ranks exceed cores. Doubling the limit
+did not rescue `sendflood` — it spent 360 s too — but it did rescue
+`coll/reduce 10`, which landed at 179.7 s of a 180 s base limit. That is why the
+MPICH legs set `MPITEST_TIMEOUT_MULTIPLIER: 2` and the Open MPI legs do not:
+Open MPI had nine tests at the limit and they were hangs, where doubling pays the
+limit twice over and buys nothing.
 
-**A second run (32076414204) separated the flakes from the facts**, and it is
-worth knowing which is which before touching either list. Reproducible: all six
-new Open MPI failures, identically, and both `io/` lines passing again. Not
-reproducible: the `rma/linked_list` family swapped which member failed. Moving in
-one direction only: `errors/comm/intercomm_abort 6` passed too, so across the two
-runs **all three** of group (g) have passed here at least once. And the multiplier
-priced itself — `pt2pt/sendflood 8` still timed out, at 360 s, so that one
-collapses rather than slows and no multiplier reaches it, while `coll/reduce 10`
-came in at 179.7 s and would have been a fresh timeout without it.
-
-The Open MPI row's nine are not: `io/setviewcur 4` and `io/i_setviewcur 4` pass
-now, the `MPI_DISPLACEMENT_CURRENT` fix having emptied that group out of the
-MPICH list and never out of this one; `rma/linked_list_bench_lock_shr 4` is the
-load-sensitive family this list's header already describes; and **six are new and
-unattributed** — `coll/allred 4` answering 512 wrong results for `MPI_SUM` over
-the 8-bit integer types, and five `threads/pt2pt/mt_*probe*` tests, four of them
-dying in `MPI_Recv` with `MPI_ERR_COUNT`. The known difference from the run this
-list was calibrated on is the architecture: that one was aarch64 under Docker
-Desktop, the runner is x86_64. Attributing them is this stage's next task and the
-method is S7's throughout — build the same test with Open MPI's own `mpicc` and
-see whether it passes unwrapped.
+**The Open MPI differences were not timing, and one of them is why there is a
+per-architecture file at all.** `coll/allred 4` returned 512 wrong results for
+`MPI_SUM` over `MPI_UNSIGNED_CHAR`, `MPI_INT8_T` and `MPI_UINT8_T` on x86_64,
+where the aarch64 run that produced the list saw none; Open MPI's AVX reduction
+component is x86-only, and `OMPI_MCA_op=^avx` is the one-variable check nobody
+has run yet. Four `threads/pt2pt/mt_*probe*` tests died in `MPI_Recv` with
+`MPI_ERR_COUNT` and a fifth hung. All of them pass over MPICH on the same runner
+with the same wrapper build, so whatever they are, they are specific to the Open
+MPI side. Two `io/` lines passed every run, the `MPI_DISPLACEMENT_CURRENT` fix
+having been taken out of the MPICH list and never out of that one.

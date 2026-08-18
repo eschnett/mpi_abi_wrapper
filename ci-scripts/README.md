@@ -20,6 +20,7 @@ do not fail the same way.
 | `linux-floor.sh` | inside Linux | the `floor` row: builds MPICH 3.1.4 from source and hands over to `linux-test.sh`. Opt-in — the build takes some fifteen minutes |
 | `install-mpich.sh <prefix> [<version>]` | anywhere | downloads, configures (stock, no patches), builds and installs a pinned MPICH release |
 | `install-openmpi.sh <prefix> [<version>]` | anywhere | the same for Open MPI |
+| `suite/i386-suite.sh` | inside a `linux/386` container | builds MPICH from source, asserts that pointers really are 4 bytes, launches two ranks with no wrapper involved, and hands over to `suite/run-suite.sh` |
 | `check-install.sh mpich\|openmpi\|/path/to/mpicc` | anywhere | S6's exit check: configure, build and install this project into a prefix of its own, then build and run a program through each of the three consumption routes (NOTES.md #9) with the loader's search path cleared |
 
 Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, these two are a stock
@@ -41,9 +42,12 @@ MPIABI_IMAGE=ubuntu:24.04 ci-scripts/run-linux-docker.sh   # override the image
 default is the one it is. In short: MPICH runs on `debian:13`, because Ubuntu
 24.04's MPICH links `libpmix` and imports `PMIx_Init` while shipping a PMI-1
 hydra, so `mpiexec -n 2` there returns two singletons and exit 0 rather than a
-two-rank job; Open MPI stays on `ubuntu:24.04`, because
-`suite/xfail-openmpi.txt` is calibrated line by line against the Open MPI 4.1.6
-that image ships; and `floor` runs on `ubuntu:20.04`, because gcc 9's gfortran
+two-rank job; Open MPI stays on `ubuntu:24.04` for what its 4.1.6 covers and
+nothing else does — that release provides 466 of the ABI's 688 entry points, so
+it is the broadest exercise of decision 6's unsupported-operation paths, and the
+local `suite/xfail-openmpi.txt` is calibrated against it (CI's Open MPI suite
+legs build 5.0.10 from source and no longer share this pin); and `floor` runs on
+`ubuntu:20.04`, because gcc 9's gfortran
 is the newest MPICH 3.1.4's configure will accept. `MPIABI_IMAGE` overrides all
 three, which is how the comparison above was made.
 
@@ -93,7 +97,7 @@ run.
 
 ## What GitHub Actions runs
 
-`.github/workflows/ci.yaml` holds nine jobs over seventeen legs, and each one
+`.github/workflows/ci.yaml` holds nine jobs over twenty legs, and each one
 calls a script from this directory wherever a script exists rather than
 repeating its recipe in YAML. That is the point of the split: the reasons live
 here, next to the code they are about, and stay runnable by hand.
@@ -107,20 +111,32 @@ here, next to the code they are about, and stay runnable by hand.
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
-| `suite-mpich` | `suite/run-suite.sh <mpicc> --variant=mpich` | the pinned MPICH 4.3.1, restored from `linux-source`'s cache — the version `suite/xfail-mpich.txt` is calibrated against, which the distro's 4.2.1 is not |
-| `suite-openmpi` | `suite/linux-suite.sh openmpi` in `container: ubuntu:24.04` | the 4.1.6 that image ships, installed by the script itself as root — the same pin `suite/xfail-openmpi.txt` is calibrated against |
+| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=…` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. Four legs: both implementations on x86_64 and aarch64 |
+| `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.1, built from source *inside* a `linux/386` container and cached by the 64-bit host |
 
-**The two suite rows are report-only**, `continue-on-error: true`, on the rule
+**The five suite legs are report-only**, `continue-on-error: true`, on the rule
 the `compile` job established: a row nobody has ever seen green cannot tell a
-regression from the thing it was added to find. Neither list has ever been
-gated on a GitHub runner, and both carry lines that are properties of the host
-they were recorded on — `xfail-mpich.txt`'s group (g) is three tests that pass
-standalone and exceed the suite's 180-second limit inside a full run, and
-`xfail-openmpi.txt`'s header records the `rma/linked_list` family passing on a
-quiet run and failing under load. Both directions of the gate can fire for that
-reason alone. Each row keeps `summary.tap` and its logs as an artifact whether
-it passed or not, which is what `run-suite.sh --gate-only` needs to retriage a
-line without a fresh 40-minute run.
+regression from the thing it was added to find. Each leg gates against a shared
+per-implementation list plus a per-architecture delta
+(`suite/xfail-ci-<mpi>.txt` and `suite/xfail-ci-<mpi>-<arch>.txt`), and every one
+of those files is empty as this lands — which states that nothing has been
+triaged for these environments yet, not that the runs are clean. The version jump
+is why: the previous lists were calibrated against MPICH 4.3.1 and the Open MPI
+4.1.6 Ubuntu ships, and MPICH 5.0.1 answers `init/version` correctly and fills in
+the entry points those lists' largest group was about. Each leg keeps
+`summary.tap` and its logs as an artifact whether it passed or not, which is what
+`run-suite.sh --gate-only` needs to write the lists without paying for five more
+runs.
+
+**Why one list per implementation *and* one per architecture.** Three runs of the
+previous arrangement established that a single file cannot describe two machines.
+On a four-vCPU runner every test asking for more ranks than there are cores runs
+5–7× slower while everything at four ranks or fewer runs 5–25× *faster* than on
+the development laptop, so timing expectations move in both directions at once;
+and over Open MPI 4.1.6 the x86_64 runner returned wrong results for `MPI_SUM`
+over the 8-bit integer types where an aarch64 run of the same list saw none. The
+shared file holds what every architecture sees, the delta holds the rest, and
+`check-tap.py` reads them as one while rejecting a test listed in both.
 
 **FreeBSD had a row and no longer does.** It established that the platform
 cannot be supported — `RTLD_DEEPBIND` there promotes only the loaded library's

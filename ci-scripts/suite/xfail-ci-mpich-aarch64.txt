@@ -1,0 +1,26 @@
+# Expected failures of MPICH's C test suite over this project in GitHub Actions,
+# over MPICH 5.0.1 on **aarch64 only**. This is the delta beside
+# xfail-ci-mpich.txt, which holds what every architecture sees; check-tap.py
+# reads the two as one and rejects a test listed in both.
+#
+# ubuntu-24.04-arm: four vCPUs, same oversubscription constraint as x86_64. It
+# is a separate file because the two are not the same machine -- over Open MPI
+# 4.1.6 the x86_64 runner produced wrong 8-bit reduction results that an aarch64
+# run of the same list never saw, which is what a per-architecture file is for.
+#
+# One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
+# check-tap.py enforces it in both directions -- an unlisted failure fails the
+# run, and so does a listed test that passed or that did not run -- and a line
+# with no reason after the colon fails the run too. `--update-xfail` writes bare
+# lines for a human to add reasons to; it can never make a red run green.
+#
+# **CI's lists are separate from the local ones on purpose.** xfail-mpich.txt and
+# xfail-openmpi.txt describe one development laptop, and three runs established
+# that the two environments genuinely disagree: on a four-vCPU runner every test
+# asking for more ranks than there are cores runs 5-7x slower, while everything
+# at four ranks or fewer runs 5-25x *faster*, so timing expectations move in both
+# directions at once. One file cannot be true of both machines.
+#
+# **An empty list is not a claim that the run is clean.** It says nothing has
+# been triaged here yet. These rows are report-only until a run has been green,
+# per the rule .github/workflows/ci.yaml's `compile` job records.

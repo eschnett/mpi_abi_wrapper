@@ -79,8 +79,9 @@ check.
 ## 3. Repository layout
 
 ```
-.github/workflows/ ci.yaml -- the four gating CI jobs, each calling a ci-scripts
-                     entry point rather than repeating its recipe
+.github/workflows/ ci.yaml -- nine CI jobs over twenty legs, each calling a
+                     ci-scripts entry point rather than repeating its recipe.
+                     Five of those legs are the MPICH C suite, report-only
 bin/               mpicc.in, mpicxx.in -- the compiler wrappers, configured at install
 ci-scripts/        MPI install and build-shape checks
   check-install.sh   the five-leg installed-prefix consumption test
@@ -88,7 +89,8 @@ ci-scripts/        MPI install and build-shape checks
   linux-test.sh, run-linux-docker.sh
   linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
                        to linux-test.sh (§11)
-  suite/             MPICH C suite runner, xfail lists, mpiexec filter, TAP gate
+  suite/             MPICH C suite runner, the local and CI xfail lists, the
+                       mpiexec filter, the TAP gate, and i386-suite.sh (§10)
 cmake/             FindMPI.cmake (the shim), mpi_abiConfig.cmake.in, mpi_abi.pc.in,
                      mpi_abi.version (ELF), mpi_abi.exported_symbols (Mach-O)
 dev/               the Python generator and the dev-time cross-checks
@@ -304,7 +306,7 @@ interrogation, `find_package(MPI)` via the shim, and `pkg-config` — each
 *building and running* a program from the installed prefix with
 `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared — plus the prefix-exclusivity
 assertion. All five pass on macOS against a distro Open MPI and on Linux against
-MPICH 4.3.1 and Open MPI 5.0.6 built from source by
+MPICH 5.0.1 and Open MPI 5.0.10 built from source by
 `ci-scripts/install-mpich.sh` / `install-openmpi.sh`.
 
 Those installers are far shorter than mpif's equivalents on purpose: mpif needs
@@ -355,7 +357,7 @@ crosses the boundary twice.
 ### MPICH's C test suite
 
 `ci-scripts/suite/run-suite.sh` builds and installs this project, configures
-MPICH 4.3.1's `test/mpi` **against the wrapper's prefix** rather than an MPI's,
+MPICH 5.0.1's `test/mpi` **against the wrapper's prefix** rather than an MPI's,
 runs the tests through `ci-scripts/suite/mpiexec-filter`, and gates the TAP
 output against `xfail-<variant>.txt` with `check-tap.py`.
 
@@ -369,15 +371,21 @@ used to make a red run green.
 | MPICH 4.3.1 | **41** in `xfail-mpich.txt` | fully triaged, every line with a cause |
 | Open MPI 4.1.6, on Linux | **168** in `xfail-openmpi.txt` | about half attributed, the rest honest placeholders |
 
-**Both rows run in `.github/workflows/ci.yaml`**, as `suite-mpich` (the pinned
-4.3.1, restored from the cache `linux-source` saves — the version the list is
-calibrated against, where the distro rows' 4.2.1 is not) and `suite-openmpi`
-(`linux-suite.sh` in the `ubuntu:24.04` container the other list is calibrated
-against). Both are **report-only**, `continue-on-error: true`, until a run there
-has been green: neither list has been gated on a GitHub runner, and both carry
-lines that describe the host they were recorded on, which either direction of the
-gate reports as a failure. Each job keeps `summary.tap` and the run's logs as an
-artifact whether it passed or not, which is what `--gate-only` retriages from.
+The two lists above are the **local** rows and are pinned to the pair of MPIs
+named in them. **CI runs five environments of its own**, each with its own list:
+`suite` over MPICH 5.0.1 and Open MPI 5.0.10 built from the pinned tarballs, on
+x86_64 and aarch64, and `suite-i386` over a MPICH 5.0.1 built inside a
+`linux/386` container. Each gates against a shared `xfail-ci-<mpi>.txt` plus a
+per-architecture `xfail-ci-<mpi>-<arch>.txt`, which `check-tap.py` reads as one
+file while rejecting a test listed in both — the split exists because three runs
+showed one file cannot describe two machines, timing moving in both directions at
+once on a four-vCPU runner and one architecture returning wrong 8-bit reductions
+that the other did not. All five are **report-only**, `continue-on-error: true`,
+and every CI list is empty until the first runs are triaged: MPICH 5.0.1 is a
+complete MPI-5.0, so the older lists' largest group — entry points the
+implementation lacks — does not carry over. Each leg keeps `summary.tap` and the
+run's logs as an artifact whether it passed or not, which is what `--gate-only`
+writes a list from.
 
 The authority for both is `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-*.txt`,
 which is also how `check-tap.py` reads them (it skips blanks and comments at

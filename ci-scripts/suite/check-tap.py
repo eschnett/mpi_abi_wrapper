@@ -2,7 +2,16 @@
 
 """Gate a MPICH-test-suite run against this variant's expected-failure list.
 
-    check-tap.py <summary.tap> <xfail-file> [--dirs=a,b,c] [--update]
+    check-tap.py <summary.tap> <xfail-file>... [--dirs=a,b,c] [--update]
+
+More than one list may be given, and they are read as one: a per-implementation
+list that holds what every environment sees, plus a smaller per-environment one
+beside it. That is what keeps a local run and a CI runner from needing two
+copies of the same 40 reasons -- the two disagree about a handful of tests, not
+about the implementation. A test listed in two of the files is an error rather
+than an override, for the reason every other duplicate here is: two reasons for
+one test means one of them is unmaintained. --update appends to the *last* file
+named, which is the environment-specific one when there is one.
 
 HISTORY.md S7: "the xfail list is committed with reasons; a variant's result
 matching its list is the gate". Matching is checked in both directions, the
@@ -70,13 +79,20 @@ def parse_tap(path):
     return results
 
 
-def parse_xfail(path):
-    """Return ({name: reason}, [complaints]).  Missing file means no list."""
-    entries, problems = {}, []
+def parse_xfail(paths):
+    """Return ({name: reason}, [complaints]) over one or more list files."""
+    entries, problems, source = {}, [], {}
+    for path in paths:
+        _parse_one(path, entries, problems, source)
+    return entries, problems
+
+
+def _parse_one(path, entries, problems, source):
     try:
         f = open(path)
     except FileNotFoundError:
-        return entries, [f"{path}: no expected-failure list for this variant"]
+        problems.append(f"{path}: no expected-failure list for this variant")
+        return
     with f:
         for lineno, line in enumerate(f, 1):
             # A comment is a line that starts with #; a reason may contain
@@ -96,9 +112,10 @@ def parse_xfail(path):
             if not reason:
                 problems.append(f"{path}:{lineno}: {name} has no reason")
             if name in entries:
-                problems.append(f"{path}:{lineno}: {name} listed twice")
+                problems.append(f"{path}:{lineno}: {name} is also listed in "
+                                f"{source[name]}; one test, one reason")
             entries[name] = reason
-    return entries, problems
+            source[name] = path
 
 
 def directory_of(name):
@@ -108,9 +125,9 @@ def directory_of(name):
 def main(argv):
     args = [a for a in argv[1:] if not a.startswith("--")]
     opts = [a for a in argv[1:] if a.startswith("--")]
-    if len(args) != 2:
+    if len(args) < 2:
         sys.exit(__doc__)
-    tap_path, xfail_path = args
+    tap_path, xfail_paths = args[0], args[1:]
     update = "--update" in opts
     dirs = None
     for o in opts:
@@ -118,7 +135,7 @@ def main(argv):
             dirs = {d.strip() for d in o[len("--dirs="):].split(",") if d.strip()}
 
     results = parse_tap(tap_path)
-    expected, problems = parse_xfail(xfail_path)
+    expected, problems = parse_xfail(xfail_paths)
 
     covered = {directory_of(n).split("/")[0] for n in results}
 
@@ -157,12 +174,12 @@ def main(argv):
         print(f"  {len(not_run)} listed tests were not part of this run")
 
     if update:
-        with open(xfail_path, "a") as f:
+        with open(xfail_paths[-1], "a") as f:
             if unexpected_fail:
                 f.write("\n# added by --update; each line needs a reason\n")
             for name in unexpected_fail:
                 f.write(f"{name} :\n")
-        print(f"  wrote {len(unexpected_fail)} bare lines to {xfail_path}")
+        print(f"  wrote {len(unexpected_fail)} bare lines to {xfail_paths[-1]}")
         return 0
 
     ok = True

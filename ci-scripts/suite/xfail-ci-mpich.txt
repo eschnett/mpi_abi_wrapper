@@ -1,0 +1,28 @@
+# Expected failures of MPICH's C test suite over this project in GitHub Actions,
+# over MPICH 5.0.1 built from source, for every architecture. Lines
+# here hold for x86_64, aarch64 and i386 alike; anything true of one
+# architecture only belongs in xfail-ci-mpich-<arch>.txt beside this file.
+#
+# MPICH 5.0.1 is the first release that is a complete MPI-5.0 -- its header says
+# MPI_VERSION 5 / MPI_SUBVERSION 0 -- so two whole categories that dominated the
+# older lists should be absent: init/version, which failed because the
+# implementation answered 4.1 where the ABI header says 5.0, and the
+# MPI_ERR_UNSUPPORTED_OPERATION stubs of decision 6, since there is almost
+# nothing left for the availability probe not to find.
+#
+# One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
+# check-tap.py enforces it in both directions -- an unlisted failure fails the
+# run, and so does a listed test that passed or that did not run -- and a line
+# with no reason after the colon fails the run too. `--update-xfail` writes bare
+# lines for a human to add reasons to; it can never make a red run green.
+#
+# **CI's lists are separate from the local ones on purpose.** xfail-mpich.txt and
+# xfail-openmpi.txt describe one development laptop, and three runs established
+# that the two environments genuinely disagree: on a four-vCPU runner every test
+# asking for more ranks than there are cores runs 5-7x slower, while everything
+# at four ranks or fewer runs 5-25x *faster*, so timing expectations move in both
+# directions at once. One file cannot be true of both machines.
+#
+# **An empty list is not a claim that the run is clean.** It says nothing has
+# been triaged here yet. These rows are report-only until a run has been green,
+# per the rule .github/workflows/ci.yaml's `compile` job records.

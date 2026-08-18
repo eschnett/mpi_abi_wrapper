@@ -2,6 +2,12 @@
 # Open MPI 4.1.6 that Ubuntu 24.04 ships (HISTORY.md S7). One line per test,
 # `<dir>/<program> <np> : why`, in runtests' own naming.
 #
+# **This is the local row's list, and it is pinned to the older pair.** GitHub
+# Actions has its own lists (xfail-ci-openmpi*.txt), because it runs Open MPI
+# 5.0.10 built from source with the 5.0.1 suite while the 168 lines below were
+# recorded against the Open MPI 4.1.6 Ubuntu 24.04 ships with the 4.3.1 suite.
+# Neither half of that pair is what CI provisions any more.
+#
 # This row runs on Linux, in the container ci-scripts/suite/linux-suite.sh
 # starts, because when it was established no Open MPI 5.0.x launcher would run
 # a job on the development laptop. That has since been fixed

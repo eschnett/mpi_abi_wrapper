@@ -19,9 +19,19 @@
 #                   explains why this file, not ci-scripts/suite/, is what a
 #                   cache key should hash).
 #
-# <version> defaults to 4.3.1: MPICH >= 4.0 is this project's primary row
-# (NOTES.md #9's version table), since it is the only implementation that
-# actually provides the ABI's `_c` large-count entry points. Pass 3.1.4 for
+# <version> defaults to 5.0.1, the current release and the first that is a
+# complete MPI-5.0 -- its own header says `MPI_VERSION 5` / `MPI_SUBVERSION 0`,
+# so it provides the whole of the ABI's surface including the `_c` large-count
+# entry points, and decision 6's stubs have almost nothing left to cover. 4.3.x
+# is the previous primary row (NOTES.md #9's version table) and still wraps.
+#
+# **This deliberately does not pass --enable-mpi-abi.** MPICH 5.0 can implement
+# the standard ABI itself -- its CHANGES puts it behind that flag and a separate
+# `mpicc_abi`, with the plain mpicc still MPICH's own ABI -- and wrapping a
+# library that already exports the ABI is a different oracle from this one
+# (NOTES.md #10's fifth, which refuses at load on macOS by design and needs
+# MPIWRAPPER_WRAP_ABI_IMPL on Linux). A stock configure is what an ordinary wrap
+# target looks like, and that is what these rows are for. Pass 3.1.4 for
 # the MPI-3.0 floor row instead -- verified, not just declared, per the same
 # table -- but that row needs an older toolchain pinned by hand: 3.1.4's own
 # configure rejects any Fortran compiler modern enough to warn rather than
@@ -34,7 +44,7 @@
 set -euo pipefail
 
 prefix=${1:-}
-version=${2:-4.3.1}
+version=${2:-5.0.1}
 if [ -z "$prefix" ]; then
   echo "usage: $(basename "$0") <prefix> [<version>]" >&2
   exit 1

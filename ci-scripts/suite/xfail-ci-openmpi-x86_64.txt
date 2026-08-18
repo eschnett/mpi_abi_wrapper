@@ -1,0 +1,32 @@
+# Expected failures of MPICH's C test suite over this project in GitHub Actions,
+# over Open MPI 5.0.10 on **x86_64 only**. This is the delta beside
+# xfail-ci-openmpi.txt, which holds what both architectures see; check-tap.py
+# reads the two as one and rejects a test listed in both.
+#
+# GitHub's standard runner, four vCPUs. Open MPI's timeouts on the older row
+# were hangs rather than slowness, which is why this job does *not* raise the
+# suite's time limit: doubling it pays the limit twice for every hang and buys
+# nothing.
+#
+# One thing to check before attributing anything here to this project: over Open
+# MPI 4.1.6 this architecture answered coll/allred's MPI_SUM over MPI_INT8_T,
+# MPI_UINT8_T and MPI_UNSIGNED_CHAR with wrong results where aarch64 did not, and
+# Open MPI's AVX reduction component is x86-only. OMPI_MCA_op=^avx is the
+# one-variable check.
+#
+# One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
+# check-tap.py enforces it in both directions -- an unlisted failure fails the
+# run, and so does a listed test that passed or that did not run -- and a line
+# with no reason after the colon fails the run too. `--update-xfail` writes bare
+# lines for a human to add reasons to; it can never make a red run green.
+#
+# **CI's lists are separate from the local ones on purpose.** xfail-mpich.txt and
+# xfail-openmpi.txt describe one development laptop, and three runs established
+# that the two environments genuinely disagree: on a four-vCPU runner every test
+# asking for more ranks than there are cores runs 5-7x slower, while everything
+# at four ranks or fewer runs 5-25x *faster*, so timing expectations move in both
+# directions at once. One file cannot be true of both machines.
+#
+# **An empty list is not a claim that the run is clean.** It says nothing has
+# been triaged here yet. These rows are report-only until a run has been green,
+# per the rule .github/workflows/ci.yaml's `compile` job records.

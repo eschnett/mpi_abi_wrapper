@@ -64,7 +64,7 @@ set -uo pipefail
 repodir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 suitedir=$repodir/ci-scripts/suite
 
-suite_version=4.3.1          # the pinned MPICH release the suite comes from
+suite_version=5.0.1          # the pinned MPICH release the suite comes from
 variant=""
 prefix=""
 dirs=""
@@ -74,6 +74,7 @@ with_spawn=0
 with_dtp=1
 gate_only=0
 update_xfail=0
+xfail_args=()
 reconfigure=0
 
 usage() {
@@ -83,6 +84,10 @@ usage: $(basename "$0") mpich|openmpi|/path/to/mpicc [options]
   --prefix=DIR     an already-installed wrapper prefix; skips build+install
   --variant=NAME   which xfail list gates this run (default: the
                    implementation family, i.e. mpich or openmpi)
+  --xfail=FILE     gate against this list instead of the variant's. Repeatable,
+                   and the files are read as one, so a shared per-implementation
+                   list can carry a small per-environment one beside it. A bare
+                   filename is looked for in ci-scripts/suite/
   --suite=VERSION  MPICH release to take test/mpi from (default $suite_version)
   --dirs=a,b,c     run only these test directories
   --np=N           default rank count (runtests -np; the suite's own is 2)
@@ -118,6 +123,7 @@ for arg in "$@"; do
   case $arg in
     --prefix=*)    prefix=${arg#*=} ;;
     --variant=*)   variant=${arg#*=} ;;
+    --xfail=*)     xfail_args+=("${arg#*=}") ;;
     --suite=*)     suite_version=${arg#*=} ;;
     --dirs=*)      dirs=${arg#*=} ;;
     --np=*)        np=${arg#*=} ;;
@@ -149,16 +155,49 @@ launcher=$mpi_bindir/mpiexec
 # The launcher is also what says which implementation this is, when the
 # caller passed a path rather than a name. Asking it beats guessing from the
 # path: an MPICH derivative installed as /opt/whatever still answers hydra.
+#
+# A caller that already knows may say so, and CI does: MPIEXEC_FILTER_KIND set
+# in the environment is taken as given rather than re-derived. Getting this wrong
+# is expensive and quiet -- `prte` is what makes mpiexec-filter add
+# --oversubscribe, and without it Open MPI refuses to start any test asking for
+# more ranks than the runner has cores, which on a four-vCPU runner is a whole
+# category of the suite failing to launch rather than failing.
+#
+# The patterns cover the spellings actually seen rather than the ones that would
+# be tidy: Open MPI 4.1.8's mpiexec answers "mpiexec (OpenRTE) 4.1.8", which
+# matches neither "Open MPI" nor "prte" -- measured here, and the reason
+# OpenRTE and PRRTE are named explicitly.
 launcher_version=$("$launcher" --version 2>&1)
-case $launcher_version in
-  *[Hh][Yy][Dd][Rr][Aa]*)             kind=hydra; detected=mpich ;;
-  *[Oo]pen*[Mm][Pp][Ii]*|*[Pp][Rr][Tt][Ee]*) kind=prte;  detected=openmpi ;;
-  *) kind=other; detected=other ;;
+case ${MPIEXEC_FILTER_KIND:-} in
+  hydra)  kind=hydra; detected=mpich ;;
+  prte)   kind=prte;  detected=openmpi ;;
+  ?*)     kind=$MPIEXEC_FILTER_KIND; detected=other ;;
+  *)
+    case $launcher_version in
+      *[Hh][Yy][Dd][Rr][Aa]*)  kind=hydra; detected=mpich ;;
+      *[Oo]pen*[Mm][Pp][Ii]*|*[Oo]pen[Rr][Tt][Ee]*|*[Pp][Rr][Tt][Ee]*|*[Pp][Rr][Rr][Tt][Ee]*)
+        kind=prte; detected=openmpi ;;
+      *) kind=other; detected=other ;;
+    esac
+    ;;
 esac
 [ -n "$family" ] || family=$detected
 [ -n "$variant" ] || variant=$family
 
-xfail_file=$suitedir/xfail-$variant.txt
+# One list or several. Several is the case a shared list plus an environment
+# delta needs; check-tap.py reads them as one and treats a test listed in two of
+# them as an error rather than an override.
+xfail_files=()
+if [ ${#xfail_args[@]} -eq 0 ]; then
+  xfail_files=("$suitedir/xfail-$variant.txt")
+else
+  for f in "${xfail_args[@]}"; do
+    case $f in
+      */*) xfail_files+=("$f") ;;
+      *)   xfail_files+=("$suitedir/$f") ;;
+    esac
+  done
+fi
 work=${MPIABI_SUITE_WORK:-$repodir/build/suite-$variant}
 src=${MPIABI_SUITE_SRC:-$repodir/build/suite-src}
 tree=$src/mpich-$suite_version/test/mpi
@@ -168,13 +207,15 @@ mkdir -p "$work" "$src"
 
 echo "wrapped MPI:  $MPICC"
 echo "launcher:     $launcher ($kind)"
-echo "variant:      $variant   (gate: ${xfail_file#"$repodir"/})"
+gate_names=""
+for f in "${xfail_files[@]}"; do gate_names="$gate_names ${f#"$repodir"/}"; done
+echo "variant:      $variant   (gate:$gate_names)"
 echo "suite:        MPICH $suite_version"
 echo "work:         $work"
 
 if [ "$gate_only" = 1 ]; then
   [ -f "$tap" ] || die "no TAP file at $tap to gate on"
-  exec python3 "$suitedir/check-tap.py" "$tap" "$xfail_file"
+  exec python3 "$suitedir/check-tap.py" "$tap" "${xfail_files[@]}"
 fi
 
 # ------------------------------------------------- the wrapper's own prefix
@@ -385,13 +426,13 @@ echo "  runtests exited $?; output in $work/runtests.log"
 # ------------------------------------------------------------------ the gate
 
 if [ "$update_xfail" = 1 ]; then
-  step "writing the observed failures into ${xfail_file#"$repodir"/}"
-  python3 "$suitedir/check-tap.py" "$tap" "$xfail_file" --update
+  step "writing the observed failures into ${xfail_files[${#xfail_files[@]}-1]#"$repodir"/}"
+  python3 "$suitedir/check-tap.py" "$tap" "${xfail_files[@]}" --update
   echo "  every new line needs a reason before it can gate anything"
 fi
 
-step "gate: observed results against ${xfail_file#"$repodir"/}"
-python3 "$suitedir/check-tap.py" "$tap" "$xfail_file" \
+step "gate: observed results against$gate_names"
+python3 "$suitedir/check-tap.py" "$tap" "${xfail_files[@]}" \
         ${dirs:+--dirs="$dirs"} || fail "the suite's result does not match its list"
 
 printf '\n=== %s\n' \
