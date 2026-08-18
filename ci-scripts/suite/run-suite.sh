@@ -41,6 +41,11 @@
 #                        persistent to let CI cache it -- keyed on the
 #                        suite version, which is all that identifies it)
 #   MPIABI_SUITE_WORK    build and run directory (default: build/suite-<variant>)
+#   MPITEST_RUN_INDIVIDUAL
+#                        exported below, not read: one MPI job per test rather
+#                        than the 5.0.1 suite's batched default. See the export
+#                        for the three reasons, of which the per-process capacity
+#                        limits of NOTES.md #6.2 is the one that matters.
 #   MPITEST_TIMEOUT_MULTIPLIER
 #                        runtests' own knob, passed straight through: every
 #                        test's time limit times this. The committed xfail
@@ -255,6 +260,33 @@ fi
 
 export MPIEXEC_FILTER_LAUNCHER=$launcher
 export MPIEXEC_FILTER_KIND=$kind
+
+# **One MPI job per test, which is not what the 5.0.1 suite does by default.**
+# MPICH 5.0's runtests gained a `run_mpitests` driver that executes a whole
+# directory's tests "inside a single MPI_Init/Finalize" -- 17 at a time in the
+# run that found this -- and MPITEST_RUN_INDIVIDUAL is its off switch. Three
+# reasons this project wants it off, and the first is about correctness rather
+# than convenience:
+#
+#   1. **The capacity limits of NOTES.md #6.2 are per process.** Op-function
+#      trampolines, keyval pairs and errhandler slots are never reclaimed, by
+#      design and in the standard's case by requirement. Seventeen tests sharing
+#      one process share one pool, so which test exhausts it depends on how many
+#      ran before it -- an expected-failure list would then be a statement about
+#      an ordering rather than about a test.
+#   2. **A test that aborts takes its batch with it.** runtests restarts the
+#      driver and continues, so the run survives; what it cannot recover is the
+#      attribution, since the tests that never ran look the same as tests that
+#      ran and passed.
+#   3. It looks for the driver at `$srcdir/run_mpitests`, which an out-of-tree
+#      build does not have -- run_mpitests is compiled from util/run_mpitests.c
+#      into the *build* tree. The first run against 5.0.1 got 21 tests of 847
+#      out of that, every one of them a launcher error, which is what sent
+#      anyone looking.
+#
+# The cost is wall-clock: one launch per test is what the 4.3.x suite always did
+# and what the timings in ci-scripts/suite/README.md were measured under.
+export MPITEST_RUN_INDIVIDUAL=1
 
 # A configured suite tree remembers the prefix it was configured against in
 # its Makefiles, so reusing one against a different wrapper would test the

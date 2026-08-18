@@ -63,7 +63,7 @@ if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null; then
   # fails. perl is runtests, curl fetches both tarballs.
   apt-get install -y -qq --no-install-recommends \
       build-essential gfortran cmake python3 patch binutils perl curl \
-      ca-certificates ccache >/dev/null \
+      ca-certificates ccache file >/dev/null \
     || { echo "package install failed" >&2; exit 2; }
 fi
 
@@ -77,6 +77,21 @@ fi
 # `mpicc` existing is the test, and the two-rank check below is what says the
 # restored copy actually works -- mpif's check-mpi-install.sh makes the same
 # point, that a cache hit is exactly when nothing has verified the installation.
+# **MPICH 5.0.1's embedded libfabric does not compile on ILP32**, and this is
+# what it costs to have the row at all. `ofi_cma.h`'s cma_copy passes
+# `unsigned long *` where `ofi_consume_iov` takes `size_t *`; on LP64 those are
+# the same type, and on 32-bit `size_t` is `unsigned int` -- same width, same
+# signedness, a different type -- so gcc 14, which promoted
+# -Wincompatible-pointer-types to an error, stops the build. It is upstream's bug
+# in a vendored module, the mismatch is harmless at this width, and the
+# alternative would be changing the device away from ch4:ofi -- which would make
+# this row differ from the 64-bit ones in two variables instead of the one it
+# exists to isolate. Drop the flag when a libfabric that compiles here lands.
+#
+# -g -O2 is restated because setting CFLAGS at all replaces autoconf's default,
+# and an unoptimised MPI would make an already long row much longer.
+export CFLAGS="${CFLAGS:--g -O2} -Wno-error=incompatible-pointer-types"
+
 if [ -x "$prefix/bin/mpicc" ]; then
   step "MPICH $version is already installed at $prefix"
 else
