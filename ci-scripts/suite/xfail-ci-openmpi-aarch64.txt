@@ -8,6 +8,13 @@
 # coll/allred -- so a failure that appears in both files is more likely ours than
 # one that appears in only the x86_64 one.
 #
+# **Empty because no leg of this row has finished in CI yet, not because the run
+# was clean.** All three attempts were killed mid-run with "the runner has
+# received a shutdown signal" -- at 51, 58 and 75 minutes, while the two legs that
+# finished at 28 and 44 minutes were fine. ci-scripts/suite/README.md has the
+# whole table and what it implies; the short version is that nothing above about
+# 45 minutes completes in that environment, and this row takes 75.
+#
 # One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
 # check-tap.py enforces it in both directions -- an unlisted failure fails the
 # run, and so does a listed test that passed or that did not run -- and a line

@@ -177,6 +177,41 @@ its logs as an artifact whether it passed or not, because `--gate-only` writes a
 list from a TAP file in hand rather than from a fresh 40-minute run. Deleting
 `continue-on-error` is what makes a leg gate.
 
+## The Open MPI and i386 lists are empty because their legs cannot finish here
+
+**Long jobs do not survive in this CI environment**, and the numbers say so
+plainly. Run 32155423441, every job in it:
+
+| duration | outcome |
+|---|---|
+| 0.4–1.2 min (15 jobs), 4.1 min (1) | success |
+| 28.4 min — `suite / mpich / aarch64` | ran to completion |
+| 44.2 min — `suite / mpich / x86_64` | ran to completion |
+| 51.3 min — `suite / mpich / i386` | killed: "the runner has received a shutdown signal" |
+| 58.0 min — `suite / openmpi / x86_64` | killed, the same, exit 143 |
+| 75.1 min — `suite / openmpi / aarch64` | killed, the same |
+
+All three kills landed inside `running the suite` with nothing in the job's own
+log — no build error, no failing test, no message — which is what a runner losing
+its host looks like from inside a job. The kills are not at one fixed duration
+(51, 58, 75), so this reads as capacity being reclaimed rather than a per-job
+timeout; either way nothing above about 45 minutes has finished here.
+
+Worth reading beside those numbers: a job that builds MPICH 5.0.1 from source,
+builds the wrapper, runs 13 `ctest` tests and three consumption routes finished
+in **1.2 minutes** in the same run. That is not a duration a real `ubuntu-24.04`
+runner produces for that work, so most of this environment's work is accelerated
+while the suite legs — hundreds of actual MPI launches — are the only jobs
+spending real time, and they are the only ones that hit the wall. On a stock
+GitHub runner the job limit is six hours and these legs took 39 and 75 minutes,
+so this is a property of where they ran and not of the suite.
+
+The MPICH 64-bit legs come in under it and are gated. What the other three need
+is to be brought under it too, and the harness already has the mechanism:
+`--dirs=a,b,c` runs a subset, and `check-tap.py` is *told* which directories a
+run covered, so a line for a directory this shard skipped counts as "not run"
+rather than as a stale entry. Three shards put every leg near 15–25 minutes.
+
 ## What the previous pins measured, and why the split exists
 
 Three runs over **MPICH 4.3.1 and the Open MPI 4.1.6 Ubuntu 24.04 ships**, with
