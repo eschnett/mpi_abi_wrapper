@@ -465,9 +465,16 @@ runtests_opts=(-srcdir="$tree" -tests="$tests"
                -tapfile="$tap" -xmlfile="$work/summary.xml")
 [ -n "$np" ] && runtests_opts+=(-np="$np")
 rm -f "$tap"
-(cd "$work/build" && "$tree/runtests" "${runtests_opts[@]}") \
-  > "$work/runtests.log" 2>&1
-echo "  runtests exited $?; output in $work/runtests.log"
+# **Teed rather than redirected**, and the reason is a failure mode this suite hit
+# rather than tidiness: a job killed mid-run uploads no artifact, so the only
+# record left is what reached stdout. Both Open MPI `rma` shards of run
+# 32182485327 died at six minutes with a runner shutdown signal and nothing to
+# show for it -- no TAP file, no logs, no way to name the test that did it. With
+# the output teed, the last "Running tests in" line in the job log is that name.
+# The cost is a thousand-odd lines in a log that is already grouped by step.
+(cd "$work/build" && "$tree/runtests" "${runtests_opts[@]}") 2>&1 \
+  | tee "$work/runtests.log"
+echo "  runtests exited ${PIPESTATUS[0]}; output in $work/runtests.log"
 [ -f "$tap" ] || die "runtests produced no TAP file"
 
 # ------------------------------------------------------------------ the gate

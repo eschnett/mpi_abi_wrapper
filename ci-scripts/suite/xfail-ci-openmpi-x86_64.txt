@@ -1,39 +1,29 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
 # over Open MPI 5.0.10 on **x86_64 only**. This is the delta beside
-# xfail-ci-openmpi.txt, which holds what both architectures see; check-tap.py
-# reads the two as one and rejects a test listed in both.
+# xfail-ci-openmpi.txt, which holds what both architectures see; check-tap.py reads
+# the two as one and rejects a test listed in both.
 #
-# GitHub's standard runner, four vCPUs. Open MPI's timeouts on the older row
-# were hangs rather than slowness, which is why this job does *not* raise the
-# suite's time limit: doubling it pays the limit twice for every hang and buys
-# nothing.
+# One line per test, `<dir>/<program> <np> : why`. A line with no reason after the
+# colon fails the run, and so does a listed test that passed.
 #
-# One thing to check before attributing anything here to this project: over Open
-# MPI 4.1.6 this architecture answered coll/allred's MPI_SUM over MPI_INT8_T,
-# MPI_UINT8_T and MPI_UNSIGNED_CHAR with wrong results where aarch64 did not, and
-# Open MPI's AVX reduction component is x86-only. OMPI_MCA_op=^avx is the
-# one-variable check.
+# **Written from run 32182485327**, in which both architectures ran the same three
+# shards and disagreed about exactly three tests.
 #
-# **Empty because no leg of this row has finished in CI yet, not because the run
-# was clean.** All three attempts were killed mid-run with "the runner has
-# received a shutdown signal" -- at 51, 58 and 75 minutes, while the two legs that
-# finished at 28 and 44 minutes were fine. ci-scripts/suite/README.md has the
-# whole table and what it implies; the short version is that nothing above about
-# 45 minutes completes in that environment, and this row takes 75.
+# **One of these three is the hypothesis this project has been carrying, now
+# reproduced on a second Open MPI release.** `coll/allred 4` gets wrong answers for
+# MPI_SUM over MPI_UNSIGNED_CHAR, MPI_INT8_T and MPI_UINT8_T -- the 8-bit integer
+# types and no others -- on x86_64 and not on aarch64. The same failure appeared
+# over Open MPI 4.1.6 on x86_64 and not on the aarch64 run that produced the older
+# list. Open MPI's AVX reduction component is x86-only, which fits two versions,
+# one architecture and one family of types better than anything on our side does.
+# `OMPI_MCA_op=^avx` is the one-variable check nobody has run yet, and building the
+# test with Open MPI's own mpicc is what would settle it.
 #
-# One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
-# check-tap.py enforces it in both directions -- an unlisted failure fails the
-# run, and so does a listed test that passed or that did not run -- and a line
-# with no reason after the colon fails the run too. `--update-xfail` writes bare
-# lines for a human to add reasons to; it can never make a red run green.
-#
-# **CI's lists are separate from the local ones on purpose.** xfail-mpich.txt and
-# xfail-openmpi.txt describe one development laptop, and three runs established
-# that the two environments genuinely disagree: on a four-vCPU runner every test
-# asking for more ranks than there are cores runs 5-7x slower, while everything
-# at four ranks or fewer runs 5-25x *faster*, so timing expectations move in both
-# directions at once. One file cannot be true of both machines.
-#
-# **An empty list is not a claim that the run is clean.** It says nothing has
-# been triaged here yet. These rows are report-only until a run has been green,
-# per the rule .github/workflows/ci.yaml's `compile` job records.
+# `threads/pt2pt/mt_iprobe_isendrecv 2` is the third member of a family whose other
+# two are in the shared list, and it was already known to be intermittent: over the
+# older pins it failed twice in three runs. If it flips, that is this line's own
+# reason firing rather than a regression.
+
+coll/allred 4 : not yet attributed, and seen on x86_64 only in run 32182485327 -- the other architecture passed it in the same run. Observed: (2) Error for type MPI_UNSIGNED_CHAR and op MPI_SUM
+mpi_t/mpit_vars 1 : not yet attributed, and seen on x86_64 only in run 32182485327 -- the other architecture passed it in the same run. Observed: *** Process received signal ***
+threads/pt2pt/mt_iprobe_isendrecv 2 : not yet attributed, and seen on x86_64 only in run 32182485327 -- the other architecture passed it in the same run. Observed: *** An error occurred in MPI_Recv

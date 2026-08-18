@@ -17,6 +17,41 @@
 # whole table and what it implies; the short version is that nothing above about
 # 45 minutes completes in that environment, and this row takes 75.
 #
+# **Written from run 32182485327**, the first run in which this row got far enough
+# to produce results. Three of its four shards completed -- coll 192 tests / 15
+# failed, rma 197 / 3, p2p 137 / 1 -- and `rest` did not: it was killed with "the
+# runner has received a shutdown signal" after building its own MPICH, so no
+# expectation for the directories in that shard has been recorded here yet, and
+# this row cannot gate until it has.
+#
+# **All 41 lines of xfail-ci-mpich.txt held here unchanged**, on three shards, with
+# nothing in it failing to fire -- so ILP32 adds to that list without contradicting
+# it, which is what the shared/delta split is for. The eleven lines below are the
+# additions.
+#
+# **Most of them are one shape, and it is the shape this row exists to find.** Six
+# collective tests and one point-to-point test fail inside MPICH's *own* internals
+# with a value that cannot be right:
+#
+#     typerep_yaksa_pack.c line 326: element_size < 0
+#     internal_Send_c: Invalid buffer pointer
+#
+# A negative element size and a rejected buffer pointer, in datatype packing and in
+# the large-count send, on the one architecture where an ABI handle is 4 bytes and
+# MPI_Aint is 4 bytes while the ABI's MPI_Count is 8. NOTES.md #4.1 and #4.2 say
+# 32-bit is where those assumptions bite, and a truncation or a sign extension
+# across that boundary would look exactly like this. **It may well be ours.** Every
+# one of these tests passes on x86_64 and aarch64 with the same wrapper build and
+# the same MPICH 5.0.1, so the difference is the architecture and not the release.
+# What settles it is the method S7 used throughout: build coll/gather and
+# pt2pt/pt2pt_large with MPICH's own mpicc inside the same linux/386 container and
+# see whether the assertion still fires with no wrapper in the picture. Until that
+# is done these lines say what was seen and claim nothing about whose bug it is.
+#
+# rma/win_large_shm is likelier to be honest: a 32-bit process has 4 GB of address
+# space and the test asks for a large shared window, so MPICH asserting rather than
+# returning an error is its own choice about an impossible request.
+#
 # One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
 # check-tap.py enforces it in both directions -- an unlisted failure fails the
 # run, and so does a listed test that passed or that did not run -- and a line
@@ -33,3 +68,17 @@
 # **An empty list is not a claim that the run is clean.** It says nothing has
 # been triaged here yet. These rows are report-only until a run has been green,
 # per the rule .github/workflows/ci.yaml's `compile` job records.
+
+# --- ILP32 only, not yet attributed --------------------------------------------
+
+coll/reduce 10 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: No Errors
+coll/redscatbkinter 8 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
+coll/redscatbkinter 10 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
+coll/gather 4 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
+coll/bcasttest 32 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
+coll/bcasttest 16 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
+coll/bcast 4 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
+coll/bcast_comm_world_only 10 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
+rma/win_large_shm 4 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
+rma/win_large_shm 3 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
+pt2pt/pt2pt_large 2 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Abort(134924545) on node 0 (rank 0 in comm 0): Fatal error in internal_Send_c: Invalid buffer pointer, error stack:

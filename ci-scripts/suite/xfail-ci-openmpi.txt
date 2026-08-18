@@ -1,34 +1,179 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over Open MPI 5.0.10 built from source, for every architecture.
-# Lines here hold for both x86_64 and aarch64; anything true of one belongs in
-# xfail-ci-openmpi-<arch>.txt beside this file.
-#
-# Open MPI 5.0.10 is *not* the MPI-5.0 counterpart of MPICH 5.0.1: it still
-# declares MPI_VERSION 3 / MPI_SUBVERSION 1 and still provides no `_c` entry
-# point at all, so the large-count half of the ABI is decision 6's stubs
-# answering MPI_ERR_UNSUPPORTED_OPERATION here. NOTES.md #1 records that as
-# load-bearing rather than exotic, and this row is where an application sees it.
-#
-# **Empty because no leg of this row has finished in CI yet, not because the run
-# was clean.** All three attempts were killed mid-run with "the runner has
-# received a shutdown signal" -- at 51, 58 and 75 minutes, while the two legs that
-# finished at 28 and 44 minutes were fine. ci-scripts/suite/README.md has the
-# whole table and what it implies; the short version is that nothing above about
-# 45 minutes completes in that environment, and this row takes 75.
+# over **Open MPI 5.0.10 built from source, on both architectures**. Anything true
+# of one architecture only belongs in xfail-ci-openmpi-<arch>.txt beside this file;
+# check-tap.py reads the two as one and rejects a test listed in both.
 #
 # One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
 # check-tap.py enforces it in both directions -- an unlisted failure fails the
 # run, and so does a listed test that passed or that did not run -- and a line
-# with no reason after the colon fails the run too. `--update-xfail` writes bare
-# lines for a human to add reasons to; it can never make a red run green.
+# with no reason after the colon fails the run too.
 #
-# **CI's lists are separate from the local ones on purpose.** xfail-mpich.txt and
-# xfail-openmpi.txt describe one development laptop, and three runs established
-# that the two environments genuinely disagree: on a four-vCPU runner every test
-# asking for more ranks than there are cores runs 5-7x slower, while everything
-# at four ranks or fewer runs 5-25x *faster*, so timing expectations move in both
-# directions at once. One file cannot be true of both machines.
+# **Written from run 32182485327**, the first run in which an Open MPI leg got far
+# enough to produce results: three of its four shards completed and the fourth did
+# not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
+# / 20, rest 316 / 82. The 109 lines here are the failures both architectures
+# produced; the four that only one produced are in the two delta files.
 #
-# **An empty list is not a claim that the run is clean.** It says nothing has
-# been triaged here yet. These rows are report-only until a run has been green,
-# per the rule .github/workflows/ci.yaml's `compile` job records.
+# **`rma` is missing from this list, and that is a gap rather than a pass.** Both
+# Open MPI `rma` shards were killed six minutes in with "the runner has received a
+# shutdown signal" -- on both architectures, twice each -- so no expectation for
+# the top-level rma directory has ever been recorded here. `errors/rma/*` did run,
+# because the shards split on top-level directories, and its lines are below.
+# ci-scripts/suite/README.md has what is known. Until that shard completes the
+# Open MPI legs cannot gate, which is why they are report-only.
+#
+# **A prediction this file used to carry was wrong and is corrected here.** It said
+# the largest group would be decision 6's stubs answering
+# MPI_ERR_UNSUPPORTED_OPERATION, on the grounds that 5.0.10 declares MPI_VERSION 3
+# / MPI_SUBVERSION 1 and has no `_c` entry point. **Not one failure in this run was
+# an unsupported-operation answer.** The version claim is still true -- group (a)
+# is exactly that mismatch -- but this release provides the entry points the suite
+# reaches, so the surface is there and what differs is behaviour.
+#
+# **Two of the groups deserve reading before the counts.** Group (d) is the
+# erroneous-argument crash of NOTES.md #13.3, 22 tests of it. Group (f) is 66 lines
+# that say what was observed and claim nothing more, which is the same honest state
+# the older xfail-openmpi.txt was in -- but three families inside it are worth
+# attention rather than acceptance, because they are wrong *data* rather than a
+# difference in error reporting:
+#
+#   * `part/parrived*` and `part/pingping` -- partitioned communication delivering
+#     zeros where the test wrote values, and a status count of 2 where 1 was
+#     expected.
+#   * `pt2pt/sendself` -- "expected (1,2) ... but found (0,1)", in about the
+#     simplest operation the suite has.
+#   * `coll/coll_large` -- "expect 0, got 255" on aarch64 and "got -1" on x86_64.
+#
+# The first two both report their mismatch one element off, which is a shape worth
+# looking at as one bug rather than several. All of them pass over MPICH 5.0.1 on
+# the same runners with the same wrapper build, so whatever they are, they are on
+# the Open MPI side of the conversion. The method for settling any of it is S7's
+# throughout: build the same test with Open MPI's own mpicc and see whether it
+# still fails without the wrapper.
+#
+# Groups keep the letters xfail-ci-mpich.txt uses, so the two lists share a
+# vocabulary; the kind matters more than the count.
+
+# --- (a) version: the header is MPI-5.0 and this implementation is not ---------
+
+init/version 1 : MPI_Get_version forwards the implementation's answer -- Open MPI 5.0.10 says 3.1 -- while the ABI header is fixed at MPI-5.0, and the test compares the two. Observed: Major version is 3 but is 5 in the mpi.h file. This line left xfail-ci-mpich.txt when MPICH reached 5.0.1 and arrived here in the same run, which is the only way it can go: forwarding the implementation's answer is the honest half, since an application told 5.0 would believe entry points work that a wrapper over an older MPI cannot provide.
+
+# --- (b) fixed-capacity tables, exhausted --------------------------------------
+
+coll/nonblocking3 1 : one MPI_User_function trampoline slot per MPI_Op_create, never reclaimed (NOTES.md #6.2), and this test creates several thousand. xfail-ci-mpich.txt records the same test with the same cause, where MPICH names it directly as a null MPI_Op; here it surfaces one call later. Observed: *** An error occurred in MPI_Request_free
+coll/nonblocking3 4 : one MPI_User_function trampoline slot per MPI_Op_create, never reclaimed (NOTES.md #6.2), and this test creates several thousand. xfail-ci-mpich.txt records the same test with the same cause, where MPICH names it directly as a null MPI_Op; here it surfaces one call later. Observed: *** An error occurred in MPI_Request_free
+coll/nonblocking3 5 : one MPI_User_function trampoline slot per MPI_Op_create, never reclaimed (NOTES.md #6.2), and this test creates several thousand. xfail-ci-mpich.txt records the same test with the same cause, where MPICH names it directly as a null MPI_Op; here it surfaces one call later. Observed: *** An error occurred in MPI_Request_free
+coll/nonblocking3 10 : one MPI_User_function trampoline slot per MPI_Op_create, never reclaimed (NOTES.md #6.2), and this test creates several thousand. xfail-ci-mpich.txt records the same test with the same cause, where MPICH names it directly as a null MPI_Op; here it surfaces one call later. Observed: *** An error occurred in MPI_Request_free
+attr/fkeyvaltype 1 : 32 keyvals per iteration over 1024 datatype-pool objects is 32,768 in one process against a 1024-slot table, and NOTES.md #6.2 forbids reclaiming them. Observed: *** An error occurred in MPI_Type_free_keyval
+
+# --- (c) entry points MPI-3.0 deleted: build failures, and the right ones ------
+
+coll/opprod 5 : uses MPI_Errhandler_set, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+coll/opprod 6 : uses MPI_Errhandler_set, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+coll/opsum 4 : uses MPI_Errhandler_set, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+datatype/lbub_oldapi 1 : uses MPI_LB, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+datatype/transpose_pack_oldapi 1 : uses MPI_Type_extent, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+datatype/typename 1 : uses MPI_Errhandler_set, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+datatype/typename_oldapi 1 : uses MPI_LB, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+datatype/indexed_misc_oldapi 1 : uses MPI_Type_lb, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+datatype/simple_size_extent_oldapi 1 : uses MPI_Type_ub, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+datatype/struct_no_real_types 1 : uses MPI_LB, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+errhan/commcall_oldapi 2 : uses MPI_Errhandler_create, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+errors/datatype/type_extent_nullarg 1 : uses MPI_Type_extent, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+errors/datatype/type_lb_nullarg 1 : uses MPI_Type_lb, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+errors/datatype/type_ub_nullarg 1 : uses MPI_Type_ub, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+mpi_t/qmpi_test 2 : uses QMPI_Context, which MPI-3.0 deleted and an MPI-5.0 ABI header therefore does not declare. A build failure, and the right one; the same line is in xfail-ci-mpich.txt, because this group is about the ABI header rather than about the implementation.
+
+# --- (d) an erroneous argument the implementation would have diagnosed ---------
+
+threads/mpi_t/mpit_threading 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/coll/reduce_local 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/cfree 4 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/too_many_icomms2 4 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: No Errors
+errors/comm/comm_create_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/comm_create_group_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/comm_get_info_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/comm_group_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/comm_split_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/comm_split_type_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/comm/intercomm_create_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/datatype/type_contiguous_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/datatype/type_vector_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/group/group_difference_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/group/group_intersection_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/group/group_range_excl_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/group/group_range_incl_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/group/group_rank_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/group/group_union_nullarg 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+errors/rma/cas_type_check 2 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: cas_type_check: /home/runner/work/_temp/suite-src/mpich-5.0.1/test/mpi/errors/rma/cas_type_check.c:72: main: Assertion `err_class == MPI_ERR_TYPE' failed.
+errors/session/comm_create_from_group 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
+session/session_re_init 4 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: session_re_init: components.c:904: hwloc_components_fini: Assertion `0 != hwloc_components_users' failed.
+
+# --- (f) measured, not yet attributed ------------------------------------------
+
+coll/coll_large 4 : not yet attributed. Observed: i = 0, expect 0, got 255
+part/parrived 2 : not yet attributed. Observed: expected 1.0 but received 0.0 at buf[1] (partition 0 count 64 off 1), iteration 0
+part/parrived_wait 2 : not yet attributed. Observed: expected 1.0 but received 0.0 at buf[1] (partition 0 count 64 off 1), iteration 0
+part/parrived_pready_out_of_order 2 : not yet attributed. Observed: expected 16.0 but received 0.0 at buf[16] (partition 1 count 16 off 0), iteration 0
+part/parrived_strided 2 : not yet attributed. Observed: expected 36.0 but received 0.0 at buf[36] (partition 4 count 8 off 4), iteration 0
+part/nonblocking_pready 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
+part/pingping 2 : not yet attributed. Observed: Status expect count 1, got 2
+pt2pt/sendself 1 : not yet attributed. Observed: expected (1,2) at 0x…, but found (0,1)
+pt2pt/sendself 2 : not yet attributed. Observed: expected (1,2) at 0x…, but found (0,1)
+pt2pt/recvnull 1 : not yet attributed. Observed: *** An error occurred in MPI_Irecv
+pt2pt/pt2pt_large 2 : not yet attributed. Observed: i = 0, expect 1, got 0
+threads/comm/idup_deadlock 4 : not yet attributed. Observed: --------------------------------------------------------------------------
+threads/comm/idup_nb 4 : not yet attributed. Observed: --------------------------------------------------------------------------
+threads/comm/idup_comm_gen 4 : not yet attributed. Observed: --------------------------------------------------------------------------
+threads/init/mult_session 4 : not yet attributed. Observed: Could not find key thread_level
+threads/part/mt_parrived_wait 2 : not yet attributed. Observed: Rank 1 tid 2 expected 32.0 but received 0.0 at buf[32] (partition 4 count 8 off 0), iteration 0
+threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: --------------------------------------------------------------------------
+threads/pt2pt/mt_probe_isendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_probe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_iprobe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
+attr/keyval_double_free 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
+attr/keyval_double_free_comm 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
+attr/keyval_double_free_type 1 : not yet attributed. Observed: *** An error occurred in MPI_Type_free_keyval
+attr/keyval_double_free_win 1 : not yet attributed. Observed: *** An error occurred in MPI_Win_free_keyval
+comm/commname 4 : not yet attributed. Observed: *** An error occurred in MPI_Comm_get_name
+comm/cmsplit_type 4 : not yet attributed. Observed: *** An error occurred in MPI_Comm_split_type
+comm/comm_idup_nb 6 : not yet attributed. Observed: --------------------------------------------------------------------------
+comm/comm_idup_isend 6 : not yet attributed. Observed: --------------------------------------------------------------------------
+datatype/pack_external 1 : not yet attributed. Observed: MPI_Pack_external_size of MPI_LONG: returns 16, expect 8
+datatype/get_elements_pairtype 1 : not yet attributed. Observed: Found 1 errors
+datatype/type_large 1 : not yet attributed. Observed: *** An error occurred in MPI_Type_commit
+datatype/large_count 1 : not yet attributed. Observed: check failed: (elements == (int) expected), line 46
+errhan/adderr 1 : not yet attributed. Observed: Error class 0 is not a valid error code e 4fc0
+errhan/commcall 2 : not yet attributed. Observed: Unexpected error code
+errors/attr/keyvalmis 1 : not yet attributed. Observed: *** An error occurred in MPI_Win_set_attr
+errors/coll/noalias 2 : not yet attributed. Observed: Did not detect aliased arguments in MPI_Allreduce
+errors/coll/noalias2 4 : not yet attributed. Observed: --------------------------------------------------------------------------
+errors/coll/noalias3 4 : not yet attributed. Observed: MPI Error in NBC subrequest 0x… : 15
+errors/coll/rerr 2 : not yet attributed. Observed: Did not detect invalid type/op pair (byte,max) in Allreduce
+errors/comm/ccreate1 8 : not yet attributed. Observed: Did not detect group of high ranks in low comm
+errors/comm/userdup 4 : not yet attributed. Observed: Unexpected error class = 14, expected user-defined class 16384
+errors/comm/too_many_comms2 4 : not yet attributed. Observed: --------------------------------------------------------------------------
+errors/comm/too_many_comms3 4 : not yet attributed. Observed: Found 4 errors
+errors/comm/subcomm_abort 4 : not yet attributed. Observed: No Errors
+errors/comm/subcomm_abort2 6 : not yet attributed. Observed: No Errors
+errors/comm/intercomm_abort 6 : not yet attributed. Observed: --------------------------------------------------------------------------
+errors/comm/unmatched 2 : not yet attributed. Observed: Found 1 errors
+errors/group/group_translate_ranks_nullarg 1 : not yet attributed. Observed: Found 1 errors
+errors/io/fileerrret 1 : not yet attributed. Observed: Returned error from open (should have called error handler instead)
+errors/pt2pt/truncmsg2 2 : not yet attributed. Observed: MPI_Recv succeeded with non-matching datatype signature
+errors/rma/win_sync_free_pt 2 : not yet attributed. Observed: 0: Operation succeeded, when it should have failed
+errors/rma/win_sync_free_at 2 : not yet attributed. Observed: 0: Operation succeeded, when it should have failed
+errors/rma/win_sync_complete 2 : not yet attributed. Observed: 0: Operation succeeded, when it should have failed
+errors/rma/win_sync_lock_pt 2 : not yet attributed. Observed: 1: Operation succeeded, when it should have failed
+errors/session/sessioninit 1 : not yet attributed. Observed: MPI_Session_init returned no error for invalid info param
+info/infocreateenv 1 : not yet attributed. Observed: Found 5 errors
+io/rd_end 2 : not yet attributed. Observed: 0: count was 10; expected 5
+io/tst_fileview 1 : not yet attributed. Observed: Error at line 101: expect MPI_ERR_IO but got MPI_ERR_TYPE: invalid datatype
+mpi_t/mpi_t_str 1 : not yet attributed. Observed: check failed: ((strlen(desc) + 1) == min(desc_len, STR_SZ)), line 86
+mpi_t/cvarwrite 1 : not yet attributed. Observed: Found 83 errors
+mpi_t/getindex 1 : not yet attributed. Observed: Errors found in MPI_T_cvar_get_index
+session/session_bsend 2 : not yet attributed. Observed: MPI_Buffer_detach: dummy_size = 8388608, expect 0
+topo/cartmap1 4 : not yet attributed. Observed: rank outside of input communicator not UNDEFINED
+topo/cartsuball 4 : not yet attributed. Observed: cart sub to size 0 did not give null
+topo/dims5 1 : not yet attributed. Observed: 72 in 2d: 12 x 6 != 9 x 8
+topo/graphmap1 4 : not yet attributed. Observed: Graph map with no local nodes did not return MPI_UNDEFINED
