@@ -770,7 +770,15 @@ jobs:
   suite:
     name: suite / ${{ matrix.mpi }} ${{ matrix.version }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: true
+    # **Per leg, because the two implementations are at different stages.** The
+    # MPICH legs gate: run 32155423441 produced 842 tests, 789 passed and 41
+    # failed on both architectures, the 41 identical test for test, and
+    # xfail-ci-mpich.txt matches them exactly in both directions -- so the rule
+    # the compile job records is satisfied and TODO.md's "do not ignore mpich
+    # failures" is what this implements. The Open MPI legs stay report-only:
+    # their lists are still empty because no Open MPI leg has yet run to
+    # completion here.
+    continue-on-error: ${{ matrix.report_only }}
     # The suite alone was 39 minutes over MPICH and 75 over Open MPI on a runner,
     # and this adds an MPI build from source in front of it on a cold cache.
     timeout-minutes: 180
@@ -790,24 +798,28 @@ jobs:
             arch: x86_64
             launcher: hydra
             timeout_multiplier: 2
+            report_only: false
           - mpi: mpich
             version: 5.0.1
             os: ubuntu-24.04-arm
             arch: aarch64
             launcher: hydra
             timeout_multiplier: 2
+            report_only: false
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04
             arch: x86_64
             launcher: prte
             timeout_multiplier: 1
+            report_only: true
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04-arm
             arch: aarch64
             launcher: prte
             timeout_multiplier: 1
+            report_only: true
     env:
       # The matrix context is available in a job's env: block where the runner
       # context is not, which is why the paths below are a step and this is not.
@@ -1020,6 +1032,22 @@ jobs:
           path: ${{ runner.temp }}/suite-i386/opt
           key: mpi-i386-5.0.1-${{ hashFiles('ci-scripts/install-mpich.sh') }}
 
+      # **Diagnostics for one unexplained event, not a fix.** In run 32155423441
+      # this row died 51 minutes in with "The runner has received a shutdown
+      # signal" and nothing in its own log -- no build error, no test failure, no
+      # message at all -- which is what a runner losing its host looks like from
+      # inside the job. The two candidates it could plausibly be are disk and
+      # memory: this is the only row that builds an MPI from source *and* compiles
+      # some 900 test programs into the same RUNNER_TEMP, and its ranks are 32-bit
+      # processes on a 64-bit host. So the space the other rows do not need is
+      # reclaimed, and what was available is printed on both sides of the
+      # container. If it recurs, these numbers are what says which of the two it
+      # was; if it does not, they cost twenty seconds.
+      - name: Make room, and record what there was
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          echo "::group::disk and memory before"; df -h /; free -m; echo "::endgroup::"
+
       # ci-scripts/suite/i386-suite.sh is what runs inside: it installs the
       # toolchain, builds MPICH from source unless the restore above already put
       # it there, asserts that pointers really are 4 bytes -- a 64-bit prefix
@@ -1033,6 +1061,11 @@ jobs:
           MPIABI_LINUX_OUT: ${{ runner.temp }}/suite-i386
           MPIABI_LINUX_ARGS: --xfail=xfail-ci-mpich.txt --xfail=xfail-ci-mpich-i386.txt
         run: ci-scripts/run-linux-docker.sh mpich
+
+      - name: What was left afterwards
+        if: always()
+        run: |
+          echo "::group::disk and memory after"; df -h /; free -m; echo "::endgroup::"
 
       # Saved only when the prefix is actually complete. The step above exits
       # non-zero for a failed gate as readily as for a failed build, so its status

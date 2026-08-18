@@ -46,7 +46,14 @@ TAP_RE = re.compile(
 def parse_tap(path):
     """Return {name: ('pass'|'fail'|'skip', detail)} in file order."""
     results = {}
-    with open(path) as f:
+    try:
+        f = open(path)
+    except FileNotFoundError:
+        # A run killed before runtests wrote anything lands here, and a
+        # traceback would read as a bug in this script rather than as the
+        # missing file it is.
+        sys.exit(f"{path}: no TAP file -- the run did not get that far")
+    with f:
         for line in f:
             line = line.rstrip("\n")
             if not line.startswith(("ok ", "not ok ")):

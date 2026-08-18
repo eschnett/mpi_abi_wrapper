@@ -3,11 +3,27 @@
 # xfail-ci-mpich.txt, which holds what every architecture sees; check-tap.py
 # reads the two as one and rejects a test listed in both.
 #
-# GitHub's standard runner: four vCPUs. That is the constraint that shows up
-# here -- MPICH's progress engine busy-polls, so a test asking for 8 or 10 ranks
-# oversubscribes and can spend its whole time limit. The suite job doubles that
-# limit (MPITEST_TIMEOUT_MULTIPLIER); a test that still times out belongs here
-# with its rank count against the core count as the reason.
+# GitHub's standard runner: four vCPUs. MPICH's progress engine busy-polls, so a
+# test asking for 8 or 10 ranks oversubscribes and runs several times slower here
+# than on a machine with cores to spare; the suite job doubles the per-test time
+# limit for it. A test that times out even so belongs here, with its rank count
+# against the core count as the reason.
+#
+# **Empty by measurement, not by default.** Run 32155423441 produced exactly the
+# 41 failures of the shared list here -- the same 41, test for test, as the
+# aarch64 leg of the same run -- so this architecture adds nothing.
+#
+# Two things that run settled, both of which had been attributed to this runner's
+# four vCPUs and only one of which belongs there:
+#
+#   * `pt2pt/sendflood 8` **passes in 5 seconds**. Over MPICH 4.3.1 it spent the
+#     whole 180-second limit, and 360 seconds when the limit was doubled, at the
+#     same eight ranks on the same four vCPUs. So that timeout was the older
+#     MPICH's, not the core count's.
+#   * `coll/reduce 10` takes 184 seconds against a 180-second base limit, so
+#     MPITEST_TIMEOUT_MULTIPLIER=2 on this job is still what keeps it green. The
+#     oversubscription slowdown is real -- 4.7-7x above four ranks, measured --
+#     it just was not what sendflood was about.
 #
 # One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
 # check-tap.py enforces it in both directions -- an unlisted failure fails the

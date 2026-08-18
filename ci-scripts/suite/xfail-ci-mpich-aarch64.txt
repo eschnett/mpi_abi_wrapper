@@ -8,6 +8,12 @@
 # 4.1.6 the x86_64 runner produced wrong 8-bit reduction results that an aarch64
 # run of the same list never saw, which is what a per-architecture file is for.
 #
+# **Empty by measurement, not by default.** Run 32155423441 produced exactly the
+# 41 failures of the shared list here, test for test identical to the x86_64 leg
+# of the same run, so this architecture adds nothing. `coll/reduce 10` takes 192
+# seconds against a 180-second base limit, which is what
+# MPITEST_TIMEOUT_MULTIPLIER=2 on this job is for.
+#
 # One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
 # check-tap.py enforces it in both directions -- an unlisted failure fails the
 # run, and so does a listed test that passed or that did not run -- and a line
