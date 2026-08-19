@@ -29,10 +29,16 @@
 # fatal, which is why this shard is flaky as well as failing.
 #
 # The two patterns below are kept because they are measured and because they buy
-# the shard 26 minutes, not because they fix it. The real choices are upstream or
-# at configure time -- see ci-scripts/suite/README.md, and the probe's `ofi` case,
-# which tests whether libfabric gives these windows an accelerated BTL and makes
-# the whole question go away.
+# the shard 26 minutes, not because they fix it.
+#
+# The configure-time hope is gone as well: the probe's `ofi` case built btl/ofi in
+# one-sided mode and the shard still died, in rma/transpose1, because the cost is
+# per datatype *element* and is incurred above the BTL. A 3.8 MB MPI_Put whose
+# target datatype describes a million discontiguous elements exhausts a 16 GB host,
+# and no transport option reaches that. So the casualties are selected by datatype
+# shape, which a testlist line does not show -- which is the other reason this file
+# cannot converge. That leaves upstream, or not running rma on the Open MPI legs.
+# See ci-scripts/suite/README.md, "Round three".
 
 # Open MPI 5.0.10 spends about 14.6 GB across two ranks here, against the mem=3
 # it declares and the ~2.7 GB Open MPI 4.1.8 spends on the same test with the same
