@@ -460,7 +460,12 @@ if [ ${#exclude_args[@]} -gt 0 ]; then
           # error, because one list covers every directory.
           n=$(grep -cE "$re" "$lf" || true)
           [ "$n" = 0 ] && continue
-          grep -vE "$re" "$lf" > "$lf.tmp" && mv "$lf.tmp" "$lf"
+          # `grep -v` exits 1 when it prints nothing, which happens when a pattern
+          # matches *every* line. Testing the exit status would then skip the `mv`
+          # and leave the file unfiltered, silently -- so the empty result is
+          # written and moved regardless, and only `mv` failing is an error.
+          grep -vE "$re" "$lf" > "$lf.tmp" || true
+          mv "$lf.tmp" "$lf" || die "could not rewrite $lf"
           echo "  $sub/$base: dropped $n line(s) matching $re"
           dropped_total=$((dropped_total + n))
         done
