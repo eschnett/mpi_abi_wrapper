@@ -457,10 +457,12 @@ would make things worse, and lowering it only hides the test.
    hundred lines later and the baseline run never reached it. The probe's fifth case,
    `excluded-5.0.10`, exists to answer exactly that — if it dies in `putfence1`, the
    list needs a second entry, measured rather than guessed.
-2. **`--with-ofi` or `--with-ucx`** in `ci-scripts/install-openmpi.sh` would give
-   `MPI_Win_create` a genuinely accelerated path and is the fix rather than the
-   workaround, at the price of a dev-package dependency. Untested here: worth one
-   probe case before it is believed.
+2. ~~**`--with-ofi` or `--with-ucx`** would give `MPI_Win_create` an accelerated path
+   and is the fix rather than the workaround.~~ **Tested in round three and refuted.**
+   `btl/ofi` built and in one-sided mode changed nothing, because the amplification is
+   per datatype element and happens above the transport. Left here struck through
+   rather than deleted, because it is the inference the accelerated-BTL analysis
+   invites and the next reader will have it too.
 3. **Upstream.** A 5.4× memory regression against 4.1.x on a stock `MPI_Get` with a
    large derived datatype, reproducible on a two-rank single-node job with no fabric,
    is worth an Open MPI issue on its own account. The probe run above is a complete
@@ -510,6 +512,69 @@ Three conclusions follow, and they replace the mitigation advice above.
   `stock` and `ofi` **side by side in one run**, because `transpose7` proved the
   margin is real and a green `ofi` row means nothing without a `stock` row dying
   beside it.
+
+### Round three: libfabric does not fix it, and the real cost is per *element*
+
+Run [32297365052](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32297365052),
+`stock` and `ofi` side by side, same image, same hour.
+
+| case | `btl` list | died in | peak RSS |
+|---|---|---|---|
+| `stock-5.0.10` | self, sm, tcp | `getfence1 -count=16000000` | 10.62 + 3.98 GB |
+| `ofi-5.0.10` | self, sm, tcp, **ofi** | **`rma/transpose1`** | 8.02 + 6.61 GB |
+
+**`btl/ofi` really was built and really was in one-sided mode.** `ompi_info` lists it,
+and `mca_btl_ofi_component.mode` defaults to `MCA_BTL_OFI_MODE_ONE_SIDED`
+(`btl_ofi_component.c:143`), whose `required_caps` is `FI_RMA | FI_ATOMIC` — the
+capability set the accelerated test wants. So this is not a case of the option being
+silently ignored. **It did not help, and the `ofi` row died *earlier* in the directory
+than the `stock` row beside it.** Attributing "worse" to libfabric would be
+over-reading a margin this noisy, but "no improvement" is not an over-reading: the row
+that was supposed to be rescued was not.
+
+**And `transpose1` is what explains all of it.** The test transposes a 1000×1000 matrix
+of `int` — **3.8 MB of payload** — with
+
+```c
+MPI_Type_vector(1000, 1, 1000, MPI_INT, &column);
+MPI_Type_create_hvector(1000, 1, sizeof(int), column, &xpose);
+MPI_Win_create(NULL, 0, 1, MPI_INFO_NULL, CommDeuce, &win);   /* rank 0: empty window */
+MPI_Put(&A[0][0], 1000*1000, MPI_INT, 1, 0, 1, xpose, win);
+```
+
+The origin buffer is contiguous. The *target* datatype is an hvector of vectors
+describing **one million discontiguous single-`int` elements**. Open MPI 5.0.10 spends
+at least **14.6 GB** moving those 3.8 MB, which is upwards of **3900×** the payload —
+a lower bound, because the host died rather than the allocation completing.
+
+**So the cost tracks the element count of the derived datatype, not the byte count**,
+and that single sentence accounts for every observation in this section:
+
+- **Why the whole directory is unsafe, not the dtp half.** `transpose1` and
+  `transpose7` are plain entries in the main `rma/testlist` with no `mem=` and no
+  arguments. What makes them expensive is the *shape* of their datatype, which no
+  annotation describes.
+- **Why the suite's memory guard cannot help.** `mem=` and `memory_total` are
+  denominated in the data a test moves. This cost is denominated in how many pieces it
+  is moved in, and 3.8 MB in a million pieces looks free to the guard.
+- **Why `getfence1 -count=16000000` was the first casualty.** Sixteen million elements,
+  and it happens to be the first test in the dtp list at that element count.
+- **Why 4.1.8 is unaffected.** `osc/pt2pt` handed the datatype to the point-to-point
+  engine, which packs and streams it; `osc/rdma` appears to build per-element state
+  instead.
+- **Why no transport option fixes it.** The per-element state is allocated above the
+  BTL, so `--mca btl self,sm`, `libfabric`, and by extension UCX, are all interventions
+  at the wrong layer. This retires the "missing configure option" answer: it was a
+  reasonable inference from the accelerated-BTL requirement, and it is wrong.
+
+**What remains.** Nothing at this project's disposal fixes this, and the exclusion
+mechanism cannot chase it — the casualties are selected by datatype shape, which is not
+visible in a testlist line. The honest options are to stop running `rma` on the Open
+MPI legs until upstream moves, or to keep the shard as a known, report-only death. The
+finding itself is worth carrying upstream: **a 3.8 MB `MPI_Put` whose target datatype
+has a million elements exhausts a 16 GB host on a two-rank single-node job, where
+Open MPI 4.1.8 completes it**, and `rma/transpose1` from MPICH's test suite is a
+twenty-line reproducer.
 
 ### Why `MPI_Win_create` has nowhere to go in Open MPI 5.x
 
@@ -601,12 +666,12 @@ worth naming rather than one:
 
   A stock configure with neither libfabric nor UCX present leaves exactly `self`,
   `sm` and `tcp` — so osc/rdma running in emulation is not bad luck on this runner,
-  it is the only thing that can happen. **`--with-ofi` (libfabric) or `--with-ucx`
-  is therefore the configure-time answer**, and either would give `MPI_Win_create` a
-  native path with no special hardware, on shared memory, which is what the
-  shared-memory intuition was reaching for. Both mean a new dev-package dependency
-  and a different thing under test, so this is a decision rather than an oversight —
-  and worth taking only if the probe shows the emulation is the cause.
+  it is the only thing that can happen. That made `--with-ofi` or `--with-ucx` look
+  like the configure-time answer, and **round three above measured it and it is not**:
+  `btl/ofi` was built, in one-sided mode, and the shard still died. The reason is in
+  that section — the cost is per datatype *element* and is incurred above the BTL, so
+  no transport option reaches it. The table stands as the account of why emulation is
+  unavoidable here; it is just not where the memory goes.
 - **A stock configure is not hermetic.** It picks up whatever dev packages the
   runner image happens to carry, so the component set is a property of the image as
   much as of the version. That is why the probe workflow prints `ompi_info`'s
