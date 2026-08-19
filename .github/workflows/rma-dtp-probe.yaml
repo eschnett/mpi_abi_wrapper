@@ -63,61 +63,56 @@ jobs:
         # are the two halves of the hypothesis; `mem_total` is the story the
         # README used to lead with and now disfavours, kept because closing it
         # costs one row.
+        # **Round three: does an accelerated BTL fix it?** The earlier cases are
+        # answered and are not re-run, because two of them kill a runner each time
+        # and the answers are recorded in ci-scripts/suite/README.md:
+        #
+        #   baseline-5.0.10        died in rma/getfence1 -count=16000000  (run 32284464458)
+        #   btl-sm-only-5.0.10     died in the same test, same footprint  (same run)
+        #   control-4.1.8          completed, 1.69 + 1.03 GB              (same run)
+        #   memory-total-1-5.0.10  survived once at 1.2 GB spare, then died
+        #                          in rma/transpose7                      (run 32291327971)
+        #   excluded-5.0.10        died in rma/putfence1 -count=16000000  (same run)
+        #
+        # Those last two are why this round is about the build rather than about
+        # more exclusions: transpose7 is in the *main* rma testlist, carries no
+        # mem= annotation and takes no count arguments, and still reached 10.73 GB
+        # on one rank. The blowup is a property of the rma directory over 5.0.10,
+        # not of the datatype-pool tests or of the annotated ones, so no list of
+        # test-line patterns converges.
+        #
+        # **A same-run control, because the margin is real.** transpose7 survived
+        # with 1.2 GB spare in one run and took the runner down in the next, so a
+        # green `ofi` row means nothing without a `stock` row dying beside it, on
+        # the same day and the same image.
         case:
-          # The reproduction, instrumented. Expected to die; the point is that
-          # it now dies with a test name and a memory trace attached.
-          - name: baseline-5.0.10
+          # Stock configure: self, sm and tcp, none of them accelerated.
+          - name: stock-5.0.10
+            mpi_tag: "5.0.10-stock"
             version: "5.0.10"
             kind: prte
+            extra_pkgs: ""
             extra_mca: ""
             mem_total: ""
             exclude_args: ""
 
-          # Takes the tcp BTL out of the emulation path, leaving shared memory
-          # as the only transport. osc/rdma sorts its alternate BTLs by latency
-          # so sm should already win, but "should" is what this workflow is for
-          # -- and if the tcp emulation is the mechanism, this row completes.
-          - name: btl-sm-only-5.0.10
+          # The same source with libfabric present. Open MPI's configure detects
+          # libfabric on its own, so no flag is needed and install-openmpi.sh stays
+          # a stock configure -- installing the package *is* the variable. What it
+          # should buy: btl/ofi is the one BTL a runner can have that passes
+          # ompi_osc_rdma_check_accelerated_btl, since it advertises RDMA, fetching
+          # atomics and remote completion, and instantiates for any provider with
+          # FI_RMA | FI_ATOMIC -- which libfabric's shm and tcp providers have. If
+          # that is the mechanism, MPI_Win_create stops being emulated and this row
+          # completes.
+          - name: ofi-5.0.10
+            mpi_tag: "5.0.10-ofi"
             version: "5.0.10"
             kind: prte
-            extra_mca: "--mca btl self,sm"
-            mem_total: ""
-            exclude_args: ""
-
-          # The memory story, settled either way. MPITEST_MEMORY_TOTAL=1 skips
-          # every mem=-annotated test in the directory (runtests line 491), so a
-          # row that still dies here has cleared memory of suspicion entirely.
-          - name: memory-total-1-5.0.10
-            version: "5.0.10"
-            kind: prte
-            extra_mca: ""
-            mem_total: "1"
-            exclude_args: ""
-
-          # The control, and the row that makes the other three interpretable:
-          # 4.1.8 is the last series that still has `osc/pt2pt`. If this passes
-          # where baseline dies, the finding is an Open MPI regression between
-          # 4.1 and 5.0 and this project is not implicated.
-          - name: control-4.1.8
-            version: "4.1.8"
-            kind: prte
+            extra_pkgs: "libfabric-dev"
             extra_mca: ""
             mem_total: ""
             exclude_args: ""
-
-          # **The mitigation, verified rather than assumed.** With the two
-          # getfence1 -count=16000000 lines excluded, does the shard finish? This
-          # is the case that decides whether the exclusion list is complete,
-          # because putfence1 carries the same -count=16000000 -testsize=4 shape
-          # at mem=2 and the baseline run never reached it -- getfence1 killed the
-          # runner first. If this row also dies, in putfence1, then the list needs
-          # its second entry and we will have measured that rather than guessed.
-          - name: excluded-5.0.10
-            version: "5.0.10"
-            kind: prte
-            extra_mca: ""
-            mem_total: ""
-            exclude_args: "--exclude=exclude-ci-openmpi.txt"
     env:
       # The suite's own knobs. The Open MPI legs of the real matrix use a
       # multiplier of 1 (README: their tests at the limit are hangs, which
@@ -150,11 +145,18 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
               build-essential gfortran cmake python3 patch binutils \
               curl ca-certificates perl ccache time
+          # The variable for this round. Open MPI's configure finds libfabric by
+          # itself, so the package is the whole of the change and
+          # install-openmpi.sh keeps its stock configure.
+          if [ -n "${{ matrix.case.extra_pkgs }}" ]; then
+              sudo apt-get install -y -qq --no-install-recommends ${{ matrix.case.extra_pkgs }}
+              echo "extra packages installed: ${{ matrix.case.extra_pkgs }}"
+          fi
 
       - name: Set up paths
         run: |
           {
-              echo "PREFIX=${RUNNER_TEMP}/opt/openmpi-${{ matrix.case.version }}"
+              echo "PREFIX=${RUNNER_TEMP}/opt/openmpi-${{ matrix.case.mpi_tag }}"
               echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-openmpi"
               echo "MPIABI_SUITE_WORK=${RUNNER_TEMP}/suite-work"
               echo "MPIABI_SUITE_SRC=${RUNNER_TEMP}/suite-src"
@@ -167,8 +169,8 @@ jobs:
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
-          path: ${{ runner.temp }}/opt/openmpi-${{ matrix.case.version }}
-          key: probe-mpi1-openmpi-${{ matrix.case.version }}-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-openmpi.sh') }}
+          path: ${{ runner.temp }}/opt/openmpi-${{ matrix.case.mpi_tag }}
+          key: probe-mpi2-openmpi-${{ matrix.case.mpi_tag }}-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-openmpi.sh') }}
 
       - name: Restore ccache
         id: cache-ccache
@@ -176,8 +178,8 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/ccache
-          key: ccache-probe-openmpi-${{ matrix.case.version }}-${{ github.run_id }}
-          restore-keys: ccache-probe-openmpi-${{ matrix.case.version }}-
+          key: ccache-probe-openmpi-${{ matrix.case.mpi_tag }}-${{ github.run_id }}
+          restore-keys: ccache-probe-openmpi-${{ matrix.case.mpi_tag }}-
 
       - name: Build and install Open MPI ${{ matrix.case.version }}
         if: steps.cache-mpi.outputs.cache-hit != 'true'
@@ -216,6 +218,13 @@ jobs:
           echo "::group::transports that would change the answer (ucx, ofi, verbs)"
           "${PREFIX}/bin/ompi_info" | grep -iE "MCA (pml|mtl|osc|btl):(ucx|ofi|uct)" || echo "none of ucx/ofi/uct built"
           echo "::endgroup::"
+          # Stated as a line of its own, because the whole round turns on it: if
+          # the ofi row did not actually get btl/ofi, its result means nothing.
+          if "${PREFIX}/bin/ompi_info" | grep -qiE "MCA btl: ?ofi"; then
+              echo "btl/ofi IS built -- osc/rdma can have an accelerated BTL"
+          else
+              echo "btl/ofi is NOT built -- osc/rdma will run emulated"
+          fi
           echo "::group::configure line this tarball was built with"
           "${PREFIX}/bin/ompi_info" --all 2>/dev/null | grep -i "Configure command line" || true
           echo "::endgroup::"

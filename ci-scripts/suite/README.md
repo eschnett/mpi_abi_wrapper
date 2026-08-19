@@ -466,6 +466,51 @@ would make things worse, and lowering it only hides the test.
    is worth an Open MPI issue on its own account. The probe run above is a complete
    reproducer.
 
+### Round two: the exclusion does not hold, and the reason changes the conclusion
+
+Run [32291327971](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32291327971)
+verified the mitigation and refuted it.
+
+| case | outcome | where |
+|---|---|---|
+| 5.0.10 + the getfence1 exclusion | **runner shutdown** | `putfence1 -count=16000000`: 8.09 + 6.79 GB |
+| 5.0.10, `MPITEST_MEMORY_TOTAL=1` | **runner shutdown** | `rma/transpose7`: 10.73 + 3.93 GB |
+| 5.0.10, `--mca btl self,sm` | runner shutdown | as before |
+| 4.1.8 | survived, `No Errors` | as before |
+
+**The exclusion worked and did not help.** Two lines were dropped, `getfence1` never
+ran, and the shard got twenty-six minutes further before `putfence1` — same
+`-count=16000000 -testsize=4` shape, `mem=2` rather than `mem=3` — died the same way.
+That much was predicted and is now measured.
+
+**What was not predicted is `transpose7`, and it is the finding that matters.** It is
+an entry in the *main* `rma/testlist`, not in `testlist.dtp`. It reads `transpose7 2`
+— no `mem=` annotation, no `-count`, no `-testsize`, nothing to suggest it is
+expensive. It reached **10.73 GB on one rank** and took the runner down. In the
+previous run the same test survived with 1.2 GB to spare, which is why this shard is
+*flaky* as well as failing: `transpose7` sits right at the edge of a 16 GB runner and
+falls off it depending on what else the image is doing.
+
+Three conclusions follow, and they replace the mitigation advice above.
+
+- **The amplification is a property of the rma directory over 5.0.10, not of the
+  datatype-pool tests.** `transpose7` is neither a dtp test nor an annotated one. So
+  `--no-dtp` would not have saved this shard either, and neither would any
+  `MPITEST_MEMORY_TOTAL`: the suite's own memory annotations cannot describe a cost
+  the implementation invents.
+- **No list of test-line patterns converges.** Each exclusion reveals the next
+  casualty, and the casualties include tests nobody would have flagged by reading the
+  testlist. `exclude-ci-openmpi.txt` keeps its two measured patterns because they buy
+  the shard twenty-six minutes, and its header now says plainly that it is not a fix.
+- **So the fix has to be the build or upstream.** Which makes the `ofi` probe case the
+  whole of the remaining question: `btl/ofi` is the one BTL a fabric-less runner can
+  have that passes `ompi_osc_rdma_check_accelerated_btl`, Open MPI's configure detects
+  libfabric on its own, and if that removes the emulation then every one of these
+  tests stops being expensive and no exclusion is needed at all. That round runs
+  `stock` and `ofi` **side by side in one run**, because `transpose7` proved the
+  margin is real and a green `ofi` row means nothing without a `stock` row dying
+  beside it.
+
 ### Why `MPI_Win_create` has nowhere to go in Open MPI 5.x
 
 The `osc/pt2pt` removal is not an inference from a missing directory. Open MPI's own
