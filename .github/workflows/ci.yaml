@@ -886,21 +886,52 @@ jobs:
             args: "--dirs=threads,pt2pt,part"
           - name: rest
             args: "--skip-dirs=coll,rma,threads,pt2pt,part"
-        # **Drop rma from the Open MPI legs.** A matrix `exclude` entry only has to
-        # be a *partial* match, so naming one key of each object is enough and this
-        # keeps working when a leg or a shard gains a field. Two combinations go,
-        # leaving 14 suite jobs where there were 16: coll, p2p and rest on all four
-        # legs, and rma on the two MPICH legs only.
+        # **Drop rma from the Open MPI legs.**
         #
-        # An excluded combination is never created, so this costs no runner -- which
-        # is the point. A step-level `if:` would have skipped the work and still paid
-        # for the checkout, the MPI restore and the wrapper build, and a job-level
-        # `if:` cannot see `matrix` at all.
+        # `exclude` entries must repeat each matched object in full. The
+        # "partial match" `exclude` documents is about omitting whole matrix *keys*
+        # -- naming `shard` and not `leg` -- and not about naming some fields of an
+        # object: an entry giving only `leg: {mpi: openmpi}` makes the *workflow
+        # invalid*, which GitHub reports as a run that fails with no jobs. Measured,
+        # on this branch, in run 32301380331.
+        #
+        # **So these two objects are duplicates and have to stay in step with the
+        # legs above.** If a leg gains or changes a field and its copy here does not,
+        # this entry stops matching and the rma shard comes back. That is visible
+        # rather than silent -- the shard dies and the job fails -- but it is still a
+        # trap, so: edit a leg, edit its copy.
+        #
+        # Two combinations go, leaving 14 suite jobs where there were 16: coll, p2p
+        # and rest on all four legs, rma on the two MPICH legs only. An excluded
+        # combination is never created, so this costs no runner -- which is the
+        # point. A step-level `if:` would have skipped the work and still paid for
+        # the checkout, the MPI restore and the wrapper build, and a job-level `if:`
+        # cannot see `matrix` at all.
         exclude:
           - leg:
               mpi: openmpi
+              version: 5.0.10
+              os: ubuntu-24.04
+              arch: x86_64
+              launcher: prte
+              timeout_multiplier: 1
+              report_only: true
+              exclude_args: "--exclude=exclude-ci-openmpi.txt"
             shard:
               name: rma
+              args: "--dirs=rma"
+          - leg:
+              mpi: openmpi
+              version: 5.0.10
+              os: ubuntu-24.04-arm
+              arch: aarch64
+              launcher: prte
+              timeout_multiplier: 1
+              report_only: true
+              exclude_args: "--exclude=exclude-ci-openmpi.txt"
+            shard:
+              name: rma
+              args: "--dirs=rma"
     env:
       # The matrix context is available in a job's env: block where the runner
       # context is not, which is why the paths below are a step and this is not.
