@@ -353,10 +353,9 @@ but the loop adding each rank's data is guarded by
 the window data stays in the user's buffer. If `osc/rdma` is the mechanism it is not
 by duplicating the data, and the next reader should not spend the afternoon there.
 
-**So the experiment to run is a version and component bisect, not a memory test.**
-`MPITEST_MEMORY_TOTAL=1` is still plumbed and still cheap, but it now tests a story
-the evidence disfavours; run it to close the question rather than to open it. The
-three that matter, in order:
+**So the experiment to run was a version and component bisect, not a memory test** —
+and it has now been run; the results are in the section above, and all three of the
+checks below fired as written. Kept as the record of what was asked and why:
 
 - **`--dirs=rma` against 4.1.6 and against 5.0.10 in the same run.** If 4.1.6
   completes and 5.0.10 dies, the finding is an Open MPI regression and this project
@@ -376,6 +375,89 @@ their own process group, so `mpiexec-filter`'s `kill -TERM -$child` looked like 
 would strand them, but measured on 5.0.6 both TERM and a hard KILL of the launcher's
 group leave no survivors. The orphan `sleep` processes the second run left behind are
 the watchdog's own sleeps, which hold no memory.
+
+### What the probe measured: an Open MPI 5.x regression, quantified
+
+Run [32284464458](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32284464458),
+four cases, `--dirs=rma` on `ubuntu-24.04`. It reproduced the death in **14m50s** and
+named the test.
+
+| case | outcome | where |
+|---|---|---|
+| 5.0.10, as CI builds it | runner shutdown signal | `getfence1 -count=16000000`: **10.93 + 3.72 GB** |
+| 5.0.10, `--mca btl self,sm` | runner shutdown signal | the same test: **10.71 + 3.88 GB** |
+| 5.0.10, `MPITEST_MEMORY_TOTAL=1` | survived | that test skipped; low-water 1.2 GB |
+| **4.1.8, the control** | **survived, `No Errors`** | the same test: **1.69 + 1.03 GB**, 105.5 s |
+
+**The culprit is `rma/getfence1 -type=MPI_INT -count=16000000 -seed=171 -testsize=4`,
+two ranks, `mem=3` — not `putpscw1`.** The README's prime suspect was wrong twice
+over: wrong test, and wrong number of ranks. The monitor's last two samples are the
+whole finding:
+
+    [mon 18:09:58] avail=13.1G  top=[getfence1:0.87G getfence1:0.55G ...]
+    [mon 18:09:59] ... ./getfence1 -type=MPI_INT -count=16000000 -seed=171 -testsize=4
+    [mon 18:10:08] avail=0.6G   top=[getfence1:10.60G getfence1:3.40G ...]
+    [mon 18:10:18] avail=0.2G   top=[getfence1:10.93G getfence1:3.72G ...]
+    [18:10:53] The runner has received a shutdown signal.
+
+**Same wrapper, same test, same runner image, 5.4× the memory.** 4.1.8 peaks at about
+2.7 GB summed over its two ranks and 5.0.10 at about 14.6 GB, on a 16 GB runner. On
+the origin rank alone it is 1.69 GB against 10.93 GB, a factor of 6.5. And the
+*shapes* differ, which is the mechanism showing through: 4.1.8's two ranks oscillate
+between 1.0 and 1.7 GB for a hundred seconds — it streams the transfer — while
+5.0.10 climbs monotonically to 10.9 GB in under twenty seconds and never comes back
+down. That is buffering a whole transfer where the older component pipelined it.
+
+The component lists confirm the story exactly, per run rather than from a laptop:
+
+| | `osc` | `btl` |
+|---|---|---|
+| 4.1.8 | monitoring, **pt2pt**, rdma, sm | self, tcp, **vader** |
+| 5.0.10 | monitoring, rdma, sm | self, sm, tcp |
+
+**Three things this settles.**
+
+- **It is not this project.** The wrapper build is identical in both rows; only the
+  wrapped implementation differs, and only the newer one dies. The static refutation
+  above said the wrapper cannot allocate in proportion to the data; the measurement
+  says something in Open MPI 5.0.10's path does.
+- **`--mca btl self,sm` does not help, and that was predicted.** Taking TCP out
+  changes nothing because `btl/sm` fails `check_accelerated_btl` just as `tcp` does,
+  so the transfer is still `osc/rdma`'s active-message emulation either way. This is
+  the measurement that closes the "shared memory should be enough" question: it was
+  tried, and it is not.
+- **Window *creation* is not where the memory goes.** Four ranks each creating a
+  256 MB `MPI_Win_create` window cost 13.6 MB of peak RSS in the same job, so
+  `allocate_state_shared`'s sum-over-local-ranks segment really is state-only under
+  `FLAVOR_CREATE`, as the source said. The blowup is in the data path.
+
+**Where this leaves the memory story, honestly.** The proximate cause *is* memory
+exhaustion, so the section above is too dismissive of it — but the reasoning it
+replaced was still wrong in both of its steps. `mem=` is a whole-job figure, and
+4.1.8's ~2.7 GB against its `mem=3` annotation confirms that the annotation is
+well-calibrated and read correctly. What defeats `memory_total=4` is not the
+arithmetic: it is that 5.0.10 spends **five times what the test declares**, so a guard
+calibrated on any streaming implementation cannot hold it. Raising `memory_total`
+would make things worse, and lowering it only hides the test.
+
+**What to do about it, in order of how much it costs.**
+
+1. **`--xfail` will not do**, because a killed runner produces no TAP line to expect.
+   The only thing that keeps the Open MPI legs alive today is not running this test:
+   either `MPITEST_MEMORY_TOTAL=2`, which skips everything from `lock_contention_dt`
+   (2.1) up and costs the eight heaviest dtp tests, or a targeted skip of
+   `getfence1`'s two `-count=16000000` lines. The second is narrower and is what the
+   evidence supports — but note the probe only proves `getfence1` dies *first*, and
+   `putfence1` carries the same `-count=16000000 -testsize=4` shape at `mem=2`, so it
+   is a candidate for the same treatment.
+2. **`--with-ofi` or `--with-ucx`** in `ci-scripts/install-openmpi.sh` would give
+   `MPI_Win_create` a genuinely accelerated path and is the fix rather than the
+   workaround, at the price of a dev-package dependency. Untested here: worth one
+   probe case before it is believed.
+3. **Upstream.** A 5.4× memory regression against 4.1.x on a stock `MPI_Get` with a
+   large derived datatype, reproducible on a two-rank single-node job with no fabric,
+   is worth an Open MPI issue on its own account. The probe run above is a complete
+   reproducer.
 
 ### Why `MPI_Win_create` has nowhere to go in Open MPI 5.x
 
