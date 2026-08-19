@@ -193,6 +193,19 @@ behind `--enable-mpi-abi` and a separate `mpicc_abi`, and wrapping a library tha
 already exports the ABI is a *different* oracle, the one that refuses at load on
 macOS by design.
 
+**Validation, and what two runs have established.** The four shards are an exact
+partition of the suite, checked against an unsharded run of the same MPI and suite
+version: 842 distinct tests and 1245 invocations either way, nothing missing,
+nothing duplicated, and no two shards sharing a test — which also settles that
+`testlist.dtp` follows the directory filter rather than escaping it, the one way
+sharding could have quietly run tests twice or not at all. The 41-line MPICH list
+has reproduced across three runs and all three architectures, i386 included, where
+it held unchanged and ILP32 only *added* eleven lines. The 109-line Open MPI list
+reproduced in full. Two entries filed as architecture differences turned out to be
+intermittent tests and were removed when the second run passed them; a test that
+flaps cannot be listed at all, since listing it fails the run it passes and not
+listing it fails the run it fails.
+
 **All five are report-only until they have been green**, which is the rule that
 workflow's `compile` job records: a row nobody has seen pass cannot tell a
 regression from the thing it was added to find. Every CI list is empty as this
@@ -233,11 +246,27 @@ spending real time, and they are the only ones that hit the wall. On a stock
 GitHub runner the job limit is six hours and these legs took 39 and 75 minutes,
 so this is a property of where they ran and not of the suite.
 
-That is what the sharding above is for. The MPICH 64-bit legs came in under the
-ceiling even unsharded and are gated; the other three did not, so every leg is now
-four jobs and each carries a quarter of the suite. `rma` over Open MPI is the one
-that may still not fit, and it is deliberately alone so that the answer is about
-`rma` rather than about the row.
+That is what the sharding above is for, and two runs of it have said how far it
+gets: **seventeen of the twenty legs complete and gate.** The three that do not are
+`rma` on both Open MPI legs and `rest` on i386.
+
+**Isolating `rma` did what it was for — the answer is now about 176 tests rather
+than about a row.** With runtests' output teed into the job log (a killed job
+uploads no artifact, so stdout is the only record left), the shard's last line is
+
+    Running tests in ./rma/testlist.dtp [176 tests - 00:01:36]
+
+after the main rma testlist has run through to `win_dynamic_rma_flush_get_collattach`.
+So it is the *datatype-pool* half of rma over Open MPI that takes the runner down,
+not rma as such. `--no-dtp` on that shard would let the rest of the directory be
+listed; it is not set, because the shard dimension is shared with the MPICH legs
+whose rma shard runs those same dtp tests green. A shard of their own is the move
+that costs nothing else.
+
+**One caution the second run added:** `openmpi / aarch64 / p2p` completed in ten
+minutes in the first run and was killed after fifty in the second, leaving orphan
+`sleep` processes behind. Open MPI has a shard that hangs intermittently as well as
+one that dies reproducibly, and a green Open MPI leg needs both settled.
 
 ## What the previous pins measured, and why the split exists
 
