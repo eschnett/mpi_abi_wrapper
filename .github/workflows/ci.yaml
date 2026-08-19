@@ -888,12 +888,15 @@ jobs:
             args: "--skip-dirs=coll,rma,threads,pt2pt,part"
         # **Drop rma from the Open MPI legs.**
         #
-        # `exclude` entries must repeat each matched object in full. The
-        # "partial match" `exclude` documents is about omitting whole matrix *keys*
-        # -- naming `shard` and not `leg` -- and not about naming some fields of an
-        # object: an entry giving only `leg: {mpi: openmpi}` makes the *workflow
-        # invalid*, which GitHub reports as a run that fails with no jobs. Measured,
-        # on this branch, in run 32301380331.
+        # **Spelled out in full on purpose, and the shorter form was tested rather
+        # than assumed.** `leg: {mpi: openmpi}` alone *is* a valid workflow -- pushed
+        # and checked on this branch -- and `exclude` does document partial matching.
+        # What is not established is whether that partial match reaches *inside* an
+        # object value, and the cost of being wrong is asymmetric: an exclude that
+        # fails to match runs the rma shard, which kills a runner. An exact match on
+        # the whole object cannot be wrong about that. (The run that failed while this
+        # was being worked out, 32301380331, was neither form: an unbounded edit had
+        # put a `leg` exclude into the suite-i386 matrix, which has no `leg`.)
         #
         # **So these two objects are duplicates and have to stay in step with the
         # legs above.** If a leg gains or changes a field and its copy here does not,
