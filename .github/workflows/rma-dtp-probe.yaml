@@ -28,7 +28,16 @@
 
 name: rma dtp probe
 
+# **Both triggers, and the push one is not laziness.** GitHub only offers
+# `workflow_dispatch` for workflows that exist on the *default* branch, so a probe
+# living on a feature branch cannot be dispatched at all -- `gh workflow run` answers
+# 404 against main. Scoping `push` to this one branch is what makes it runnable
+# before it is merged, and it cannot fire anywhere else: ci.yaml's own `push` is
+# limited to main, so pushing here runs this probe and nothing more. The dispatch
+# trigger is kept for the day this does land on main.
 on:
+  push:
+    branches: [investigate-rma-dtp-openmpi5]
   workflow_dispatch:
 
 permissions:
