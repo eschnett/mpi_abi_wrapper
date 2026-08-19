@@ -1,0 +1,347 @@
+# The rma dtp shard, instrumented -- a throwaway workflow for one question.
+#
+# ci-scripts/suite/README.md's "Debugging the rma dtp shard" section narrows the
+# Open MPI legs' one reproducible death to `./rma/testlist.dtp [176 tests]` and
+# then to a mechanism: Open MPI 5.0 removed the `osc/pt2pt` one-sided component,
+# `osc/sm` declines `MPI_WIN_FLAVOR_CREATE` outright, and `btl/sm` advertises
+# MCA_BTL_FLAGS_RDMA without the ATOMIC_FOPS and RDMA_REMOTE_COMPLETION that
+# `ompi_osc_rdma_check_accelerated_btl` demands -- so every `MPI_Win_create`
+# window on a runner with no RDMA fabric lands in osc/rdma's active-message
+# emulation, which is exactly the path 5.0's own changelog describes as having
+# needed "many MPI one-sided and RDMA emulation fixes for the `tcp` BTL". The
+# 4.1.6 run in that section's evidence predates all of it and passes.
+#
+# That is a story assembled from reading source. This workflow measures it.
+#
+# **workflow_dispatch only, on purpose.** It is a probe, not a gate: it never
+# runs on push, it never blocks a merge, and it is meant to be deleted with its
+# branch once the answer is on disk in ci-scripts/suite/README.md.
+#
+# **Everything goes to stdout, including the resource trace.** The failure being
+# chased kills the runner, and a killed job uploads no artifact -- the collect
+# step below runs only if the job survives, so nothing may depend on it. The
+# monitor step therefore prints memory, /dev/shm and the top RSS consumers into
+# the job log every ten seconds, so that a dead runner still leaves the shape of
+# its death behind. RUNTESTS_VERBOSE=1 is what makes the last line before the
+# kill *name* the test: runtests prints each command as it starts it (line 722 of
+# test/mpi/runtests) and prints nothing at all for a test that passes.
+
+name: rma dtp probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe / ${{ matrix.case.name }}
+    runs-on: ubuntu-24.04
+    # A probe never gates. Every case is expected to be informative, and two of
+    # them are expected to die.
+    continue-on-error: true
+    # Two thirds of the suite job's ceiling. The 4.1.6 evidence says the whole rma
+    # directory is nine minutes of *test* time, but a cold cache pays for an Open
+    # MPI build first and MPITEST_RUN_INDIVIDUAL=1 pays a launcher startup per
+    # test, so the floor is higher than that nine minutes suggests. A case still
+    # running at sixty minutes has told us something by doing so.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # **Four cases, each isolating one variable.** `version` and `extra_mca`
+        # are the two halves of the hypothesis; `mem_total` is the story the
+        # README used to lead with and now disfavours, kept because closing it
+        # costs one row.
+        case:
+          # The reproduction, instrumented. Expected to die; the point is that
+          # it now dies with a test name and a memory trace attached.
+          - name: baseline-5.0.10
+            version: "5.0.10"
+            kind: prte
+            extra_mca: ""
+            mem_total: ""
+
+          # Takes the tcp BTL out of the emulation path, leaving shared memory
+          # as the only transport. osc/rdma sorts its alternate BTLs by latency
+          # so sm should already win, but "should" is what this workflow is for
+          # -- and if the tcp emulation is the mechanism, this row completes.
+          - name: btl-sm-only-5.0.10
+            version: "5.0.10"
+            kind: prte
+            extra_mca: "--mca btl self,sm"
+            mem_total: ""
+
+          # The memory story, settled either way. MPITEST_MEMORY_TOTAL=1 skips
+          # every mem=-annotated test in the directory (runtests line 491), so a
+          # row that still dies here has cleared memory of suspicion entirely.
+          - name: memory-total-1-5.0.10
+            version: "5.0.10"
+            kind: prte
+            extra_mca: ""
+            mem_total: "1"
+
+          # The control, and the row that makes the other three interpretable:
+          # 4.1.8 is the last series that still has `osc/pt2pt`. If this passes
+          # where baseline dies, the finding is an Open MPI regression between
+          # 4.1 and 5.0 and this project is not implicated.
+          - name: control-4.1.8
+            version: "4.1.8"
+            kind: prte
+            extra_mca: ""
+            mem_total: ""
+    env:
+      # The suite's own knobs. The Open MPI legs of the real matrix use a
+      # multiplier of 1 (README: their tests at the limit are hangs, which
+      # doubling pays for twice and does not rescue), so this matches them.
+      MPITEST_TIMEOUT_MULTIPLIER: 1
+      MPIEXEC_FILTER_KIND: ${{ matrix.case.kind }}
+      # Named rather than left to auto-detection: 4.1.8 answers `mpiexec
+      # (OpenRTE) 4.1.8`, which mpiexec-filter's Open-then-MPI pattern does not
+      # match, so it would fall through to `other` and lose --oversubscribe.
+      #
+      # MCA parameters travel as launcher arguments rather than as OMPI_MCA_*
+      # environment variables, because mpiexec-filter's default
+      # MPIEXEC_FILTER_ENV_RE covers MPI_ABI_*, MPIABI_*, MPIR_CVAR_*,
+      # MPIEXEC_TIMEOUT and FI_* -- and nothing beginning OMPI_. prterun
+      # forwards no environment it is not told to, so an OMPI_MCA_* set here
+      # would reach the launcher and not the ranks.
+      MPIEXEC_FILTER_ARGS: ${{ matrix.case.extra_mca }}
+      # What makes the last line before a kill name a test.
+      RUNTESTS_VERBOSE: 1
+    steps:
+      - uses: actions/checkout@v6
+
+      # The suite job's list verbatim. gfortran included for the reason NOTES.md
+      # #9 gives: --disable-fortran silently drops the implementations of the
+      # MPI_Type_create_f90_* entry points, which are plain C and which the
+      # compile-only probe would then report as available.
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+              build-essential gfortran cmake python3 patch binutils \
+              curl ca-certificates perl ccache time
+
+      - name: Set up paths
+        run: |
+          {
+              echo "PREFIX=${RUNNER_TEMP}/opt/openmpi-${{ matrix.case.version }}"
+              echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpi-src-openmpi"
+              echo "MPIABI_SUITE_WORK=${RUNNER_TEMP}/suite-work"
+              echo "MPIABI_SUITE_SRC=${RUNNER_TEMP}/suite-src"
+              echo "CCACHE_DIR=${RUNNER_TEMP}/ccache"
+          } >>"${GITHUB_ENV}"
+
+      # Restore-only, and keyed by version so the two versions cannot collide.
+      # A miss costs this row one Open MPI build.
+      - name: Restore the MPI installation
+        id: cache-mpi
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/opt/openmpi-${{ matrix.case.version }}
+          key: probe-mpi1-openmpi-${{ matrix.case.version }}-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-openmpi.sh') }}
+
+      - name: Restore ccache
+        id: cache-ccache
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-probe-openmpi-${{ matrix.case.version }}-${{ github.run_id }}
+          restore-keys: ccache-probe-openmpi-${{ matrix.case.version }}-
+
+      - name: Build and install Open MPI ${{ matrix.case.version }}
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        run: |
+          export PATH=/usr/lib/ccache:${PATH}
+          ccache --zero-stats
+          ci-scripts/install-openmpi.sh "${PREFIX}" "${{ matrix.case.version }}"
+          ccache --show-stats
+
+      - name: Save ccache
+        if: always() && steps.cache-mpi.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ${{ steps.cache-ccache.outputs.cache-primary-key }}
+
+      # **What this build actually got, recorded before anything runs.** The
+      # whole hypothesis is about which components exist and which BTL wins, and
+      # `ompi_info` answers both from the installation rather than from the
+      # source tree that was read on a laptop. install-openmpi.sh runs a stock
+      # configure, so the component set is partly a property of whatever dev
+      # packages this runner image happens to carry -- which makes printing it
+      # per-run the difference between a measurement and an assumption.
+      - name: What this Open MPI has
+        run: |
+          echo "::group::version"
+          "${PREFIX}/bin/ompi_info" --version || true
+          echo "::endgroup::"
+          echo "::group::one-sided (osc) components -- is pt2pt here?"
+          "${PREFIX}/bin/ompi_info" --param osc all --level 9 2>/dev/null | grep -E "^ *MCA osc" | sort -u || true
+          "${PREFIX}/bin/ompi_info" | grep -iE "MCA osc" || true
+          echo "::endgroup::"
+          echo "::group::btl components"
+          "${PREFIX}/bin/ompi_info" | grep -iE "MCA btl" || true
+          echo "::endgroup::"
+          echo "::group::transports that would change the answer (ucx, ofi, verbs)"
+          "${PREFIX}/bin/ompi_info" | grep -iE "MCA (pml|mtl|osc|btl):(ucx|ofi|uct)" || echo "none of ucx/ofi/uct built"
+          echo "::endgroup::"
+          echo "::group::configure line this tarball was built with"
+          "${PREFIX}/bin/ompi_info" --all 2>/dev/null | grep -i "Configure command line" || true
+          echo "::endgroup::"
+
+      - name: Two ranks, with no wrapper involved
+        run: |
+          cat >"${RUNNER_TEMP}/hello.c" <<'EOF'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(int argc, char **argv) {
+              int size = -1, rank = -1;
+              MPI_Init(&argc, &argv);
+              MPI_Comm_size(MPI_COMM_WORLD, &size);
+              MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+              printf("rank %d of %d\n", rank, size);
+              MPI_Finalize();
+              return size == 2 ? 0 : 1;
+          }
+          EOF
+          "${PREFIX}/bin/mpicc" -o "${RUNNER_TEMP}/hello" "${RUNNER_TEMP}/hello.c"
+          "${PREFIX}/bin/mpiexec" -n 2 ${{ matrix.case.extra_mca }} "${RUNNER_TEMP}/hello"
+
+      # **Which osc component actually serves an MPI_Win_create window.** The
+      # source says osc/rdma is the only one that can, and that it will be in
+      # emulation mode because no BTL here passes the accelerated test. This
+      # asks the installed library instead, with the verbosity that makes it
+      # answer, and it runs before the suite so the answer survives the kill.
+      - name: Which osc component serves MPI_Win_create
+        run: |
+          cat >"${RUNNER_TEMP}/wincreate.c" <<'EOF'
+          #include <mpi.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+          int main(int argc, char **argv) {
+              MPI_Init(&argc, &argv);
+              int rank; MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+              /* 256 MB per rank: large enough that a per-rank duplication would
+               * be visible in the trace, small enough to be safe if it is. */
+              size_t n = 256UL << 20;
+              void *buf = malloc(n);
+              if (!buf) { fprintf(stderr, "malloc failed\n"); MPI_Abort(MPI_COMM_WORLD, 1); }
+              MPI_Win win;
+              MPI_Win_create(buf, n, 1, MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+              MPI_Win_fence(0, win);
+              if (rank == 0) printf("MPI_Win_create of %zu bytes per rank: ok\n", n);
+              MPI_Win_free(&win);
+              free(buf);
+              MPI_Finalize();
+              return 0;
+          }
+          EOF
+          "${PREFIX}/bin/mpicc" -o "${RUNNER_TEMP}/wincreate" "${RUNNER_TEMP}/wincreate.c"
+          echo "::group::osc selection, verbose"
+          "${PREFIX}/bin/mpiexec" -n 4 --oversubscribe ${{ matrix.case.extra_mca }} \
+              --mca osc_base_verbose 100 "${RUNNER_TEMP}/wincreate" 2>&1 | tail -40 || true
+          echo "::endgroup::"
+          echo "::group::memory cost of four 256 MB MPI_Win_create windows"
+          /usr/bin/time -v "${PREFIX}/bin/mpiexec" -n 4 --oversubscribe ${{ matrix.case.extra_mca }} \
+              "${RUNNER_TEMP}/wincreate" 2>&1 | grep -E "Maximum resident|Elapsed|ok$" || true
+          echo "::endgroup::"
+
+      # **The trace that survives the runner's death.** Ten-second samples on
+      # stdout: a killed job keeps its log and loses its artifacts, so this is
+      # the only instrument that reports from the wrong side of an OOM. /dev/shm
+      # is sampled because osc/rdma backs its window state with a file-backed
+      # mmap in a session directory, and a tmpfs filling counts against the same
+      # sixteen gigabytes the ranks are spending.
+      - name: Start the resource monitor
+        run: |
+          cat >"${RUNNER_TEMP}/monitor.sh" <<'EOF'
+          #!/usr/bin/env bash
+          while true; do
+            avail=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo)
+            free=$(awk '/^MemFree/{printf "%.1f", $2/1048576}' /proc/meminfo)
+            shm=$(df -h /dev/shm 2>/dev/null | awk 'NR==2{print $3"/"$2}')
+            tmp=$(df -h /tmp 2>/dev/null | awk 'NR==2{print $3"/"$2}')
+            top=$(ps -eo rss=,comm= --sort=-rss 2>/dev/null | head -3 \
+                  | awk '{printf "%s:%.2fG ", $2, $1/1048576}')
+            echo "[mon $(date -u +%H:%M:%S)] avail=${avail}G free=${free}G shm=${shm} tmp=${tmp} top=[${top}]"
+            sleep 10
+          done
+          EOF
+          chmod +x "${RUNNER_TEMP}/monitor.sh"
+          nohup "${RUNNER_TEMP}/monitor.sh" >"${RUNNER_TEMP}/monitor.log" 2>&1 &
+          echo "monitor pid $!"
+          echo "MONITOR_PID=$!" >>"${GITHUB_ENV}"
+
+      # `--dirs=rma` only, and the monitor interleaved into the same stream.
+      # `tee` is not enough on its own and the README says why: passing tests
+      # print nothing, so without RUNTESTS_VERBOSE the last line before a kill is
+      # the directory header and not a test. The two streams are merged with
+      # `tail -f` on the monitor log rather than run through a pipe, so that
+      # runtests' own stdout stays unbuffered on the job log.
+      - name: Run the rma shard, instrumented
+        run: |
+          tail -f "${RUNNER_TEMP}/monitor.log" &
+          tailpid=$!
+          # **Exported only when non-empty, and that is not tidiness.**
+          # runtests reads this with `defined($ENV{...})`, and an empty string is
+          # defined: `MPITEST_MEMORY_TOTAL=` sets memory_total to '', which
+          # compares numerically as 0, which skips *every* mem=-annotated test in
+          # the directory. Three of the four cases here want the default of 4, and
+          # setting the variable to "" would have silently turned them into the
+          # fourth -- running none of the tests this workflow exists to run.
+          if [ -n "${{ matrix.case.mem_total }}" ]; then
+              export MPITEST_MEMORY_TOTAL="${{ matrix.case.mem_total }}"
+              echo "MPITEST_MEMORY_TOTAL=${MPITEST_MEMORY_TOTAL}"
+          else
+              echo "MPITEST_MEMORY_TOTAL unset -- runtests' default of 4 applies"
+          fi
+          set +e
+          ci-scripts/suite/run-suite.sh "${PREFIX}/bin/mpicc" \
+              --variant=probe-${{ matrix.case.name }} \
+              --xfail=xfail-ci-openmpi.txt \
+              --xfail=xfail-ci-openmpi-x86_64.txt \
+              --dirs=rma
+          status=$?
+          set -e
+          kill "$tailpid" 2>/dev/null || true
+          echo "run-suite.sh exited ${status}"
+          exit 0
+
+      - name: Stop the monitor and say how it ended
+        if: always()
+        run: |
+          kill "${MONITOR_PID}" 2>/dev/null || true
+          echo "::group::final memory state"
+          free -g || true
+          df -h /dev/shm /tmp || true
+          echo "::endgroup::"
+          echo "::group::kernel OOM evidence, if any"
+          sudo dmesg 2>/dev/null | grep -iE "out of memory|oom|killed process" | tail -20 \
+              || echo "no OOM lines in dmesg (or dmesg unavailable)"
+          echo "::endgroup::"
+          echo "::group::last 60 monitor samples"
+          tail -60 "${RUNNER_TEMP}/monitor.log" 2>/dev/null || true
+          echo "::endgroup::"
+
+      # Best-effort only: a row that takes the runner down never reaches this,
+      # which is why nothing above depends on it.
+      - name: Collect the TAP file and the suite's logs
+        if: always()
+        run: |
+          mkdir -p probe-artifact
+          cp -f "${MPIABI_SUITE_WORK}/summary.tap" probe-artifact/ || true
+          cp -f "${MPIABI_SUITE_WORK}"/*.log probe-artifact/ || true
+          cp -f "${RUNNER_TEMP}/monitor.log" probe-artifact/ || true
+          ls -l probe-artifact || true
+
+      - name: Keep them
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: probe-${{ matrix.case.name }}
+          path: probe-artifact
+          retention-days: 14

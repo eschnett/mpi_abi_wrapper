@@ -271,8 +271,10 @@ one that dies reproducibly, and a green Open MPI leg needs both settled.
 
 ### Debugging the rma dtp shard: what is known, and where to start
 
-**Those tests declare how much memory they need, and that is very likely the
-mechanism.** The suite generates its datatype-pool tests from
+**Those tests declare how much memory they need, which is where this started and is
+not where it ended** — the memory reading below is corrected two paragraphs on, and
+the table is kept because it is what decides *which* of these tests run. The suite
+generates its datatype-pool tests from
 `test/mpi/maint/dtp-test-config.txt`, whose fourth field is passthrough attributes,
 and the rma entries there carry `mem=`:
 
@@ -293,42 +295,169 @@ lines 539–540 of the same file. So the 5 GB tests are skipped and **everything
 1.1 GB up to 4 GB runs**. That is not inference: the MPICH rma shard's own TAP
 carries `ok N - ./rma/epochtest 4 # SKIP xfail due to memory requirement`.
 
-**The first hypothesis, then, is `rma/putpscw1` at `mem=4` with 4 ranks.** If Open
-MPI backs a window per rank rather than once per job, four ranks against a 16 GB
-runner exhausts the host — and a host that dies is exactly what "the runner has
-received a shutdown signal, with nothing in the job's own log" looks like from
-inside. MPICH runs the same tests green on the same runners, so the difference would
-be how the two implementations back a window rather than anything about the test.
+**Corrected: `mem=` is a whole-job figure, not a per-rank one.** `runtests` compares
+it against `memory_total`, whose own comment is `# Total memory in GB`, and the
+implicit-lock arithmetic beside it — `$test_opt->{mem} * $g_opt{memory_multiplier} >
+$g_opt{memory_total}`, where `memory_multiplier` is "No of simultaneous jobs" —
+multiplies by concurrent *jobs* and never by ranks. Measured, to settle it rather
+than argue it: `putpscw1` with the heaviest of its four argument sets
+(`-type=MPI_INT:4+MPI_DOUBLE:8 -count=262144 -testsize=16`, 4 ranks) plateaus at
+**3.2 GB of sampled RSS summed over all four ranks** through the wrapper over MPICH
+— sampled on a laptop over several minutes and stopped there rather than run to
+completion, so read it as the plateau and not as a final figure, which is enough when
+a per-rank reading of the annotation would predict about 16. So `mem=4`
+means four gigabytes for the whole job, and the "4 GB × 4 ranks = 16 GB" reading that
+made this the prime suspect does not hold: one test at a time against a 16 GB runner
+has four times the headroom it needs.
 
-**The second hypothesis would be ours, and it is worth testing in the same run.** If
-anything in this project's Open MPI path allocates in proportion to the data — a
-staged copy of a buffer or a datatype — then a 4 GB operation becomes 8 GB. Nothing
-else in the suite operates at a size where that would be visible, so this shard
-would be the only place it could ever show up.
+**The second hypothesis — that it is ours — is refuted, statically and completely.**
+Every RMA body in `gen/mpiwrapper/wrappers.c` is strict passthrough of the choice
+buffer: `MPI_Put` converts five handles and an integer and hands `origin_addr`
+straight to the target, which is what §3's argument-class table already promises — a
+choice buffer emits "one test" for a sentinel and never a copy. Of the 58 allocation
+and copy sites in 25,571 generated lines, **all eight `malloc`s are
+`nstaged * sizeof *block`** in the six `alltoallw` variants, sized by communicator
+size rather than by data. On the hand-written side the only allocations are
+per-handle pairs in `extrastate.c` and one fixed `MPIWRAPPER_AUTOBUF_BYTES` (8 MB)
+buffered-send pool. Nothing in this project's path scales with message size, so a
+4 GB operation cannot become 8 GB here.
 
-**Two knobs settle it, and both are already plumbed through.** `runtests` reads
-`MPITEST_MEMORY_TOTAL` and `MPITEST_MEMORY_MULTIPLIER` (its `MPITEST_` + uppercase
-loop, around line 183), and `run-suite.sh` passes the environment through untouched:
+**What the evidence points at instead is the Open MPI version.** There is a
+*completed* Linux Open MPI suite run on disk, in `build/linux-out/suite-openmpi/`:
+1229 tests, 996 passed, and the rma directory ran all 383 of its tests including the
+whole dtp list. `putpscw1` passed all twelve instances, in 0.08 s to 17.5 s, and the
+only memory skips in rma are the two 5 GB tests — `epochtest` and
+`lockall_dt_flushlocal`, four instances each — exactly what the table above predicts
+at `memory_total=4`. The whole rma directory cost 523.9 s of test time. That run's
+wrapper was built against `/usr/lib/aarch64-linux-gnu/openmpi`, which is the **4.1.6
+Ubuntu 24.04 ships**, on the same architecture as one of the legs that now dies,
+while CI's Open MPI legs build **5.0.10 from source** (`ci-scripts/install-openmpi.sh`,
+`version=${2:-5.0.10}`). So the variable between "runs the dtp list green" and "takes
+the runner down" is the implementation, not the memory and not this project.
 
-- `MPITEST_MEMORY_TOTAL=1` skips every memory-annotated test in the table. If the
-  shard then completes, the memory story is right and the remaining question is only
-  which test and whose allocation.
-- `RUNTESTS_VERBOSE=1` (or `V=1`) makes runtests print each test as it starts, so the
-  last line before the kill *names* the test. The tee added to `run-suite.sh` gets
-  only the directory line today, because passing tests are not printed otherwise —
-  which is why the culprit is still a suspect rather than a fact.
+**And there is a mechanism that fits exactly this directory and nothing else.**
+Open MPI 5.0 **removed the `osc/pt2pt` one-sided component**: the 5.0.6 tree in
+`build/mpi/ompi-src/ompi/mca/osc/` holds `rdma`, `sm`, `ucx`, `portals4` and
+`monitoring` and no `pt2pt`, while the shipped changelogs still discuss `osc/pt2pt`
+for 3.0.x and 3.1.x. A CI runner has no RDMA fabric, so every window these tests
+create was served by `osc/pt2pt` under 4.1.6 and must be served by `osc/rdma` under
+5.0.10 — a different code path, reached by the one directory that dies.
 
-**Two ways to run it, and they answer different questions.** A branch with a
-`workflow_dispatch`-only job — Open MPI 5.0.10, `--dirs=rma`, verbose — iterates in
-about ten minutes against ninety for the full matrix, and tells you what CI does. A
-local `docker run` is the better instrument, because a container can be watched:
-peak RSS and cgroup memory events prove an OOM where CI can only show you the
-corpse. `ci-scripts/run-linux-docker.sh` already defines the mount contract (`/src`
-read-only, `/out` read-write) and `ci-scripts/suite/i386-suite.sh` is a worked
-example of a script that builds an MPI inside a container and hands over to
-`run-suite.sh`; an Open MPI equivalent is that file with `install-openmpi.sh` in
-place of `install-mpich.sh`. An aarch64 container is a fair test, since the shard
-dies on both architectures.
+One candidate inside that path was checked and does *not* apply.
+`allocate_state_shared` in `osc_rdma_component.c` sizes a single shared-memory
+segment as the **sum over all local ranks' window sizes** and attaches all of it in
+every rank, which is precisely "backs a window per rank rather than once per job" —
+but the loop adding each rank's data is guarded by
+`if (MPI_WIN_FLAVOR_ALLOCATE == module->flavor)`, and every rma dtp test uses
+`MPI_Win_create`. Under `FLAVOR_CREATE` that segment carries only per-rank state and
+the window data stays in the user's buffer. If `osc/rdma` is the mechanism it is not
+by duplicating the data, and the next reader should not spend the afternoon there.
+
+**So the experiment to run is a version and component bisect, not a memory test.**
+`MPITEST_MEMORY_TOTAL=1` is still plumbed and still cheap, but it now tests a story
+the evidence disfavours; run it to close the question rather than to open it. The
+three that matter, in order:
+
+- **`--dirs=rma` against 4.1.6 and against 5.0.10 in the same run.** If 4.1.6
+  completes and 5.0.10 dies, the finding is an Open MPI regression and this project
+  is not involved — worth establishing before anything else is measured.
+- **`OMPI_MCA_osc=sm`, or `^rdma`, on the 5.0.10 leg.** One variable, and it names
+  the component if the component is the cause.
+- **`RUNTESTS_VERBOSE=1`.** Unchanged and still necessary: passing tests are not
+  printed, so only this makes the last line before the kill *name* the test.
+
+A local `docker run` remains the better instrument for the reason it always was — a
+container's peak RSS and cgroup memory events prove an OOM where CI can only show the
+corpse. One shortcut is closed, though: the local macOS Open MPI 5.0.6 in
+`build/mpi/openmpi-native/` fails `MPI_Init` even for a two-rank hello world, dying in
+`PMIx_Finalize` after a shared-memory segment error, so the comparison has to be made
+on Linux. The watchdog was also cleared in passing: `prterun`'s ranks each sit in
+their own process group, so `mpiexec-filter`'s `kill -TERM -$child` looked like it
+would strand them, but measured on 5.0.6 both TERM and a hard KILL of the launcher's
+group leave no survivors. The orphan `sleep` processes the second run left behind are
+the watchdog's own sleeps, which hold no memory.
+
+### Why `MPI_Win_create` has nowhere to go in Open MPI 5.x
+
+The `osc/pt2pt` removal is not an inference from a missing directory. Open MPI's own
+5.0.x changelog, shipped in the tarball this project builds
+(`docs/html/_sources/release-notes/changelog/v5.0.x.rst.txt`), says it under
+"Transport updates and improvements → One-sided Communication":
+
+> Removed the legacy `pt2pt` one-sided component. Users should now utilize the
+> `rdma` one-sided component instead. The `rdma` component will use BTL components
+> — such as the TCP BTL — to effect one-sided communications.
+
+Two entries above it, in the same list:
+
+> Many MPI one-sided and RDMA emulation fixes for the `tcp` BTL. This patch series
+> fixs many issues when running with `--mca osc rdma --mca btl tcp`, i.e., TCP
+> support for one sided MPI calls.
+
+So the replacement path was *new enough in 5.0 to need a patch series of its own*,
+and it is the path a runner with no fabric is left with. What makes that inescapable
+rather than merely likely is three facts read out of the 5.0.6 tree in
+`build/mpi/ompi-src/`, each of which closes one alternative:
+
+- **`osc/sm` declines these windows outright.** `component_query` in
+  `ompi/mca/osc/sm/osc_sm_component.c` returns `-1` unless the flavor is
+  `MPI_WIN_FLAVOR_SHARED` or `MPI_WIN_FLAVOR_ALLOCATE`. Every rma dtp test uses
+  `MPI_Win_create`, which is `MPI_WIN_FLAVOR_CREATE`. Being single-node does not
+  help: the flavor is checked before locality is.
+- **`osc/ucx` and `osc/portals4` are not built.** A stock configure with no
+  `--with-ucx` and no UCX headers on the runner leaves them out.
+- **So `osc/rdma` is the only component left**, and inside it `btl/sm` does not
+  qualify for the fast path. `ompi_osc_rdma_check_accelerated_btl` requires four
+  things — `MCA_BTL_FLAGS_RDMA`, `MCA_BTL_FLAGS_ATOMIC_FOPS`,
+  `MCA_BTL_FLAGS_RDMA_REMOTE_COMPLETION` and `MCA_BTL_ATOMIC_SUPPORTS_ADD` — and
+  `opal/mca/btl/sm/` sets **only the first**, and only when an `smsc` single-copy
+  component is present (`btl_sm_component.c`, `mca_btl_sm.super.btl_flags |=
+  MCA_BTL_FLAGS_RDMA`). It never sets an atomic flag or a remote-completion flag
+  anywhere in the component. `btl/tcp` does not qualify either.
+
+The consequence is that `ompi_osc_rdma_query_accelerated_btls` fails and
+`ompi_osc_rdma_query_alternate_btls` takes over, wrapping whichever BTLs exist in
+`opal_btl_base_am_rdma_create` — **active-message RDMA emulation**, sorted by BTL
+latency so shared memory is preferred over TCP but neither is native. Every `MPI_Put`
+in the directory becomes emulated one-sided traffic over a path that, in 4.1.6, was
+`osc/pt2pt`.
+
+**This is the answer to "RDMA should work with shared memory".** It is a reasonable
+expectation and it is not what 5.x does: `btl/sm` advertises RDMA *put and get* and
+osc/rdma's fast path additionally demands *remote-completion notification and
+fetching atomics*, which shared memory does not advertise even though a CPU could
+obviously perform them. `vader` is the 4.x name for the same component and changes
+nothing here — it was renamed to `sm` in 5.0.
+
+**What follows for the knobs.** There is no runtime setting that restores a native
+one-sided path for `MPI_Win_create` on a machine with no RDMA fabric, because the
+component that used to serve it no longer exists. What is worth setting is narrower:
+
+- `--mca btl self,sm` keeps TCP out of the emulation entirely. osc/rdma already
+  sorts by latency, so this should be a no-op — and if it is not, the tcp BTL's
+  emulation is implicated and the changelog above says why that is plausible.
+- `--mca osc_base_verbose 100` names the component that served each window, which
+  turns all of the above from a reading of source into a line in a log.
+- `MPITEST_MEMORY_TOTAL=1` remains the way to close the memory story rather than
+  open it.
+
+**And for the build (`ci-scripts/install-openmpi.sh`).** Nothing is missing in the
+sense of a subtree: the installer takes the official
+`openmpi-<version>.tar.bz2`, which bundles PMIx, PRRTE, libevent and hwloc, so there
+is no `--recursive` clone to get wrong. The stock configure has two consequences
+worth naming rather than one:
+
+- **`--with-ucx` is the option whose absence changes this path**, and UCX is the one
+  transport that would give `MPI_Win_create` a native one-sided component
+  (`osc/ucx`) on a machine with no fabric, since it supports shared-memory
+  transports. Adding it means a `libucx-dev` dependency and a different thing under
+  test, so it is a decision and not an oversight — but it is the answer to "are we
+  missing a configure option".
+- **A stock configure is not hermetic.** It picks up whatever dev packages the
+  runner image happens to carry, so the component set is a property of the image as
+  much as of the version. That is why the probe workflow prints `ompi_info`'s
+  component list and configure line per run: the alternative is assuming the laptop's
+  component set is CI's.
 
 ### Hand-off
 
@@ -351,6 +480,27 @@ same numbers). For the "is it ours" half, the RMA bodies are in
 `NOTES.md` #3 lists which argument classes stage a temporary at all. The runs this
 section is written from are 32182485327 and 32189118611, whose artifacts carry every
 shard's `summary.tap` and logs.
+
+**The probe that measures all of the above is
+`.github/workflows/rma-dtp-probe.yaml`**, on the `investigate-rma-dtp-openmpi5`
+branch. It is `workflow_dispatch`-only and deliberately disposable: four cases over
+`--dirs=rma` — 5.0.10 as it stands, 5.0.10 with `--mca btl self,sm`, 5.0.10 with
+`MPITEST_MEMORY_TOTAL=1`, and 4.1.8 as the control that still has `osc/pt2pt`. Three
+things in it are worth keeping if it is ever rewritten. It prints `ompi_info`'s
+component list and configure line per run, because a stock configure inherits the
+runner image's dev packages and the component set is therefore a measurement rather
+than a constant. It runs a four-rank `MPI_Win_create` under `--mca
+osc_base_verbose 100` *before* the suite, so the component that serves these windows
+is named in the log even for a case that dies later. And its resource monitor writes
+to **stdout** every ten seconds rather than to a file, because the failure being
+chased kills the runner and a killed job keeps its log while losing its artifacts —
+which is the same reason the run step must not depend on the collect step.
+
+One trap that workflow already paid for: `MPITEST_MEMORY_TOTAL` must be left *unset*
+rather than set to the empty string. runtests reads it with `defined($ENV{...})`, an
+empty string is defined, and `''` compares numerically as 0 — so a matrix that spells
+the default case as `MPITEST_MEMORY_TOTAL=""` skips every `mem=`-annotated test in
+the directory and runs none of what it exists to run.
 
 ## What the previous pins measured, and why the split exists
 
