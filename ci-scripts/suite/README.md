@@ -269,6 +269,89 @@ minutes in the first run and was killed after fifty in the second, leaving orpha
 `sleep` processes behind. Open MPI has a shard that hangs intermittently as well as
 one that dies reproducibly, and a green Open MPI leg needs both settled.
 
+### Debugging the rma dtp shard: what is known, and where to start
+
+**Those tests declare how much memory they need, and that is very likely the
+mechanism.** The suite generates its datatype-pool tests from
+`test/mpi/maint/dtp-test-config.txt`, whose fourth field is passthrough attributes,
+and the rma entries there carry `mem=`:
+
+| test | declared | ranks |
+|---|---|---|
+| `epochtest`, `lockall_dt_flushlocal` | 5 GB | 4 |
+| `putpscw1` | **4 GB** | 4 |
+| `lockall_dt_flushlocalall` | 3 GB | 4 |
+| `lock_contention_dt` | 2.1 GB | 4 |
+| `getfence1`, `putfence1` | 2 GB | 2 |
+| `accpscw1` | 1.7 GB | 4 |
+| `accfence1` | 1.2 GB | 4 |
+| `lockall_dt` | 1.1 GB | 4 |
+
+`runtests` skips a test whose `mem=` exceeds its `memory_total`, **which defaults to
+4** — `$g_opt{memory_total} = 4;` at line 72 of `test/mpi/runtests`, and the skip at
+lines 539–540 of the same file. So the 5 GB tests are skipped and **everything from
+1.1 GB up to 4 GB runs**. That is not inference: the MPICH rma shard's own TAP
+carries `ok N - ./rma/epochtest 4 # SKIP xfail due to memory requirement`.
+
+**The first hypothesis, then, is `rma/putpscw1` at `mem=4` with 4 ranks.** If Open
+MPI backs a window per rank rather than once per job, four ranks against a 16 GB
+runner exhausts the host — and a host that dies is exactly what "the runner has
+received a shutdown signal, with nothing in the job's own log" looks like from
+inside. MPICH runs the same tests green on the same runners, so the difference would
+be how the two implementations back a window rather than anything about the test.
+
+**The second hypothesis would be ours, and it is worth testing in the same run.** If
+anything in this project's Open MPI path allocates in proportion to the data — a
+staged copy of a buffer or a datatype — then a 4 GB operation becomes 8 GB. Nothing
+else in the suite operates at a size where that would be visible, so this shard
+would be the only place it could ever show up.
+
+**Two knobs settle it, and both are already plumbed through.** `runtests` reads
+`MPITEST_MEMORY_TOTAL` and `MPITEST_MEMORY_MULTIPLIER` (its `MPITEST_` + uppercase
+loop, around line 183), and `run-suite.sh` passes the environment through untouched:
+
+- `MPITEST_MEMORY_TOTAL=1` skips every memory-annotated test in the table. If the
+  shard then completes, the memory story is right and the remaining question is only
+  which test and whose allocation.
+- `RUNTESTS_VERBOSE=1` (or `V=1`) makes runtests print each test as it starts, so the
+  last line before the kill *names* the test. The tee added to `run-suite.sh` gets
+  only the directory line today, because passing tests are not printed otherwise —
+  which is why the culprit is still a suspect rather than a fact.
+
+**Two ways to run it, and they answer different questions.** A branch with a
+`workflow_dispatch`-only job — Open MPI 5.0.10, `--dirs=rma`, verbose — iterates in
+about ten minutes against ninety for the full matrix, and tells you what CI does. A
+local `docker run` is the better instrument, because a container can be watched:
+peak RSS and cgroup memory events prove an OOM where CI can only show you the
+corpse. `ci-scripts/run-linux-docker.sh` already defines the mount contract (`/src`
+read-only, `/out` read-write) and `ci-scripts/suite/i386-suite.sh` is a worked
+example of a script that builds an MPI inside a container and hands over to
+`run-suite.sh`; an Open MPI equivalent is that file with `install-openmpi.sh` in
+place of `install-mpich.sh`. An aarch64 container is a fair test, since the shard
+dies on both architectures.
+
+### Hand-off
+
+Everything needed is on disk. **`ci-scripts/suite/run-suite.sh`** is the runner —
+`--dirs`, `--skip-dirs`, `--xfail`, the teed runtests invocation and the environment
+it exports; **`ci-scripts/suite/mpiexec-filter`** is the launcher the suite actually
+gets, and its header explains `--oversubscribe` and the watchdog;
+**`ci-scripts/suite/xfail-ci-openmpi.txt`** holds the 109 expectations and states the
+rma gap in its own header; **`.github/workflows/ci.yaml`**'s `suite` job holds the
+shard matrix and is where a per-leg environment variable would go;
+**`ci-scripts/install-openmpi.sh`** builds the 5.0.10 being wrapped;
+**`ci-scripts/run-linux-docker.sh`** and **`ci-scripts/suite/i386-suite.sh`** are the
+local-container route. On the suite's own side, unpack the pinned tarball and read
+`test/mpi/maint/dtp-test-config.txt` for the annotations and `test/mpi/runtests` for
+lines 72, 539 and 183; the generated per-directory list is `rma/testlist.dtp` in the
+configured build tree, which the 5.0.1 run reports as 176 tests (a locally configured
+4.3.1 tree has 184 lines, 40 of them annotated, which is the same shape and not the
+same numbers). For the "is it ours" half, the RMA bodies are in
+`gen/mpiwrapper/wrappers.c` and anything that stages lives in `src/mpiwrapper/`;
+`NOTES.md` #3 lists which argument classes stage a temporary at all. The runs this
+section is written from are 32182485327 and 32189118611, whose artifacts carry every
+shard's `summary.tap` and logs.
+
 ## What the previous pins measured, and why the split exists
 
 Three runs over **MPICH 4.3.1 and the Open MPI 4.1.6 Ubuntu 24.04 ships**, with
