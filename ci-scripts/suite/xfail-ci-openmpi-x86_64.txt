@@ -6,8 +6,13 @@
 # One line per test, `<dir>/<program> <np> : why`. A line with no reason after the
 # colon fails the run, and so does a listed test that passed.
 #
-# **Written from run 32182485327**, in which both architectures ran the same three
-# shards and disagreed about exactly three tests.
+# **Written from run 32182485327 and cut down by run 32189118611**, which is what a
+# second run is for. Two of the three entries reproduced and are below.
+# mpi_t/mpit_vars 1 did not: x86_64 passed it the second time, so it was an
+# intermittent test rather than an architecture difference, and the gate said so as
+# "expected failure that passed". It is not listed anywhere now -- a test that flaps
+# cannot be, since listing it fails the run it passes -- so a future red on it is
+# this paragraph's business rather than a regression.
 #
 # **One of these three is the hypothesis this project has been carrying, now
 # reproduced on a second Open MPI release.** `coll/allred 4` gets wrong answers for
@@ -25,5 +30,4 @@
 # reason firing rather than a regression.
 
 coll/allred 4 : not yet attributed, and seen on x86_64 only in run 32182485327 -- the other architecture passed it in the same run. Observed: (2) Error for type MPI_UNSIGNED_CHAR and op MPI_SUM
-mpi_t/mpit_vars 1 : not yet attributed, and seen on x86_64 only in run 32182485327 -- the other architecture passed it in the same run. Observed: *** Process received signal ***
 threads/pt2pt/mt_iprobe_isendrecv 2 : not yet attributed, and seen on x86_64 only in run 32182485327 -- the other architecture passed it in the same run. Observed: *** An error occurred in MPI_Recv

@@ -19,8 +19,21 @@
 # shutdown signal" -- on both architectures, twice each -- so no expectation for
 # the top-level rma directory has ever been recorded here. `errors/rma/*` did run,
 # because the shards split on top-level directories, and its lines are below.
-# ci-scripts/suite/README.md has what is known. Until that shard completes the
-# Open MPI legs cannot gate, which is why they are report-only.
+# **Run 32189118611 localised it**, because runtests' output is teed into the job
+# log now and a killed job leaves nothing else. The shard gets through the main rma
+# testlist -- win_dynamic_rma_flush_get_collattach is the last test to report -- and
+# dies in the next thing it starts:
+#
+#     Running tests in ./rma/testlist.dtp [176 tests - 00:01:36]
+#
+# So it is the *datatype-pool* half of rma, 176 tests, not rma as such. `--no-dtp`
+# on that shard would let the rest of the directory be listed; it is not set,
+# because the shard dimension is shared with the MPICH legs, whose rma shard runs
+# those same dtp tests green. Splitting rma's dtp tests into a shard of their own is
+# the move that would cost nothing else, and it is a decision rather than a fix.
+#
+# ci-scripts/suite/README.md has the rest. Until that shard completes the Open MPI
+# legs cannot gate, which is why they are report-only.
 #
 # **A prediction this file used to carry was wrong and is corrected here.** It said
 # the largest group would be decision 6's stubs answering
