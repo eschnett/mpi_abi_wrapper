@@ -1,0 +1,32 @@
+# Individual test *lines* not to run over Open MPI, with a reason each.
+#
+# This is not an expected-failure list and cannot be one. check-tap.py compares
+# observed results against xfail-ci-openmpi*.txt, and both work because the test
+# ran and produced a TAP line. A test that exhausts the host produces nothing:
+# the runner is killed, the job uploads no artifact, and there is no line to
+# expect. So the only way to keep such a test from costing the whole shard is to
+# stop it being run, which is what this file does -- run-suite.sh drops matching
+# lines from the generated testlists before runtests sees them.
+#
+# Format: one extended regular expression per line, matched against a testlist
+# line with `grep -E`. A `#` line is a comment and a reason is required above
+# every pattern, for the same reason the xfail lists require one.
+#
+# Keep this as narrow as the evidence. The alternative knob,
+# MPITEST_MEMORY_TOTAL, is both too broad and too narrow: at 2 it would also
+# drop putpscw1, lock_contention_dt and lockall_dt_flushlocalall, which the
+# probe showed completing, and it would still run putfence1's -count=16000000
+# line, which carries the same shape as the two below at mem=2.
+
+# Open MPI 5.0.10 spends about 14.6 GB across two ranks on these, against the
+# mem=3 they declare and the ~2.7 GB Open MPI 4.1.8 spends on the same test with
+# the same wrapper -- 5.4x, and 6.5x on the origin rank alone. A 16 GB runner
+# dies. The cause is upstream and specific to 5.x: 5.0 removed the osc/pt2pt
+# one-sided component, osc/sm declines MPI_WIN_FLAVOR_CREATE, and no BTL a stock
+# configure builds here passes ompi_osc_rdma_check_accelerated_btl -- so
+# MPI_Win_create lands in osc/rdma's active-message emulation, which buffers the
+# whole transfer where pt2pt streamed it. ci-scripts/suite/README.md has the
+# measurement and run 32284464458 has the trace. Revisit if the Open MPI legs
+# ever build with --with-ofi or --with-ucx, which would give these windows an
+# accelerated path and make the exclusion unnecessary.
+^getfence1 .*-count=16000000

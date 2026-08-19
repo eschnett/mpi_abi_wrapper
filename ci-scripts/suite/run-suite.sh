@@ -74,6 +74,7 @@ variant=""
 prefix=""
 dirs=""
 skip_dirs=""
+exclude_args=()
 np=""
 jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 with_spawn=0
@@ -106,6 +107,11 @@ usage: $(basename "$0") mpich|openmpi|/path/to/mpicc [options]
   --with-spawn     include the spawn directory. Off by default: MPI_Comm_spawn
                    hangs under hydra on macOS with no wrapper involved
                    (test/README.md), and 31 tests timing out costs an hour
+  --exclude=FILE   drop individual test lines matching the patterns in FILE.
+                   Repeatable. For a test that takes the host down rather than
+                   failing -- an xfail list cannot cover one, because a killed
+                   runner leaves no TAP line to expect. See
+                   exclude-ci-openmpi.txt for the format and the reasoning.
   --no-dtp         leave out testlist.dtp, the datatype-pool tests: the same
                    call over hundreds of generated derived datatypes, which is
                    most of the run's value here and most of its runtime
@@ -138,6 +144,7 @@ for arg in "$@"; do
     --suite=*)     suite_version=${arg#*=} ;;
     --dirs=*)      dirs=${arg#*=} ;;
     --skip-dirs=*) skip_dirs=${arg#*=} ;;
+    --exclude=*)   exclude_args+=("${arg#*=}") ;;
     --np=*)        np=${arg#*=} ;;
     --jobs=*)      jobs=${arg#*=} ;;
     --with-spawn)  with_spawn=1 ;;
@@ -406,6 +413,61 @@ if [ "$with_spawn" = 0 ]; then
     sed 's/^spawn$/# spawn: excluded with the top-level spawn directory/' \
         "$work/build/$sub/testlist.configured" > "$work/build/$sub/testlist"
   done
+fi
+
+# ------------------------------------------------------- excluded test lines
+#
+# **A test that takes the host down cannot be expected-failed.** check-tap.py
+# gates on xfail-ci-*.txt, and every line in those files describes a test that
+# ran and reported. One that exhausts the runner reports nothing: the job is
+# killed, no artifact is uploaded, and there is no TAP line to match. So the only
+# way to stop such a test costing a whole shard is to keep runtests from running
+# it, which is what --exclude does.
+#
+# Filtering happens **in place, after the spawn pass above**, so the two compose
+# instead of the second undoing the first -- the spawn filter derives `testlist`
+# from `testlist.configured`, and re-deriving here would put the spawn lines
+# back. Deleting lines is idempotent, so a reused work directory is safe.
+#
+# Both `testlist` and `testlist.dtp` are filtered: the dtp list is generated from
+# maint/dtp-test-config.txt and is where the expensive tests live, so a pattern
+# that only reached `testlist` would miss the case this exists for.
+if [ ${#exclude_args[@]} -gt 0 ]; then
+  step "excluding individual test lines"
+  exclude_res=()
+  for f in "${exclude_args[@]}"; do
+    case $f in
+      */*) ef=$f ;;
+      *)   ef=$suitedir/$f ;;
+    esac
+    [ -f "$ef" ] || die "no exclusion list at $ef"
+    echo "  from ${ef#"$repodir"/}"
+    while IFS= read -r line; do
+      case $line in ''|'#'*) continue ;; esac
+      exclude_res+=("$line")
+    done < "$ef"
+  done
+  if [ ${#exclude_res[@]} -eq 0 ]; then
+    echo "  (no patterns; nothing excluded)"
+  else
+    dropped_total=0
+    for sub in $covered; do
+      for base in testlist testlist.dtp; do
+        lf=$work/build/$sub/$base
+        [ -f "$lf" ] || continue
+        for re in "${exclude_res[@]}"; do
+          # grep -c counts, grep -v filters; a pattern matching nothing is not an
+          # error, because one list covers every directory.
+          n=$(grep -cE "$re" "$lf" || true)
+          [ "$n" = 0 ] && continue
+          grep -vE "$re" "$lf" > "$lf.tmp" && mv "$lf.tmp" "$lf"
+          echo "  $sub/$base: dropped $n line(s) matching $re"
+          dropped_total=$((dropped_total + n))
+        done
+      done
+    done
+    echo "  $dropped_total line(s) excluded in total"
+  fi
 fi
 
 # ---------------------------------------------------------------- build them

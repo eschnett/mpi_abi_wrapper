@@ -442,14 +442,21 @@ would make things worse, and lowering it only hides the test.
 
 **What to do about it, in order of how much it costs.**
 
-1. **`--xfail` will not do**, because a killed runner produces no TAP line to expect.
-   The only thing that keeps the Open MPI legs alive today is not running this test:
-   either `MPITEST_MEMORY_TOTAL=2`, which skips everything from `lock_contention_dt`
-   (2.1) up and costs the eight heaviest dtp tests, or a targeted skip of
-   `getfence1`'s two `-count=16000000` lines. The second is narrower and is what the
-   evidence supports — but note the probe only proves `getfence1` dies *first*, and
-   `putfence1` carries the same `-count=16000000 -testsize=4` shape at `mem=2`, so it
-   is a candidate for the same treatment.
+1. **Done: the two `getfence1` lines are excluded, and `--xfail` could not have done
+   it.** A killed runner produces no TAP line, so there is nothing for an
+   expected-failure list to match — which is why `run-suite.sh` gained `--exclude` and
+   `ci-scripts/suite/exclude-ci-openmpi.txt`, applied to the Open MPI legs only. The
+   list drops test *lines* from the generated testlists before runtests sees them, and
+   it is deliberately narrower than the alternative: `MPITEST_MEMORY_TOTAL=2` would
+   also drop `putpscw1`, `lock_contention_dt` and `lockall_dt_flushlocalall`, all of
+   which the probe watched complete, *and* would still run `putfence1`'s
+   `-count=16000000` line at `mem=2`.
+
+   **That last point is the open one.** The probe proves only that `getfence1` dies
+   *first*; `putfence1` carries the same `-count=16000000 -testsize=4` shape two
+   hundred lines later and the baseline run never reached it. The probe's fifth case,
+   `excluded-5.0.10`, exists to answer exactly that — if it dies in `putfence1`, the
+   list needs a second entry, measured rather than guessed.
 2. **`--with-ofi` or `--with-ucx`** in `ci-scripts/install-openmpi.sh` would give
    `MPI_Win_create` a genuinely accelerated path and is the fix rather than the
    workaround, at the price of a dev-package dependency. Untested here: worth one

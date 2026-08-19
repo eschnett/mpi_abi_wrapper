@@ -813,6 +813,7 @@ jobs:
             launcher: hydra
             timeout_multiplier: 2
             report_only: false
+            exclude_args: ""
           - mpi: mpich
             version: 5.0.1
             os: ubuntu-24.04-arm
@@ -820,6 +821,7 @@ jobs:
             launcher: hydra
             timeout_multiplier: 2
             report_only: false
+            exclude_args: ""
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04
@@ -827,6 +829,13 @@ jobs:
             launcher: prte
             timeout_multiplier: 1
             report_only: true
+            # Why these two legs exclude a test and the MPICH legs do not:
+            # ci-scripts/suite/exclude-ci-openmpi.txt, and the measurement behind
+            # it in ci-scripts/suite/README.md. Short version: Open MPI 5.0.10
+            # spends 5.4x what 4.1.8 does on rma/getfence1 -count=16000000 and
+            # takes a 16 GB runner down, which an xfail list cannot cover because
+            # a killed runner leaves no TAP line to expect.
+            exclude_args: "--exclude=exclude-ci-openmpi.txt"
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04-arm
@@ -834,6 +843,13 @@ jobs:
             launcher: prte
             timeout_multiplier: 1
             report_only: true
+            # Why these two legs exclude a test and the MPICH legs do not:
+            # ci-scripts/suite/exclude-ci-openmpi.txt, and the measurement behind
+            # it in ci-scripts/suite/README.md. Short version: Open MPI 5.0.10
+            # spends 5.4x what 4.1.8 does on rma/getfence1 -count=16000000 and
+            # takes a 16 GB runner down, which an xfail list cannot cover because
+            # a killed runner leaves no TAP line to expect.
+            exclude_args: "--exclude=exclude-ci-openmpi.txt"
         # The last shard is the *complement* of the other three rather than a
         # fourth list, so a directory a later suite release adds is covered by
         # construction instead of by somebody remembering to add it here.
@@ -976,6 +992,7 @@ jobs:
               --variant=ci-${{ matrix.leg.mpi }}-${{ matrix.leg.arch }} \
               --xfail=xfail-ci-${{ matrix.leg.mpi }}.txt \
               --xfail=xfail-ci-${{ matrix.leg.mpi }}-${{ matrix.leg.arch }}.txt \
+              ${{ matrix.leg.exclude_args }} \
               ${{ matrix.shard.args }}
 
       # Staged into the workspace first, and uploaded by a **relative** path.

@@ -71,6 +71,7 @@ jobs:
             kind: prte
             extra_mca: ""
             mem_total: ""
+            exclude_args: ""
 
           # Takes the tcp BTL out of the emulation path, leaving shared memory
           # as the only transport. osc/rdma sorts its alternate BTLs by latency
@@ -81,6 +82,7 @@ jobs:
             kind: prte
             extra_mca: "--mca btl self,sm"
             mem_total: ""
+            exclude_args: ""
 
           # The memory story, settled either way. MPITEST_MEMORY_TOTAL=1 skips
           # every mem=-annotated test in the directory (runtests line 491), so a
@@ -90,6 +92,7 @@ jobs:
             kind: prte
             extra_mca: ""
             mem_total: "1"
+            exclude_args: ""
 
           # The control, and the row that makes the other three interpretable:
           # 4.1.8 is the last series that still has `osc/pt2pt`. If this passes
@@ -100,6 +103,21 @@ jobs:
             kind: prte
             extra_mca: ""
             mem_total: ""
+            exclude_args: ""
+
+          # **The mitigation, verified rather than assumed.** With the two
+          # getfence1 -count=16000000 lines excluded, does the shard finish? This
+          # is the case that decides whether the exclusion list is complete,
+          # because putfence1 carries the same -count=16000000 -testsize=4 shape
+          # at mem=2 and the baseline run never reached it -- getfence1 killed the
+          # runner first. If this row also dies, in putfence1, then the list needs
+          # its second entry and we will have measured that rather than guessed.
+          - name: excluded-5.0.10
+            version: "5.0.10"
+            kind: prte
+            extra_mca: ""
+            mem_total: ""
+            exclude_args: "--exclude=exclude-ci-openmpi.txt"
     env:
       # The suite's own knobs. The Open MPI legs of the real matrix use a
       # multiplier of 1 (README: their tests at the limit are hangs, which
@@ -313,6 +331,7 @@ jobs:
               --variant=probe-${{ matrix.case.name }} \
               --xfail=xfail-ci-openmpi.txt \
               --xfail=xfail-ci-openmpi-x86_64.txt \
+              ${{ matrix.case.exclude_args }} \
               --dirs=rma
           status=$?
           set -e
