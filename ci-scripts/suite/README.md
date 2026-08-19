@@ -447,12 +447,32 @@ sense of a subtree: the installer takes the official
 is no `--recursive` clone to get wrong. The stock configure has two consequences
 worth naming rather than one:
 
-- **`--with-ucx` is the option whose absence changes this path**, and UCX is the one
-  transport that would give `MPI_Win_create` a native one-sided component
-  (`osc/ucx`) on a machine with no fabric, since it supports shared-memory
-  transports. Adding it means a `libucx-dev` dependency and a different thing under
-  test, so it is a decision and not an oversight — but it is the answer to "are we
-  missing a configure option".
+- **No BTL this build can produce passes the accelerated test, and that is the
+  configure answer.** Grepping the five relevant components in
+  `opal/mca/btl/` for the four flags `ompi_osc_rdma_check_accelerated_btl` wants:
+
+  | BTL | RDMA | ATOMIC_FOPS | REMOTE_COMPLETION | SUPPORTS_ADD | accelerated? |
+  |---|---|---|---|---|---|
+  | `sm` | yes¹ | — | — | — | no |
+  | `tcp` | — | — | — | — | no |
+  | `self` | yes | — | yes | — | no |
+  | `ofi` | yes | yes | yes | yes | **yes**² |
+  | `uct` | yes | yes | yes | yes | **yes**³ |
+
+  ¹ only when an `smsc` single-copy component is present.
+  ² `btl/ofi` needs libfabric, and instantiates only for a provider advertising
+  `FI_RMA | FI_ATOMIC` (`MCA_BTL_OFI_ONE_SIDED_REQUIRED_CAPS`) plus
+  `FI_DELIVERY_COMPLETE`; libfabric's `shm` and `tcp` providers do.
+  ³ `btl/uct` needs UCX.
+
+  A stock configure with neither libfabric nor UCX present leaves exactly `self`,
+  `sm` and `tcp` — so osc/rdma running in emulation is not bad luck on this runner,
+  it is the only thing that can happen. **`--with-ofi` (libfabric) or `--with-ucx`
+  is therefore the configure-time answer**, and either would give `MPI_Win_create` a
+  native path with no special hardware, on shared memory, which is what the
+  shared-memory intuition was reaching for. Both mean a new dev-package dependency
+  and a different thing under test, so this is a decision rather than an oversight —
+  and worth taking only if the probe shows the emulation is the cause.
 - **A stock configure is not hermetic.** It picks up whatever dev packages the
   runner image happens to carry, so the component set is a property of the image as
   much as of the version. That is why the probe workflow prints `ompi_info`'s
