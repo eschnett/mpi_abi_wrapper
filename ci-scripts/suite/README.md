@@ -679,9 +679,9 @@ worth naming rather than one:
   unavoidable here; it is just not where the memory goes.
 - **A stock configure is not hermetic.** It picks up whatever dev packages the
   runner image happens to carry, so the component set is a property of the image as
-  much as of the version. That is why the probe workflow prints `ompi_info`'s
-  component list and configure line per run: the alternative is assuming the laptop's
-  component set is CI's.
+  much as of the version. That is why the probe printed `ompi_info`'s component list
+  and configure line per run: the alternative is assuming the laptop's component set is
+  CI's.
 
 ### Hand-off
 
@@ -705,26 +705,40 @@ same numbers). For the "is it ours" half, the RMA bodies are in
 section is written from are 32182485327 and 32189118611, whose artifacts carry every
 shard's `summary.tap` and logs.
 
-**The probe that measures all of the above is
-`.github/workflows/rma-dtp-probe.yaml`**, on the `investigate-rma-dtp-openmpi5`
-branch. It is `workflow_dispatch`-only and deliberately disposable: four cases over
-`--dirs=rma` — 5.0.10 as it stands, 5.0.10 with `--mca btl self,sm`, 5.0.10 with
-`MPITEST_MEMORY_TOTAL=1`, and 4.1.8 as the control that still has `osc/pt2pt`. Three
-things in it are worth keeping if it is ever rewritten. It prints `ompi_info`'s
-component list and configure line per run, because a stock configure inherits the
-runner image's dev packages and the component set is therefore a measurement rather
-than a constant. It runs a four-rank `MPI_Win_create` under `--mca
-osc_base_verbose 100` *before* the suite, so the component that serves these windows
-is named in the log even for a case that dies later. And its resource monitor writes
-to **stdout** every ten seconds rather than to a file, because the failure being
-chased kills the runner and a killed job keeps its log while losing its artifacts —
-which is the same reason the run step must not depend on the collect step.
+**The probe that measured all of the above has been deleted with the branch it lived
+on**, `.github/workflows/rma-dtp-probe.yaml` on `investigate-rma-dtp-openmpi5`. It was
+`workflow_dispatch`-plus-branch-`push` and deliberately disposable; what it produced is
+the three rounds above, and the runs keep the evidence:
+[32284464458](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32284464458),
+[32291327971](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32291327971) and
+[32297365052](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32297365052).
 
-One trap that workflow already paid for: `MPITEST_MEMORY_TOTAL` must be left *unset*
-rather than set to the empty string. runtests reads it with `defined($ENV{...})`, an
-empty string is defined, and `''` compares numerically as 0 — so a matrix that spells
-the default case as `MPITEST_MEMORY_TOTAL=""` skips every `mem=`-annotated test in
-the directory and runs none of what it exists to run.
+**Four things in it are worth rebuilding rather than reinventing, if this ever needs
+probing again.**
+
+- **Everything on stdout, and no step depending on the collect step.** The failure
+  kills the runner, and a killed job keeps its log while losing its artifacts. Its
+  resource monitor therefore printed memory, `/dev/shm` and the top RSS consumers every
+  ten seconds into the job log — which is the only instrument that reports from the
+  wrong side of an OOM, and the thing that turned "the rma shard dies" into "`transpose1`
+  reached 8.02 GB at 20:31:02".
+- **`RUNTESTS_VERBOSE=1`.** runtests prints nothing for a passing test, so without it
+  the last line before a kill is a directory header rather than a test name.
+- **`ompi_info`'s component list and configure line, per run.** `install-openmpi.sh`
+  runs a stock configure, so the component set is partly a property of whatever dev
+  packages the runner image carries. Printing it is the difference between measuring
+  `btl/ofi` was built and assuming it.
+- **A same-run control.** `transpose7` survived with 1.2 GB spare in one run and killed
+  the runner in the next, so any claim of the form "configuration X fixes it" needs the
+  unfixed configuration dying beside it, on the same image and the same hour. The
+  libfabric round was structured that way and it is what made "no improvement"
+  reportable rather than arguable.
+
+One trap it paid for: `MPITEST_MEMORY_TOTAL` must be left *unset* rather than set to
+the empty string. runtests reads it with `defined($ENV{...})`, an empty string is
+defined, and `''` compares numerically as 0 — so a matrix that spells the default case
+as `MPITEST_MEMORY_TOTAL=""` skips every `mem=`-annotated test in the directory and runs
+none of what it exists to run.
 
 ## What the previous pins measured, and why the split exists
 
