@@ -93,8 +93,9 @@ A line is `<dir>/<program> <np> : why`, with runtests' own name for the test
 so the list can be compared with an unwrapped run by eye.
 
 **The two local lists are in different states, and that is deliberate rather
-than unfinished-looking.** (Both describe the development laptop against the
-older pair of MPIs; the CI lists are further down and are empty.)
+than unfinished-looking.** (Both describe the development laptop against the older
+pair of MPIs. The CI lists are further down, are written from real runs, and are
+not these.)
 `xfail-mpich.txt` is fully triaged: **41** failures, each
 with a cause. The three bugs of ours that this suite found are not in it,
 because all three were fixed -- the last of them, `MPI_DISPLACEMENT_CURRENT`,
