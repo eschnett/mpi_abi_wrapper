@@ -151,10 +151,12 @@ expected-failure list:
 | `suite` × aarch64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
 | `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | not yet | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
 
-**Each of those five runs as four jobs**, one per shard of the suite — twenty legs
-in all. The shards are `coll`, `rma`, `threads+pt2pt+part`, and the complement of
-those three, and they exist so that the slow legs can finish at all rather than
-for parallelism. Measured per-directory cost is what picked them:
+**Each of those five runs as four jobs**, one per shard of the suite — **eighteen
+legs**, not twenty: `rma` is excluded on the two Open MPI legs, for the measured and
+upstream reason the sections below give, so those two run three shards each. The
+shards are `coll`, `rma`, `threads+pt2pt+part`, and the complement of those three, and
+they exist so that the slow legs can finish at all rather than for parallelism.
+Measured per-directory cost is what picked them:
 
 | shard | MPICH 5.0.1 | Open MPI (4.1.6, for shape) |
 |---|---|---|
@@ -247,9 +249,12 @@ spending real time, and they are the only ones that hit the wall. On a stock
 GitHub runner the job limit is six hours and these legs took 39 and 75 minutes,
 so this is a property of where they ran and not of the suite.
 
-That is what the sharding above is for, and two runs of it have said how far it
-gets: **seventeen of the twenty legs complete and gate.** The three that do not are
-`rma` on both Open MPI legs and `rest` on i386.
+That is what the sharding above is for, and two runs of it said how far it got:
+**seventeen of the then-twenty legs completed and gated.** The three that did not were
+`rma` on both Open MPI legs and `rest` on i386. Those two `rma` legs are no longer run
+at all — the matrix excludes them — so the live count is seventeen of eighteen, with
+`rest` on i386 the one outstanding leg. The rest of this section is the record of how
+the `rma` question was answered; the answer itself is under "Round three".
 
 **Isolating `rma` did what it was for — the answer is now about 176 tests rather
 than about a row.** With runtests' output teed into the job log (a killed job

@@ -14,26 +14,36 @@
 # / 20, rest 316 / 82. The 109 lines here are the failures both architectures
 # produced; the four that only one produced are in the two delta files.
 #
-# **`rma` is missing from this list, and that is a gap rather than a pass.** Both
-# Open MPI `rma` shards were killed six minutes in with "the runner has received a
-# shutdown signal" -- on both architectures, twice each -- so no expectation for
-# the top-level rma directory has ever been recorded here. `errors/rma/*` did run,
-# because the shards split on top-level directories, and its lines are below.
-# **Run 32189118611 localised it**, because runtests' output is teed into the job
-# log now and a killed job leaves nothing else. The shard gets through the main rma
-# testlist -- win_dynamic_rma_flush_get_collattach is the last test to report -- and
-# dies in the next thing it starts:
+# **`rma` is missing from this list, and it is no longer a gap: the directory is not
+# run on the Open MPI legs.** It was a gap for a while -- both shards were killed six
+# minutes in with "the runner has received a shutdown signal", on both architectures,
+# twice each -- and teeing runtests into the job log localised it, first to
+# `./rma/testlist.dtp [176 tests]` and then, once the monitor was added, to individual
+# tests. The cause turned out to be upstream and not a triage problem.
 #
-#     Running tests in ./rma/testlist.dtp [176 tests - 00:01:36]
+# Open MPI 5.0 removed the `osc/pt2pt` one-sided component. `osc/rdma`, which replaces
+# it, appears to build per-element state for a derived datatype where pt2pt packed and
+# streamed it, so the cost tracks a datatype's *element count* rather than its byte
+# count. `rma/transpose1` -- 3.8 MB of payload, `MPI_Put` onto a million discontiguous
+# elements -- takes at least 14.6 GB and a 16 GB runner with it, where Open MPI 4.1.8
+# completes the same test with the same wrapper in 1.7 GB. Neither `--mca btl self,sm`,
+# nor a libfabric build with a real accelerated `btl/ofi`, nor excluding the offending
+# test lines reaches it; the last only moves the death to the next casualty, because
+# the casualties are chosen by datatype shape and no testlist line shows that.
 #
-# So it is the *datatype-pool* half of rma, 176 tests, not rma as such. `--no-dtp`
-# on that shard would let the rest of the directory be listed; it is not set,
-# because the shard dimension is shared with the MPICH legs, whose rma shard runs
-# those same dtp tests green. Splitting rma's dtp tests into a shard of their own is
-# the move that would cost nothing else, and it is a decision rather than a fix.
+# So `.github/workflows/ci.yaml`'s suite matrix excludes `rma` on these two legs, and
+# there is nothing for this file to expect. `errors/rma/*` still runs, because the
+# shards split on top-level directories, and its lines are below. Re-adding the shard
+# is a two-line revert if an Open MPI release restores a streaming one-sided path.
 #
-# ci-scripts/suite/README.md has the rest. Until that shard completes the Open MPI
-# legs cannot gate, which is why they are report-only.
+# ci-scripts/suite/README.md has the rest, including the run ids for every
+# measurement above.
+#
+# **Excluding rma does not by itself make these legs gate, and they stay
+# report-only.** One thing is still outstanding and it is not rma: `openmpi /
+# aarch64 / p2p` finished in ten minutes in one run and was killed after fifty in
+# the next. Open MPI has a shard that hangs intermittently as well as the one that
+# died reproducibly, and a green Open MPI leg needs that settled too.
 #
 # **A prediction this file used to carry was wrong and is corrected here.** It said
 # the largest group would be decision 6's stubs answering

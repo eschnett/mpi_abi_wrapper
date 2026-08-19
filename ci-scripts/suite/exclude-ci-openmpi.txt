@@ -1,5 +1,11 @@
 # Individual test *lines* not to run over Open MPI, with a reason each.
 #
+# **Nothing here matches today.** Both patterns name tests in `rma`, and `rma` is
+# excluded from the Open MPI legs by the suite matrix in .github/workflows/ci.yaml,
+# so this file is inert. It is kept, and kept wired, because the two decisions are
+# independent: re-enabling the shard should not silently re-enable the two tests
+# already known to take a runner down.
+#
 # This is not an expected-failure list and cannot be one. check-tap.py compares
 # observed results against xfail-ci-openmpi*.txt, and both work because the test
 # ran and produced a TAP line. A test that exhausts the host produces nothing:

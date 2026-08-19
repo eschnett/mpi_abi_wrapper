@@ -804,6 +804,28 @@ jobs:
       # the other three safe rather than what makes rma safe. If the rma shard is
       # still killed, that is now a fact about one directory instead of about the
       # row, which is progress a single job could not produce.
+      #
+      # **And it was still killed, which is why `exclude` below drops it from the
+      # two Open MPI legs.** Not as a triage of an unexplained failure: the cause
+      # is measured and upstream. Open MPI 5.0 removed the `osc/pt2pt` one-sided
+      # component, and `osc/rdma`, which replaces it, appears to build per-element
+      # state for a derived datatype where pt2pt packed and streamed it. So the
+      # cost tracks a datatype's *element count* rather than its byte count, and
+      # `rma/transpose1` -- a 3.8 MB `MPI_Put` onto a million discontiguous
+      # elements -- takes at least 14.6 GB and a 16 GB runner with it. Open MPI
+      # 4.1.8 completes the same test with the same wrapper in 1.7 GB.
+      #
+      # Three things were tried and none of them reach it, each measured rather
+      # than reasoned: `--mca btl self,sm`, a libfabric build that really did
+      # produce an accelerated `btl/ofi` in one-sided mode, and excluding the
+      # offending test lines -- which only moved the death to the next casualty,
+      # because the casualties are selected by datatype shape and no testlist line
+      # shows that. ci-scripts/suite/README.md has all three rounds and the run ids.
+      #
+      # So this drops coverage rather than pretending to have it, and the shard
+      # stays in the matrix for the MPICH legs, which run the same tests green. The
+      # thing to watch for is an Open MPI release that restores a streaming
+      # one-sided path; re-adding two lines here is the whole of the revert.
       matrix:
         leg:
           - mpi: mpich
@@ -829,12 +851,13 @@ jobs:
             launcher: prte
             timeout_multiplier: 1
             report_only: true
-            # Why these two legs exclude a test and the MPICH legs do not:
-            # ci-scripts/suite/exclude-ci-openmpi.txt, and the measurement behind
-            # it in ci-scripts/suite/README.md. Short version: Open MPI 5.0.10
-            # spends 5.4x what 4.1.8 does on rma/getfence1 -count=16000000 and
-            # takes a 16 GB runner down, which an xfail list cannot cover because
-            # a killed runner leaves no TAP line to expect.
+            # **Currently inert, and kept deliberately.** Every pattern in
+            # exclude-ci-openmpi.txt names a test in `rma`, and `rma` is excluded
+            # from these legs by the matrix above, so nothing matches today. It
+            # stays wired because the two are independent decisions: if a future
+            # Open MPI makes the directory affordable again, re-adding the shard
+            # restores these two line exclusions with it rather than silently
+            # running the two tests that are known to take a runner down.
             exclude_args: "--exclude=exclude-ci-openmpi.txt"
           - mpi: openmpi
             version: 5.0.10
@@ -843,12 +866,13 @@ jobs:
             launcher: prte
             timeout_multiplier: 1
             report_only: true
-            # Why these two legs exclude a test and the MPICH legs do not:
-            # ci-scripts/suite/exclude-ci-openmpi.txt, and the measurement behind
-            # it in ci-scripts/suite/README.md. Short version: Open MPI 5.0.10
-            # spends 5.4x what 4.1.8 does on rma/getfence1 -count=16000000 and
-            # takes a 16 GB runner down, which an xfail list cannot cover because
-            # a killed runner leaves no TAP line to expect.
+            # **Currently inert, and kept deliberately.** Every pattern in
+            # exclude-ci-openmpi.txt names a test in `rma`, and `rma` is excluded
+            # from these legs by the matrix above, so nothing matches today. It
+            # stays wired because the two are independent decisions: if a future
+            # Open MPI makes the directory affordable again, re-adding the shard
+            # restores these two line exclusions with it rather than silently
+            # running the two tests that are known to take a runner down.
             exclude_args: "--exclude=exclude-ci-openmpi.txt"
         # The last shard is the *complement* of the other three rather than a
         # fourth list, so a directory a later suite release adds is covered by
@@ -862,6 +886,21 @@ jobs:
             args: "--dirs=threads,pt2pt,part"
           - name: rest
             args: "--skip-dirs=coll,rma,threads,pt2pt,part"
+        # **Drop rma from the Open MPI legs.** A matrix `exclude` entry only has to
+        # be a *partial* match, so naming one key of each object is enough and this
+        # keeps working when a leg or a shard gains a field. Two combinations go,
+        # leaving 14 suite jobs where there were 16: coll, p2p and rest on all four
+        # legs, and rma on the two MPICH legs only.
+        #
+        # An excluded combination is never created, so this costs no runner -- which
+        # is the point. A step-level `if:` would have skipped the work and still paid
+        # for the checkout, the MPI restore and the wrapper build, and a job-level
+        # `if:` cannot see `matrix` at all.
+        exclude:
+          - leg:
+              mpi: openmpi
+            shard:
+              name: rma
     env:
       # The matrix context is available in a job's env: block where the runner
       # context is not, which is why the paths below are a step and this is not.
@@ -1073,6 +1112,21 @@ jobs:
             args: "--dirs=threads,pt2pt,part"
           - name: rest
             args: "--skip-dirs=coll,rma,threads,pt2pt,part"
+        # **Drop rma from the Open MPI legs.** A matrix `exclude` entry only has to
+        # be a *partial* match, so naming one key of each object is enough and this
+        # keeps working when a leg or a shard gains a field. Two combinations go,
+        # leaving 14 suite jobs where there were 16: coll, p2p and rest on all four
+        # legs, and rma on the two MPICH legs only.
+        #
+        # An excluded combination is never created, so this costs no runner -- which
+        # is the point. A step-level `if:` would have skipped the work and still paid
+        # for the checkout, the MPI restore and the wrapper build, and a job-level
+        # `if:` cannot see `matrix` at all.
+        exclude:
+          - leg:
+              mpi: openmpi
+            shard:
+              name: rma
     steps:
       - uses: actions/checkout@v6
 
