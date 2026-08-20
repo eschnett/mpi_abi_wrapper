@@ -2,7 +2,8 @@
 
 """Gate a MPICH-test-suite run against this variant's expected-failure list.
 
-    check-tap.py <summary.tap> <xfail-file>... [--dirs=a,b,c] [--update]
+    check-tap.py <summary.tap> <xfail-file>... [--flaky=FILE]...
+                 [--dirs=a,b,c] [--update]
 
 More than one list may be given, and they are read as one: a per-implementation
 list that holds what every environment sees, plus a smaller per-environment one
@@ -29,6 +30,25 @@ A.3 and dev/check_prototype.py to S1's reference bodies:
   * a line with no reason fails the run. --update writes exactly such lines,
     so a run that discovers new failures cannot be turned into a green one by
     re-running with --update: the reasons have to be typed by a human.
+
+**--flaky names a third category, and it exists because the two above cannot
+express one.** A test that fails in one run and passes in the next cannot be
+listed as an expected failure -- that fails the runs it passes -- and cannot be
+left unlisted either -- that fails the runs it fails. Every such test was
+therefore left out of the lists with a paragraph of prose beside it, which made
+a red run something a human had to read a comment to interpret. A flaky entry
+says "either outcome is acceptable", so the gate stays meaningful for everything
+else.
+
+The rules that still apply to a flaky line are the ones that keep it from
+rotting: it needs a reason, it may not also appear in an xfail list, and it must
+still name a test that ran (in a directory this run covered) or it is stale.
+What it gives up is the ability to notice that the test has settled down, which
+is the price of not having to guess which way it will go; a flaky line should
+name what would let it be promoted back to xfail or deleted.
+
+Flaky outcomes are printed either way, so "it flapped again" is visible in the
+log rather than silently excused.
 
 The TAP names are runtests' own -- "<dir>/<program> <np>" -- so the list
 reads as the suite's own vocabulary and can be compared with an unwrapped
@@ -137,12 +157,24 @@ def main(argv):
     tap_path, xfail_paths = args[0], args[1:]
     update = "--update" in opts
     dirs = None
+    flaky_paths = []
     for o in opts:
         if o.startswith("--dirs="):
             dirs = {d.strip() for d in o[len("--dirs="):].split(",") if d.strip()}
+        elif o.startswith("--flaky="):
+            flaky_paths.append(o[len("--flaky="):])
 
     results = parse_tap(tap_path)
     expected, problems = parse_xfail(xfail_paths)
+    flaky, flaky_problems = parse_xfail(flaky_paths) if flaky_paths else ({}, [])
+    problems += flaky_problems
+
+    # One test, one category: a name in both lists means nobody knows which it
+    # is, and the xfail rule against duplicates applies across the pair for the
+    # same reason it applies within a file.
+    for name in sorted(set(expected) & set(flaky)):
+        problems.append(f"{name} is listed as both an expected failure and "
+                        f"flaky; one test, one category")
 
     covered = {directory_of(n).split("/")[0] for n in results}
 
@@ -151,14 +183,23 @@ def main(argv):
     stale = []
     not_run = []
     matched = []
+    flaked_fail = []
+    flaked_pass = []
 
     for name, (outcome, _detail) in sorted(results.items()):
+        if name in flaky:
+            # Either way is acceptable; which way it went is still reported.
+            if outcome == "fail":
+                flaked_fail.append(name)
+            elif outcome == "pass":
+                flaked_pass.append(name)
+            continue
         if outcome == "fail":
             (matched if name in expected else unexpected_fail).append(name)
         elif outcome == "pass" and name in expected:
             unexpected_pass.append(name)
 
-    for name in sorted(expected):
+    for name in sorted(set(expected) | set(flaky)):
         if name in results:
             continue
         top = directory_of(name).split("/")[0]
@@ -177,6 +218,10 @@ def main(argv):
           f"{nskip} skipped by the suite")
     print(f"  {len(matched)} of the failures are expected and listed; "
           f"{len(unexpected_fail)} are not")
+    if flaked_fail or flaked_pass:
+        print(f"  {len(flaked_fail) + len(flaked_pass)} flaky tests ran: "
+              f"{len(flaked_fail)} failed, {len(flaked_pass)} passed "
+              f"(neither gates)")
     if not_run:
         print(f"  {len(not_run)} listed tests were not part of this run")
 
@@ -189,6 +234,11 @@ def main(argv):
         print(f"  wrote {len(unexpected_fail)} bare lines to {xfail_paths[-1]}")
         return 0
 
+    for name in flaked_fail:
+        print(f"  FLAKY, FAILED  {name}   ({flaky[name]})")
+    for name in flaked_pass:
+        print(f"  FLAKY, PASSED  {name}   ({flaky[name]})")
+
     ok = True
     for name in unexpected_fail:
         print(f"  UNEXPECTED FAILURE  {name}")
@@ -198,7 +248,8 @@ def main(argv):
               f"   ({expected[name]})")
         ok = False
     for name in stale:
-        print(f"  LISTED BUT NOT RUN  {name}   ({expected[name]})")
+        why = expected.get(name) or flaky.get(name)
+        print(f"  LISTED BUT NOT RUN  {name}   ({why})")
         ok = False
     for p in problems:
         print(f"  {p}")

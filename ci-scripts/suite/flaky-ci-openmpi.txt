@@ -1,0 +1,35 @@
+# Flaky tests of MPICH's C test suite over this project in GitHub Actions, over
+# **Open MPI 5.0.10 built from source, on both architectures**. A test here may fail
+# or pass without failing the gate; check-tap.py prints which it did either way.
+#
+# Same grammar and same anti-rot rules as the xfail lists: a reason is required, a
+# test may not appear in both categories, and a line naming a test that did not run
+# in a covered directory is stale.
+#
+# **The whole mt_*probe* family lives here, and it is Open MPI's bug rather than a
+# mystery.** Run 32418464622 built one suite tree twice against the same Open MPI --
+# once through this project's prefix and once against Open MPI directly -- and all
+# four failed with no wrapper in the path at all: eight of eight native runs, seven
+# printing the same MPI_ERR_COUNT out of MPI_Recv and the eighth aborting identically.
+# So these are not expectations about this project.
+#
+# They are here rather than in the xfail list because *which* member trips moves with
+# thread timing. Run 32409072194 is the demonstration: mt_iprobe_isendrecv failed
+# while mt_iprobe_sendrecv passed, and the gate went red on "EXPECTED FAILURE THAT
+# PASSED" with nothing unexpected in the run. Listing them as expected failures makes
+# the p2p legs unstable in both directions; listing them here makes the gate mean
+# something again for everything else in that shard.
+#
+# **What would retire these four lines:** the underlying bug. MPI_Get_count on a
+# probe-filled status returns a negative count under MPI_THREAD_MULTIPLE -- either the
+# -1 the test initialised, since MPI leaves an out parameter alone on an error return,
+# or MPI_UNDEFINED, which Open MPI returns when the status byte count is not a whole
+# number of datatypes. Why a probe's _ucount is not a whole number of MPI_INTs is the
+# open question; ob1's iprobe copies the whole status including _ucount on a match and
+# leaves it untouched on a miss. An Open MPI release that fixes it turns these into
+# passes, and then this file is where the four lines to delete are.
+
+threads/pt2pt/mt_probe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_probe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_iprobe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv

@@ -75,6 +75,7 @@ prefix=""
 dirs=""
 skip_dirs=""
 exclude_args=()
+flaky_args=()
 np=""
 jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 with_spawn=0
@@ -107,6 +108,11 @@ usage: $(basename "$0") mpich|openmpi|/path/to/mpicc [options]
   --with-spawn     include the spawn directory. Off by default: MPI_Comm_spawn
                    hangs under hydra on macOS with no wrapper involved
                    (test/README.md), and 31 tests timing out costs an hour
+  --flaky=FILE     tests in FILE may fail or pass without failing the gate.
+                   Repeatable. For a test that genuinely flaps: an xfail line
+                   fails the runs it passes, and no line fails the runs it
+                   fails, so neither category fits. FILE must exist; a variant
+                   with no flaky tests simply does not pass this.
   --exclude=FILE   drop individual test lines matching the patterns in FILE.
                    Repeatable. For a test that takes the host down rather than
                    failing -- an xfail list cannot cover one, because a killed
@@ -145,6 +151,7 @@ for arg in "$@"; do
     --dirs=*)      dirs=${arg#*=} ;;
     --skip-dirs=*) skip_dirs=${arg#*=} ;;
     --exclude=*)   exclude_args+=("${arg#*=}") ;;
+    --flaky=*)     flaky_args+=("${arg#*=}") ;;
     --np=*)        np=${arg#*=} ;;
     --jobs=*)      jobs=${arg#*=} ;;
     --with-spawn)  with_spawn=1 ;;
@@ -217,6 +224,17 @@ else
     esac
   done
 fi
+# Resolved like the xfail lists -- a bare name means beside this script -- and
+# required to exist for the same reason: a --flaky that silently did nothing
+# would excuse whatever it was pointed at by mistake.
+flaky_files=()
+for f in "${flaky_args[@]+"${flaky_args[@]}"}"; do
+  case $f in
+    */*) flaky_files+=("$f") ;;
+    *)   flaky_files+=("$suitedir/$f") ;;
+  esac
+done
+
 work=${MPIABI_SUITE_WORK:-$repodir/build/suite-$variant}
 src=${MPIABI_SUITE_SRC:-$repodir/build/suite-src}
 tree=$src/mpich-$suite_version/test/mpi
@@ -228,13 +246,20 @@ echo "wrapped MPI:  $MPICC"
 echo "launcher:     $launcher ($kind)"
 gate_names=""
 for f in "${xfail_files[@]}"; do gate_names="$gate_names ${f#"$repodir"/}"; done
+flaky_opts=()
+for f in "${flaky_files[@]+"${flaky_files[@]}"}"; do
+  [ -f "$f" ] || die "no flaky list at $f"
+  flaky_opts+=("--flaky=$f")
+  gate_names="$gate_names +flaky:${f#"$repodir"/}"
+done
 echo "variant:      $variant   (gate:$gate_names)"
 echo "suite:        MPICH $suite_version"
 echo "work:         $work"
 
 if [ "$gate_only" = 1 ]; then
   [ -f "$tap" ] || die "no TAP file at $tap to gate on"
-  exec python3 "$suitedir/check-tap.py" "$tap" "${xfail_files[@]}"
+  exec python3 "$suitedir/check-tap.py" "$tap" "${xfail_files[@]}" \
+       "${flaky_opts[@]+"${flaky_opts[@]}"}"
 fi
 
 # ------------------------------------------------- the wrapper's own prefix
@@ -554,6 +579,7 @@ fi
 
 step "gate: observed results against$gate_names"
 python3 "$suitedir/check-tap.py" "$tap" "${xfail_files[@]}" \
+        "${flaky_opts[@]+"${flaky_opts[@]}"}" \
         ${dirs:+--dirs="$dirs"} || fail "the suite's result does not match its list"
 
 printf '\n=== %s\n' \

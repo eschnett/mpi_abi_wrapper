@@ -1,0 +1,30 @@
+# Flaky tests of MPICH's C test suite over this project in GitHub Actions, over
+# **MPICH 5.0.1 built from source, on every architecture**. A test here may fail
+# or pass without failing the gate; check-tap.py prints which it did either way.
+#
+# One line per test, `<dir>/<program> <np> : why`, the same grammar the xfail
+# lists use. The rules that keep a line from rotting still apply: it needs a
+# reason, it may not also appear in an xfail list, and it must still name a test
+# that ran in a directory this run covered.
+#
+# **This category exists because the xfail lists cannot express a flap.** An
+# expected-failure line fails the runs the test passes, and leaving it unlisted
+# fails the runs it fails, so before this file every flapping test was left out
+# of the lists with a paragraph of prose beside it and a red run was something a
+# human had to read a comment to interpret. That is what made the MPICH legs
+# unable to gate honestly.
+#
+# **A line here is a smaller claim than an xfail line and should be a temporary
+# one.** It says only "either outcome happens", which gives up the ability to
+# notice the test settling down. So say what would let it be promoted back to
+# xfail or deleted, and prefer attributing the flap to living with it.
+
+# Timing, and its sibling's entry in xfail-mpich.txt says why: MPI_Abort on a
+# sub-communicator with hydra's -disable-auto-cleanup expects the surviving ranks
+# to keep running, and errors/comm/subcomm_abort2 6 is listed there as reaching
+# the 180-second limit instead while passing standalone. These runners are slow
+# under load and this one lands on either side of that limit: it failed the
+# mpich/x86_64/rest shard in run 32398089529 and passed the same shard in
+# 32280776848 and 32403337939. Promote it to xfail if it starts failing every
+# time, or delete it if a timeout multiplier settles it.
+errors/comm/subcomm_abort 4 : flaps on timing, like its sibling subcomm_abort2 -- MPI_Abort on a sub-communicator reaching the 180-second limit on a loaded runner. Failed in run 32398089529, passed in 32280776848 and 32403337939

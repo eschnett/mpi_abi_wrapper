@@ -13,16 +13,12 @@
 # **Written from run 32155423441**, the first run of this suite over 5.0.1 with
 # one MPI job per test: 842 tests, 789 passed, 41 failed, 12 skipped by the suite.
 #
-# **One known flap, unlisted on purpose: `errors/comm/subcomm_abort 4`.** It failed
-# the `mpich / x86_64 / rest` shard in run 32398089529 and passed the same shard on
-# main in 32280776848 and in the run before that. A test that fails in one run and
-# passes in the next cannot be expressed in this file at all -- listing it fails the
-# run it passes, and not listing it fails the run it fails -- so it is left unlisted
-# and this paragraph is how whoever meets that red knows it is the known flap rather
-# than a regression. The reason is probably its sibling's: `xfail-mpich.txt` records
-# `errors/comm/subcomm_abort2 6` reaching the 180-second limit where the surviving
-# ranks are meant to keep running, and notes it passes standalone. That is a timing
-# story, and these runners are slow under load.
+# **Flaps go in flaky-ci-mpich.txt now, not in a paragraph here.** This file briefly
+# carried `errors/comm/subcomm_abort 4` as prose, because a test that fails in one run
+# and passes in the next cannot be expressed as an expected failure -- listing it fails
+# the runs it passes, not listing it fails the runs it fails. check-tap.py's --flaky
+# category exists for exactly that, so the test has a line of its own there and a red
+# run no longer needs a human to read a comment to interpret.
 # The count of lines here is `grep -cvE '^\s*(#|$)'`, the same lines check-tap.py
 # reads; plain `wc -l` counts this header too.
 #

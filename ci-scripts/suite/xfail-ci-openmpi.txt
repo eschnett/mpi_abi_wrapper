@@ -198,10 +198,6 @@ threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: -----------------
 # Fixing it properly means either attributing the underlying MPI_ERR_COUNT bug, or
 # giving check-tap.py a way to say "may fail or pass" -- which is a change to what the
 # gate means and wants deciding on its own, not in passing.
-threads/pt2pt/mt_probe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv
-threads/pt2pt/mt_probe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv
-threads/pt2pt/mt_iprobe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv
-threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv. Moved here from the x86_64 delta in ab8f2d4, run 32302208489 having failed it on both architectures
 attr/keyval_double_free 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
 attr/keyval_double_free_comm 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
 attr/keyval_double_free_type 1 : not yet attributed. Observed: *** An error occurred in MPI_Type_free_keyval
