@@ -12,24 +12,34 @@
 #
 # `mpi_t/mpit_vars 1` left first, was called an intermittent test, and the record now
 # says something more useful than either "intermittent" or "architecture difference".
-# Four runs:
+# Five runs:
 #
 #     32182485327   x86_64 failed                      -> listed here
 #     32189118611   x86_64 passed                       -> delisted as a flap
 #     32302208489   x86_64 passed, aarch64 failed 5/5   -> called architecture-specific
 #     32398089529   x86_64 failed, aarch64 failed       -> neither claim survives
+#     32403337939   x86_64 passed, aarch64 passed       -> nor does "aarch64 always"
 #
-# **aarch64 fails it every time; x86_64 fails it some of the time.** Both earlier
-# readings were single-run inferences, and the second one was made in this file while
-# quoting the warning against exactly that.
+# **It is intermittent on both architectures.** Three readings have now been written
+# into this file and withdrawn -- "flap", then "architecture-specific", then "aarch64
+# every time" -- each from too few runs, and the third was written while quoting the
+# warning against exactly that. The lesson is stronger than any of them: **this test's
+# result cannot be read from one run in either direction.** A green run does not show a
+# fix worked and a red one does not show it failed.
 #
-# What reconciles them is the mechanism, which is new: it *segfaults*, in
+# And intermittency on both is what the mechanism predicts, which is the reason to
+# trust the mechanism over any of the three patterns: it *segfaults*, in
 # MPI_T_pvar_get_info through this project's wrapper and into Open MPI's
-# mca_base_pvar_get -- "address not mapped", at 0x44 -- alongside 599 errors from the
-# `strlen(desc) + 1 == min(desc_len, STR_SZ)` check that NOTES.md #5.8 makes ours. A
-# bad pointer lands on a mapped address sometimes and not others, so one bug that is
-# always present explains a reliable symptom on one architecture and an intermittent
-# one on the other. There is no need for two explanations.
+# mca_base_pvar_get -- "address not mapped", at 0x44, which is exactly
+# offsetof(mca_base_pvar_t, flags) on LP64 and so is `(*pvar)->flags` with *pvar NULL.
+# Reading uninitialized memory lands on something harmless sometimes and not others,
+# which is what "intermittent on both" looks like from outside.
+#
+# (An earlier version of this note attributed 599 desc-length check failures to this
+# test. They belong to `mpi_t/mpi_t_str`, which runs immediately before it and is
+# listed in the shared file; runtests prints one program's captured output just above
+# the next program's verdict, which is easy to misread. mpit_vars' own output is the
+# backtrace and nothing else.)
 #
 # It is listed nowhere, and cannot be: it flaps on x86_64, so listing it fails the
 # runs it passes. That is also the wrong remedy -- a segfault through our own code is

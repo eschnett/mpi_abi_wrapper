@@ -1474,9 +1474,8 @@ the decision rather than working around it.
    ```
 
    The consequence is not a wrong answer but undefined behaviour whose *symptom*
-   depends on what the stack held, which is why that test failed reliably on one
-   architecture and intermittently on the other and was twice mis-diagnosed from
-   single runs. **A report the caller can ignore into undefined behaviour is not a
+   depends on what the stack held, which is why that test's failure is intermittent on
+   both architectures and was mis-diagnosed three times from too few runs. **A report the caller can ignore into undefined behaviour is not a
    report**, so `stub_out_zeros` now writes a defined zero to every `out` scalar,
    under the same nullable rule the handles use. `inout` integers are deliberately
    left alone: `MPI_T_category_get_info`'s `name_len` is the caller's buffer size
