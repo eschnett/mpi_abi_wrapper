@@ -2291,6 +2291,66 @@ def out_handle_nulls(ep):
     return out
 
 
+# The out-parameter pointees a stub can give a defined value to. Handles are
+# absent on purpose: null_out_handles owns those and has the right per-class
+# null. So are `void` (there is nothing to assign through), `char` (a string
+# buffer, whose shape is the caller's) and `MPI_Status` (a struct with its own
+# ABI encoding). What is left is the plain integers, which is where the damage
+# was: see stub_out_zeros.
+STUB_ZEROABLE_POINTEES = ("int", "MPI_Count", "MPI_Aint", "MPI_Offset")
+
+
+def out_scalar_zeros(ep):
+    """The ABI names of the plain-integer out parameters of `ep`.
+
+    `direction == "out"` and not `"inout"`, deliberately: an inout integer is
+    the caller's own value on the way in -- `MPI_T_category_get_info`'s
+    `name_len` is the size of the buffer it passed -- and zeroing that would
+    destroy an input rather than define an output.
+    """
+    out = []
+    for p in ep.params:
+        if p.name == "..." or p.direction != "out":
+            continue
+        if p.is_array or not p.is_pointer:
+            continue
+        if p.pointee() in STUB_ZEROABLE_POINTEES:
+            out.append("abi_" + p.name)
+    return out
+
+
+def stub_out_zeros(ep, ind):
+    """What decision 6's stub owes the caller beyond a null handle.
+
+    null_out_handles' docstring states the principle -- "so that nobody is
+    handed an uninitialized one" -- and reached only the handles. The integers
+    were left untouched, and a caller that ignores the return code then reads
+    its own uninitialized stack. That is not hypothetical: `mpi_t/mpit_vars`
+    does
+
+        int num_sources;
+        MPI_T_source_get_num(&num_sources);
+        for (int i = 0; i < num_sources; i++) ...
+
+    and no released Open MPI has `MPI_T_source_get_num`, so this slot is a stub
+    over it and the loop bound was whatever the stack held. That is why the test
+    printed absurd counts and why its symptom was reliable on one architecture
+    and intermittent on the other -- stack contents, not logic. Decision 6
+    promises a missing entry point is *reported*, and a report the caller can
+    ignore into undefined behaviour is not one.
+
+    The same `nullable` rule as null_out_handles: the five MPI_T `*_get_info`
+    routines the standard lets a caller pass NULL to are guarded, and everywhere
+    else a valid pointer is the caller's contract.
+    """
+    nullable = ep.name in NULLABLE_OUT_ROUTINES
+    lines = []
+    for abi in out_scalar_zeros(ep):
+        stmt = f"*{abi} = 0;"
+        lines.append(ind + (f"if ({abi}) {stmt}" if nullable else stmt))
+    return lines
+
+
 def null_out_handles(ep, ind):
     """What an early return owes the caller: a null handle in every out
     parameter, so that nobody is handed an uninitialized one -- and nothing at
@@ -2439,6 +2499,7 @@ def emit_stub(ep):
         if p.name != "...":
             body.append(f"    (void)abi_{p.name};")
     body += null_out_handles(ep, "    ")
+    body += stub_out_zeros(ep, "    ")
     if ep.ret == "int":
         body.append("    return MPIABI_ERR_UNSUPPORTED_OPERATION;")
     elif ep.ret == "double":

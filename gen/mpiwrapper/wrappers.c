@@ -2257,6 +2257,7 @@ static int w_PMPI_Cart_get(MPIABI_Comm abi_comm, int abi_maxdims,
     (void)abi_dims;                                                            \
     (void)abi_periods;                                                         \
     (void)abi_newrank;                                                         \
+    *abi_newrank = 0;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -2288,6 +2289,7 @@ static int w_PMPI_Cart_map(MPIABI_Comm abi_comm, int abi_ndims,
     (void)abi_comm;                                                            \
     (void)abi_coords;                                                          \
     (void)abi_rank;                                                            \
+    *abi_rank = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -2322,6 +2324,8 @@ static int w_PMPI_Cart_rank(MPIABI_Comm abi_comm, const int abi_coords[],
     (void)abi_disp;                                                            \
     (void)abi_rank_source;                                                     \
     (void)abi_rank_dest;                                                       \
+    *abi_rank_source = 0;                                                      \
+    *abi_rank_dest = 0;                                                        \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -2386,6 +2390,7 @@ static int w_PMPI_Cart_sub(MPIABI_Comm abi_comm, const int abi_remain_dims[],
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_ndims;                                                           \
+    *abi_ndims = 0;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -2504,6 +2509,7 @@ static int w_PMPI_Comm_call_errhandler(MPIABI_Comm abi_comm, int abi_errorcode)
     (void)abi_comm1;                                                           \
     (void)abi_comm2;                                                           \
     (void)abi_result;                                                          \
+    *abi_result = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -3156,6 +3162,7 @@ static int w_PMPI_Comm_join(int abi_fd, MPIABI_Comm *abi_intercomm)
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_rank;                                                            \
+    *abi_rank = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -3214,6 +3221,7 @@ static int w_PMPI_Comm_remote_group(MPIABI_Comm abi_comm,
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -3347,6 +3355,7 @@ static int w_PMPI_Comm_set_name(MPIABI_Comm abi_comm,
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -3452,6 +3461,7 @@ static int w_PMPI_Comm_split_type(MPIABI_Comm abi_comm, int abi_split_type,
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -3816,6 +3826,9 @@ static int w_PMPI_Dist_graph_neighbors(MPIABI_Comm abi_comm,
     (void)abi_indegree;                                                        \
     (void)abi_outdegree;                                                       \
     (void)abi_weighted;                                                        \
+    *abi_indegree = 0;                                                         \
+    *abi_outdegree = 0;                                                        \
+    *abi_weighted = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -3874,6 +3887,7 @@ static int w_PMPI_Errhandler_free(MPIABI_Errhandler *abi_errhandler)
   {                                                                            \
     (void)abi_errorcode;                                                       \
     (void)abi_errorclass;                                                      \
+    *abi_errorclass = 0;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4206,6 +4220,7 @@ static int w_PMPI_File_delete(const char *abi_filename, MPIABI_Info abi_info)
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_amode;                                                           \
+    *abi_amode = 0;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4231,6 +4246,7 @@ static int w_PMPI_File_get_amode(MPIABI_File abi_fh, int *abi_amode)
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4258,6 +4274,7 @@ static int w_PMPI_File_get_atomicity(MPIABI_File abi_fh, int *abi_flag)
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
     (void)abi_disp;                                                            \
+    *abi_disp = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4382,6 +4399,7 @@ static int w_PMPI_File_get_info(MPIABI_File abi_fh, MPIABI_Info *abi_info_used)
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
+    *abi_offset = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4409,6 +4427,7 @@ static int w_PMPI_File_get_position(MPIABI_File abi_fh,
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
+    *abi_offset = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4436,6 +4455,7 @@ static int w_PMPI_File_get_position_shared(MPIABI_File abi_fh,
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4463,6 +4483,7 @@ static int w_PMPI_File_get_size(MPIABI_File abi_fh, MPIABI_Offset *abi_size)
     (void)abi_fh;                                                              \
     (void)abi_datatype;                                                        \
     (void)abi_extent;                                                          \
+    *abi_extent = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -4494,6 +4515,7 @@ static int w_PMPI_File_get_type_extent(MPIABI_File abi_fh,
     (void)abi_fh;                                                              \
     (void)abi_datatype;                                                        \
     (void)abi_extent;                                                          \
+    *abi_extent = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8056,6 +8078,7 @@ static int w_PMPI_Get_accumulate_c(const void *abi_origin_addr,
   {                                                                            \
     (void)abi_location;                                                        \
     (void)abi_address;                                                         \
+    *abi_address = 0;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8111,6 +8134,8 @@ static int w_PMPI_Get_hw_resource_info(MPIABI_Info *abi_hw_info)
   {                                                                            \
     (void)abi_version;                                                         \
     (void)abi_subversion;                                                      \
+    *abi_version = 0;                                                          \
+    *abi_subversion = 0;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8275,6 +8300,7 @@ static int w_PMPI_Graph_get(MPIABI_Comm abi_comm, int abi_maxindex,
     (void)abi_indx;                                                            \
     (void)abi_edges;                                                           \
     (void)abi_newrank;                                                         \
+    *abi_newrank = 0;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8349,6 +8375,7 @@ static int w_PMPI_Graph_neighbors(MPIABI_Comm abi_comm, int abi_rank,
     (void)abi_comm;                                                            \
     (void)abi_rank;                                                            \
     (void)abi_nneighbors;                                                      \
+    *abi_nneighbors = 0;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8378,6 +8405,8 @@ static int w_PMPI_Graph_neighbors_count(MPIABI_Comm abi_comm, int abi_rank,
     (void)abi_comm;                                                            \
     (void)abi_nnodes;                                                          \
     (void)abi_nedges;                                                          \
+    *abi_nnodes = 0;                                                           \
+    *abi_nedges = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8432,6 +8461,7 @@ static int w_PMPI_Grequest_complete(MPIABI_Request abi_request)
     (void)abi_group1;                                                          \
     (void)abi_group2;                                                          \
     (void)abi_result;                                                          \
+    *abi_result = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8783,6 +8813,7 @@ static int w_PMPI_Group_range_incl(MPIABI_Group abi_group, int abi_n,
   {                                                                            \
     (void)abi_group;                                                           \
     (void)abi_rank;                                                            \
+    *abi_rank = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -8808,6 +8839,7 @@ static int w_PMPI_Group_rank(MPIABI_Group abi_group, int *abi_rank)
   {                                                                            \
     (void)abi_group;                                                           \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -10272,6 +10304,7 @@ static int w_PMPI_Igatherv_c(const void *abi_sendbuf,
     (void)abi_message;                                                         \
     (void)abi_status;                                                          \
     *abi_message = MPIABI_MESSAGE_NULL;                                        \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -11236,6 +11269,7 @@ static int w_PMPI_Info_free(MPIABI_Info *abi_info)
     (void)abi_valuelen;                                                        \
     (void)abi_value;                                                           \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -11264,6 +11298,7 @@ static int w_PMPI_Info_get(MPIABI_Info abi_info, const char *abi_key,
   {                                                                            \
     (void)abi_info;                                                            \
     (void)abi_nkeys;                                                           \
+    *abi_nkeys = 0;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -11295,6 +11330,7 @@ static int w_PMPI_Info_get_nkeys(MPIABI_Info abi_info, int *abi_nkeys)
     (void)abi_buflen;                                                          \
     (void)abi_value;                                                           \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -11330,6 +11366,8 @@ static int w_PMPI_Info_get_string(MPIABI_Info abi_info, const char *abi_key,
     (void)abi_key;                                                             \
     (void)abi_valuelen;                                                        \
     (void)abi_flag;                                                            \
+    *abi_valuelen = 0;                                                         \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -11538,6 +11576,7 @@ static int w_PMPI_Intercomm_merge(MPIABI_Comm abi_intercomm, int abi_high,
     (void)abi_comm;                                                            \
     (void)abi_flag;                                                            \
     (void)abi_status;                                                          \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -12067,6 +12106,7 @@ static int w_PMPI_Irsend_c(const void *abi_buf, MPIABI_Count abi_count,
 #define BODY_MPI_Is_thread_main(TARGET)                                        \
   {                                                                            \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -14287,6 +14327,7 @@ static int w_PMPI_Neighbor_alltoallw_init_c(const void *abi_sendbuf,
   {                                                                            \
     (void)abi_op;                                                              \
     (void)abi_commute;                                                         \
+    *abi_commute = 0;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -14507,6 +14548,7 @@ static int w_PMPI_Pack_external_c(const char *abi_datarep,
     (void)abi_incount;                                                         \
     (void)abi_datatype;                                                        \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -14540,6 +14582,7 @@ static int w_PMPI_Pack_external_size(const char *abi_datarep, int abi_incount,
     (void)abi_incount;                                                         \
     (void)abi_datatype;                                                        \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -14575,6 +14618,7 @@ static int w_PMPI_Pack_external_size_c(const char *abi_datarep,
     (void)abi_datatype;                                                        \
     (void)abi_comm;                                                            \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -14606,6 +14650,7 @@ static int w_PMPI_Pack_size(int abi_incount, MPIABI_Datatype abi_datatype,
     (void)abi_datatype;                                                        \
     (void)abi_comm;                                                            \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -14637,6 +14682,7 @@ static int w_PMPI_Pack_size_c(MPIABI_Count abi_incount,
     (void)abi_request;                                                         \
     (void)abi_partition;                                                       \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -15021,6 +15067,7 @@ static int w_PMPI_Put_c(const void *abi_origin_addr,
 #define BODY_MPI_Query_thread(TARGET)                                          \
   {                                                                            \
     (void)abi_provided;                                                        \
+    *abi_provided = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -16080,6 +16127,7 @@ static int w_PMPI_Request_free(MPIABI_Request *abi_request)
     (void)abi_request;                                                         \
     (void)abi_flag;                                                            \
     (void)abi_status;                                                          \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -16145,6 +16193,7 @@ static int w_PMPI_Request_get_status(MPIABI_Request abi_request, int *abi_flag,
     (void)abi_array_of_requests;                                               \
     (void)abi_flag;                                                            \
     (void)abi_array_of_statuses;                                               \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -16204,6 +16253,8 @@ static int w_PMPI_Request_get_status_all(int abi_count,
     (void)abi_indx;                                                            \
     (void)abi_flag;                                                            \
     (void)abi_status;                                                          \
+    *abi_indx = 0;                                                             \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -16275,6 +16326,7 @@ static int w_PMPI_Request_get_status_any(int abi_count,
     (void)abi_outcount;                                                        \
     (void)abi_array_of_indices;                                                \
     (void)abi_array_of_statuses;                                               \
+    *abi_outcount = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -18074,6 +18126,7 @@ static int w_PMPI_Session_get_nth_pset(MPIABI_Session abi_session,
     (void)abi_session;                                                         \
     (void)abi_info;                                                            \
     (void)abi_npset_names;                                                     \
+    *abi_npset_names = 0;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -18584,6 +18637,7 @@ static int w_PMPI_Status_set_tag(MPIABI_Status *abi_status, int abi_tag)
     (void)abi_request;                                                         \
     (void)abi_flag;                                                            \
     (void)abi_status;                                                          \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -18658,6 +18712,7 @@ static int w_PMPI_Test(MPIABI_Request *abi_request, int *abi_flag,
     (void)abi_array_of_requests;                                               \
     (void)abi_flag;                                                            \
     (void)abi_array_of_statuses;                                               \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -18729,6 +18784,8 @@ static int w_PMPI_Testall(int abi_count,
     (void)abi_indx;                                                            \
     (void)abi_flag;                                                            \
     (void)abi_status;                                                          \
+    *abi_indx = 0;                                                             \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -18812,6 +18869,7 @@ static int w_PMPI_Testany(int abi_count,
     (void)abi_outcount;                                                        \
     (void)abi_array_of_indices;                                                \
     (void)abi_array_of_statuses;                                               \
+    *abi_outcount = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -18845,6 +18903,7 @@ static int w_PMPI_Testsome(int abi_incount,
   {                                                                            \
     (void)abi_comm;                                                            \
     (void)abi_status;                                                          \
+    *abi_status = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20032,6 +20091,7 @@ static int w_PMPI_Type_free_keyval(int *abi_type_keyval)
     (void)abi_type_keyval;                                                     \
     (void)abi_attribute_val;                                                   \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20231,6 +20291,10 @@ static int w_PMPI_Type_get_contents_c(MPIABI_Datatype abi_datatype,
     (void)abi_num_addresses;                                                   \
     (void)abi_num_datatypes;                                                   \
     (void)abi_combiner;                                                        \
+    *abi_num_integers = 0;                                                     \
+    *abi_num_addresses = 0;                                                    \
+    *abi_num_datatypes = 0;                                                    \
+    *abi_combiner = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20275,6 +20339,11 @@ static int w_PMPI_Type_get_envelope(MPIABI_Datatype abi_datatype,
     (void)abi_num_large_counts;                                                \
     (void)abi_num_datatypes;                                                   \
     (void)abi_combiner;                                                        \
+    *abi_num_integers = 0;                                                     \
+    *abi_num_addresses = 0;                                                    \
+    *abi_num_large_counts = 0;                                                 \
+    *abi_num_datatypes = 0;                                                    \
+    *abi_combiner = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20312,6 +20381,8 @@ static int w_PMPI_Type_get_envelope_c(MPIABI_Datatype abi_datatype,
     (void)abi_datatype;                                                        \
     (void)abi_lb;                                                              \
     (void)abi_extent;                                                          \
+    *abi_lb = 0;                                                               \
+    *abi_extent = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20341,6 +20412,8 @@ static int w_PMPI_Type_get_extent(MPIABI_Datatype abi_datatype,
     (void)abi_datatype;                                                        \
     (void)abi_lb;                                                              \
     (void)abi_extent;                                                          \
+    *abi_lb = 0;                                                               \
+    *abi_extent = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20374,6 +20447,8 @@ static int w_PMPI_Type_get_extent_c(MPIABI_Datatype abi_datatype,
     (void)abi_datatype;                                                        \
     (void)abi_lb;                                                              \
     (void)abi_extent;                                                          \
+    *abi_lb = 0;                                                               \
+    *abi_extent = 0;                                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20406,6 +20481,8 @@ static int w_PMPI_Type_get_extent_x(MPIABI_Datatype abi_datatype,
     (void)abi_datatype;                                                        \
     (void)abi_true_lb;                                                         \
     (void)abi_true_extent;                                                     \
+    *abi_true_lb = 0;                                                          \
+    *abi_true_extent = 0;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20437,6 +20514,8 @@ static int w_PMPI_Type_get_true_extent(MPIABI_Datatype abi_datatype,
     (void)abi_datatype;                                                        \
     (void)abi_true_lb;                                                         \
     (void)abi_true_extent;                                                     \
+    *abi_true_lb = 0;                                                          \
+    *abi_true_extent = 0;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20470,6 +20549,8 @@ static int w_PMPI_Type_get_true_extent_c(MPIABI_Datatype abi_datatype,
     (void)abi_datatype;                                                        \
     (void)abi_true_lb;                                                         \
     (void)abi_true_extent;                                                     \
+    *abi_true_lb = 0;                                                          \
+    *abi_true_extent = 0;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20726,6 +20807,7 @@ static int w_PMPI_Type_set_name(MPIABI_Datatype abi_datatype,
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20751,6 +20833,7 @@ static int w_PMPI_Type_size(MPIABI_Datatype abi_datatype, int *abi_size)
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -20780,6 +20863,7 @@ static int w_PMPI_Type_size_c(MPIABI_Datatype abi_datatype,
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_size;                                                            \
+    *abi_size = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -21253,6 +21337,7 @@ static int w_PMPI_Waitall(int abi_count,
     (void)abi_array_of_requests;                                               \
     (void)abi_indx;                                                            \
     (void)abi_status;                                                          \
+    *abi_indx = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -21334,6 +21419,7 @@ static int w_PMPI_Waitany(int abi_count,
     (void)abi_outcount;                                                        \
     (void)abi_array_of_indices;                                                \
     (void)abi_array_of_statuses;                                               \
+    *abi_outcount = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22251,6 +22337,8 @@ static int w_PMPI_Win_set_name(MPIABI_Win abi_win, const char *abi_win_name)
     (void)abi_size;                                                            \
     (void)abi_disp_unit;                                                       \
     (void)abi_baseptr;                                                         \
+    *abi_size = 0;                                                             \
+    *abi_disp_unit = 0;                                                        \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22286,6 +22374,8 @@ static int w_PMPI_Win_shared_query(MPIABI_Win abi_win, int abi_rank,
     (void)abi_size;                                                            \
     (void)abi_disp_unit;                                                       \
     (void)abi_baseptr;                                                         \
+    *abi_size = 0;                                                             \
+    *abi_disp_unit = 0;                                                        \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22367,6 +22457,7 @@ static int w_PMPI_Win_sync(MPIABI_Win abi_win) BODY_MPI_Win_sync(PMPI_Win_sync)
   {                                                                            \
     (void)abi_win;                                                             \
     (void)abi_flag;                                                            \
+    *abi_flag = 0;                                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22543,6 +22634,7 @@ static double w_PMPI_Wtime(void) BODY_MPI_Wtime(PMPI_Wtime)
 #define BODY_MPI_T_category_changed(TARGET)                                    \
   {                                                                            \
     (void)abi_update_number;                                                   \
+    *abi_update_number = 0;                                                    \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22655,6 +22747,7 @@ static int w_PMPI_T_category_get_events(int abi_cat_index, int abi_len,
   {                                                                            \
     (void)abi_name;                                                            \
     (void)abi_cat_index;                                                       \
+    *abi_cat_index = 0;                                                        \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22695,6 +22788,9 @@ static int w_PMPI_T_category_get_index(const char *abi_name,
     (void)abi_num_cvars;                                                       \
     (void)abi_num_pvars;                                                       \
     (void)abi_num_categories;                                                  \
+    if (abi_num_cvars) *abi_num_cvars = 0;                                     \
+    if (abi_num_pvars) *abi_num_pvars = 0;                                     \
+    if (abi_num_categories) *abi_num_categories = 0;                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22726,6 +22822,7 @@ static int w_PMPI_T_category_get_info(int abi_cat_index, char *abi_name,
 #define BODY_MPI_T_category_get_num(TARGET)                                    \
   {                                                                            \
     (void)abi_num_cat;                                                         \
+    *abi_num_cat = 0;                                                          \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22751,6 +22848,7 @@ static int w_PMPI_T_category_get_num(int *abi_num_cat)
   {                                                                            \
     (void)abi_cat_index;                                                       \
     (void)abi_num_events;                                                      \
+    *abi_num_events = 0;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22807,6 +22905,7 @@ static int w_PMPI_T_category_get_pvars(int abi_cat_index, int abi_len,
   {                                                                            \
     (void)abi_name;                                                            \
     (void)abi_cvar_index;                                                      \
+    *abi_cvar_index = 0;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22871,6 +22970,9 @@ static int w_PMPI_T_cvar_get_index(const char *abi_name, int *abi_cvar_index)
     (void)abi_scope;                                                           \
     if (abi_datatype) *abi_datatype = MPIABI_DATATYPE_NULL;                    \
     if (abi_enumtype) *abi_enumtype = MPIABI_T_ENUM_NULL;                      \
+    if (abi_verbosity) *abi_verbosity = 0;                                     \
+    if (abi_bind) *abi_bind = 0;                                               \
+    if (abi_scope) *abi_scope = 0;                                             \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22904,6 +23006,7 @@ static int w_PMPI_T_cvar_get_info(int abi_cvar_index, char *abi_name,
 #define BODY_MPI_T_cvar_get_num(TARGET)                                        \
   {                                                                            \
     (void)abi_num_cvar;                                                        \
+    *abi_num_cvar = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -22951,6 +23054,7 @@ static int w_PMPI_T_cvar_get_num(int *abi_num_cvar)
     (void)abi_handle;                                                          \
     (void)abi_count;                                                           \
     *abi_handle = MPIABI_T_CVAR_HANDLE_NULL;                                   \
+    *abi_count = 0;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23063,6 +23167,7 @@ static int w_PMPI_T_cvar_write(MPIABI_T_cvar_handle abi_handle,
     (void)abi_num;                                                             \
     (void)abi_name;                                                            \
     (void)abi_name_len;                                                        \
+    *abi_num = 0;                                                              \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23096,6 +23201,7 @@ static int w_PMPI_T_enum_get_info(MPIABI_T_enum abi_enumtype, int *abi_num,
     (void)abi_value;                                                           \
     (void)abi_name;                                                            \
     (void)abi_name_len;                                                        \
+    *abi_value = 0;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23227,6 +23333,7 @@ static int w_PMPI_T_event_copy(MPIABI_T_event_instance abi_event_instance,
   {                                                                            \
     (void)abi_name;                                                            \
     (void)abi_event_index;                                                     \
+    *abi_event_index = 0;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23320,6 +23427,8 @@ static int w_PMPI_T_event_get_index(const char *abi_name, int *abi_event_index)
     (void)abi_bind;                                                            \
     if (abi_enumtype) *abi_enumtype = MPIABI_T_ENUM_NULL;                      \
     if (abi_info) *abi_info = MPIABI_INFO_NULL;                                \
+    if (abi_verbosity) *abi_verbosity = 0;                                     \
+    if (abi_bind) *abi_bind = 0;                                               \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23357,6 +23466,7 @@ static int w_PMPI_T_event_get_info(int abi_event_index, char *abi_name,
 #define BODY_MPI_T_event_get_num(TARGET)                                       \
   {                                                                            \
     (void)abi_num_events;                                                      \
+    *abi_num_events = 0;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23383,6 +23493,7 @@ static int w_PMPI_T_event_get_num(int *abi_num_events)
   {                                                                            \
     (void)abi_event_instance;                                                  \
     (void)abi_source_index;                                                    \
+    *abi_source_index = 0;                                                     \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23411,6 +23522,7 @@ static int w_PMPI_T_event_get_source(
   {                                                                            \
     (void)abi_event_instance;                                                  \
     (void)abi_event_timestamp;                                                 \
+    *abi_event_timestamp = 0;                                                  \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23608,6 +23720,7 @@ static int w_PMPI_T_finalize(void) BODY_MPI_T_finalize(PMPI_T_finalize)
   {                                                                            \
     (void)abi_required;                                                        \
     (void)abi_provided;                                                        \
+    *abi_provided = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23636,6 +23749,7 @@ static int w_PMPI_T_init_thread(int abi_required, int *abi_provided)
     (void)abi_name;                                                            \
     (void)abi_var_class;                                                       \
     (void)abi_pvar_index;                                                      \
+    *abi_pvar_index = 0;                                                       \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23710,6 +23824,12 @@ static int w_PMPI_T_pvar_get_index(const char *abi_name, int abi_var_class,
     (void)abi_atomic;                                                          \
     if (abi_datatype) *abi_datatype = MPIABI_DATATYPE_NULL;                    \
     if (abi_enumtype) *abi_enumtype = MPIABI_T_ENUM_NULL;                      \
+    if (abi_verbosity) *abi_verbosity = 0;                                     \
+    if (abi_var_class) *abi_var_class = 0;                                     \
+    if (abi_bind) *abi_bind = 0;                                               \
+    if (abi_readonly) *abi_readonly = 0;                                       \
+    if (abi_continuous) *abi_continuous = 0;                                   \
+    if (abi_atomic) *abi_atomic = 0;                                           \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23747,6 +23867,7 @@ static int w_PMPI_T_pvar_get_info(int abi_pvar_index, char *abi_name,
 #define BODY_MPI_T_pvar_get_num(TARGET)                                        \
   {                                                                            \
     (void)abi_num_pvar;                                                        \
+    *abi_num_pvar = 0;                                                         \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -23798,6 +23919,7 @@ static int w_PMPI_T_pvar_get_num(int *abi_num_pvar)
     (void)abi_handle;                                                          \
     (void)abi_count;                                                           \
     *abi_handle = MPIABI_T_PVAR_HANDLE_NULL;                                   \
+    *abi_count = 0;                                                            \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -24125,6 +24247,8 @@ static int w_PMPI_T_pvar_write(MPIABI_T_pvar_session abi_session,
     (void)abi_max_ticks;                                                       \
     (void)abi_info;                                                            \
     if (abi_info) *abi_info = MPIABI_INFO_NULL;                                \
+    if (abi_ticks_per_second) *abi_ticks_per_second = 0;                       \
+    if (abi_max_ticks) *abi_max_ticks = 0;                                     \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -24160,6 +24284,7 @@ static int w_PMPI_T_source_get_info(int abi_source_index, char *abi_name,
 #define BODY_MPI_T_source_get_num(TARGET)                                      \
   {                                                                            \
     (void)abi_num_sources;                                                     \
+    *abi_num_sources = 0;                                                      \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif
@@ -24185,6 +24310,7 @@ static int w_PMPI_T_source_get_num(int *abi_num_sources)
   {                                                                            \
     (void)abi_source_index;                                                    \
     (void)abi_timestamp;                                                       \
+    *abi_timestamp = 0;                                                        \
     return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
   }
 #endif

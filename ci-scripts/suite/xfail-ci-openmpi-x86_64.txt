@@ -33,8 +33,28 @@
 #
 # It is listed nowhere, and cannot be: it flaps on x86_64, so listing it fails the
 # runs it passes. That is also the wrong remedy -- a segfault through our own code is
-# a bug to fix, not an expectation to record. NOTES.md #5.8 and the MPI_T string
-# handling are where to start.
+# a bug to fix, not an expectation to record.
+#
+# **One cause was found and fixed; whether it was the whole cause is not yet known.**
+# decision 6's stub used to leave non-handle out parameters untouched, and this test
+# does `int num_sources; MPI_T_source_get_num(&num_sources); for (i = 0; i <
+# num_sources; i++)` over an Open MPI that has no MPI_T_source_get_num -- so the loop
+# bound was stack garbage, which is exactly the shape of a symptom that is reliable on
+# one architecture and intermittent on the other. NOTES.md decision 6 now requires a
+# stub to define every `out` scalar, and it does.
+#
+# What that does *not* explain is the faulting call itself. The backtrace crashes in
+# MPI_T_pvar_get_info, which Open MPI does have, so it is not a stub; and its two call
+# sites in this test take their index from MPI_T_pvar_get_num and from
+# MPI_T_category_get_pvars, both also present and both faithful passthroughs here.
+# Open MPI's own bounds check is worth knowing about while chasing the rest:
+# mca_base_pvar_get_internal tests `index >= pvar_count` and *not* `index < 0`, its
+# `assert(*pvar)` is compiled out in the -O3 -DNDEBUG build install-openmpi.sh
+# produces, and opal_pointer_array_get_item omits the negative check too -- so a
+# negative index is an unchecked wild read rather than MPI_T_ERR_INVALID_INDEX. The
+# fault address 0x44 is exactly offsetof(mca_base_pvar_t, flags) on LP64, which is
+# `(*pvar)->flags` with *pvar NULL. The next run of this shard is the experiment:
+# if mpit_vars still fails, the remaining index source is what to find.
 #
 # **One of these three is the hypothesis this project has been carrying, now
 # reproduced on a second Open MPI release.** `coll/allred 4` gets wrong answers for

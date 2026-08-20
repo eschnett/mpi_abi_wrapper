@@ -1459,6 +1459,29 @@ the decision rather than working around it.
    `dev/probe_impl.py` from the implementation's own header — not a version
    test, not `nm`, and not `#ifdef` on the implementation's own name for a
    constant. §3, `HISTORY.md` §1.19.
+
+   **A stub must leave every out parameter defined, not just the handles.** This
+   was half-done for a long time: the stub nulled out-handles — `null_out_handles`,
+   whose docstring already gave the reason as "so that nobody is handed an
+   uninitialized one" — and left plain integers untouched. A caller that ignores
+   the return code, which the standard lets it do and real code does, then reads
+   its own uninitialized stack. `mpi_t/mpit_vars` is the case that found it:
+
+   ```c
+   int num_sources;
+   MPI_T_source_get_num(&num_sources);      /* no released Open MPI has this */
+   for (int i = 0; i < num_sources; i++)    /* loop bound is stack garbage */
+   ```
+
+   The consequence is not a wrong answer but undefined behaviour whose *symptom*
+   depends on what the stack held, which is why that test failed reliably on one
+   architecture and intermittently on the other and was twice mis-diagnosed from
+   single runs. **A report the caller can ignore into undefined behaviour is not a
+   report**, so `stub_out_zeros` now writes a defined zero to every `out` scalar,
+   under the same nullable rule the handles use. `inout` integers are deliberately
+   left alone: `MPI_T_category_get_info`'s `name_len` is the caller's buffer size
+   on the way in, and zeroing it would destroy an input rather than define an
+   output.
 7. **PMPI gets its own vtable slots** — two per entry point, 1366 in all,
    calling the implementation's shifted names directly. No probe and no
    fallback, since both names always exist and reach the same code when nothing
