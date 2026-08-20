@@ -127,7 +127,11 @@ jobs:
         run: |
           tap="${MPIABI_SUITE_WORK}/summary.tap"
           echo "::group::mt_*probe* lines, wrapped"
-          grep -E "mt_[im]?probe" "$tap" || echo "(no matching lines)"
+          if [ -f "$tap" ]; then
+              grep -E "mt_[a-z]*probe" "$tap" || echo "(no matching TAP lines)"
+          else
+              echo "no TAP at $tap"
+          fi
           echo "::endgroup::"
 
       # **Leg two: no wrapper at all.** The same suite tree, configured against Open
@@ -149,14 +153,48 @@ jobs:
           echo "configured against ${PREFIX} (no wrapper)"
 
           export MPIEXEC_FILTER_LAUNCHER="${PREFIX}/bin/mpiexec"
+
+          # **The arguments are not optional and their absence is silent-ish.** These
+          # programs answer a bare invocation with "Usage: ... -count=[COUNT]
+          # -iter=[ITER]" and MPI_Abort, which the first version of this probe recorded
+          # as a failure and nearly read as the answer. The values are the testlist's
+          # own: threads/pt2pt/testlist gives `arg=-iter=1024 arg=-count=1` for all
+          # four, so the native leg runs exactly what the wrapped leg ran.
+          args="-iter=1024 -count=1"
+
+          summary=""
           for t in mt_probe_isendrecv mt_probe_sendrecv mt_iprobe_isendrecv mt_iprobe_sendrecv; do
-              echo "::group::native ${t}"
-              ( cd "${native}/threads/pt2pt" && make "$t" >/dev/null 2>&1 ) \
-                  || { echo "  BUILD FAILED"; echo "::endgroup::"; continue; }
+              echo "::group::native ${t} ${args}"
+              if ! ( cd "${native}/threads/pt2pt" && make "$t" >/dev/null 2>&1 ); then
+                  echo "  BUILD FAILED"
+                  summary="${summary}\n  ${t}: BUILD FAILED"
+                  echo "::endgroup::"
+                  continue
+              fi
+              # No pipe around the launcher: `... | tail` reports tail's status, which
+              # is what made every row of the first run say exit=0.
+              out="${RUNNER_TEMP}/native-${t}.out"
               set +e
               ( cd "${native}/threads/pt2pt" && \
-                timeout 180 "${GITHUB_WORKSPACE}/ci-scripts/suite/mpiexec-filter" -n 2 "./$t" 2>&1 | tail -20 )
-              echo "  exit=$?"
+                timeout 180 "${GITHUB_WORKSPACE}/ci-scripts/suite/mpiexec-filter" \
+                    -n 2 "./$t" $args ) >"$out" 2>&1
+              rc=$?
               set -e
+              tail -25 "$out"
+              # "No Errors" is how every program in this suite reports success, and
+              # runtests looks for exactly that rather than for the exit status.
+              if grep -q "No Errors" "$out"; then
+                  verdict="PASSED"
+              elif grep -q "MPI_ERR_COUNT" "$out"; then
+                  verdict="FAILED with MPI_ERR_COUNT (the symptom under investigation)"
+              else
+                  verdict="FAILED otherwise"
+              fi
+              echo "  rc=${rc}  ->  ${verdict}"
+              summary="${summary}\n  ${t}: rc=${rc} ${verdict}"
               echo "::endgroup::"
           done
+
+          echo "::group::NATIVE SUMMARY -- no wrapper in the path"
+          printf "%b\n" "$summary"
+          echo "::endgroup::"
