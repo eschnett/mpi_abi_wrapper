@@ -154,6 +154,24 @@ threads/comm/idup_comm_gen 4 : not yet attributed. Observed: -------------------
 threads/init/mult_session 4 : not yet attributed. Observed: Could not find key thread_level
 threads/part/mt_parrived_wait 2 : not yet attributed. Observed: Rank 1 tid 2 expected 32.0 but received 0.0 at buf[32] (partition 4 count 8 off 0), iteration 0
 threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: --------------------------------------------------------------------------
+# **The four threads/pt2pt/mt_*probe* lines below are a family, and the family flaps.**
+# All four fail the same way -- MPI_ERR_COUNT out of MPI_Recv, over Open MPI and not
+# over MPICH -- but *which* of them trips in a given run moves with thread timing. Run
+# 32409072194 is the demonstration: mt_iprobe_isendrecv failed (as listed) while
+# mt_iprobe_sendrecv passed, and the gate went red on "EXPECTED FAILURE THAT PASSED"
+# with zero unexpected failures.
+#
+# check-tap.py has no way to express that. It is strictly bidirectional -- an unlisted
+# failure, a listed test that passed, and a listed test that did not run all fail the
+# run -- so for a test that flaps, listing it fails the runs it passes and not listing
+# it fails the runs it fails. There is no placement of these four that is stable, and
+# moving them between this file and the per-architecture ones only moves which run goes
+# red. They are left listed because they fail far more often than they pass; the p2p
+# legs are report-only, so the cost is noise rather than a blocked merge.
+#
+# Fixing it properly means either attributing the underlying MPI_ERR_COUNT bug, or
+# giving check-tap.py a way to say "may fail or pass" -- which is a change to what the
+# gate means and wants deciding on its own, not in passing.
 threads/pt2pt/mt_probe_isendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
 threads/pt2pt/mt_probe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
 threads/pt2pt/mt_iprobe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
