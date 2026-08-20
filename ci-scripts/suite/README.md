@@ -203,7 +203,7 @@ nothing duplicated, and no two shards sharing a test — which also settles that
 `testlist.dtp` follows the directory filter rather than escaping it, the one way
 sharding could have quietly run tests twice or not at all. The 41-line MPICH list
 has reproduced across three runs and all three architectures, i386 included, where
-it held unchanged and ILP32 only *added* eleven lines. The 109-line Open MPI list
+it held unchanged and ILP32 only *added* eleven lines. The 110-line Open MPI list
 reproduced in full. Two entries filed as architecture differences turned out to be
 intermittent tests and were removed when the second run passed them; a test that
 flaps cannot be listed at all, since listing it fails the run it passes and not
@@ -689,7 +689,7 @@ Everything needed is on disk. **`ci-scripts/suite/run-suite.sh`** is the runner 
 `--dirs`, `--skip-dirs`, `--xfail`, the teed runtests invocation and the environment
 it exports; **`ci-scripts/suite/mpiexec-filter`** is the launcher the suite actually
 gets, and its header explains `--oversubscribe` and the watchdog;
-**`ci-scripts/suite/xfail-ci-openmpi.txt`** holds the 109 expectations and states the
+**`ci-scripts/suite/xfail-ci-openmpi.txt`** holds the 110 expectations and states the
 rma gap in its own header; **`.github/workflows/ci.yaml`**'s `suite` job holds the
 shard matrix and is where a per-leg environment variable would go;
 **`ci-scripts/install-openmpi.sh`** builds the 5.0.10 being wrapped;

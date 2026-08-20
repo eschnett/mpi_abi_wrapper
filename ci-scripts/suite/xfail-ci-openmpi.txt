@@ -11,8 +11,11 @@
 # **Written from run 32182485327**, the first run in which an Open MPI leg got far
 # enough to produce results: three of its four shards completed and the fourth did
 # not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
-# / 20, rest 316 / 82. The 109 lines here are the failures both architectures
-# produced; the four that only one produced are in the two delta files.
+# / 20, rest 316 / 82. That run put 109 lines here, the failures both architectures
+# produced, and four in the two delta files. **There are 110 now**, and one delta
+# line: run 32302208489 failed threads/pt2pt/mt_iprobe_isendrecv 2 on both
+# architectures over five attempts, so it moved here from the x86_64 file, which
+# explains its own longer reason below.
 #
 # **`rma` is missing from this list, and it is no longer a gap: the directory is not
 # run on the Open MPI legs.** It was a gap for a while -- both shards were killed six
@@ -154,6 +157,7 @@ threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: -----------------
 threads/pt2pt/mt_probe_isendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
 threads/pt2pt/mt_probe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
 threads/pt2pt/mt_iprobe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_iprobe_isendrecv 2 : not yet attributed, and the fourth member of the family above. Moved here from the x86_64 delta: run 32302208489 failed it on both architectures, 21 failures apiece and the same 21 tests, over five attempts. Observed: *** An error occurred in MPI_Recv
 attr/keyval_double_free 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
 attr/keyval_double_free_comm 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
 attr/keyval_double_free_type 1 : not yet attributed. Observed: *** An error occurred in MPI_Type_free_keyval
