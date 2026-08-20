@@ -216,7 +216,15 @@ io/rd_end 2 : not yet attributed. Observed: 0: count was 10; expected 5
 io/tst_fileview 1 : not yet attributed. Observed: Error at line 101: expect MPI_ERR_IO but got MPI_ERR_TYPE: invalid datatype
 mpi_t/mpi_t_str 1 : not yet attributed. Observed: check failed: ((strlen(desc) + 1) == min(desc_len, STR_SZ)), line 86
 mpi_t/cvarwrite 1 : not yet attributed. Observed: Found 83 errors
-mpi_t/getindex 1 : not yet attributed. Observed: Errors found in MPI_T_cvar_get_index
+# Partly attributed, and staying listed. Its absurd error count -- run 32398089529
+# reported "Found 629584712 errors" -- was the same uninitialized-out-parameter bug
+# decision 6's stub fix cured: `int num_events; MPI_T_event_get_num(&num_events);` over
+# an Open MPI with no MPI_T_event_get_num, then one `errs++` per garbage iteration. That
+# part is gone. What remains is real and independent of it: the cvar and pvar sections
+# fail on their own, including MPI_T_cvar_get_index("AN INVALID CVAR NAME FOR TEST") not
+# answering MPI_T_ERR_INVALID_NAME. So expect this to keep failing, with a small count
+# instead of a huge one, and the small count is the part still to attribute.
+mpi_t/getindex 1 : not yet attributed beyond the event-loop half, which decision 6's stub fix cured; the cvar and pvar index lookups fail independently. Observed: Errors found in MPI_T_cvar_get_index
 session/session_bsend 2 : not yet attributed. Observed: MPI_Buffer_detach: dummy_size = 8388608, expect 0
 topo/cartmap1 4 : not yet attributed. Observed: rank outside of input communicator not UNDEFINED
 topo/cartsuball 4 : not yet attributed. Observed: cart sub to size 0 did not give null
