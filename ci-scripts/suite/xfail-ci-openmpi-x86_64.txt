@@ -10,16 +10,31 @@
 # run 32302208489.** One entry is left, and both departures are worth keeping because
 # each was a claim this file made and then had to withdraw.
 #
-# `mpi_t/mpit_vars 1` left first: x86_64 passed it the second time, so it was called
-# an intermittent test rather than an architecture difference and listed nowhere. That
-# has since gone the other way. Over five attempts of run 32302208489 it failed
-# aarch64 every time and passed x86_64 every time, which is an architecture difference
-# after all -- and it now has a mechanism rather than an outcome, because it
-# *segfaults*, in MPI_T_pvar_get_info through this project's wrapper and into Open
-# MPI's mca_base_pvar_get, alongside 599 errors from the
-# `strlen(desc) + 1 == min(desc_len, STR_SZ)` check that NOTES.md #5.8 makes ours.
-# It is still listed nowhere, deliberately: a segfault through our own code is a bug
-# to fix and not an expectation to record.
+# `mpi_t/mpit_vars 1` left first, was called an intermittent test, and the record now
+# says something more useful than either "intermittent" or "architecture difference".
+# Four runs:
+#
+#     32182485327   x86_64 failed                      -> listed here
+#     32189118611   x86_64 passed                       -> delisted as a flap
+#     32302208489   x86_64 passed, aarch64 failed 5/5   -> called architecture-specific
+#     32398089529   x86_64 failed, aarch64 failed       -> neither claim survives
+#
+# **aarch64 fails it every time; x86_64 fails it some of the time.** Both earlier
+# readings were single-run inferences, and the second one was made in this file while
+# quoting the warning against exactly that.
+#
+# What reconciles them is the mechanism, which is new: it *segfaults*, in
+# MPI_T_pvar_get_info through this project's wrapper and into Open MPI's
+# mca_base_pvar_get -- "address not mapped", at 0x44 -- alongside 599 errors from the
+# `strlen(desc) + 1 == min(desc_len, STR_SZ)` check that NOTES.md #5.8 makes ours. A
+# bad pointer lands on a mapped address sometimes and not others, so one bug that is
+# always present explains a reliable symptom on one architecture and an intermittent
+# one on the other. There is no need for two explanations.
+#
+# It is listed nowhere, and cannot be: it flaps on x86_64, so listing it fails the
+# runs it passes. That is also the wrong remedy -- a segfault through our own code is
+# a bug to fix, not an expectation to record. NOTES.md #5.8 and the MPI_T string
+# handling are where to start.
 #
 # **One of these three is the hypothesis this project has been carrying, now
 # reproduced on a second Open MPI release.** `coll/allred 4` gets wrong answers for
