@@ -154,12 +154,38 @@ threads/comm/idup_comm_gen 4 : not yet attributed. Observed: -------------------
 threads/init/mult_session 4 : not yet attributed. Observed: Could not find key thread_level
 threads/part/mt_parrived_wait 2 : not yet attributed. Observed: Rank 1 tid 2 expected 32.0 but received 0.0 at buf[32] (partition 4 count 8 off 0), iteration 0
 threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: --------------------------------------------------------------------------
-# **The four threads/pt2pt/mt_*probe* lines below are a family, and the family flaps.**
-# All four fail the same way -- MPI_ERR_COUNT out of MPI_Recv, over Open MPI and not
-# over MPICH -- but *which* of them trips in a given run moves with thread timing. Run
-# 32409072194 is the demonstration: mt_iprobe_isendrecv failed (as listed) while
-# mt_iprobe_sendrecv passed, and the gate went red on "EXPECTED FAILURE THAT PASSED"
-# with zero unexpected failures.
+# **The four threads/pt2pt/mt_*probe* lines below are a family, they are Open MPI's,
+# and the family flaps.**
+#
+# **Attributed, finally, and not to us.** Run 32418464622 built the same suite tree
+# twice against the same Open MPI 5.0.10 -- once through this project's prefix and once
+# against Open MPI directly -- and ran all four in each. With **no wrapper in the path
+# at all**, eight of eight native runs failed: seven printed the same
+# `MPI_ERR_COUNT: invalid count argument` out of MPI_Recv that the wrapped leg shows,
+# and the eighth aborted identically with the message past the captured tail. The
+# wrapped leg in the same run reproduced as listed -- 61 tests, 11 failures, 11 expected
+# and 0 unexpected. So this is an Open MPI bug reachable without this project, which is
+# what two releases of "not yet attributed" could not say because the tests had only
+# ever been run through the wrapper.
+#
+# For whoever takes it upstream, the path is short and the arithmetic is not in doubt:
+#
+#     int recv_count = -1;
+#     MPI_Iprobe(...);  MPI_Get_count(status, MPI_INT, &recv_count);
+#     MPI_Recv(buff, recv_count, MPI_INT, ...);          /* MPI_ERR_COUNT */
+#
+# so the count reaching MPI_Recv is negative -- either still -1, because MPI leaves an
+# out parameter alone on an error return, or MPI_UNDEFINED, which Open MPI's
+# MPI_Get_count returns when the status byte count is not a multiple of the datatype
+# size. Both are legitimate, so the question is why the probe's status carries a
+# _ucount that is not a whole number of MPI_INTs under MPI_THREAD_MULTIPLE. ob1's
+# iprobe copies the whole status including _ucount on a match and leaves it untouched
+# on a miss, which is where reading ran out and measuring took over.
+#
+# **And the family still flaps, which is separate from whose bug it is.** *Which* member
+# trips in a given run moves with thread timing. Run 32409072194 is the demonstration:
+# mt_iprobe_isendrecv failed (as listed) while mt_iprobe_sendrecv passed, and the gate
+# went red on "EXPECTED FAILURE THAT PASSED" with zero unexpected failures.
 #
 # check-tap.py has no way to express that. It is strictly bidirectional -- an unlisted
 # failure, a listed test that passed, and a listed test that did not run all fail the
@@ -172,10 +198,10 @@ threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: -----------------
 # Fixing it properly means either attributing the underlying MPI_ERR_COUNT bug, or
 # giving check-tap.py a way to say "may fail or pass" -- which is a change to what the
 # gate means and wants deciding on its own, not in passing.
-threads/pt2pt/mt_probe_isendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
-threads/pt2pt/mt_probe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
-threads/pt2pt/mt_iprobe_sendrecv 2 : not yet attributed. Observed: *** An error occurred in MPI_Recv
-threads/pt2pt/mt_iprobe_isendrecv 2 : not yet attributed, and the fourth member of the family above. Moved here from the x86_64 delta: run 32302208489 failed it on both architectures, 21 failures apiece and the same 21 tests, over five attempts. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_probe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_probe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_iprobe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv
+threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622. MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv then rejects. Observed: *** An error occurred in MPI_Recv. Moved here from the x86_64 delta in ab8f2d4, run 32302208489 having failed it on both architectures
 attr/keyval_double_free 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
 attr/keyval_double_free_comm 1 : not yet attributed. Observed: *** An error occurred in MPI_Comm_free_keyval
 attr/keyval_double_free_type 1 : not yet attributed. Observed: *** An error occurred in MPI_Type_free_keyval
