@@ -256,13 +256,16 @@ at all — the matrix excludes them — and `rest` on i386 now finishes in 3 min
 **all eighteen live legs complete**. The rest of this section is the record of how each
 was answered: `rma` under "Round three", i386 under "The i386 `rest` shard".
 
-**One caveat on the table above, earned by the i386 answer.** "Nothing above about 45
-minutes finishes here" was read off durations, and for the i386 row it was the wrong
-reading — that leg was not being reclaimed for taking too long, it was starving its own
-runner, and the 51 minutes were a symptom rather than the cause. The measurement is
-under "The i386 `rest` shard". Whether the same is true of the Open MPI legs at 58 and
-75 minutes is untested; what is now known is that a duration in this table is not by
-itself evidence of an environment limit.
+**The table above has since been read wrong twice, and both corrections are worth
+carrying.** "Nothing above about 45 minutes finishes here" was inferred from durations,
+and it does not hold: `suite / openmpi / x86_64 / p2p` ran **50 min 41 s to success** in
+run 32425661806, and aarch64's 50 min 13 s. Nor was the i386 row being reclaimed for
+taking too long — it was starving its own runner, so its 51 minutes were a symptom. Both
+measurements are below, under "The i386 `rest` shard" and "Do the Open MPI legs die the
+same way". What survives of this table is that the pre-sharding Open MPI legs died and
+the sharded ones do not, which sharding itself explained: the deaths were `rma`, and
+`rma` is excluded now. **A duration in this table is not evidence of an environment
+limit.**
 
 **Isolating `rma` did what it was for — the answer is now about 176 tests rather
 than about a row.** With runtests' output teed into the job log (a killed job
@@ -943,6 +946,56 @@ landed at 179.7 s of a 180 s limit on these runners, which is also the likeliest
 the line was ever recorded. Giving the row the multiplier the other MPICH rows have is
 the probable fix and is deliberately *not* done yet: it would double every limit in the
 shard whose failure mode under investigation is a job that runs too long.
+
+### Do the Open MPI legs die the same way? No, and not by luck
+
+The question is the obvious one after the i386 answer, and it has three parts: do they
+die now, did the ones that died die of this, and are the survivors trending there.
+
+**They do not die now.** No Open MPI leg in runs 32420200083, 32425661806, 32434698299
+or 32436484546 carries "lost communication" or "shutdown signal". `x86_64 / p2p` ran
+**50 min 41 s to success** in 32425661806 and aarch64's 50 min 13 s, which also
+falsifies "nothing above about 45 minutes finishes here" for these legs — that section's
+wall was never a wall, it was one shard. Their red rows are *gate* failures: `rest`
+finishes in about 14 minutes and fails on one unlisted `mpi_t/mpit_vars 1`.
+
+**The one that did die has a different cause, already measured**: `rma`, whose
+per-element memory took runners down at six minutes — `transpose1` at 8.02 GB — which is
+the upstream Open MPI 5.x regression under "Round three" and why the matrix excludes
+that shard. Both rows therefore died of the same *outcome*, a starved runner, by
+different *causes*: one test legitimately allocating 10 GB against a leak plus orphans.
+That distinction is the whole answer, and collapsing it into "the same way" would be
+wrong in the direction that matters — the i386 fix was a flag, and this one is upstream.
+
+**And the survivors are not trending there**, which is the part that needed measuring
+rather than reasoning: a leg that finishes today can still be leaking, as the i386 row
+finished its early directories before its tmpfs filled. `.github/workflows/openmpi-starvation-probe.yaml`
+ran both surviving shards under the same ten-second instrument, field for field, in run
+[32438146220](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32438146220):
+
+| | i386 `rest` at 64 MB | openmpi `p2p`, 47 min | openmpi `rest`, 14 min |
+|---|---|---|---|
+| `/dev/shm` peak | **64M of 64M, full at 16 s** | 480 KB of 7.9 GB | 660 KB of 7.9 GB |
+| entries | **3 → 166, monotonic** | 0–6, oscillating, ends at 3 | 0–7, oscillating, ends at 1 |
+| MemAvailable | **14.8 GB → 16 MB** | 14.5–15.0 GB, flat | 13.2–15.0 GB |
+| load, on 4 vCPUs | **345** | 8.6 | 6.1 |
+| processes | 8 → 275 | 163–302, against a ~160 baseline | 158–263 |
+| SIGBUS, bad terminations | **139, 172** | 0, 0 | 0, 0 |
+
+**Open MPI reclaims its shared segments and MPICH does not.** The entry count here goes
+up and down and ends where it started, where MPICH left 24 files and 39 MB behind even
+in the leg that *passed* cleanly. So there is nothing accumulating to fill a tmpfs,
+which is why the host's 7.9 GB is not the reason these legs are safe — they would be
+safe at 64 MB too, on this evidence.
+
+Where the p2p leg's 50 minutes actually go, since that was the standing suspicion:
+**`part/testlist` alone takes 27 of them** for 46 tests, and `threads/comm` another 9.
+Real test time in two directories, with no crash of any kind in the log.
+
+**Not measured**: the excluded `rma` shard under this instrument, which would only
+re-derive a number Round three already has; and aarch64, where only the durations and
+the absence of kill messages are known. If an Open MPI leg is ever containerised, the
+`--shm-size` question returns for it regardless of this result.
 
 ## What the previous pins measured, and why the split exists
 
