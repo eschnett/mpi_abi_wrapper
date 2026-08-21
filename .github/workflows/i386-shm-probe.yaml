@@ -106,6 +106,19 @@ jobs:
           # Enough that no test in the suite can be short of it.
           - name: 8g
             flag: "--shm-size=8g"
+          # **The io directory, which the two legs above leave out.** It is where
+          # 18 of the shard's 20 minutes go and where the one surviving log ends:
+          # `simple_collective` took 147 s and `external32_derived_dtype` hit
+          # hydra's 180-second limit and then could not be killed --
+          # "unable to send signal downstream" -- with the runner shutdown
+          # message arriving seconds later. A shard that stops crashing may still
+          # not finish, so this asks whether the stalls are the same problem, with
+          # the shm question already answered in its favour and those two tests as
+          # the ones it blames.
+          - name: io-8g
+            flag: "--shm-size=8g"
+            dirs: "--dirs=io"
+            tests: "io/simple_collective io/external32_derived_dtype"
     steps:
       - uses: actions/checkout@v6
 
@@ -146,6 +159,8 @@ jobs:
             -v "${SUITE_OUT}:/out" \
             -e SRC=/src \
             -e RUNTESTS_VERBOSE=1 \
+            -e MPIABI_PROBE_DIRS="${{ matrix.shm.dirs }}" \
+            -e MPIABI_PROBE_TESTS="${{ matrix.shm.tests }}" \
             i386/debian:trixie-slim \
             bash /src/ci-scripts/suite/i386-shm-probe.sh
 

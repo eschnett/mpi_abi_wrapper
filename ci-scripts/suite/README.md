@@ -740,7 +740,7 @@ defined, and `''` compares numerically as 0 — so a matrix that spells the defa
 as `MPITEST_MEMORY_TOTAL=""` skips every `mem=`-annotated test in the directory and runs
 none of what it exists to run.
 
-### The i386 `rest` shard: what one cancelled run showed, and what is being measured
+### The i386 `rest` shard: not ILP32, a 64 MB `/dev/shm`
 
 **The row still dies the same way, and it has got harder to instrument.** In run
 [32425661806](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32425661806)
@@ -765,52 +765,86 @@ says something no list on this branch records yet.
 |---|---|---|
 | failures | **172** (160 distinct programs) | 33, every one listed |
 | of those, `EXIT STRING: Bus error (signal 7)` | **139** | 0 |
-| `io` | **18.2 minutes**, two stalls of 147 s and 882 s | 4 seconds |
+| `io` | **18.2 minutes**, 14.7 of them the window the runner was reclaimed in | 4 seconds |
 | everything but `io` | 2.5 minutes | 55 seconds |
 
 The failures are not confined to anything: `info` 12 of 12, `io` 31 of 31, `datatype`
 29 of 71, `errors/*` almost entirely, and `comm`'s 46 tests clean. The first SIGBUS
 lands 13 seconds into `datatype`, after `attr` and `comm` have run 71 tests without
-one. So the ILP32 delta list, which has eleven lines, is short by something like 140.
+one. So the ILP32 delta list, which has eleven lines, *looked* short by something like
+140 — and the next paragraph is why it is not short by any.
 
-**The hypothesis is that most of that is one missing flag, and that it is not about 32
-bits at all.** i386 is the only suite row that runs inside `docker run` — a 32-bit
-userspace cannot host the runner's own x86_64 node actions, which is why
-`ci-scripts/suite/i386-suite.sh` exists — and `ci-scripts/run-linux-docker.sh` passes
-no `--shm-size`, so that container gets Docker's default **64 MB `/dev/shm`**. The
-other four rows run directly on the runner, where it is the host's; the probe prints
-both sizes rather than assuming either. MPICH's ch4:shm is expected to map its shared
-segments there — also checked rather than assumed, by counting the entries — and SIGBUS
-is exactly what touching a page of a mapping the backing tmpfs cannot honour produces.
-It is *not* the signal x86 raises for the misaligned access ILP32 would otherwise be
-suspected of. A rank that dies leaves its
-segment behind, which is the shape of "71 tests pass and then everything fails".
+**That log also caught the reclaim happening**, which is worth separating from the
+stalls it gets blamed on. The 882 seconds are not one test running long: inside them
+`external32_derived_dtype` hit hydra's own 180-second limit, hydra then failed to kill
+it — `unable to send signal downstream`, `sock write error` — and
+"The runner has received a shutdown signal" appears seconds later, with the job
+cancelled 15 seconds after that. So that window is the environment coming apart rather
+than a measurement of the test, and the only stall in it measured against a working
+launcher is `simple_collective`'s 147 seconds.
 
-If that is right it also retires three lines of `xfail-ci-mpich-i386.txt` that are
-filed as "not yet attributed, and ILP32-only" and are all requests for more shared
-memory than 64 MB: `coll/bcast*` at 4–32 ranks reporting `BAD TERMINATION` with no
-signal quoted, and `rma/win_large_shm` asserting `map_entry != NULL` in `ch4_impl.h`.
+**It is not about 32 bits. It is one missing flag.** i386 is the only suite row that
+runs inside `docker run` — a 32-bit userspace cannot host the runner's own x86_64 node
+actions, which is why `ci-scripts/suite/i386-suite.sh` exists — and
+`ci-scripts/run-linux-docker.sh` passed no `--shm-size`, so that container got Docker's
+default `/dev/shm`: **64 MB**, `size=65536k` in the mount line. The other four rows run
+directly on the runner, whose own `/dev/shm` is **7.9 GB**. MPICH maps its shared
+segments in that tmpfs, and touching a page the tmpfs cannot back is SIGBUS — not the
+signal x86 raises for the misaligned access ILP32 would otherwise be suspected of.
 
-**Two things it does not explain**, and they are worth stating so a green shm leg is
-not over-read: the 882-second stall inside `io`, which is longer than any base time
-limit in the suite, and the runner death itself — a 64 MB tmpfs cannot starve a 16 GB
-runner. Against the hypothesis: the `p2p`, `rma` and `coll` shards of the same run, in
-the same container with the same 64 MB, report 0, 0 and 1 bus errors. Whatever the
-mechanism is, it is reached by what the `rest` directories do and not by the container
-alone.
+`.github/workflows/i386-shm-probe.yaml` and `ci-scripts/suite/i386-shm-probe.sh`
+measured it: the same shard twice, one flag apart, same image, same minutes, `io` left
+out because 18 of the shard's 20 minutes are in that one directory while the storm
+starts before it. Run
+[32431588989](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32431588989):
 
-**The measurement is `.github/workflows/i386-shm-probe.yaml` with
-`ci-scripts/suite/i386-shm-probe.sh` inside it**: the same shard twice, one variable
-apart — no flag, and `--shm-size=8g` — on the same image within the same hour, which is
-the same-run-control rule the libfabric round established. It leaves `io` out, because
-18 of the shard's 20 minutes are in that one directory and the storm reproduces in the
-2.5 minutes that are not; prints `/dev/shm`'s size, its entry count and free memory
-every ten seconds, so a leak is visible while it happens; and runs two of the SIGBUS-ing
-tests — `info/infotest` and `datatype/pairtype_size_extent` — under gdb both through the
-wrapper and against MPICH's own `mpicc`. The backtrace names the library the signal
-lands in and the native leg is the "is it ours" method the rest of this branch used: a
-test that SIGBUSes with no wrapper in the path is not ours. Both are disposable and go
-with the branch.
+| | default (64 MB) | `--shm-size=8g` |
+|---|---|---|
+| the job | **did not finish** — 40-minute limit, inside `docker run` | **3 min 13 s**, 44 s of it testing |
+| tests | no result | 283: 248 passed, **33 failed** |
+| unlisted failures — what the gate rejects | no result | **0** |
+| SIGBUS | no result | **0** |
+| the gate | no result | **"suite matches its expected-failure list"** |
+
+**So there is no ILP32 delta here at all.** With room in `/dev/shm`, 32-bit x86
+reproduces the 41-line shared expected-failure list exactly — 33 of its lines fired,
+nothing else failed — in 44 seconds against x86_64's 55, and
+`xfail-ci-mpich-i386.txt` needs not one line for any of the ~140 failures that were
+about to be written into it as properties of ILP32.
+
+**The mechanism is a leak, and the clean leg is what shows it.** During those 44
+seconds `/dev/shm` went 3 → 22 → 24 entries and 4.1 → 36 → 39 MB, and all 24
+`mpich_shm_*_0` files were **still there** when the suite finished. Nothing reclaims
+them. So the tmpfs fills as the shard runs, and against a 64 MB cap it is a question of
+when rather than whether — which is the shape of "`attr` and `comm` run 71 tests clean
+and then everything fails".
+
+**Not ours.** In the leg with room, `info/infotest` and `datatype/pairtype_size_extent`
+both pass standalone under gdb and under `mpiexec -n 2`, through the wrapper *and* built
+against MPICH's own `mpicc`. The wrapper is not in this failure anywhere.
+
+**What this does not settle, stated so the green leg is not over-read.**
+
+- **Where the control leg's 40 minutes went is unknown, because its log is gone.** A job
+  that exceeds its timeout loses its log here exactly as a reclaimed one does —
+  `gh run view --job 96624103650 --log` answers "log not found" — so what is established
+  is that the identical script finished in 3m13s with 8 GB and had not finished in 40
+  minutes with 64 MB, not the shape of the difference in between. That lesson is now in
+  the probe: it imposes a `timeout` of its own inside the container, so the step
+  completes and the log is kept.
+- **39 MB is less than 64 MB.** The leak alone does not arithmetically prove the cap was
+  crossed in the CI runs; what is measured is a monotonic leak with no reclaim, a 64 MB
+  cap, and a storm that disappears when the cap is raised. A failing test may well leak
+  more than a passing one, and the shard as CI runs it has 314 tests to this leg's 283.
+  The exact crossing point was not measured.
+- **`io` was in neither leg**, so `simple_collective`'s 147 seconds and whatever
+  `external32_derived_dtype` really costs are untouched by this. The probe has an `io-8g` leg for exactly that question, and the two
+  tests it blames are the two that stalled.
+- **The runner death is not explained by a 64 MB tmpfs**, which cannot starve a 16 GB
+  runner. What the shm answer does change is the premise: a shard that spends its time
+  crashing and leaking is not the same shard as one that finishes in 44 seconds, so the
+  death has to be re-measured after the flag lands rather than reasoned about from the
+  runs before it.
 
 **A separate red row in the same run, noted here because its cause is one line of
 drift.** `suite / mpich 5.0.1 / i386 / coll` fails the gate for the opposite reason —

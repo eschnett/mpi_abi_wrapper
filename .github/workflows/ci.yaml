@@ -1140,12 +1140,19 @@ jobs:
     # than assumed: that method rests on a killed job keeping its log while losing its
     # artifacts, and this job keeps neither -- `gh run view --job 96606969905 --log`
     # answers "log not found" and the run's log archive has no entry for the job at
-    # all. So a probe of this row has to end on its own terms. What one *cancelled*
-    # run did leave behind says the shard is failing 172 tests, 139 of them with
-    # SIGBUS, and that 18 of its 20 minutes are in `io` alone;
-    # ci-scripts/suite/README.md's "The i386 `rest` shard" has the numbers and the
-    # hypothesis they point at, which is that this is the only suite row inside
-    # `docker run` and therefore the only one with a 64 MB /dev/shm.
+    # all. So a probe of this row has to end on its own terms.
+    #
+    # **What the probe found is that most of it was never about this row at all**: this
+    # is the only suite row inside `docker run`, so it was the only one with Docker's
+    # default 64 MB /dev/shm against the runner's own 7.9 GB, and MPICH leaks its
+    # shared segments there -- 24 files and 39 MB left behind by 283 tests, none of
+    # them reclaimed. With --shm-size=8g, which ci-scripts/run-linux-docker.sh now
+    # passes, these directories go from 172 failures and 139 SIGBUS to 33 failures,
+    # every one already listed, and the gate green in 44 seconds. Run 32431588989, and
+    # ci-scripts/suite/README.md's "The i386 `rest` shard" has the table and the four
+    # things it does not settle -- among them the `io` directory, which was in neither
+    # leg, and this row's 50-minute death, which a 64 MB tmpfs cannot cause on its own.
+    # Whether the row now finishes is what the next run of it answers.
     #
     # Until then this row is honestly red rather than dishonestly green, which is what
     # gating means.

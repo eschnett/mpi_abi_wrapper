@@ -80,12 +80,50 @@ mpis=("$@")
 
 command -v docker >/dev/null || { echo "docker not found" >&2; exit 2; }
 
+# **--shm-size, because Docker's default is 64 MB and an MPI lives in
+# /dev/shm.** A container gets 64 MB there whatever the host has; MPICH's
+# ch4:shm maps its shared segments in that tmpfs, and touching a page the tmpfs
+# cannot back raises SIGBUS -- which is not a signal x86 raises for anything the
+# tests themselves do wrong.
+#
+# Measured, one flag apart in run 32431588989, on the i386 `rest` shard of the
+# suite minus its io directory:
+#
+#   default (64 MB, and `size=65536k` is what the mount says) -- the job did not
+#     finish. It hit its 40-minute limit inside `docker run`, having done work the
+#     other leg did in 3m13s. In CI the same shard fails 172 tests, 139 of them
+#     with "Bus error (signal 7)".
+#   --shm-size=8g -- **283 tests, 248 passed, 33 failed, every failure already in
+#     the shared expected-failure list, none unlisted, none a crash**, and the
+#     gate green: 44 seconds of testing against x86_64's 55. Nothing about ILP32
+#     left to explain.
+#
+# The mechanism is a leak, also measured: /dev/shm went 3 -> 22 -> 24 entries and
+# 4.1 -> 36 -> 39 MB during those 44 seconds and **all 24 `mpich_shm_*` files
+# were still there when the suite ended**. Nothing reclaims them, so against a
+# 64 MB cap the tmpfs fills as the shard runs, and touching a page it cannot back
+# is SIGBUS. The runner's own /dev/shm is 7.9 GB, which is why the four 64-bit
+# rows -- which run on the runner rather than in a container -- never see this.
+#
+# It is a cap and not a reservation -- tmpfs pages are allocated on demand, and
+# this leg used 39 MB of the 8 GB -- so a generous number costs nothing until
+# something uses it, and something using all of it would itself be a finding. 8g
+# is the value that was measured; MPIABI_DOCKER_SHM_SIZE overrides it.
+# ci-scripts/suite/README.md has the full comparison and what it does not settle.
+#
+# The same trap exists for a `container:` job in GitHub Actions, which is
+# .github/workflows/ci.yaml's `linux-distro` and `sanitize` rows; there the knob
+# is `options: --shm-size=...`. Those rows run 13 ctest tests at two ranks and
+# pass, so nothing is changed there on the strength of this measurement.
+shm_size=${MPIABI_DOCKER_SHM_SIZE:-8g}
+
 status=0
 for mpi in "${mpis[@]}"; do
   image=$(image_for "$mpi")
   inner=$(inner_for "$mpi")
   printf '\n########## %s on %s ##########\n' "$mpi" "$image"
   docker run --rm \
+    --shm-size="$shm_size" \
     -v "$src:/src:ro" \
     ${MPIABI_LINUX_OUT:+-v "$MPIABI_LINUX_OUT:/out"} \
     -e SRC=/src \
