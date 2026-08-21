@@ -740,6 +740,87 @@ defined, and `''` compares numerically as 0 — so a matrix that spells the defa
 as `MPITEST_MEMORY_TOTAL=""` skips every `mem=`-annotated test in the directory and runs
 none of what it exists to run.
 
+### The i386 `rest` shard: what one cancelled run showed, and what is being measured
+
+**The row still dies the same way, and it has got harder to instrument.** In run
+[32425661806](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32425661806)
+job `suite / mpich 5.0.1 / i386 / rest` ended at 50 min 01 s with "The hosted runner
+lost communication with the server", the same 49–52 minute wall this section opens
+with and the same one `.github/workflows/ci.yaml` records five consecutive attempts
+of. **What is new is that the log is gone too.**
+`gh run view --job 96606969905 --log` answers `log not found`, and the run's own log
+archive contains no entry for that job at all, while every other job in the run is
+there. So the instrument that answered the rma question — everything on stdout, because
+a killed job keeps its log even when it loses its artifacts — does not reach this
+failure. A probe of this row has to *end on its own terms*: a smaller unit of work, or
+a self-imposed timeout below the wall.
+
+**One run did leave a log, because it was cancelled rather than killed**: job
+96590527783 of run
+[32420200083](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32420200083),
+superseded by a newer push 24 minutes in. It reached the `session` directory, and it
+says something no list on this branch records yet.
+
+| | i386 | x86_64, same shard, same run |
+|---|---|---|
+| failures | **172** (160 distinct programs) | 33, every one listed |
+| of those, `EXIT STRING: Bus error (signal 7)` | **139** | 0 |
+| `io` | **18.2 minutes**, two stalls of 147 s and 882 s | 4 seconds |
+| everything but `io` | 2.5 minutes | 55 seconds |
+
+The failures are not confined to anything: `info` 12 of 12, `io` 31 of 31, `datatype`
+29 of 71, `errors/*` almost entirely, and `comm`'s 46 tests clean. The first SIGBUS
+lands 13 seconds into `datatype`, after `attr` and `comm` have run 71 tests without
+one. So the ILP32 delta list, which has eleven lines, is short by something like 140.
+
+**The hypothesis is that most of that is one missing flag, and that it is not about 32
+bits at all.** i386 is the only suite row that runs inside `docker run` — a 32-bit
+userspace cannot host the runner's own x86_64 node actions, which is why
+`ci-scripts/suite/i386-suite.sh` exists — and `ci-scripts/run-linux-docker.sh` passes
+no `--shm-size`, so that container gets Docker's default **64 MB `/dev/shm`**. The
+other four rows run directly on the runner, where it is the host's; the probe prints
+both sizes rather than assuming either. MPICH's ch4:shm is expected to map its shared
+segments there — also checked rather than assumed, by counting the entries — and SIGBUS
+is exactly what touching a page of a mapping the backing tmpfs cannot honour produces.
+It is *not* the signal x86 raises for the misaligned access ILP32 would otherwise be
+suspected of. A rank that dies leaves its
+segment behind, which is the shape of "71 tests pass and then everything fails".
+
+If that is right it also retires three lines of `xfail-ci-mpich-i386.txt` that are
+filed as "not yet attributed, and ILP32-only" and are all requests for more shared
+memory than 64 MB: `coll/bcast*` at 4–32 ranks reporting `BAD TERMINATION` with no
+signal quoted, and `rma/win_large_shm` asserting `map_entry != NULL` in `ch4_impl.h`.
+
+**Two things it does not explain**, and they are worth stating so a green shm leg is
+not over-read: the 882-second stall inside `io`, which is longer than any base time
+limit in the suite, and the runner death itself — a 64 MB tmpfs cannot starve a 16 GB
+runner. Against the hypothesis: the `p2p`, `rma` and `coll` shards of the same run, in
+the same container with the same 64 MB, report 0, 0 and 1 bus errors. Whatever the
+mechanism is, it is reached by what the `rest` directories do and not by the container
+alone.
+
+**The measurement is `.github/workflows/i386-shm-probe.yaml` with
+`ci-scripts/suite/i386-shm-probe.sh` inside it**: the same shard twice, one variable
+apart — no flag, and `--shm-size=8g` — on the same image within the same hour, which is
+the same-run-control rule the libfabric round established. It leaves `io` out, because
+18 of the shard's 20 minutes are in that one directory and the storm reproduces in the
+2.5 minutes that are not; prints `/dev/shm`'s size, its entry count and free memory
+every ten seconds, so a leak is visible while it happens; and runs two of the SIGBUS-ing
+tests — `info/infotest` and `datatype/pairtype_size_extent` — under gdb both through the
+wrapper and against MPICH's own `mpicc`. The backtrace names the library the signal
+lands in and the native leg is the "is it ours" method the rest of this branch used: a
+test that SIGBUSes with no wrapper in the path is not ours. Both are disposable and go
+with the branch.
+
+**A separate red row in the same run, noted here because its cause is one line of
+drift.** `suite / mpich 5.0.1 / i386 / coll` fails the gate for the opposite reason —
+`EXPECTED FAILURE THAT PASSED coll/reduce 10` — and i386 is the one MPICH leg that does
+*not* set `MPITEST_TIMEOUT_MULTIPLIER: 2`. That variable exists because `coll/reduce 10`
+landed at 179.7 s of a 180 s limit on these runners, which is also the likeliest reason
+the line was ever recorded. Giving the row the multiplier the other MPICH rows have is
+the probable fix and is deliberately *not* done yet: it would double every limit in the
+shard whose failure mode under investigation is a job that runs too long.
+
 ## What the previous pins measured, and why the split exists
 
 Three runs over **MPICH 4.3.1 and the Open MPI 4.1.6 Ubuntu 24.04 ships**, with

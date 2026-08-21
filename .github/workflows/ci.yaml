@@ -1132,12 +1132,20 @@ jobs:
     # **The fourth does not, and turning this on makes that block rather than whisper:
     # `i386 / rest` loses its runner.** "The hosted runner lost communication with the
     # server", at 49 to 52 minutes, in five consecutive attempts of run 32302208489 and
-    # in the runs before it. It uploads no log and no TAP, so there is nothing for
-    # either list to excuse -- an xfail line needs a result and a flaky line needs one
-    # too. Whatever kills it has to be *found*, and the instrument is the one the rma
-    # work used: a resource monitor printing to stdout every ten seconds, because a
-    # killed job keeps its log and loses its artifacts. ci-scripts/suite/README.md's
-    # "Round two" and "Round three" are that method written down.
+    # in every run since, 32425661806 included. It uploads no log and no TAP, so there
+    # is nothing for either list to excuse -- an xfail line needs a result and a flaky
+    # line needs one too.
+    #
+    # **The rma work's instrument does not reach this one**, which is measured rather
+    # than assumed: that method rests on a killed job keeping its log while losing its
+    # artifacts, and this job keeps neither -- `gh run view --job 96606969905 --log`
+    # answers "log not found" and the run's log archive has no entry for the job at
+    # all. So a probe of this row has to end on its own terms. What one *cancelled*
+    # run did leave behind says the shard is failing 172 tests, 139 of them with
+    # SIGBUS, and that 18 of its 20 minutes are in `io` alone;
+    # ci-scripts/suite/README.md's "The i386 `rest` shard" has the numbers and the
+    # hypothesis they point at, which is that this is the only suite row inside
+    # `docker run` and therefore the only one with a 64 MB /dev/shm.
     #
     # Until then this row is honestly red rather than dishonestly green, which is what
     # gating means.
