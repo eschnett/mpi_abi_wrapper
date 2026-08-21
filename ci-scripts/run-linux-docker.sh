@@ -117,6 +117,24 @@ command -v docker >/dev/null || { echo "docker not found" >&2; exit 2; }
 # pass, so nothing is changed there on the strength of this measurement.
 shm_size=${MPIABI_DOCKER_SHM_SIZE:-8g}
 
+# **The suite's own knobs have to cross the container boundary, and they did not.**
+# A `docker run` inherits nothing from the caller's environment, so a job setting
+# MPITEST_TIMEOUT_MULTIPLIER outside this script was setting it for a shell that
+# runs no tests -- which is how the i386 row came to be the one MPICH leg without
+# the multiplier the others set, in a way no file said out loud.
+#
+# `${VAR:+-e VAR}` forwards a variable only when it is set *and non-empty*, which
+# is deliberate rather than idiomatic: MPITEST_MEMORY_TOTAL is read by runtests
+# with `defined()`, an empty string is defined, and `''` compares numerically as 0,
+# so forwarding an empty one would skip every `mem=`-annotated test in the run.
+# Absent is the only safe way to spell "default" for that family
+# (ci-scripts/suite/README.md records what that trap cost the rma probe).
+docker_env=(
+  ${MPITEST_TIMEOUT_MULTIPLIER:+-e MPITEST_TIMEOUT_MULTIPLIER}
+  ${MPITEST_MEMORY_TOTAL:+-e MPITEST_MEMORY_TOTAL}
+  ${RUNTESTS_VERBOSE:+-e RUNTESTS_VERBOSE}
+)
+
 status=0
 for mpi in "${mpis[@]}"; do
   image=$(image_for "$mpi")
@@ -126,6 +144,7 @@ for mpi in "${mpis[@]}"; do
     --shm-size="$shm_size" \
     -v "$src:/src:ro" \
     ${MPIABI_LINUX_OUT:+-v "$MPIABI_LINUX_OUT:/out"} \
+    ${docker_env[@]+"${docker_env[@]}"} \
     -e SRC=/src \
     "$image" bash "$inner" "$mpi" ${MPIABI_LINUX_ARGS:-} || status=1
 done

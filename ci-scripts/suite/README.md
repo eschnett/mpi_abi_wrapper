@@ -149,7 +149,7 @@ expected-failure list:
 | `suite` × aarch64 | MPICH 5.0.1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
 | `suite` × x86_64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
 | `suite` × aarch64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
-| `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | not yet | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
+| `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
 
 **Each of those five runs as four jobs**, one per shard of the suite — **eighteen
 legs**, not twenty: `rma` is excluded on the two Open MPI legs, for the measured and
@@ -220,7 +220,7 @@ its logs as an artifact whether it passed or not, because `--gate-only` writes a
 list from a TAP file in hand rather than from a fresh 40-minute run. Deleting
 `continue-on-error` is what makes a leg gate.
 
-## The Open MPI and i386 lists are empty because their legs cannot finish here
+## Why the Open MPI lists are empty, and how the i386 ones stopped being
 
 **Long jobs do not survive in this CI environment**, and the numbers say so
 plainly. Run 32155423441, every job in it:
@@ -252,9 +252,17 @@ so this is a property of where they ran and not of the suite.
 That is what the sharding above is for, and two runs of it said how far it got:
 **seventeen of the then-twenty legs completed and gated.** The three that did not were
 `rma` on both Open MPI legs and `rest` on i386. Those two `rma` legs are no longer run
-at all — the matrix excludes them — so the live count is seventeen of eighteen, with
-`rest` on i386 the one outstanding leg. The rest of this section is the record of how
-the `rma` question was answered; the answer itself is under "Round three".
+at all — the matrix excludes them — and `rest` on i386 now finishes in 3 min 38 s, so
+**all eighteen live legs complete**. The rest of this section is the record of how each
+was answered: `rma` under "Round three", i386 under "The i386 `rest` shard".
+
+**One caveat on the table above, earned by the i386 answer.** "Nothing above about 45
+minutes finishes here" was read off durations, and for the i386 row it was the wrong
+reading — that leg was not being reclaimed for taking too long, it was starving its own
+runner, and the 51 minutes were a symptom rather than the cause. The measurement is
+under "The i386 `rest` shard". Whether the same is true of the Open MPI legs at 58 and
+75 minutes is untested; what is now known is that a duration in this table is not by
+itself evidence of an environment limit.
 
 **Isolating `rma` did what it was for — the answer is now about 176 tests rather
 than about a row.** With runtests' output teed into the job log (a killed job
@@ -823,6 +831,52 @@ and then everything fails".
 both pass standalone under gdb and under `mpiexec -n 2`, through the wrapper *and* built
 against MPICH's own `mpicc`. The wrapper is not in this failure anywhere.
 
+**The row then finished, for the first time.** With the flag in
+`ci-scripts/run-linux-docker.sh`, `suite / mpich 5.0.1 / i386 / rest` in run
+[32434698299](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32434698299)
+went green in **3 minutes 38 seconds** — against 49-52 minutes and no result at all, in
+every one of the attempts before it. Its numbers are not merely acceptable, they are
+x86_64's, test for test:
+
+| | i386, with the flag | x86_64, same shard |
+|---|---|---|
+| tests | 316: 279 passed, 33 failed, 4 skipped | 316: 279 passed, 33 failed, 4 skipped |
+| unlisted failures | **0** | 0 |
+| SIGBUS, launcher timeouts | **0, 0** | 0, 0 |
+
+**And the other three shards named which of the eleven ILP32-only lines were the tmpfs
+and which are real** — the gate did it, by rejecting the run for `EXPECTED FAILURE THAT
+PASSED`, which is the mechanism that keeps a list from quietly holding a line that has
+stopped being true. In the same run: `p2p` green at 137 tests / 1 failure, `rma` green
+at 197 / 3, `rest` green at 316 / 33, and `coll` red with 192 / 10 — every failure in
+all four listed, nothing unlisted anywhere, and **five listed tests passing**:
+
+| retired — it was the 64 MB tmpfs | kept — it survives 8 GB of `/dev/shm` |
+|---|---|
+| `coll/bcast 4` | `coll/redscatbkinter 8`, `coll/redscatbkinter 10` |
+| `coll/bcast_comm_world_only 10` | `coll/gather 4` |
+| `coll/bcasttest 16`, `coll/bcasttest 32` | `pt2pt/pt2pt_large 2` |
+| `coll/reduce 10` | `rma/win_large_shm 3`, `rma/win_large_shm 4` |
+
+The four `bcast*` lines were the ones asking 4 to 32 ranks' worth of shared memory of a
+64 MB tmpfs, and their `EXIT CODE: 9` was a rank being killed rather than a collective
+being wrong. `coll/reduce 10` is the timing knife-edge measured at 179.7 s of a 180 s
+limit further down this file, and i386 was the one MPICH leg running without the
+`MPITEST_TIMEOUT_MULTIPLIER: 2` the others set — **because a job `env:` block does not
+cross into `docker run`, and `run-linux-docker.sh` forwarded no suite knobs at all**.
+It forwards them now, and the row sets the multiplier, so that is the cause addressed
+rather than the symptom listed.
+
+The right-hand column keeps its "may well be ours" standing, unchanged except for one
+fact it did not have: it is not the container. `rma/win_large_shm` reads better than
+ever as honest — a 32-bit process has 4 GB of address space, so 8 GB of `/dev/shm`
+cannot help it and did not.
+
+**So the "empty because their legs cannot finish here" of this section's title no longer
+describes the i386 row.** It finishes, it gates, and its delta is six lines rather than
+eleven — and none of the ~140 SIGBUS failures that were about to be called ILP32
+properties is one.
+
 **What this does not settle, stated so the green leg is not over-read.**
 
 - **Where the control leg's 40 minutes went is unknown, because its log is gone.** A job
@@ -837,14 +891,40 @@ against MPICH's own `mpicc`. The wrapper is not in this failure anywhere.
   cap, and a storm that disappears when the cap is raised. A failing test may well leak
   more than a passing one, and the shard as CI runs it has 314 tests to this leg's 283.
   The exact crossing point was not measured.
-- **`io` was in neither leg**, so `simple_collective`'s 147 seconds and whatever
-  `external32_derived_dtype` really costs are untouched by this. The probe has an `io-8g` leg for exactly that question, and the two
-  tests it blames are the two that stalled.
-- **The runner death is not explained by a 64 MB tmpfs**, which cannot starve a 16 GB
-  runner. What the shm answer does change is the premise: a shard that spends its time
-  crashing and leaking is not the same shard as one that finishes in 44 seconds, so the
-  death has to be re-measured after the flag lands rather than reasoned about from the
-  runs before it.
+- ~~**`io` was in neither leg**~~ — **it has since been measured, and it is the same
+  cause.** The probe's `io-8g` leg, run
+  [32434696210](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32434696210):
+  **"All 31 tests passed! (total runtime: 0 min 3 sec)"**, no SIGBUS, no timeout,
+  slowest test 0.07 s. The same directory fails 31 of 31 over 18.2 minutes with 64 MB.
+  So `simple_collective`'s 147 seconds and `external32_derived_dtype`'s 180-second
+  timeout were the full tmpfs as well, not two slow tests, and nothing in `io` needs a
+  line either.
+- ~~**The runner death is not explained by a 64 MB tmpfs**~~ — **it is, and the
+  control leg watched it happen.** Re-run with a 20-minute timeout of its own so that
+  the container exits and the log survives (run
+  [32434696210](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32434696210),
+  the `default` leg), the monitor's ten-second lines are the whole mechanism:
+
+  | into the suite | `/dev/shm` | entries | load, on 4 vCPUs | procs | MemAvailable |
+  |---|---|---|---|---|---|
+  | 6 s | 6.1M of 64M | 3 | 1.96 | 54 | 14.9 GB |
+  | 16 s | **64M of 64M — full** | 5 | 8.03 | 124 | 14.3 GB |
+  | 1 min | 64M of 64M | 69 | 58.9 | 188 | 6.5 GB |
+  | 3 min | 64M of 64M | 158 | 228 | 178 | 336 MB |
+  | 3 min 50 s | 64M of 64M | 165 | **247** | 135 | **16 MB** |
+
+  The tmpfs is full **16 seconds into the suite, inside `datatype`** — which is where
+  the CI log's first SIGBUS lands, to the directory. From there the leak only grows
+  (166 entries at the end, none reclaimed) and the crashing tests leave orphans: 275
+  processes at the peak, load reaching **345**, and MemAvailable falling from 14.8 GB
+  to **16 MB**. The gdb step afterwards took 2 min 36 s for work the clean leg did in
+  half a second, because the machine was still on its knees.
+
+  **So this row was not a victim of "long jobs do not survive here". It was starving
+  its own runner**, which is exactly what GitHub's message for the failure names —
+  "anything … that starves it for CPU/Memory". The 49-52 minute kill is when the
+  runner loses contact, not when a scheduler reclaims it. The Open MPI legs' kills at
+  58 and 75 minutes are a separate question and this says nothing about them.
 
 **A separate red row in the same run, noted here because its cause is one line of
 drift.** `suite / mpich 5.0.1 / i386 / coll` fails the gate for the opposite reason —

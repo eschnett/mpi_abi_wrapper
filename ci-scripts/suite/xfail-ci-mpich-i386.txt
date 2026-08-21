@@ -10,31 +10,50 @@
 # counts that no longer fit, a datatype extent that overflows, anything about
 # sizeof -- belong here rather than in the shared list.
 #
-# **Empty because no leg of this row has finished in CI yet, not because the run
-# was clean.** All three attempts were killed mid-run with "the runner has
-# received a shutdown signal" -- at 51, 58 and 75 minutes, while the two legs that
-# finished at 28 and 44 minutes were fine. ci-scripts/suite/README.md has the
-# whole table and what it implies; the short version is that nothing above about
-# 45 minutes completes in that environment, and this row takes 75.
+# **All four shards of this row now finish, and the reason they did not was one
+# missing Docker flag.** This is the only suite row that runs inside `docker run`,
+# so it was the only one whose /dev/shm was Docker's default 64 MB against the
+# runner's own 7.9 GB -- and MPICH leaks its shared segments into that tmpfs, 24
+# files and 39 MB left behind by 283 tests, none reclaimed. Once it fills, every
+# further MPI_Init-era mapping raises SIGBUS. That is what the `rest` shard's ~140
+# extra failures were, and why it never finished: 172 failures and 139 SIGBUS,
+# against x86_64's 33 for the same shard.
 #
-# **Written from run 32182485327**, the first run in which this row got far enough
-# to produce results. Three of its four shards completed -- coll 192 tests / 15
-# failed, rma 197 / 3, p2p 137 / 1 -- and `rest` did not: it was killed with "the
-# runner has received a shutdown signal" after building its own MPICH, so no
-# expectation for the directories in that shard has been recorded here yet, and
-# this row cannot gate until it has.
+# ci-scripts/run-linux-docker.sh now passes --shm-size, and in run 32434698299
+# `rest` went green in **3 minutes 38 seconds** with x86_64's numbers exactly --
+# 316 tests, 279 passed, 33 failed, 4 skipped, nothing unlisted, no SIGBUS -- where
+# every attempt before it died at 49-52 minutes with no result at all.
+# ci-scripts/suite/README.md's "The i386 `rest` shard" has the two-leg measurement
+# and what it does not settle.
 #
-# **All 41 lines of xfail-ci-mpich.txt held here unchanged**, on three shards, with
-# nothing in it failing to fire -- so ILP32 adds to that list without contradicting
-# it, which is what the shared/delta split is for. The eleven lines below are the
-# additions.
+# **So this file is a delta of six lines rather than eleven.** Five retired in that
+# run because they were the tmpfs rather than the architecture, and the gate is
+# what named them -- `EXPECTED FAILURE THAT PASSED`, which is the rule that a list
+# cannot quietly keep a line that has stopped being true:
 #
-# **Most of them are one shape, and it is the shape this row exists to find.** Six
-# collective tests and one point-to-point test fail inside MPICH's *own* internals
-# with a value that cannot be right:
+#     coll/bcast 4, coll/bcast_comm_world_only 10, coll/bcasttest 16, coll/bcasttest 32
+#     coll/reduce 10
 #
-#     typerep_yaksa_pack.c line 326: element_size < 0
-#     internal_Send_c: Invalid buffer pointer
+# The four bcast lines were the ones asking 4 to 32 ranks' worth of shared memory
+# of a 64 MB tmpfs, and their `EXIT CODE: 9` was a rank being killed rather than a
+# collective being wrong. coll/reduce 10 is the timing knife-edge
+# ci-scripts/suite/README.md measures at 179.7 s of a 180 s limit, and this row is
+# the one MPICH leg that had been running without the MPITEST_TIMEOUT_MULTIPLIER: 2
+# the others set; it now has it, which is the cause rather than the symptom. If it
+# flaps again, flaky-ci-mpich.txt is where it goes.
+#
+# **All 41 lines of xfail-ci-mpich.txt hold here unchanged**, across all four
+# shards, with nothing in it failing to fire -- so ILP32 adds to that list without
+# contradicting it, which is what the shared/delta split is for. The six lines
+# below are the additions.
+#
+# **They are two shapes, and both survive a /dev/shm with room in it**, which is
+# the one thing run 32434698299 added to their attribution: whatever they are, they
+# are not the container.
+#
+#     typerep_yaksa_pack.c line 326: element_size < 0     (coll/redscatbkinter, coll/gather)
+#     internal_Send_c: Invalid buffer pointer             (pt2pt/pt2pt_large)
+#     ch4_impl.h line 850: map_entry != NULL              (rma/win_large_shm)
 #
 # A negative element size and a rejected buffer pointer, in datatype packing and in
 # the large-count send, on the one architecture where an ABI handle is 4 bytes and
@@ -43,14 +62,19 @@
 # across that boundary would look exactly like this. **It may well be ours.** Every
 # one of these tests passes on x86_64 and aarch64 with the same wrapper build and
 # the same MPICH 5.0.1, so the difference is the architecture and not the release.
-# What settles it is the method S7 used throughout: build coll/gather and
-# pt2pt/pt2pt_large with MPICH's own mpicc inside the same linux/386 container and
-# see whether the assertion still fires with no wrapper in the picture. Until that
-# is done these lines say what was seen and claim nothing about whose bug it is.
+# What settles it is the method S7 used throughout, and which the shm probe has now
+# made routine: build coll/gather and pt2pt/pt2pt_large with MPICH's own mpicc
+# inside the same linux/386 container and see whether the assertion still fires with
+# no wrapper in the picture. `ci-scripts/suite/i386-shm-probe.sh` does exactly that
+# for two named tests and takes them from MPIABI_PROBE_TESTS, so it is a matter of
+# pointing it here. Until that is done these lines say what was seen and claim
+# nothing about whose bug it is.
 #
-# rma/win_large_shm is likelier to be honest: a 32-bit process has 4 GB of address
-# space and the test asks for a large shared window, so MPICH asserting rather than
-# returning an error is its own choice about an impossible request.
+# rma/win_large_shm is likelier to be honest, and the shm run is evidence for that
+# reading rather than against it: a 32-bit process has 4 GB of address space and the
+# test asks for a large shared window, so 8 GB of /dev/shm cannot help it and did
+# not. MPICH asserting rather than returning an error is its own choice about an
+# impossible request.
 #
 # One line per test, `<dir>/<program> <np> : why`, in runtests' own naming.
 # check-tap.py enforces it in both directions -- an unlisted failure fails the
@@ -65,20 +89,16 @@
 # at four ranks or fewer runs 5-25x *faster*, so timing expectations move in both
 # directions at once. One file cannot be true of both machines.
 #
-# **An empty list is not a claim that the run is clean.** It says nothing has
-# been triaged here yet. These rows are report-only until a run has been green,
-# per the rule .github/workflows/ci.yaml's `compile` job records.
+# **This list is no longer empty and no longer a placeholder**, which is the whole
+# difference run 32434698299 made: it says what ILP32 adds over the shared list,
+# measured on four shards that all finished, rather than saying nothing has been
+# triaged. The row gates.
 
 # --- ILP32 only, not yet attributed --------------------------------------------
 
-coll/reduce 10 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: No Errors
-coll/redscatbkinter 8 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
-coll/redscatbkinter 10 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
-coll/gather 4 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
-coll/bcasttest 32 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
-coll/bcasttest 16 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
-coll/bcast 4 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
-coll/bcast_comm_world_only 10 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: = BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES
-rma/win_large_shm 4 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
-rma/win_large_shm 3 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
-pt2pt/pt2pt_large 2 : not yet attributed, and ILP32-only -- x86_64 and aarch64 pass it in the same run. Observed: Abort(134924545) on node 0 (rank 0 in comm 0): Fatal error in internal_Send_c: Invalid buffer pointer, error stack:
+coll/redscatbkinter 8 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
+coll/redscatbkinter 10 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
+coll/gather 4 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
+rma/win_large_shm 4 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
+rma/win_large_shm 3 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
+pt2pt/pt2pt_large 2 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Abort(134924545) on node 0 (rank 0 in comm 0): Fatal error in internal_Send_c: Invalid buffer pointer, error stack:

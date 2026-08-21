@@ -1123,6 +1123,29 @@ jobs:
   suite-i386:
     name: suite / mpich 5.0.1 / i386 / ${{ matrix.shard.name }}
     runs-on: ubuntu-24.04
+    # **The same multiplier the other MPICH rows set, which this row had been
+    # missing.** ci-scripts/suite/README.md measures why it exists: `coll/reduce 10`
+    # lands at 179.7 s of a 180 s base limit on these runners, and doubling the
+    # limit is what rescues it. Running one MPICH leg without it was drift rather
+    # than a decision, and it is the likeliest reason `coll/reduce 10` was ever
+    # written into xfail-ci-mpich-i386.txt -- a line that run 32434698299 then
+    # rejected, because the test passed. Not set until now for a reason that the
+    # /dev/shm fix removed: while this row's failure mode was a job that ran for 50
+    # minutes, doubling every limit in it was the wrong direction. The shard is 3
+    # minutes 38 seconds.
+    #
+    # It also makes the shared list *more* likely to hold here rather than less,
+    # which is the direction that matters for a gate: xfail-ci-mpich.txt was
+    # calibrated on the 64-bit rows, which have always run with this multiplier, and
+    # every one of its 41 lines held on i386 without it.
+    #
+    # **A job `env:` block alone would not have done this.** The suite runs inside
+    # `docker run`, which inherits nothing, so ci-scripts/run-linux-docker.sh has to
+    # forward the variable -- and until this commit it forwarded no suite knobs at
+    # all. That is the mechanism by which this row came to differ from the others
+    # without any file saying so.
+    env:
+      MPITEST_TIMEOUT_MULTIPLIER: 2
     # **This row gates, like the other MPICH rows.** It was continue-on-error while
     # its lists were being written; TODO.md's "do not ignore mpich failures" is the
     # rule, and an MPICH row that cannot fail the build is not applying it. The four
