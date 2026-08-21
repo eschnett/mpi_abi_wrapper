@@ -872,6 +872,15 @@ fact it did not have: it is not the container. `rma/win_large_shm` reads better 
 ever as honest — a 32-bit process has 4 GB of address space, so 8 GB of `/dev/shm`
 cannot help it and did not.
 
+**Confirmed in the run after the triage**, which is what says the five deletions were
+right rather than hopeful:
+[32436484546](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32436484546) has
+**all four i386 shards green** — `rest` 3 m 24 s, `rma` 8 m 27 s, `p2p` 12 m 43 s,
+`coll` 14 m 51 s — with `coll` gating at 192 tests / 181 passed / 10 failed, every
+failure listed, nothing unlisted, and no `EXPECTED FAILURE THAT PASSED` anywhere. So
+`rest` finishing is reproducible and not a lucky run, and the multiplier now reaches the
+container.
+
 **So the "empty because their legs cannot finish here" of this section's title no longer
 describes the i386 row.** It finishes, it gates, and its delta is six lines rather than
 eleven — and none of the ~140 SIGBUS failures that were about to be called ILP32
