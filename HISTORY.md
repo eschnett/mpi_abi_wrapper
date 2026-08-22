@@ -1,10 +1,11 @@
 # MPI ABI wrapper — history
 
 What was tried and abandoned, what a measurement overturned, and what each
-implementation stage settled. One of three documents:
+implementation stage settled. One of four documents:
 
 | | holds |
 |---|---|
+| `CLAUDE.md` | how to work here: the reading protocol, the host, the session rules |
 | `CODE.md` | what the repository contains now, and the number behind every claim |
 | `NOTES.md` | the design, its reasons, and what is missing, broken or undecided |
 | **`HISTORY.md`** | roads not taken, beliefs that were measured false, and the stage record |
@@ -357,6 +358,20 @@ unrelated macro — renames to the same spelling. The plain uniform rule turned
 out to be both simpler and correct, so the special case was removed rather than
 kept.
 
+### 1.22 Probing the built-in request values at initialization
+
+The first mechanism considered for `NOTES.md` §13.2's staged-leak fix: reveal
+the implementation's shared built-in requests once at initialization — a
+`MPI_PROC_NULL` `MPI_Isend` and an `MPI_Ibarrier` on `MPI_COMM_SELF` produce
+them — then free rather than attach when a staged operation returns one.
+Rejected, twice over: the probed set is only as complete as the operations
+provoked, and nothing caps how many built-ins an implementation may have; and
+the values are not stable — MPICH's are `0x6c000000 | kind`, the kind enum
+grows, and two of MPICH's own named `MPIR_REQUEST_COMPLETE_*` macros are stale
+by exactly that drift. `NOTES.md` §13.2's (a) and (b) get the same effect from
+a question the standard answers (`MPI_Request_get_status`) rather than from
+values nobody promises.
+
 ---
 
 ## 2. Beliefs a measurement overturned
@@ -540,8 +555,8 @@ implementation and is wrong on the other.
 
 ### 2.11 Two benchmarks that reported confidently wrong numbers
 
-Both from `dev/dispatch-bench/`, and both are why the session-hygiene rule says
-to check a benchmark against its own disassembly:
+Both from `dev/dispatch-bench/`, and both are why `CLAUDE.md`'s session rule
+says to check a benchmark against its own disassembly:
 
 - measuring each shape to completion let thermal drift land on one shape,
   reporting **+213%** for one extra load;
@@ -716,6 +731,23 @@ version script on `libmpiwrapper` (§3's S6b), which GNU/Linux had been passing
 by accident. The row itself was then dropped: a permanently red row teaches
 nothing after the first run, and `NOTES.md` §13.4 now records the platform as
 unsupported.
+
+### 2.17 A benchmark that measured `host-env.sh`'s own workaround
+
+The poll benchmark behind `NOTES.md` §13.2's (b) — is `MPI_Request_get_status`
+on an incomplete request cheap enough for every in-flight staged post? — was
+run on the development laptop first and answered **9.2 µs per poll, +17%** on
+an `MPI_Ialltoallw`+`MPI_Wait` pair over MPICH. Three orders of magnitude out:
+`scripts/host-env.sh` pins `FI_PROVIDER=tcp` to dodge a VPN interface
+(`CODE.md` §12), so every MPICH progress poll on that machine goes through a
+TCP provider, and the benchmark measured the workaround rather than the
+mechanism. The container rows are the numbers — 6.5–16.3 ns per poll, at most
++1.7% on the pair — and they are what licensed (b).
+
+Third instance of §2.11's pattern, a benchmark reporting a confidently wrong
+number, and the first where the wrong number came from a *fix*. The rule it
+adds: a host-specific environment workaround is part of what any benchmark on
+that host measures.
 
 ---
 

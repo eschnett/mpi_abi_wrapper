@@ -1,13 +1,17 @@
 # MPI ABI wrapper — design
 
 The authoritative design document: what this project is, why it is shaped the
-way it is, and what about it is missing, broken or undecided. One of three:
+way it is, and what about it is missing, broken or undecided. One of four:
 
 | | holds |
 |---|---|
+| `CLAUDE.md` | how to work here: the reading protocol, the host, the session rules |
 | `CODE.md` | what the repository contains now, and the number behind every claim |
 | **`NOTES.md`** | the design, its reasons, and what is missing, broken or undecided |
 | `HISTORY.md` | roads not taken, beliefs that were measured false, and the stage record |
+
+**Read this file by the section a task names, never whole.** `CLAUDE.md`
+carries the protocol and the section map.
 
 **The section numbers below are an interface.** Roughly two hundred places in
 the source cite `NOTES.md #2`, `#5.7`, `#6.2` and the rest. §1–§13 keep their
@@ -1880,36 +1884,9 @@ not.
 
 ### Session hygiene
 
-- **Read only the sections a task names.** These files are long; loading all of
-  them wastes the context the work needs. `CODE.md` §2 and `gen/report.txt`
-  answer most "where is X" questions on their own.
-- **Do not re-litigate the numbered decisions.** They have reasons recorded,
-  several of them measured.
-- **New findings go in the section that owns the rule, not only in a stage
-  narrative.** This is the failure mode that a review found three times: S7's
-  `status.MPI_ERROR` rule, its displacement sentinel and its attribute-value
-  class were all recorded accurately in a per-stage account and left out of §5,
-  which is the section a later session actually reads. A finding is not filed
-  until the rule it changes says so.
-- **New measurements go in `dev/`.** A claim in a commit message is a claim
-  nobody will find again.
-- **Prefer a benchmark or a probe to an argument** for anything performance- or
-  loader-related, and **check any benchmark against its own disassembly** — two
-  of the three benchmarks here reported confidently wrong numbers first
-  (`HISTORY.md` §2.11).
-- **Check every count against the artifact, not against another sentence.**
-  Eleven have been wrong, each one `grep` from being right. `CODE.md` carries an
-  authority column for this reason; if a number is worth writing down, write
-  down how to re-derive it.
-- **Commit message subjects are imperative.** "Add the FreeBSD row", not "The
-  FreeBSD row, added" — the subject completes *if applied, this commit will
-  ___*, so `git log --oneline` reads as a list of what each commit does. Only
-  the subject's mood is fixed by this; the body keeps the style the rest of
-  this file asks for, which is the reason for the change, the measurement
-  behind any claim in it, and what was verified. The history is mixed because
-  this was not written down until late.
-- **End committed and green.** Work that leaves the tree red has not produced
-  something the next session can build on.
+Moved to `CLAUDE.md`, which every session loads. The rules are working style
+rather than design, and they could not do their job from deep inside the file
+they exist to keep out of context.
 
 ---
 
@@ -1971,10 +1948,10 @@ One is deliberately *not* closed by an edit, because an edit cannot close it:
 
 Each is a behaviour a user can hit, and all four should be in the release notes.
 All four are now deliberate — the design chose them, and §6.2 says why for the
-first two. The fourth used to be a conformance bug rather than a choice: a legal
-call answered with `MPI_ERR_INTERN`. That is fixed, and what is left in its
-place is a bounded leak, which is a limitation and not a bug. The history is
-kept under it because the wrong reading that hid it is worth not repeating.
+first two. The staged-leak one used to be a conformance bug rather than a
+choice: a legal call answered with `MPI_ERR_INTERN`. That is fixed, and what is
+left in its place is a bounded leak, which is a limitation and not a bug; the
+wrong reading that hid it is kept in `HISTORY.md` §2.6a.
 
 - **Fixed-capacity tables are exhaustible, and ordinary programs reach them.**
   1024 op trampolines per variant, 256 errhandler slots per class, 1024 keyval
@@ -1996,16 +1973,9 @@ kept under it because the wrong reading that hid it is worth not repeating.
   are in the way — counted by `mpiwrapper_staged_leaked()`, and warned about
   once per process in a debug build.
 
-  **Until it was fixed this was a conformance bug, and this section said it was
-  unreachable.** Both halves of that are worth keeping.
-
-  *Memory safety* was never at risk — that is what declining bought, and it is
-  why §6.3 calls it safe. *Conformance* was broken whenever it fired: a legal
-  call got an error the wrapped implementation would not have given, and the
-  default error handler turned that into an aborted job. *Reachability* **was
-  not nil.** `dev/request-identity/reproduce.c` got `MPI_ERR_INTERN` out of the
-  wrapper over stock Open MPI 5.0.6, no CVAR and no MCA parameter, from two
-  shapes:
+  The two shapes that reach it, from `dev/request-identity/reproduce.c` over
+  stock Open MPI 5.0.6 — no CVAR, no MCA parameter — and green now on both
+  implementations, macOS and Linux:
 
   - two `MPI_Ialltoallw` with all counts zero, posted before either is waited
     on;
@@ -2013,15 +1983,10 @@ kept under it because the wrong reading that hid it is worth not repeating.
     are zero, so there was *nothing* to keep alive and the wrapper attached a
     zero-length block only because the attach was unconditional.
 
-  Both are green now, on both implementations and on macOS and Linux.
-
-  What misled the earlier reading was `dev/request-identity/probe.c`'s
-  `MPI_Ialltoallw` row, which reports distinct handles and is the one shape that
-  gets them: distinct buffers and a count of 1, which is exactly what builds a
-  non-empty schedule on a one-rank communicator. `probe-staged.c` is the row to
-  read now, and `HISTORY.md` §2.6a keeps the correction, because it is that
-  section's class twice over: reasoning about what an implementation *would not*
-  do, and reading a measurement's scope as wider than it was.
+  Until (a) and (b) below existed, those two answered `MPI_ERR_INTERN` — a
+  conformance bug this section called unreachable. `HISTORY.md` §2.6a keeps
+  that correction and which probe row misled it; `probe-staged.c` is the row to
+  read now.
 
   Where the shortcut comes from, read out of the sources:
 
@@ -2044,16 +2009,12 @@ kept under it because the wrong reading that hid it is worth not repeating.
   `mpiwrapper_staged_keep` (`src/mpiwrapper/staging.c`), which is the one call
   the eight generated bodies make and the one place the policy is written down.
   Five mechanisms were considered; the first two were not built and the reasons
-  are kept, because both are natural ideas that will occur again.
+  are kept — the first in `HISTORY.md` §1.22, the second below — because both
+  are natural ideas that will occur again.
 
-  - *Probe the built-in request values once at initialization* — a
-    `MPI_PROC_NULL` `MPI_Isend` and an `MPI_Ibarrier` on `MPI_COMM_SELF` reveal
-    them — then free rather than attach when a staged operation returns one.
-    **Rejected:** the set is only as complete as the operations provoked, and
-    nothing caps how many built-ins an implementation may have. A second reason
-    has since turned up: the values are not stable. MPICH's are
-    `0x6c000000 | kind`, the kind enum grows, and two of MPICH's own named
-    `MPIR_REQUEST_COMPLETE_*` macros are stale by exactly that drift.
+  - *Probe the built-in request values once at initialization, then free rather
+    than attach when a staged operation returns one.* **Rejected** — the probed
+    set cannot be complete, and the values drift. `HISTORY.md` §1.22.
   - *Let one key hold more than one block.* The table is open-addressed and
     `mpiwrapper_staged_release` already frees exactly *one* matching entry, so
     the whole change is one arm of `mpiwrapper_staged_attach`: where it meets
@@ -2133,14 +2094,10 @@ kept under it because the wrong reading that hid it is worth not repeating.
     is not needed. It is recorded because it is the fallback if a host ever
     disagrees.
 
-    **A host did disagree, and the reason is a trap worth keeping.** The same
-    benchmark on the development laptop reports 9.2 µs per poll and **+17%** on
-    the pair for MPICH — three orders of magnitude out, and entirely an artefact
-    of `scripts/host-env.sh` pinning `FI_PROVIDER=tcp` to dodge a VPN interface.
-    Every MPICH progress poll on that machine goes through a TCP provider.
-    Benchmarking MPICH progress on this laptop measures the workaround; the
-    container rows are the numbers. Third instance of `HISTORY.md` §2.11's
-    pattern, and the first one where the wrong number came from a *fix*.
+    **A host did disagree**: the development laptop reports numbers three
+    orders of magnitude worse, an artefact of `scripts/host-env.sh`'s own
+    `FI_PROVIDER` workaround. The container rows are the numbers;
+    `HISTORY.md` §2.17 keeps the trap.
 
     Open MPI makes this exact move itself: `ompi_coll_base_retain_datatypes_w`,
     which attaches per-operation state to a request, opens with

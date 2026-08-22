@@ -1,10 +1,11 @@
 # MPI ABI wrapper — the code as it stands
 
 What this repository contains, where each thing lives, and the artifact behind
-every number. One of three documents:
+every number. One of four documents:
 
 | | holds |
 |---|---|
+| `CLAUDE.md` | how to work here: the reading protocol, the host, the session rules |
 | **`CODE.md`** | what the repository contains now, and the number behind every claim |
 | `NOTES.md` | the design, its reasons, and what is missing, broken or undecided |
 | `HISTORY.md` | roads not taken, beliefs that were measured false, and the stage record |
