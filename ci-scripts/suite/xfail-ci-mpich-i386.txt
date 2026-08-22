@@ -65,10 +65,11 @@
 # What settles it is the method S7 used throughout, and which the shm probe has now
 # made routine: build coll/gather and pt2pt/pt2pt_large with MPICH's own mpicc
 # inside the same linux/386 container and see whether the assertion still fires with
-# no wrapper in the picture. `ci-scripts/suite/i386-shm-probe.sh` does exactly that
-# for two named tests and takes them from MPIABI_PROBE_TESTS, so it is a matter of
-# pointing it here. Until that is done these lines say what was seen and claim
-# nothing about whose bug it is.
+# no wrapper in the picture. The shm probe did exactly that for two named tests, taking
+# them from MPIABI_PROBE_TESTS -- so pointing it here is the whole of the next step, and
+# `git show c1ea0a9` is the recipe, the probe itself having been deleted with the branch
+# it was written on. Until that is done these lines say what was seen and claim nothing
+# about whose bug it is.
 #
 # rma/win_large_shm is likelier to be honest, and the shm run is evidence for that
 # reading rather than against it: a 32-bit process has 4 GB of address space and the

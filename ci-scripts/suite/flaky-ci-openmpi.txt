@@ -33,3 +33,21 @@ threads/pt2pt/mt_probe_isendrecv 2 : Open MPI's, reproduced with no wrapper in t
 threads/pt2pt/mt_probe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
 threads/pt2pt/mt_iprobe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
 threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
+
+# **Flaps on both architectures, and the run table in xfail-ci-openmpi-x86_64.txt is
+# eleven observations long.** It segfaults rather than failing: MPI_T_pvar_get_info,
+# through this project's wrapper and into Open MPI's mca_base_pvar_get, at address 0x44
+# -- exactly offsetof(mca_base_pvar_t, flags) on LP64, so `(*pvar)->flags` with *pvar
+# NULL, which is a negative or out-of-range index that neither mca_base_pvar_get nor
+# opal_pointer_array_get_item range-checks. Reading an uninitialized value lands
+# somewhere harmless sometimes and not others, which is what an intermittent segfault
+# looks like from outside.
+#
+# **Promote it to xfail, or delete it, when the remaining index source is found.**
+# NOTES.md decision 6's stub fix removed one of them -- MPI_T_source_get_num's out
+# parameter, over an Open MPI that does not define the entry point -- and that file
+# carried "the stub fix cured it" as a working position until five more failures
+# withdrew it. Whatever still feeds a bad index into MPI_T_pvar_get_info is the whole
+# of the question; a wrapper that returned MPI_T_ERR_INVALID_INDEX instead of a wild
+# read would also settle whether the negative index is ours to reject.
+mpi_t/mpit_vars 1 : segfaults intermittently on both architectures in MPI_T_pvar_get_info, at 0x44 = offsetof(mca_base_pvar_t, flags) with *pvar NULL -- an unchecked index rather than MPI_T_ERR_INVALID_INDEX. Failed in runs 32420200083 (both), 32425661806 and 32434698299 (aarch64), 32438146220 (x86_64); passed in 32403337939, 32436484546 and 32441107176. Observed: Signal: Segmentation fault (11), Failing at address: 0x44

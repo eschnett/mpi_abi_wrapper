@@ -19,26 +19,38 @@
 #     32302208489   x86_64 passed, aarch64 failed 5/5   -> called architecture-specific
 #     32398089529   x86_64 failed, aarch64 failed       -> neither claim survives
 #     32403337939   x86_64 passed, aarch64 passed       -> nor does "aarch64 always"
+#     32420200083   x86_64 failed, aarch64 failed       -> nor does the stub-fix cure
+#     32425661806   aarch64 failed                      -> (x86_64's leg passed)
+#     32434698299   aarch64 failed                      -> x86_64's leg was cancelled
+#     32438146220   x86_64 failed                       -> under the shm probe
+#     32436484546   x86_64 passed, aarch64 passed
+#     32441107176   x86_64 passed, aarch64 passed
 #
 # **It was intermittent on both architectures.** Three readings were written into this
 # file and withdrawn -- "flap", then "architecture-specific", then "aarch64 every time"
 # -- each from too few runs, and the third was written while quoting the warning against
 # exactly that.
 #
-# **The working position is that decision 6's stub fix cured it**, and this paragraph
-# says so rather than leaving the question open, because the alternative is treating
-# every future red as ambiguous forever. `stub_out_zeros` (NOTES.md decision 6) gave
-# every `out` scalar in a stub body a defined value, and this test read exactly such a
-# value as a loop bound -- `int num_sources; MPI_T_source_get_num(&num_sources);` over
-# an Open MPI that has no MPI_T_source_get_num. It has passed on both architectures in
-# every run since. **So the test is expected to pass, it is listed nowhere, and a red on
-# it is now a regression to investigate rather than the old flap.**
+# **The working position was that decision 6's stub fix cured it. That is now withdrawn**,
+# and by the failure mode the paragraph itself warned about. `stub_out_zeros` (NOTES.md
+# decision 6) gave every `out` scalar in a stub body a defined value, and this test read
+# exactly such a value as a loop bound -- `int num_sources;
+# MPI_T_source_get_num(&num_sources);` over an Open MPI that has no
+# MPI_T_source_get_num. That read was real and is gone. But the test has failed five
+# more times since, on both architectures, so it was **not the whole cause** -- which is
+# what the paragraph below predicted would happen and said how to read: the fix is not
+# wrong, and the remaining index source is what to find.
 #
-# What that assumption is worth knowing about: it was never measured. An intermittent
-# failure cannot be shown cured by runs that pass, only by a failure rate compared
-# before and after, and no such comparison was made. If it comes back, the fix is not
-# wrong -- the uninitialized read was real and is gone -- but it was not the whole
-# cause, and the remaining question is the one below.
+# The assumption was never measurable in the form it was stated: an intermittent failure
+# cannot be shown cured by runs that pass, only by a failure rate compared before and
+# after, and no such comparison was made. Six of the last nine observations pass, which
+# is the same picture as before the fix.
+#
+# **It now lives in flaky-ci-openmpi.txt**, which did not exist when the note above was
+# written -- "listed nowhere, and cannot be" was true of a repository with only xfail
+# lists, and a flap is exactly what that category was added for. A line there says
+# "either outcome happens" without failing the runs it passes, and it keeps a red from
+# needing this comment to interpret.
 #
 # And intermittency on both is what the mechanism predicts, which is the reason to
 # trust the mechanism over any of the three patterns: it *segfaults*, in

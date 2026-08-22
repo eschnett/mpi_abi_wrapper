@@ -803,10 +803,11 @@ directly on the runner, whose own `/dev/shm` is **7.9 GB**. MPICH maps its share
 segments in that tmpfs, and touching a page the tmpfs cannot back is SIGBUS — not the
 signal x86 raises for the misaligned access ILP32 would otherwise be suspected of.
 
-`.github/workflows/i386-shm-probe.yaml` and `ci-scripts/suite/i386-shm-probe.sh`
-measured it: the same shard twice, one flag apart, same image, same minutes, `io` left
-out because 18 of the shard's 20 minutes are in that one directory while the storm
-starts before it. Run
+A disposable probe measured it — `.github/workflows/i386-shm-probe.yaml` with
+`ci-scripts/suite/i386-shm-probe.sh` inside it, deleted with the branch as its header
+said and recoverable with `git show c1ea0a9`: the same shard twice, one flag apart, same
+image, same minutes, `io` left out because 18 of the shard's 20 minutes are in that one
+directory while the storm starts before it. Run
 [32431588989](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32431588989):
 
 | | default (64 MB) | `--shm-size=8g` |
@@ -970,7 +971,8 @@ wrong in the direction that matters — the i386 fix was a flag, and this one is
 **And the survivors are not trending there**, which is the part that needed measuring
 rather than reasoning: a leg that finishes today can still be leaking, as the i386 row
 finished its early directories before its tmpfs filled. `.github/workflows/openmpi-starvation-probe.yaml`
-ran both surviving shards under the same ten-second instrument, field for field, in run
+— disposable too, and `git show e7b8657` is the recipe — ran both surviving shards under
+the same ten-second instrument, field for field, in run
 [32438146220](https://github.com/eschnett/mpi_abi_wrapper/actions/runs/32438146220):
 
 | | i386 `rest` at 64 MB | openmpi `p2p`, 47 min | openmpi `rest`, 14 min |
@@ -996,6 +998,17 @@ Real test time in two directories, with no crash of any kind in the log.
 re-derive a number Round three already has; and aarch64, where only the durations and
 the absence of kill messages are known. If an Open MPI leg is ever containerised, the
 `--shm-size` question returns for it regardless of this result.
+
+**The instrument is worth rebuilding rather than reinventing**, and both probes are gone
+with the branch as their headers said. What made them work, beyond the four things
+"Hand-off" already lists: a ten-second monitor whose fields are `/dev/shm` usage *and*
+entry count (a leak is a count that only grows), load, process count, top RSS and
+MemAvailable, run in the *same step* as the suite because a background process cannot
+outlive the step that started it and still be seen; a `timeout` of the probe's own well
+under the job's, because a job that exceeds its GitHub timeout loses its log exactly as
+a reclaimed one does; and `procps` installed up front, since `i386/debian:trixie-slim`
+has no `ps` or `free` and a monitor whose fields are "command not found" reports nothing
+for a whole run. `git show c1ea0a9` and `git show e7b8657` are the two recipes.
 
 ## What the previous pins measured, and why the split exists
 
