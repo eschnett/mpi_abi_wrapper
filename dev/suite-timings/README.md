@@ -30,9 +30,28 @@ minutes. The critical path was `suite / openmpi 5.0.10 / {x86_64,aarch64} / p2p`
 
 **83% of the whole workflow's critical path was seventeen tests hanging**, every one
 of them already a line in `xfail-ci-openmpi.txt`. The same seventeen run in
-0.04–0.19 s on the MPICH legs. Capping them at 30 s takes the `p2p` shard to about
-13.8 minutes and the workflow to roughly 21, where the ceiling becomes the MPICH
-`p2p` shard's 20.0 minutes of real work.
+0.04–0.19 s on the MPICH legs.
+
+## What the caps actually did
+
+Run 32604435562, the same workflow with `timelimit-ci-openmpi.txt` in:
+
+| | before | after |
+|---|---|---|
+| workflow wall clock | 48m47s | **~20 min** |
+| runner minutes | 256 | **184** |
+| longest job | 47 min | **19.4 min** |
+| openmpi p2p test loop | 46.3 min | **16.8 / 18.4 min** |
+| openmpi rest test loop | 13.0 min | **3.2 min** |
+| failures reported, p2p / rest | 61 / 84 | **61 / 84** |
+
+Identical verdicts, a third of the wall clock. The ceiling is now the MPICH `p2p`
+shard at 17.4 minutes, which is real work — no test in it is near its limit.
+
+**Run it on every new run's shards, because the set of hangs is not closed.** The
+first capped run promoted `threads/comm/idup_nb` from "hangs on aarch64 only" to
+"hangs on both", where it was 18% of what remained of the `p2p` shard. Which member
+of that family hangs moves with thread timing; all five are capped now.
 
 The tool also prints the slowest test that *passed*, which is the floor any cap has
 to clear: 26.5 s in `p2p`, 10.3 s in `rest`, but **84.4 s in `coll`**

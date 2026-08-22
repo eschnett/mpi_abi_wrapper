@@ -9,6 +9,12 @@
 # 83% of the whole workflow's critical path, spent re-establishing seventeen
 # failures already written down.
 #
+# **Measured after, in run 32604435562:** the workflow went from 48m47s to about 20
+# minutes and from 256 runner-minutes to 184, with the p2p shard's test loop at 16.8
+# minutes against 46.3 and the rest shard's at 3.2 against 13.0. **Both shards
+# reported exactly the same failures as before** -- 61 and 84 -- which is the check
+# that matters: the caps changed how long a verdict took and not what it was.
+#
 # Format: one rule per line, `SECONDS <extended regular expression>`, the pattern
 # matched against a testlist line with `grep -E` exactly as exclude-ci-openmpi.txt
 # is. **End a name with `[[:space:]]`, not with a literal space.** A testlist name
@@ -61,10 +67,16 @@
 # as far as the test's output goes. That probe is also what establishes that an
 # appended `timeLimit=` reaches runtests at all; dev/suite-timings/ records it.
 #
-# **The twelve patterns match 35 testlist lines, of which 17 hang.** Re-derive with
+# **The fifteen patterns match 41 testlist lines, of which 18 have been seen to
+# hang.** Re-derive with
 # `dev/suite-timings/tap-timings.py` over a shard's summary.tap, which prints every
 # test at the limit; the match counts come from grep -E over the testlists the
 # suite's configure leaves in the build tree.
+#
+# **A run can add a line, and the first one did.** `threads/comm/idup_nb` hung on
+# both architectures in 32604435562 having hung on only one in 32586710591, and was
+# 18% of what was left of the p2p shard. Read every new run's shards with
+# dev/suite-timings/tap-timings.py rather than assuming the set is closed.
 #
 # **What would retire a line:** attribution. Every one of these is "not yet
 # attributed" in xfail-ci-openmpi.txt, and nine of the twelve are partitioned
@@ -100,6 +112,21 @@
 
 # threads/comm/idup_comm_gen: its one line hangs.
 30 ^idup_comm_gen[[:space:]]
+
+# **The whole threads/comm idup family, because which member hangs moves.** Five
+# lines, all np=4, and three of them have now been seen at the limit with the
+# member varying by run and by architecture: run 32586710591 hung idup_comm_gen on
+# x86_64 and idup_nb on aarch64, and run 32604435562 hung idup_nb on both. That is
+# the same shape as the mt_*probe* family in flaky-ci-openmpi.txt -- thread timing
+# choosing the casualty -- so capping only the members caught so far just moves the
+# three minutes to the next one. The other two cost nothing to cap: comm_idup and
+# ctxidup complete in 1.1 s whenever they complete at all.
+30 ^idup_nb[[:space:]]
+30 ^ctxidup[[:space:]]
+# ^comm_idup also reaches comm/testlist, where comm_idup runs at np=2, 4 and 9 in
+# under 0.14 s. Deliberate: comm_idup_nb and comm_idup_isend beside it are two of
+# the four hangs in the rest shard, so the same argument applies there.
+30 ^comm_idup[[:space:]]
 
 # comm/comm_idup_nb at np=6: hangs. In the `rest` shard rather than `p2p`.
 30 ^comm_idup_nb[[:space:]]

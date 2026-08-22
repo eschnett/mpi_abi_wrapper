@@ -135,9 +135,31 @@ default, so an `xfail` line describes it perfectly and the run pays three minute
 per occurrence to re-establish something already written down. Run 32586710591 paid
 it seventeen times — 39.1 of the Open MPI `p2p` shard's 46.3 minutes on thirteen of
 them and 12.0 of the `rest` shard's 13.0 on the other four, which was **83% of the
-whole workflow's critical path**. Capping those lines at 30 s takes the `p2p` shard
-to about 13.8 minutes and the workflow from roughly 49 minutes to roughly 21, at
-which point the ceiling is the MPICH `p2p` shard's 20.0 minutes of real work.
+whole workflow's critical path**.
+
+**Run 32604435562 is the same workflow with the caps in**, and it is where the
+numbers below come from rather than a projection:
+
+| | before (32586710591) | after (32604435562) |
+|---|---|---|
+| workflow wall clock | 48m47s | **~20 min** |
+| runner minutes, all jobs | 256 | **184** |
+| longest job | 47 min | **19.4 min** |
+| openmpi p2p, test loop | 46.3 min | **16.8 min** (x86_64), 18.4 (aarch64) |
+| openmpi rest, test loop | 13.0 min | **3.2 min** |
+| failures reported, p2p / rest | 61 / 84 | **61 / 84** |
+
+That last row is the one that matters: the caps changed how long a verdict took and
+not what it was. The ceiling is now the MPICH `p2p` shard, 17.4 minutes of real work
+with no test near its limit.
+
+**The first capped run also added a line to the list.** `threads/comm/idup_nb` hung
+on both architectures having hung on only one before, and was 18% of what was left
+of the `p2p` shard. Which member of that five-line `idup` family hangs moves with
+thread timing, exactly as the `mt_*probe*` family in `flaky-ci-openmpi.txt` does, so
+all five are capped now — the two that have never hung complete in 1.1 s and cost
+nothing to cover. Read each new run's shards with `dev/suite-timings/tap-timings.py`
+rather than assuming the set is closed.
 
 The mechanism is the suite's own: `timeLimit=N` is a testlist key `runtests` parses
 into the per-test timeout and thence into `MPIEXEC_TIMEOUT`, and MPICH's own

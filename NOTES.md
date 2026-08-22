@@ -1763,7 +1763,8 @@ Version choice is about coverage, not admissibility:
   hangs that were *already* expected failures — 83% of the workflow's critical
   path re-establishing what the lists said. `timelimit-ci-openmpi.txt` caps those
   lines at 30 s with the suite's own `timeLimit=` key, so they keep running,
-  keep reporting and keep gating. **Cap a hang, do not exclude it:** an excluded
+  keep reporting and keep gating — run 32604435562 is the same workflow at ~20
+  minutes instead of 48m47s, reporting the identical 61 and 84 failures. **Cap a hang, do not exclude it:** an excluded
   test cannot tell you the day the implementation fixes it, which is the only
   reason to keep an expectation rather than a note.
 - **The cross test, the headline property:** one `libmpi_abi`, one test binary,
