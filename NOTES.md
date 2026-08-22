@@ -1753,6 +1753,19 @@ Version choice is about coverage, not admissibility:
   and it earned that position: three conversion bugs no in-house check could
   have seen (`HISTORY.md` §3, S7). Its gate reads the expected-failure list in
   both directions and rejects a line with no reason.
+  **How a test fails decides which list it belongs in, and there are four.** An
+  expected failure runs and fails the same way; a flaky one runs and does either;
+  a **hang** runs, fails, and costs `runtests`' 180-second default every time it
+  does; and only a test that takes the runner down before reporting is excluded,
+  because that is the one case with no TAP line to gate on. The third category is
+  the one the taxonomy was missing: run 32586710591 spent 39.1 of the Open MPI
+  `p2p` shard's 46.3 minutes and 12.0 of the `rest` shard's 13.0 on seventeen
+  hangs that were *already* expected failures — 83% of the workflow's critical
+  path re-establishing what the lists said. `timelimit-ci-openmpi.txt` caps those
+  lines at 30 s with the suite's own `timeLimit=` key, so they keep running,
+  keep reporting and keep gating. **Cap a hang, do not exclude it:** an excluded
+  test cannot tell you the day the implementation fixes it, which is the only
+  reason to keep an expectation rather than a note.
 - **The cross test, the headline property:** one `libmpi_abi`, one test binary,
   run against an MPICH wrapper and an Open MPI wrapper by changing only the
   environment variable. mpif's `cross` stage rebuilds against each

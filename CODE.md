@@ -91,8 +91,9 @@ ci-scripts/        MPI install and build-shape checks
   linux-test.sh, run-linux-docker.sh
   linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
                        to linux-test.sh (§11)
-  suite/             MPICH C suite runner, the local and CI xfail lists, the
-                       mpiexec filter, the TAP gate, and i386-suite.sh (§10)
+  suite/             MPICH C suite runner, the local and CI lists -- xfail,
+                       flaky, exclude and timelimit -- the mpiexec filter, the
+                       TAP gate, and i386-suite.sh (§10)
 cmake/             FindMPI.cmake (the shim), mpi_abiConfig.cmake.in, mpi_abi.pc.in,
                      mpi_abi.version (ELF), mpi_abi.exported_symbols (Mach-O)
 dev/               the Python generator and the dev-time cross-checks
@@ -382,12 +383,27 @@ per-architecture `xfail-ci-<mpi>-<arch>.txt`, which `check-tap.py` reads as one
 file while rejecting a test listed in both — the split exists because three runs
 showed one file cannot describe two machines, timing moving in both directions at
 once on a four-vCPU runner and one architecture returning wrong 8-bit reductions
-that the other did not. All five are **report-only**, `continue-on-error: true`,
-and every CI list is empty until the first runs are triaged: MPICH 5.0.1 is a
-complete MPI-5.0, so the older lists' largest group — entry points the
-implementation lacks — does not carry over. Each leg keeps `summary.tap` and the
-run's logs as an artifact whether it passed or not, which is what `--gate-only`
-writes a list from.
+that the other did not. **The three MPICH environments gate**
+(`continue-on-error: false`, which is TODO.md's "do not ignore mpich failures");
+the two Open MPI legs are still report-only, and about half of
+`xfail-ci-openmpi.txt` still says "not yet attributed". Each leg keeps
+`summary.tap` and the run's logs as an artifact whether it passed or not, which
+is what `--gate-only` writes a list from.
+
+**Four kinds of list, chosen by how a test fails** (§10): `xfail-ci-*` for a
+repeatable failure, `flaky-ci-*` for one that does either, `timelimit-ci-*` for
+one that *hangs* — capped with the suite's own `timeLimit=` key so it still runs,
+reports and gates — and `exclude-ci-*` only for a test that takes the runner down
+before it can report. The counts, by
+`grep -cvE '^\s*(#|$)' ci-scripts/suite/<file>`:
+
+| list | lines |
+|---|---|
+| `xfail-ci-mpich.txt` + `-i386` delta | **41** + **6** (x86_64 and aarch64 deltas are empty) |
+| `xfail-ci-openmpi.txt` + `-x86_64` delta | **106** + **1** |
+| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **1**, **5** |
+| `timelimit-ci-openmpi.txt` | **12** patterns, covering 17 hanging test lines |
+| `exclude-ci-openmpi.txt` | **2**, both inert while `rma` is off the Open MPI legs |
 
 The authority for both is `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-*.txt`,
 which is also how `check-tap.py` reads them (it skips blanks and comments at

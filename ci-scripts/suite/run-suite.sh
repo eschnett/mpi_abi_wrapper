@@ -75,6 +75,7 @@ prefix=""
 dirs=""
 skip_dirs=""
 exclude_args=()
+timelimit_args=()
 flaky_args=()
 np=""
 jobs=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
@@ -118,6 +119,12 @@ usage: $(basename "$0") mpich|openmpi|/path/to/mpicc [options]
                    failing -- an xfail list cannot cover one, because a killed
                    runner leaves no TAP line to expect. See
                    exclude-ci-openmpi.txt for the format and the reasoning.
+  --time-limit=FILE
+                   cap the per-test time limit on the test lines matching the
+                   patterns in FILE. Repeatable. For a test that *hangs*: it
+                   still runs, still reports and still gates, but it costs the
+                   cap rather than the suite's 180-second default. See
+                   timelimit-ci-openmpi.txt for the format and the measurement.
   --no-dtp         leave out testlist.dtp, the datatype-pool tests: the same
                    call over hundreds of generated derived datatypes, which is
                    most of the run's value here and most of its runtime
@@ -151,6 +158,7 @@ for arg in "$@"; do
     --dirs=*)      dirs=${arg#*=} ;;
     --skip-dirs=*) skip_dirs=${arg#*=} ;;
     --exclude=*)   exclude_args+=("${arg#*=}") ;;
+    --time-limit=*) timelimit_args+=("${arg#*=}") ;;
     --flaky=*)     flaky_args+=("${arg#*=}") ;;
     --np=*)        np=${arg#*=} ;;
     --jobs=*)      jobs=${arg#*=} ;;
@@ -233,6 +241,32 @@ for f in "${flaky_args[@]+"${flaky_args[@]}"}"; do
     */*) flaky_files+=("$f") ;;
     *)   flaky_files+=("$suitedir/$f") ;;
   esac
+done
+# Resolved the same way, and checked here rather than where they are read: the
+# reading happens after the wrapper build and the suite's configure, so a
+# mistyped filename would otherwise cost five minutes before saying so.
+timelimit_files=()
+for f in "${timelimit_args[@]+"${timelimit_args[@]}"}"; do
+  case $f in
+    */*) timelimit_files+=("$f") ;;
+    *)   timelimit_files+=("$suitedir/$f") ;;
+  esac
+  [ -f "${timelimit_files[${#timelimit_files[@]}-1]}" ] \
+    || die "no time-limit list at ${timelimit_files[${#timelimit_files[@]}-1]}"
+done
+timelimit_rules=()
+for tf in "${timelimit_files[@]+"${timelimit_files[@]}"}"; do
+  while IFS= read -r line; do
+    case $line in ''|'#'*) continue ;; esac
+    secs=${line%% *}
+    re=${line#* }
+    case $secs in
+      ''|*[!0-9]*) die "$tf: '$line' does not begin with a number of seconds" ;;
+    esac
+    [ "$secs" != 0 ] || die "$tf: '$line' caps at zero seconds"
+    [ "$re" != "$line" ] || die "$tf: '$line' has seconds but no pattern"
+    timelimit_rules+=("$secs $re")
+  done < "$tf"
 done
 
 work=${MPIABI_SUITE_WORK:-$repodir/build/suite-$variant}
@@ -497,6 +531,92 @@ if [ ${#exclude_args[@]} -gt 0 ]; then
       done
     done
     echo "  $dropped_total line(s) excluded in total"
+  fi
+fi
+
+# ----------------------------------------------------- capped time limits
+#
+# **A test that hangs costs the timeout, and the timeout is 180 seconds.** In run
+# 32586710591 the Open MPI `p2p` shard spent 39.1 of its 46.3 minutes on thirteen
+# tests that ran to the limit and failed, and the `rest` shard 12.0 of 13.0 on four
+# more -- 83% of the whole run's critical path, waiting for hangs that were already
+# expected failures. The suite has the answer in its own vocabulary: `timeLimit=N`
+# is a testlist key runtests parses (test/mpi/runtests, where it becomes the
+# per-test `_timeout` and then MPIEXEC_TIMEOUT), and the suite's own lists already
+# use it. This pass appends one to the lines a list names.
+#
+# **Why this and not the three neighbouring mechanisms.** A hang is not a runner
+# kill, so --exclude is too blunt: the test would stop running and a release that
+# fixed it would never say so. The suite's own `xfail=` key is the same loss by
+# another spelling -- runtests SKIPs those without running them. And
+# MPITEST_TIMEOUT_MULTIPLIER is global, so cutting it to reach these seventeen
+# would also cut `coll/bcast_comm_world_only`, which *passes* over Open MPI at 84.4
+# seconds. Capping named lines leaves every other test at 180 and keeps the capped
+# ones in the run, in the TAP file and under the gate.
+#
+# **Recursive, unlike the exclusion pass above, and it creates the file it edits.**
+# Five of the seventeen live in a subdirectory -- threads/comm, threads/part,
+# threads/pt2pt, errors/coll, errors/comm -- which a top-level walk never reaches.
+# And a directory whose source testlist is a plain file rather than a `.in` has no
+# copy in the build tree at all; runtests falls back to the source tree for those
+# (`! -s $listfile_path && -s $srcdir/$listfile`), so writing a build-tree copy is
+# both how the cap takes effect and something this pass has to do for itself. The
+# copy is made only when a pattern actually matches, so an unmatched directory is
+# left exactly as configure left it.
+#
+# Idempotent for a given list: an existing `timeLimit=` on a matched line is
+# stripped before the new one is appended, so a second run over the same work
+# directory re-derives the same file rather than accumulating keys. It is *not*
+# idempotent across a list that was **narrowed** -- a line that a previous run's
+# pattern matched and this one's does not keeps the cap it was given, because
+# nothing re-derives it from the original. `--reconfigure` is the reset.
+#
+# The lists themselves were resolved and parsed before the wrapper build, so a
+# missing file or a malformed line fails in the first second rather than the
+# fifth minute; what is left here is the rewriting.
+if [ ${#timelimit_args[@]} -gt 0 ]; then
+  step "capping the time limit on named test lines"
+  for tf in "${timelimit_files[@]}"; do echo "  from ${tf#"$repodir"/}"; done
+  if [ ${#timelimit_rules[@]} -eq 0 ]; then
+    echo "  (no patterns; nothing capped)"
+  else
+    capped_total=0
+    for sub in $covered; do
+      # The union of both trees: the build tree has the generated lists
+      # (testlist from testlist.in, and every testlist.dtp), the source tree has
+      # the plain ones that were never copied.
+      rels=$(
+        { [ -d "$tree/$sub" ] && (cd "$tree" && find "$sub" \( -name testlist -o -name testlist.dtp \) )
+          [ -d "$work/build/$sub" ] && (cd "$work/build" && find "$sub" \( -name testlist -o -name testlist.dtp \) )
+        } 2>/dev/null | sort -u
+      )
+      for rel in $rels; do
+        for rule in "${timelimit_rules[@]}"; do
+          secs=${rule%% *}
+          re=${rule#* }
+          lf=$work/build/$rel
+          src_lf=$tree/$rel
+          # Read whichever file runtests would read, which is the build-tree copy
+          # when it exists and is non-empty, and the source otherwise.
+          if [ -s "$lf" ]; then read_lf=$lf; else read_lf=$src_lf; fi
+          [ -f "$read_lf" ] || continue
+          # Counted the way awk below rewrites: comment lines are not candidates,
+          # so a pattern that could match one must not be reported as a cap.
+          n=$(grep -vE '^[[:space:]]*#' "$read_lf" | grep -cE "$re" || true)
+          [ "$n" = 0 ] && continue
+          mkdir -p "$(dirname "$lf")"
+          awk -v re="$re" -v secs="$secs" '
+            /^[ \t]*#/ { print; next }
+            $0 ~ re    { gsub(/[ \t]+timeLimit=[^ \t]+/, ""); print $0 " timeLimit=" secs; next }
+                       { print }
+          ' "$read_lf" > "$lf.tmp" || die "could not rewrite $lf"
+          mv "$lf.tmp" "$lf" || die "could not rewrite $lf"
+          echo "  $rel: capped $n line(s) at ${secs}s matching $re"
+          capped_total=$((capped_total + n))
+        done
+      done
+    done
+    echo "  $capped_total line(s) capped in total"
   fi
 fi
 

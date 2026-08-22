@@ -1,0 +1,117 @@
+# Test lines whose per-test time limit is capped over Open MPI, with a reason each.
+#
+# **These tests hang. The cap is what stops a hang costing three minutes.** Every
+# test named here is already an expected failure in xfail-ci-openmpi.txt; what this
+# file changes is not whether it fails but how long it takes to say so. runtests
+# gives a test 180 seconds by default, and a hang uses all of it: in run
+# 32586710591 the Open MPI `p2p` shard spent 39.1 of its 46.3 minutes on thirteen
+# tests at the limit, and the `rest` shard 12.0 of its 13.0 on four more. That was
+# 83% of the whole workflow's critical path, spent re-establishing seventeen
+# failures already written down.
+#
+# Format: one rule per line, `SECONDS <extended regular expression>`, the pattern
+# matched against a testlist line with `grep -E` exactly as exclude-ci-openmpi.txt
+# is. **End a name with `[[:space:]]`, not with a literal space.** A testlist name
+# is a prefix of other testlist names in three of the cases below, and the first
+# draft of this file wrote `^parrived`, which capped 26 lines instead of 9 --
+# `parrived_wait`, `parrived_strided` and `parrived_pready_out_of_order` all start
+# with it. A trailing space would work and is invisible in a diff and in an editor
+# that strips it; the character class says what it means.
+#
+# **A testlist line may also begin with whitespace** -- `threads/coll/testlist` is
+# ` allred 2`, indented in the suite's own source -- so a `^name` anchor is only
+# safe for a file that does not do that. None of the twelve directories below do,
+# checked with the counts in the next paragraph rather than assumed; a rule for a
+# directory that does needs `^ *name[[:space:]]`.
+#
+# A `#` line is a comment and a reason is required above every rule, for the
+# same reason the xfail lists require one. run-suite.sh appends `timeLimit=SECONDS`
+# to each matching line, which is the suite's own key -- MPICH's testlists use it
+# themselves (`ibarrier 2 timeLimit=30`), runtests turns it into the per-test
+# timeout and thence into MPIEXEC_TIMEOUT.
+#
+# **This is not an exclusion and must not become one.** A capped test still runs,
+# still produces a TAP line and still gates, so an Open MPI release that fixes one
+# of these reports it as an expected failure that passed -- the gate asking for the
+# xfail line to be deleted. --exclude would delete the coverage instead, and the
+# suite's own `xfail=` testlist key is the same loss by another spelling: runtests
+# SKIPs those without running them.
+#
+# **Why not MPITEST_TIMEOUT_MULTIPLIER, which is one number and no file.** It is
+# global. Cutting it far enough to reach these seventeen would also cut
+# `coll/bcast_comm_world_only`, which *passes* over Open MPI 5.0.10 at 84.4 seconds
+# (run 32586710591, x86_64 coll shard). A per-line cap leaves every other test at
+# 180 seconds, where the measurements the xfail lists were recorded under put it.
+#
+# **Why 30 seconds and not 5.** Two measurements bound it from below and one from
+# above. From below: the non-hanging runs of these same tests over Open MPI take at
+# most 0.6 s, and the MPICH legs run all of them in 0.04-0.19 s, so anything past a
+# second or two is already generous. But `threads/pt2pt/multisend4` *passes* over
+# Open MPI at 18.3 s on a four-vCPU runner at np=5, which is what a genuinely slow
+# threads test looks like here, and three of the lines below are threads tests.
+# From above: 30 s puts the `p2p` shard at roughly 13.8 minutes, comfortably under
+# the 20.0-minute MPICH `p2p` shard that then becomes the workflow's critical path,
+# so a tighter cap would not shorten the run at all. Pick the loosest cap that
+# clears the new ceiling; that is 30.
+#
+# **What a cap that is too tight does, measured rather than imagined.**
+# `threads/coll/allred` takes 1.29 s on the development laptop; capped at 1 s it was
+# killed at 1.10 s and reported `not ok` with `Timeout: 1` in its TAP block -- and
+# its own output was `No Errors`. A cap turns a slow pass into a failure, silently
+# as far as the test's output goes. That probe is also what establishes that an
+# appended `timeLimit=` reaches runtests at all; dev/suite-timings/ records it.
+#
+# **The twelve patterns match 35 testlist lines, of which 17 hang.** Re-derive with
+# `dev/suite-timings/tap-timings.py` over a shard's summary.tap, which prints every
+# test at the limit; the match counts come from grep -E over the testlists the
+# suite's configure leaves in the build tree.
+#
+# **What would retire a line:** attribution. Every one of these is "not yet
+# attributed" in xfail-ci-openmpi.txt, and nine of the twelve are partitioned
+# communication, which is one suspect rather than nine. A line whose test is
+# understood either becomes a real xfail reason and keeps its cap, or -- if the
+# hang turns out to be this project's -- gets fixed and needs neither.
+
+# part/parrived: 3 of its 9 testlist lines hang (-spart=1/-rpart=16,
+# -spart=16/-rpart=32, -spart=17/-rpart=33); the other 6 fail in 0.1-0.6 s with
+# zeroed receive buffers. MPICH runs all 9 in 0.04-0.11 s.
+30 ^parrived[[:space:]]
+
+# part/parrived_wait: the same 3 of 9 lines, the same shape, the same times.
+30 ^parrived_wait[[:space:]]
+
+# part/parrived_pready_out_of_order: 2 of its 3 lines hang.
+30 ^parrived_pready_out_of_order[[:space:]]
+
+# part/parrived_strided: 1 of its 5 lines hangs (-spart=17/-rpart=33 -stride=2).
+30 ^parrived_strided[[:space:]]
+
+# threads/part/mt_parrived_wait: 1 of its 2 lines hangs; the other fails in 0.4 s.
+30 ^mt_parrived_wait[[:space:]]
+
+# threads/pt2pt/mt_ibsendirecv: its one line hangs. The boundary matters --
+# mt_ibsendirecv_huge is a different test in the same file, has two lines of its
+# own and does not hang.
+30 ^mt_ibsendirecv[[:space:]]
+
+# threads/comm/idup_deadlock: its one line hangs. Sits beside idup_nb and
+# comm_idup, which fail and pass respectively in about a second.
+30 ^idup_deadlock[[:space:]]
+
+# threads/comm/idup_comm_gen: its one line hangs.
+30 ^idup_comm_gen[[:space:]]
+
+# comm/comm_idup_nb at np=6: hangs. In the `rest` shard rather than `p2p`.
+30 ^comm_idup_nb[[:space:]]
+
+# comm/comm_idup_isend at np=6: hangs. In the `rest` shard rather than `p2p`.
+30 ^comm_idup_isend[[:space:]]
+
+# errors/coll/noalias2 at np=4: hangs. In the `rest` shard, in a subdirectory that
+# the exclusion pass's top-level walk would not have reached.
+30 ^noalias2[[:space:]]
+
+# errors/comm/too_many_comms2 at np=4: hangs. Also a subdirectory, and one whose
+# source testlist is a plain file, so run-suite.sh writes the build-tree copy that
+# carries the cap.
+30 ^too_many_comms2[[:space:]]

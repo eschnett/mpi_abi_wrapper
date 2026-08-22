@@ -117,6 +117,62 @@ that produced it, and three configure decisions change it, including whether
 the `threads` directory exists at all. `run-suite.sh` prints all three; take
 the total from a run rather than from prose.
 
+## Four ways a list can speak about a test
+
+The gate above is one of four, and which file a test belongs in is decided by how
+it fails rather than by how annoying it is. In increasing loss of coverage:
+
+| file | the test | costs | the gate |
+|---|---|---|---|
+| `xfail-ci-*.txt` | runs, fails the same way every time | its own time | fails if it passes, or if it stops running |
+| `flaky-ci-*.txt` | runs, fails or passes with the weather | its own time | accepts either, and prints which |
+| `timelimit-ci-*.txt` | runs and **hangs** | the cap, not 180 s | unchanged; the test still reports |
+| `exclude-ci-*.txt` | takes the runner down before reporting | nothing | cannot see it at all — no TAP line exists |
+
+**The third of these is the newest and the cheapest thing in this directory.** A
+hang is not a runner kill: the test does report, at the end of runtests' 180-second
+default, so an `xfail` line describes it perfectly and the run pays three minutes
+per occurrence to re-establish something already written down. Run 32586710591 paid
+it seventeen times — 39.1 of the Open MPI `p2p` shard's 46.3 minutes on thirteen of
+them and 12.0 of the `rest` shard's 13.0 on the other four, which was **83% of the
+whole workflow's critical path**. Capping those lines at 30 s takes the `p2p` shard
+to about 13.8 minutes and the workflow from roughly 49 minutes to roughly 21, at
+which point the ceiling is the MPICH `p2p` shard's 20.0 minutes of real work.
+
+The mechanism is the suite's own: `timeLimit=N` is a testlist key `runtests` parses
+into the per-test timeout and thence into `MPIEXEC_TIMEOUT`, and MPICH's own
+testlists use it (`ibarrier 2 timeLimit=30`). `run-suite.sh --time-limit=FILE`
+appends one to every line a pattern matches, after the exclusion pass so the two
+compose.
+
+**Three neighbouring mechanisms were rejected, each for a reason that is a
+measurement.** `--exclude` and the suite's own `xfail=` testlist key both stop the
+test running — `xfail=` makes `runtests` SKIP it — so a release that fixed the hang
+could never say so, which is the one thing this gate exists to notice.
+`MPITEST_TIMEOUT_MULTIPLIER` is global, and cutting it far enough to reach these
+seventeen would also cut `coll/bcast_comm_world_only`, which *passes* over Open MPI
+5.0.10 at 84.4 seconds.
+
+**Two things the pass has to do that the exclusion pass does not**, both of them
+properties of where these tests live. It walks **recursively**: five of the
+seventeen are in `threads/comm`, `threads/part`, `threads/pt2pt`, `errors/coll` and
+`errors/comm`, and the top-level walk `--exclude` uses reaches none of them. And it
+**writes the file it edits** when there is none: a directory whose source testlist
+is a plain file rather than a `.in` has no copy in the build tree, and `runtests`
+falls back to the source tree for those (`! -s $listfile_path && -s
+$srcdir/$listfile`), so a build-tree copy is both how the cap takes effect and
+something the pass has to create. It creates one only where a pattern actually
+matches.
+
+**Re-derive the 83%** from any run's artifacts — the TAP file carries a `# time=`
+per test:
+
+```sh
+gh run download <run-id> -n suite-openmpi-x86_64-p2p -D /tmp/p2p
+grep -aoE '^(not )?ok [0-9]+ - \./[^ ]+ [0-9]+ # time=[0-9.]+' /tmp/p2p/summary.tap |
+  sed -E 's/.* \.\/([^ ]+) ([0-9]+) # time=([0-9.]+)/\3 \1/' | sort -rn | head -20
+```
+
 ## Two things about the environment
 
 **`FI_PROVIDER`.** MPICH's `ch4:ofi` picks a VPN interface when one is up and

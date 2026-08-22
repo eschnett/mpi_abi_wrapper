@@ -804,6 +804,21 @@ jobs:
       # the other three safe rather than what makes rma safe. If the rma shard is
       # still killed, that is now a fact about one directory instead of about the
       # row, which is progress a single job could not produce.
+
+      # **And the numbers above are the shape, not the cost.** Measured on 5.0.10 in
+      # run 32586710591, the Open MPI p2p shard is 46.3 minutes and the rest shard
+      # 13.0 -- but 39.1 and 12.0 of those are *seventeen tests hanging to the
+      # 180-second limit*, which was 83% of this workflow's critical path spent
+      # re-establishing failures already written into xfail-ci-openmpi.txt. The legs
+      # below cap those lines at 30 s (timelimit-ci-openmpi.txt), which is what takes
+      # this workflow from ~49 minutes to ~21. Re-derive any of it from a shard's own
+      # artifact with dev/suite-timings/tap-timings.py; the TAP file carries a
+      # `# time=` per test.
+      #
+      # **The ceiling after the caps is the MPICH p2p shard's 20.0 minutes**, and
+      # that is real work with no test near its limit -- pt2pt 8.5, threads 5.4,
+      # part 5.1. Splitting it is the next lever if this needs to be faster, and it
+      # costs four more jobs paying the ~1 minute of fixed cost each.
       #
       # **And it was still killed, which is why `exclude` below drops it from the
       # two Open MPI legs.** Not as a triage of an unexplained failure: the cause
@@ -836,6 +851,11 @@ jobs:
             timeout_multiplier: 2
             report_only: false
             exclude_args: ""
+            # Empty on purpose: the MPICH legs have no test at the time limit
+            # except coll/reduce at np=10, which is a slow test rather than a
+            # hang -- run 32586710591 shows it at the limit and nothing else
+            # within 40 seconds of it. Capping is for hangs.
+            timelimit_args: ""
           - mpi: mpich
             version: 5.0.1
             os: ubuntu-24.04-arm
@@ -844,6 +864,11 @@ jobs:
             timeout_multiplier: 2
             report_only: false
             exclude_args: ""
+            # Empty on purpose: the MPICH legs have no test at the time limit
+            # except coll/reduce at np=10, which is a slow test rather than a
+            # hang -- run 32586710591 shows it at the limit and nothing else
+            # within 40 seconds of it. Capping is for hangs.
+            timelimit_args: ""
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04
@@ -859,6 +884,13 @@ jobs:
             # restores these two line exclusions with it rather than silently
             # running the two tests that are known to take a runner down.
             exclude_args: "--exclude=exclude-ci-openmpi.txt"
+            # **Not inert, unlike the line above.** Seventeen tests over Open MPI
+            # 5.0.10 hang to the 180-second default and fail; run 32586710591 spent
+            # 39.1 of the p2p shard's 46.3 minutes and 12.0 of the rest shard's 13.0
+            # on them, which was 83% of the workflow's critical path. They stay in
+            # the run, in the TAP file and under the gate -- only the waiting goes.
+            # timelimit-ci-openmpi.txt has the per-line reasons and why 30 seconds.
+            timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04-arm
@@ -874,6 +906,13 @@ jobs:
             # restores these two line exclusions with it rather than silently
             # running the two tests that are known to take a runner down.
             exclude_args: "--exclude=exclude-ci-openmpi.txt"
+            # **Not inert, unlike the line above.** Seventeen tests over Open MPI
+            # 5.0.10 hang to the 180-second default and fail; run 32586710591 spent
+            # 39.1 of the p2p shard's 46.3 minutes and 12.0 of the rest shard's 13.0
+            # on them, which was 83% of the workflow's critical path. They stay in
+            # the run, in the TAP file and under the gate -- only the waiting goes.
+            # timelimit-ci-openmpi.txt has the per-line reasons and why 30 seconds.
+            timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
         # The last shard is the *complement* of the other three rather than a
         # fourth list, so a directory a later suite release adds is covered by
         # construction instead of by somebody remembering to add it here.
@@ -920,6 +959,7 @@ jobs:
               timeout_multiplier: 1
               report_only: true
               exclude_args: "--exclude=exclude-ci-openmpi.txt"
+              timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
             shard:
               name: rma
               args: "--dirs=rma"
@@ -932,6 +972,7 @@ jobs:
               timeout_multiplier: 1
               report_only: true
               exclude_args: "--exclude=exclude-ci-openmpi.txt"
+              timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
             shard:
               name: rma
               args: "--dirs=rma"
@@ -1067,6 +1108,7 @@ jobs:
               --xfail=xfail-ci-${{ matrix.leg.mpi }}-${{ matrix.leg.arch }}.txt \
               --flaky=flaky-ci-${{ matrix.leg.mpi }}.txt \
               ${{ matrix.leg.exclude_args }} \
+              ${{ matrix.leg.timelimit_args }} \
               ${{ matrix.shard.args }}
 
       # Staged into the workspace first, and uploaded by a **relative** path.
