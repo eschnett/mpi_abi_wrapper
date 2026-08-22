@@ -34,24 +34,35 @@ of them already a line in `xfail-ci-openmpi.txt`. The same seventeen run in
 
 ## What the caps actually did
 
-Run 32604435562, the same workflow with `timelimit-ci-openmpi.txt` in:
+Run 32605598678, the same workflow with `timelimit-ci-openmpi.txt` in:
 
 | | before | after |
 |---|---|---|
-| workflow wall clock | 48m47s | **~20 min** |
-| runner minutes | 256 | **184** |
-| longest job | 47 min | **19.4 min** |
-| openmpi p2p test loop | 46.3 min | **16.8 / 18.4 min** |
+| workflow wall clock | 48m47s | **19 min** |
+| runner minutes | 256 | **181** |
+| longest job | 47 min | **17.8 min** |
+| openmpi p2p test loop | 46.3 min | **14.4 / 16.9 min** |
 | openmpi rest test loop | 13.0 min | **3.2 min** |
 | failures reported, p2p / rest | 61 / 84 | **61 / 84** |
 
-Identical verdicts, a third of the wall clock. The ceiling is now the MPICH `p2p`
-shard at 17.4 minutes, which is real work — no test in it is near its limit.
+Identical verdicts, 39% of the wall clock. The ceiling is now the MPICH `p2p` shard
+at 17.6 minutes, which is real work — no test in it is near its limit, so no further
+capping can shorten this workflow.
 
 **Run it on every new run's shards, because the set of hangs is not closed.** The
 first capped run promoted `threads/comm/idup_nb` from "hangs on aarch64 only" to
-"hangs on both", where it was 18% of what remained of the `p2p` shard. Which member
-of that family hangs moves with thread timing; all five are capped now.
+"hangs on both", where it was 18% of what remained of the `p2p` shard; all five
+members of that family are capped now. The second promoted one of `part/pingping`'s
+24 lines from 5.2 s to 180.4 s, which is left uncapped on purpose —
+`timelimit-ci-openmpi.txt` says why.
+
+**And this script had the bug that hid the second one.** It called a test "at the
+limit" if it reached 95% of the slowest time in the file, which was fine while every
+test shared one limit and wrong the moment the caps created several: on the aarch64
+shard the single uncapped 180-second hang set the bar and hid all fourteen
+30-second ones under it, reporting 1 test at the limit where there were 15. It now
+reads each failure's own `Timeout:` field out of its TAP block, which runtests
+writes and which is authoritative.
 
 The tool also prints the slowest test that *passed*, which is the floor any cap has
 to clear: 26.5 s in `p2p`, 10.3 s in `rest`, but **84.4 s in `coll`**

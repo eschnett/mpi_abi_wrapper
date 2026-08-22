@@ -73,6 +73,19 @@
 # test at the limit; the match counts come from grep -E over the testlists the
 # suite's configure leaves in the build tree.
 #
+# **One flapping hang is deliberately not here: `part/pingping`.** In run
+# 32605598678 one of its 24 aarch64 lines went from 5.2 s to 180.4 s while the
+# other 23 stayed between 0.3 and 11.0. It is left uncapped for two reasons. The
+# rule format matches a testlist line with no way to say *which directory*, and
+# `pingping` also exists in `pt2pt/`, where it **passes** over Open MPI at up to
+# 15.1 s -- a 30-second cap there is barely twice its passing time, which is the
+# too-tight-cap failure mode this file measured on purpose. And it buys nothing:
+# the workflow's ceiling is now the MPICH p2p shard at 17.6 minutes, so taking 3
+# minutes off a 17.8-minute Open MPI shard leaves the run where it is. If it ever
+# is worth capping, the extension is a directory qualifier on the rule --
+# `30 part:^pingping[[:space:]]` -- checked against the `$rel` the rewriting pass
+# already has in hand.
+#
 # **A run can add a line, and the first one did.** `threads/comm/idup_nb` hung on
 # both architectures in 32604435562 having hung on only one in 32586710591, and was
 # 18% of what was left of the p2p shard. Read every new run's shards with

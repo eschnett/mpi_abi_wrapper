@@ -140,18 +140,20 @@ whole workflow's critical path**.
 **Run 32604435562 is the same workflow with the caps in**, and it is where the
 numbers below come from rather than a projection:
 
-| | before (32586710591) | after (32604435562) |
+| | before (32586710591) | after (32605598678) |
 |---|---|---|
-| workflow wall clock | 48m47s | **~20 min** |
-| runner minutes, all jobs | 256 | **184** |
-| longest job | 47 min | **19.4 min** |
-| openmpi p2p, test loop | 46.3 min | **16.8 min** (x86_64), 18.4 (aarch64) |
+| workflow wall clock | 48m47s | **19 min** |
+| runner minutes, all jobs | 256 | **181** |
+| longest job | 47 min | **17.8 min** |
+| openmpi p2p, test loop | 46.3 min | **14.4 min** (x86_64), 16.9 (aarch64) |
 | openmpi rest, test loop | 13.0 min | **3.2 min** |
 | failures reported, p2p / rest | 61 / 84 | **61 / 84** |
 
 That last row is the one that matters: the caps changed how long a verdict took and
-not what it was. The ceiling is now the MPICH `p2p` shard, 17.4 minutes of real work
-with no test near its limit.
+not what it was. **The ceiling is now the MPICH `p2p` shard at 17.6 minutes**, which
+is real work with no test near its limit — pt2pt 8.5, threads 5.4, part 5.1. Further
+capping cannot shorten this workflow; splitting that shard is the next lever, and it
+costs four more jobs paying about a minute of fixed cost each.
 
 **The first capped run also added a line to the list.** `threads/comm/idup_nb` hung
 on both architectures having hung on only one before, and was 18% of what was left
