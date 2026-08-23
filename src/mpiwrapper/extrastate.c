@@ -354,7 +354,13 @@ struct datarep_pair {
   MPIABI_Datarep_conversion_function *read_fn;
   MPIABI_Datarep_conversion_function *write_fn;
 #  endif
-#  ifdef MPIWRAPPER_HAVE_MPI_Register_datarep_c
+  /* Present whenever *either* the large-count registrar or its fallback is
+   * compiled. The narrower guard that used to be here read naturally and was
+   * exactly wrong for the fallback, whose whole premise is that
+   * MPI_Register_datarep_c is absent (NOTES.md #5.10).
+   */
+#  if defined(MPIWRAPPER_HAVE_MPI_Register_datarep_c) ||                       \
+      defined(MPIWRAPPER_HAVE_MPI_Register_datarep)
   MPIABI_Datarep_conversion_function_c *read_fn_c;
   MPIABI_Datarep_conversion_function_c *write_fn_c;
 #  endif
@@ -509,3 +515,82 @@ int mpiwrapper_datarep_c_fns(MPIABI_Datarep_conversion_function_c *abi_read_fn,
 }
 
 #endif /* MPIWRAPPER_HAVE_MPI_Register_datarep_c */
+
+/* ------------------------- a large-count datarep, over a small-count MPI ---- */
+
+/* NOTES.md #5.10. The caller registered MPIABI_Datarep_conversion_function_c
+ * through MPI_Register_datarep_c, and the implementation has only
+ * MPI_Register_datarep, whose conversion function takes `int count`. So these
+ * two trampolines have the *small* shape -- that is what the implementation
+ * stores and will call -- and widen the count on the way into the caller's
+ * function.
+ *
+ * Like the op adapter, this cannot fail: the count comes from the
+ * implementation, which produced it as an int, so widening it is exact.
+ *
+ * The one thing that is not symmetric is the sentinel. The caller says "no
+ * conversion in this direction" with MPIABI_CONVERSION_FN_NULL_C, and what has
+ * to reach the implementation is MPI_CONVERSION_FN_NULL -- the *small*
+ * spelling of the same idea, because the small registrar is what is being
+ * called.
+ */
+#if !defined(MPIWRAPPER_HAVE_MPI_Register_datarep_c) &&                        \
+    defined(MPIWRAPPER_HAVE_MPI_Register_datarep)
+
+static int datarep_read_ca_tramp(void *userbuf, MPI_Datatype datatype,
+                                 int count, void *filebuf, MPI_Offset position,
+                                 void *extra_state)
+{
+  const struct datarep_pair *const pair = extra_state;
+
+  const MPIABI_Datatype abi_datatype = mpiwrapper_datatype_toabi(datatype);
+
+  const int abi_ierror =
+      pair->read_fn_c(userbuf, abi_datatype, (MPIABI_Count)count, filebuf,
+                      (MPIABI_Offset)position, pair->extra_state);
+  return mpiwrapper_errorcode_fromabi(abi_ierror);
+}
+
+static int datarep_write_ca_tramp(void *userbuf, MPI_Datatype datatype,
+                                  int count, void *filebuf,
+                                  MPI_Offset position, void *extra_state)
+{
+  const struct datarep_pair *const pair = extra_state;
+
+  const MPIABI_Datatype abi_datatype = mpiwrapper_datatype_toabi(datatype);
+
+  const int abi_ierror =
+      pair->write_fn_c(userbuf, abi_datatype, (MPIABI_Count)count, filebuf,
+                       (MPIABI_Offset)position, pair->extra_state);
+  return mpiwrapper_errorcode_fromabi(abi_ierror);
+}
+
+int mpiwrapper_datarep_ca_fns(MPIABI_Datarep_conversion_function_c *abi_read_fn,
+                              MPIABI_Datarep_conversion_function_c *abi_write_fn,
+                              MPIABI_Datarep_extent_function *abi_extent_fn,
+                              void                           *abi_extra_state,
+                              MPI_Datarep_conversion_function **read_fn,
+                              MPI_Datarep_conversion_function **write_fn,
+                              MPI_Datarep_extent_function     **extent_fn,
+                              void                            **state)
+{
+  struct datarep_pair *const pair = calloc(1, sizeof *pair);
+  if (!pair) return 0;
+
+  pair->read_fn_c   = abi_read_fn;
+  pair->write_fn_c  = abi_write_fn;
+  pair->extent_fn   = abi_extent_fn;
+  pair->extra_state = abi_extra_state;
+
+  *read_fn   = abi_read_fn == MPIABI_CONVERSION_FN_NULL_C
+                   ? MPI_CONVERSION_FN_NULL
+                   : datarep_read_ca_tramp;
+  *write_fn  = abi_write_fn == MPIABI_CONVERSION_FN_NULL_C
+                   ? MPI_CONVERSION_FN_NULL
+                   : datarep_write_ca_tramp;
+  *extent_fn = datarep_extent_tramp;
+  *state     = pair;
+  return 1;
+}
+
+#endif /* the large-count datarep fallback */

@@ -61,8 +61,15 @@ actually provides the `_c` surface". Two of these four now do:
 | | declares | `_c` surface |
 |---|---|---|
 | MVAPICH 4.1 | `MPI_VERSION 4` / `MPI_SUBVERSION 1` | 387 `_c` prototypes in `src/include/mpi_proto.h`; `MPI_Type_size_c` links and returns 4 |
-| Intel MPI 2021.15 | `MPI_VERSION 3` / `MPI_SUBVERSION 1` | `MPI_Type_size_c` links and returns 4 **anyway** — the declared level understates the surface |
-| Open MPI 5.0.10 | `MPI_VERSION 3` / `MPI_SUBVERSION 1` | none at all — still what makes decision 6's stubs load-bearing |
+| Intel MPI 2021.15 | `MPI_VERSION 3` / `MPI_SUBVERSION 1` | **125** `_c` prototypes in `mpi.h` of 650 `MPI_*` total, and `MPI_Type_size_c` links and returns 4 — the declared level understates the surface, and the surface is *partial* |
+| Open MPI 5.0.10 | `MPI_VERSION 3` / `MPI_SUBVERSION 1` | none at all — still what makes NOTES.md §5.10's narrowing fallback, and §13.2's `INT_MAX` cap with it, load-bearing |
+
+**A partial `_c` surface is coverage nothing else in the matrix has.** MPICH
+>= 4.0 and MVAPICH 4.1 declare the whole set and Open MPI 5.0.10 none of it, so
+each takes one arm of NOTES.md §5.10's narrowing fallback throughout. Intel MPI
+2021.15, with 125 of the forms present, is the only row where the generator's
+per-entry-point probe answers both ways in the same build — which is worth
+having now that the fallback exists, and was not a reason anyone chose the pin.
 
 **Both probes check this by linking and running, never by grepping a header**,
 because grepping is how you get it wrong twice over. `src/include/mpi.h.in` in

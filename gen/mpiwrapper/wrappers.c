@@ -99,7 +99,7 @@ static int w_PMPI_Accumulate(const void *abi_origin_addr, int abi_origin_count,
 /* ------------------------------------------------------- MPI_Accumulate_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Accumulate_c
-#define BODY_MPI_Accumulate_c(TARGET)                                          \
+#define BODY_MPI_Accumulate_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const  origin_addr     =                                       \
         mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
@@ -120,8 +120,35 @@ static int w_PMPI_Accumulate(const void *abi_origin_addr, int abi_origin_count,
                target_disp, target_count, target_datatype, op, win);           \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Accumulate)
+#define BODY_MPI_Accumulate_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const  origin_addr     =                                       \
+        mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Op       op              = mpiwrapper_op_fromabi(abi_op);        \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(origin_addr, origin_count, origin_datatype, target_rank,      \
+                 target_disp, target_count, target_datatype, op, win);         \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Accumulate_c(TARGET)                                          \
+#define BODY_MPI_Accumulate_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -143,7 +170,7 @@ static int w_MPI_Accumulate_c(const void *abi_origin_addr,
                               MPIABI_Count abi_target_count,
                               MPIABI_Datatype abi_target_datatype,
                               MPIABI_Op abi_op, MPIABI_Win abi_win)
-    BODY_MPI_Accumulate_c(MPI_Accumulate_c)
+    BODY_MPI_Accumulate_c(MPI_Accumulate_c, MPI_Accumulate)
 static int w_PMPI_Accumulate_c(const void *abi_origin_addr,
                                MPIABI_Count abi_origin_count,
                                MPIABI_Datatype abi_origin_datatype,
@@ -152,7 +179,7 @@ static int w_PMPI_Accumulate_c(const void *abi_origin_addr,
                                MPIABI_Count abi_target_count,
                                MPIABI_Datatype abi_target_datatype,
                                MPIABI_Op abi_op, MPIABI_Win abi_win)
-    BODY_MPI_Accumulate_c(PMPI_Accumulate_c)
+    BODY_MPI_Accumulate_c(PMPI_Accumulate_c, PMPI_Accumulate)
 
 /* ---------------------------------------------------------- MPI_Allgather */
 
@@ -201,7 +228,7 @@ static int w_PMPI_Allgather(const void *abi_sendbuf, int abi_sendcount,
 /* -------------------------------------------------------- MPI_Allgather_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Allgather_c
-#define BODY_MPI_Allgather_c(TARGET)                                           \
+#define BODY_MPI_Allgather_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -217,8 +244,30 @@ static int w_PMPI_Allgather(const void *abi_sendbuf, int abi_sendcount,
                comm);                                                          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Allgather)
+#define BODY_MPI_Allgather_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm);                                                        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Allgather_c(TARGET)                                           \
+#define BODY_MPI_Allgather_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -237,14 +286,14 @@ static int w_MPI_Allgather_c(const void *abi_sendbuf,
                              MPIABI_Count abi_recvcount,
                              MPIABI_Datatype abi_recvtype,
                              MPIABI_Comm abi_comm)
-    BODY_MPI_Allgather_c(MPI_Allgather_c)
+    BODY_MPI_Allgather_c(MPI_Allgather_c, MPI_Allgather)
 static int w_PMPI_Allgather_c(const void *abi_sendbuf,
                               MPIABI_Count abi_sendcount,
                               MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                               MPIABI_Count abi_recvcount,
                               MPIABI_Datatype abi_recvtype,
                               MPIABI_Comm abi_comm)
-    BODY_MPI_Allgather_c(PMPI_Allgather_c)
+    BODY_MPI_Allgather_c(PMPI_Allgather_c, PMPI_Allgather)
 
 /* ----------------------------------------------------- MPI_Allgather_init */
 
@@ -307,7 +356,7 @@ static int w_PMPI_Allgather_init(const void *abi_sendbuf, int abi_sendcount,
 /* --------------------------------------------------- MPI_Allgather_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Allgather_init_c
-#define BODY_MPI_Allgather_init_c(TARGET)                                      \
+#define BODY_MPI_Allgather_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -330,8 +379,41 @@ static int w_PMPI_Allgather_init(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Allgather_init)
+#define BODY_MPI_Allgather_init_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, info, &request);                                        \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Allgather_init_c(TARGET)                                      \
+#define BODY_MPI_Allgather_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -355,7 +437,7 @@ static int w_MPI_Allgather_init_c(const void *abi_sendbuf,
                                   MPIABI_Datatype abi_recvtype,
                                   MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_Allgather_init_c(MPI_Allgather_init_c)
+    BODY_MPI_Allgather_init_c(MPI_Allgather_init_c, MPI_Allgather_init)
 static int w_PMPI_Allgather_init_c(const void *abi_sendbuf,
                                    MPIABI_Count abi_sendcount,
                                    MPIABI_Datatype abi_sendtype,
@@ -364,7 +446,7 @@ static int w_PMPI_Allgather_init_c(const void *abi_sendbuf,
                                    MPIABI_Datatype abi_recvtype,
                                    MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_Allgather_init_c(PMPI_Allgather_init_c)
+    BODY_MPI_Allgather_init_c(PMPI_Allgather_init_c, PMPI_Allgather_init)
 
 /* --------------------------------------------------------- MPI_Allgatherv */
 
@@ -417,7 +499,7 @@ static int w_PMPI_Allgatherv(const void *abi_sendbuf, int abi_sendcount,
 /* ------------------------------------------------------- MPI_Allgatherv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Allgatherv_c
-#define BODY_MPI_Allgatherv_c(TARGET)                                          \
+#define BODY_MPI_Allgatherv_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -437,8 +519,65 @@ static int w_PMPI_Allgatherv(const void *abi_sendbuf, int abi_sendcount,
                recvtype, comm);                                                \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Allgatherv)
+#define BODY_MPI_Allgatherv_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int  recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *recvcounts = NULL;                                                    \
+    int  displs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *displs     = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nranks, sizeof *recvcounts);         \
+    if (!recvcounts) goto done;                                                \
+    displs = mpiwrapper_stage(displs_stack, sizeof displs_stack,               \
+                              (size_t)nranks, sizeof *displs);                 \
+    if (!displs) goto done;                                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs,  \
+                   recvtype, comm);                                            \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    mpiwrapper_unstage(displs, displs_stack);                                  \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Allgatherv_c(TARGET)                                          \
+#define BODY_MPI_Allgatherv_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -459,7 +598,7 @@ static int w_MPI_Allgatherv_c(const void *abi_sendbuf,
                               const MPIABI_Aint abi_displs[],
                               MPIABI_Datatype abi_recvtype,
                               MPIABI_Comm abi_comm)
-    BODY_MPI_Allgatherv_c(MPI_Allgatherv_c)
+    BODY_MPI_Allgatherv_c(MPI_Allgatherv_c, MPI_Allgatherv)
 static int w_PMPI_Allgatherv_c(const void *abi_sendbuf,
                                MPIABI_Count abi_sendcount,
                                MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
@@ -467,7 +606,7 @@ static int w_PMPI_Allgatherv_c(const void *abi_sendbuf,
                                const MPIABI_Aint abi_displs[],
                                MPIABI_Datatype abi_recvtype,
                                MPIABI_Comm abi_comm)
-    BODY_MPI_Allgatherv_c(PMPI_Allgatherv_c)
+    BODY_MPI_Allgatherv_c(PMPI_Allgatherv_c, PMPI_Allgatherv)
 
 /* ---------------------------------------------------- MPI_Allgatherv_init */
 
@@ -535,7 +674,7 @@ static int w_PMPI_Allgatherv_init(const void *abi_sendbuf, int abi_sendcount,
 /* -------------------------------------------------- MPI_Allgatherv_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Allgatherv_init_c
-#define BODY_MPI_Allgatherv_init_c(TARGET)                                     \
+#define BODY_MPI_Allgatherv_init_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -562,8 +701,76 @@ static int w_PMPI_Allgatherv_init(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Allgatherv_init)
+#define BODY_MPI_Allgatherv_init_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+    int *const displs     = block + nranks;                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcount, sendtype, recvbuf,         \
+                                recvcounts, displs, recvtype, comm, info,      \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Allgatherv_init_c(TARGET)                                     \
+#define BODY_MPI_Allgatherv_init_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -589,7 +796,7 @@ static int w_MPI_Allgatherv_init_c(const void *abi_sendbuf,
                                    MPIABI_Datatype abi_recvtype,
                                    MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_Allgatherv_init_c(MPI_Allgatherv_init_c)
+    BODY_MPI_Allgatherv_init_c(MPI_Allgatherv_init_c, MPI_Allgatherv_init)
 static int w_PMPI_Allgatherv_init_c(const void *abi_sendbuf,
                                     MPIABI_Count abi_sendcount,
                                     MPIABI_Datatype abi_sendtype,
@@ -599,7 +806,7 @@ static int w_PMPI_Allgatherv_init_c(const void *abi_sendbuf,
                                     MPIABI_Datatype abi_recvtype,
                                     MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                     MPIABI_Request *abi_request)
-    BODY_MPI_Allgatherv_init_c(PMPI_Allgatherv_init_c)
+    BODY_MPI_Allgatherv_init_c(PMPI_Allgatherv_init_c, PMPI_Allgatherv_init)
 
 /* ---------------------------------------------------------- MPI_Alloc_mem */
 
@@ -670,7 +877,7 @@ static int w_PMPI_Allreduce(const void *abi_sendbuf, void *abi_recvbuf,
 /* -------------------------------------------------------- MPI_Allreduce_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Allreduce_c
-#define BODY_MPI_Allreduce_c(TARGET)                                           \
+#define BODY_MPI_Allreduce_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -683,8 +890,25 @@ static int w_PMPI_Allreduce(const void *abi_sendbuf, void *abi_recvbuf,
     const int ierror = TARGET(sendbuf, recvbuf, count, datatype, op, comm);    \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Allreduce)
+#define BODY_MPI_Allreduce_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(sendbuf, recvbuf, count, datatype, op, comm);  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Allreduce_c(TARGET)                                           \
+#define BODY_MPI_Allreduce_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -700,12 +924,12 @@ static int w_MPI_Allreduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                              MPIABI_Count abi_count,
                              MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                              MPIABI_Comm abi_comm)
-    BODY_MPI_Allreduce_c(MPI_Allreduce_c)
+    BODY_MPI_Allreduce_c(MPI_Allreduce_c, MPI_Allreduce)
 static int w_PMPI_Allreduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                               MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                               MPIABI_Comm abi_comm)
-    BODY_MPI_Allreduce_c(PMPI_Allreduce_c)
+    BODY_MPI_Allreduce_c(PMPI_Allreduce_c, PMPI_Allreduce)
 
 /* ----------------------------------------------------- MPI_Allreduce_init */
 
@@ -763,7 +987,7 @@ static int w_PMPI_Allreduce_init(const void *abi_sendbuf, void *abi_recvbuf,
 /* --------------------------------------------------- MPI_Allreduce_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Allreduce_init_c
-#define BODY_MPI_Allreduce_init_c(TARGET)                                      \
+#define BODY_MPI_Allreduce_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -784,8 +1008,35 @@ static int w_PMPI_Allreduce_init(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Allreduce_init)
+#define BODY_MPI_Allreduce_init_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, comm, info, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Allreduce_init_c(TARGET)                                      \
+#define BODY_MPI_Allreduce_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -806,14 +1057,14 @@ static int w_MPI_Allreduce_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                                   MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                                   MPIABI_Info abi_info,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_Allreduce_init_c(MPI_Allreduce_init_c)
+    BODY_MPI_Allreduce_init_c(MPI_Allreduce_init_c, MPI_Allreduce_init)
 static int w_PMPI_Allreduce_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                                    MPIABI_Count abi_count,
                                    MPIABI_Datatype abi_datatype,
                                    MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                                    MPIABI_Info abi_info,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_Allreduce_init_c(PMPI_Allreduce_init_c)
+    BODY_MPI_Allreduce_init_c(PMPI_Allreduce_init_c, PMPI_Allreduce_init)
 
 /* ----------------------------------------------------------- MPI_Alltoall */
 
@@ -861,7 +1112,7 @@ static int w_PMPI_Alltoall(const void *abi_sendbuf, int abi_sendcount,
 /* --------------------------------------------------------- MPI_Alltoall_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Alltoall_c
-#define BODY_MPI_Alltoall_c(TARGET)                                            \
+#define BODY_MPI_Alltoall_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -877,8 +1128,30 @@ static int w_PMPI_Alltoall(const void *abi_sendbuf, int abi_sendcount,
                comm);                                                          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Alltoall)
+#define BODY_MPI_Alltoall_c(TARGET, FALLBACK)                                  \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm);                                                        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Alltoall_c(TARGET)                                            \
+#define BODY_MPI_Alltoall_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -896,14 +1169,14 @@ static int w_MPI_Alltoall_c(const void *abi_sendbuf,
                             MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                             MPIABI_Count abi_recvcount,
                             MPIABI_Datatype abi_recvtype, MPIABI_Comm abi_comm)
-    BODY_MPI_Alltoall_c(MPI_Alltoall_c)
+    BODY_MPI_Alltoall_c(MPI_Alltoall_c, MPI_Alltoall)
 static int w_PMPI_Alltoall_c(const void *abi_sendbuf,
                              MPIABI_Count abi_sendcount,
                              MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                              MPIABI_Count abi_recvcount,
                              MPIABI_Datatype abi_recvtype,
                              MPIABI_Comm abi_comm)
-    BODY_MPI_Alltoall_c(PMPI_Alltoall_c)
+    BODY_MPI_Alltoall_c(PMPI_Alltoall_c, PMPI_Alltoall)
 
 /* ------------------------------------------------------ MPI_Alltoall_init */
 
@@ -965,7 +1238,7 @@ static int w_PMPI_Alltoall_init(const void *abi_sendbuf, int abi_sendcount,
 /* ---------------------------------------------------- MPI_Alltoall_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Alltoall_init_c
-#define BODY_MPI_Alltoall_init_c(TARGET)                                       \
+#define BODY_MPI_Alltoall_init_c(TARGET, FALLBACK)                             \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -988,8 +1261,41 @@ static int w_PMPI_Alltoall_init(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Alltoall_init)
+#define BODY_MPI_Alltoall_init_c(TARGET, FALLBACK)                             \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, info, &request);                                        \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Alltoall_init_c(TARGET)                                       \
+#define BODY_MPI_Alltoall_init_c(TARGET, FALLBACK)                             \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -1012,7 +1318,7 @@ static int w_MPI_Alltoall_init_c(const void *abi_sendbuf,
                                  MPIABI_Datatype abi_recvtype,
                                  MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                  MPIABI_Request *abi_request)
-    BODY_MPI_Alltoall_init_c(MPI_Alltoall_init_c)
+    BODY_MPI_Alltoall_init_c(MPI_Alltoall_init_c, MPI_Alltoall_init)
 static int w_PMPI_Alltoall_init_c(const void *abi_sendbuf,
                                   MPIABI_Count abi_sendcount,
                                   MPIABI_Datatype abi_sendtype,
@@ -1021,7 +1327,7 @@ static int w_PMPI_Alltoall_init_c(const void *abi_sendbuf,
                                   MPIABI_Datatype abi_recvtype,
                                   MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_Alltoall_init_c(PMPI_Alltoall_init_c)
+    BODY_MPI_Alltoall_init_c(PMPI_Alltoall_init_c, PMPI_Alltoall_init)
 
 /* ---------------------------------------------------------- MPI_Alltoallv */
 
@@ -1078,7 +1384,7 @@ static int w_PMPI_Alltoallv(const void *abi_sendbuf,
 /* -------------------------------------------------------- MPI_Alltoallv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Alltoallv_c
-#define BODY_MPI_Alltoallv_c(TARGET)                                           \
+#define BODY_MPI_Alltoallv_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -1099,8 +1405,83 @@ static int w_PMPI_Alltoallv(const void *abi_sendbuf,
                rdispls, recvtype, comm);                                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Alltoallv)
+#define BODY_MPI_Alltoallv_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const  sendbuf  =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int  sendcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *sendcounts = NULL;                                                    \
+    int  sdispls_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                  \
+    int *sdispls    = NULL;                                                    \
+    int  recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *recvcounts = NULL;                                                    \
+    int  rdispls_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                  \
+    int *rdispls    = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    sendcounts = mpiwrapper_stage(sendcounts_stack, sizeof sendcounts_stack,   \
+                                  (size_t)nranks, sizeof *sendcounts);         \
+    if (!sendcounts) goto done;                                                \
+    sdispls = mpiwrapper_stage(sdispls_stack, sizeof sdispls_stack,            \
+                               (size_t)nranks, sizeof *sdispls);               \
+    if (!sdispls) goto done;                                                   \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nranks, sizeof *recvcounts);         \
+    if (!recvcounts) goto done;                                                \
+    rdispls = mpiwrapper_stage(rdispls_stack, sizeof rdispls_stack,            \
+                               (size_t)nranks, sizeof *rdispls);               \
+    if (!rdispls) goto done;                                                   \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcounts, sdispls, sendtype, recvbuf, recvcounts,\
+                   rdispls, recvtype, comm);                                   \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(sendcounts, sendcounts_stack);                          \
+    mpiwrapper_unstage(sdispls, sdispls_stack);                                \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    mpiwrapper_unstage(rdispls, rdispls_stack);                                \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Alltoallv_c(TARGET)                                           \
+#define BODY_MPI_Alltoallv_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -1123,7 +1504,7 @@ static int w_MPI_Alltoallv_c(const void *abi_sendbuf,
                              const MPIABI_Aint abi_rdispls[],
                              MPIABI_Datatype abi_recvtype,
                              MPIABI_Comm abi_comm)
-    BODY_MPI_Alltoallv_c(MPI_Alltoallv_c)
+    BODY_MPI_Alltoallv_c(MPI_Alltoallv_c, MPI_Alltoallv)
 static int w_PMPI_Alltoallv_c(const void *abi_sendbuf,
                               const MPIABI_Count abi_sendcounts[],
                               const MPIABI_Aint abi_sdispls[],
@@ -1132,7 +1513,7 @@ static int w_PMPI_Alltoallv_c(const void *abi_sendbuf,
                               const MPIABI_Aint abi_rdispls[],
                               MPIABI_Datatype abi_recvtype,
                               MPIABI_Comm abi_comm)
-    BODY_MPI_Alltoallv_c(PMPI_Alltoallv_c)
+    BODY_MPI_Alltoallv_c(PMPI_Alltoallv_c, PMPI_Alltoallv)
 
 /* ----------------------------------------------------- MPI_Alltoallv_init */
 
@@ -1205,7 +1586,7 @@ static int w_PMPI_Alltoallv_init(const void *abi_sendbuf,
 /* --------------------------------------------------- MPI_Alltoallv_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Alltoallv_init_c
-#define BODY_MPI_Alltoallv_init_c(TARGET)                                      \
+#define BODY_MPI_Alltoallv_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -1233,8 +1614,85 @@ static int w_PMPI_Alltoallv_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Alltoallv_init)
+#define BODY_MPI_Alltoallv_init_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const void *const  sendbuf  =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged =                                                    \
+        (size_t)nranks + (size_t)nranks + (size_t)nranks + (size_t)nranks;     \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const sendcounts = block;                                             \
+    int *const sdispls    = block + nranks;                                    \
+    int *const recvcounts = block + nranks + nranks;                           \
+    int *const rdispls    = block + nranks + nranks + nranks;                  \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtype,        \
+                                recvbuf, recvcounts, rdispls, recvtype, comm,  \
+                                info, &request);                               \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Alltoallv_init_c(TARGET)                                      \
+#define BODY_MPI_Alltoallv_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -1262,7 +1720,7 @@ static int w_MPI_Alltoallv_init_c(const void *abi_sendbuf,
                                   MPIABI_Datatype abi_recvtype,
                                   MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_Alltoallv_init_c(MPI_Alltoallv_init_c)
+    BODY_MPI_Alltoallv_init_c(MPI_Alltoallv_init_c, MPI_Alltoallv_init)
 static int w_PMPI_Alltoallv_init_c(const void *abi_sendbuf,
                                    const MPIABI_Count abi_sendcounts[],
                                    const MPIABI_Aint abi_sdispls[],
@@ -1273,7 +1731,7 @@ static int w_PMPI_Alltoallv_init_c(const void *abi_sendbuf,
                                    MPIABI_Datatype abi_recvtype,
                                    MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_Alltoallv_init_c(PMPI_Alltoallv_init_c)
+    BODY_MPI_Alltoallv_init_c(PMPI_Alltoallv_init_c, PMPI_Alltoallv_init)
 
 /* ---------------------------------------------------------- MPI_Alltoallw */
 
@@ -1291,9 +1749,9 @@ static int w_PMPI_Alltoallv_init_c(const void *abi_sendbuf,
     const int *const  rdispls           = abi_rdispls;                         \
     const MPI_Comm    comm              = mpiwrapper_comm_fromabi(abi_comm);   \
                                                                                \
-    int ntypes = 0;                                                            \
+    int nranks = 0;                                                            \
     {                                                                          \
-      const int ierror = mpiwrapper_comm_extent(comm, &ntypes);                \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
       if (ierror != MPI_SUCCESS)                                               \
         return mpiwrapper_errorcode_toabi(ierror);                             \
     }                                                                          \
@@ -1305,17 +1763,17 @@ static int w_PMPI_Alltoallv_init_c(const void *abi_sendbuf,
     int           abi_ierror = MPIABI_ERR_INTERN;                              \
                                                                                \
     sendtypes = mpiwrapper_stage(sendtypes_stack, sizeof sendtypes_stack,      \
-                                 (size_t)ntypes, sizeof *sendtypes);           \
+                                 (size_t)nranks, sizeof *sendtypes);           \
     if (!sendtypes) goto done;                                                 \
     recvtypes = mpiwrapper_stage(recvtypes_stack, sizeof recvtypes_stack,      \
-                                 (size_t)ntypes, sizeof *recvtypes);           \
+                                 (size_t)nranks, sizeof *recvtypes);           \
     if (!recvtypes) goto done;                                                 \
                                                                                \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       sendtypes[i] = sendtypes_ignored                                         \
                          ? MPI_DATATYPE_NULL                                   \
                          : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
                                                                                \
     {                                                                          \
@@ -1367,7 +1825,7 @@ static int w_PMPI_Alltoallw(const void *abi_sendbuf,
 /* -------------------------------------------------------- MPI_Alltoallw_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Alltoallw_c
-#define BODY_MPI_Alltoallw_c(TARGET)                                           \
+#define BODY_MPI_Alltoallw_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const      sendbuf           =                                 \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -1383,9 +1841,9 @@ static int w_PMPI_Alltoallw(const void *abi_sendbuf,
     const MPI_Comm         comm              =                                 \
         mpiwrapper_comm_fromabi(abi_comm);                                     \
                                                                                \
-    int ntypes = 0;                                                            \
+    int nranks = 0;                                                            \
     {                                                                          \
-      const int ierror = mpiwrapper_comm_extent(comm, &ntypes);                \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
       if (ierror != MPI_SUCCESS)                                               \
         return mpiwrapper_errorcode_toabi(ierror);                             \
     }                                                                          \
@@ -1397,17 +1855,17 @@ static int w_PMPI_Alltoallw(const void *abi_sendbuf,
     int           abi_ierror = MPIABI_ERR_INTERN;                              \
                                                                                \
     sendtypes = mpiwrapper_stage(sendtypes_stack, sizeof sendtypes_stack,      \
-                                 (size_t)ntypes, sizeof *sendtypes);           \
+                                 (size_t)nranks, sizeof *sendtypes);           \
     if (!sendtypes) goto done;                                                 \
     recvtypes = mpiwrapper_stage(recvtypes_stack, sizeof recvtypes_stack,      \
-                                 (size_t)ntypes, sizeof *recvtypes);           \
+                                 (size_t)nranks, sizeof *recvtypes);           \
     if (!recvtypes) goto done;                                                 \
                                                                                \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       sendtypes[i] = sendtypes_ignored                                         \
                          ? MPI_DATATYPE_NULL                                   \
                          : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
                                                                                \
     {                                                                          \
@@ -1422,8 +1880,101 @@ static int w_PMPI_Alltoallw(const void *abi_sendbuf,
     mpiwrapper_unstage(recvtypes, recvtypes_stack);                            \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Alltoallw)
+#define BODY_MPI_Alltoallw_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const sendbuf           =                                      \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    const int         sendtypes_ignored = abi_sendbuf == MPIABI_IN_PLACE;      \
+    void *const       recvbuf           =                                      \
+        mpiwrapper_recvbuf_fromabi(abi_recvbuf);                               \
+    const MPI_Comm    comm              = mpiwrapper_comm_fromabi(abi_comm);   \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int           sendcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];      \
+    int          *sendcounts = NULL;                                           \
+    int           sdispls_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];         \
+    int          *sdispls    = NULL;                                           \
+    MPI_Datatype  sendtypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
+    MPI_Datatype *sendtypes  = NULL;                                           \
+    int           recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];      \
+    int          *recvcounts = NULL;                                           \
+    int           rdispls_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];         \
+    int          *rdispls    = NULL;                                           \
+    MPI_Datatype  recvtypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
+    MPI_Datatype *recvtypes  = NULL;                                           \
+    int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    sendcounts = mpiwrapper_stage(sendcounts_stack, sizeof sendcounts_stack,   \
+                                  (size_t)nranks, sizeof *sendcounts);         \
+    if (!sendcounts) goto done;                                                \
+    sdispls = mpiwrapper_stage(sdispls_stack, sizeof sdispls_stack,            \
+                               (size_t)nranks, sizeof *sdispls);               \
+    if (!sdispls) goto done;                                                   \
+    sendtypes = mpiwrapper_stage(sendtypes_stack, sizeof sendtypes_stack,      \
+                                 (size_t)nranks, sizeof *sendtypes);           \
+    if (!sendtypes) goto done;                                                 \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nranks, sizeof *recvcounts);         \
+    if (!recvcounts) goto done;                                                \
+    rdispls = mpiwrapper_stage(rdispls_stack, sizeof rdispls_stack,            \
+                               (size_t)nranks, sizeof *rdispls);               \
+    if (!rdispls) goto done;                                                   \
+    recvtypes = mpiwrapper_stage(recvtypes_stack, sizeof recvtypes_stack,      \
+                                 (size_t)nranks, sizeof *recvtypes);           \
+    if (!recvtypes) goto done;                                                 \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      sendtypes[i] = sendtypes_ignored                                         \
+                         ? MPI_DATATYPE_NULL                                   \
+                         : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcounts, sdispls, sendtypes, recvbuf,           \
+                   recvcounts, rdispls, recvtypes, comm);                      \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(sendcounts, sendcounts_stack);                          \
+    mpiwrapper_unstage(sdispls, sdispls_stack);                                \
+    mpiwrapper_unstage(sendtypes, sendtypes_stack);                            \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    mpiwrapper_unstage(rdispls, rdispls_stack);                                \
+    mpiwrapper_unstage(recvtypes, recvtypes_stack);                            \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Alltoallw_c(TARGET)                                           \
+#define BODY_MPI_Alltoallw_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -1447,7 +1998,7 @@ static int w_MPI_Alltoallw_c(const void *abi_sendbuf,
                              const MPIABI_Aint abi_rdispls[],
                              const MPIABI_Datatype abi_recvtypes[],
                              MPIABI_Comm abi_comm)
-    BODY_MPI_Alltoallw_c(MPI_Alltoallw_c)
+    BODY_MPI_Alltoallw_c(MPI_Alltoallw_c, MPI_Alltoallw)
 static int w_PMPI_Alltoallw_c(const void *abi_sendbuf,
                               const MPIABI_Count abi_sendcounts[],
                               const MPIABI_Aint abi_sdispls[],
@@ -1457,7 +2008,7 @@ static int w_PMPI_Alltoallw_c(const void *abi_sendbuf,
                               const MPIABI_Aint abi_rdispls[],
                               const MPIABI_Datatype abi_recvtypes[],
                               MPIABI_Comm abi_comm)
-    BODY_MPI_Alltoallw_c(PMPI_Alltoallw_c)
+    BODY_MPI_Alltoallw_c(PMPI_Alltoallw_c, PMPI_Alltoallw)
 
 /* ----------------------------------------------------- MPI_Alltoallw_init */
 
@@ -1476,16 +2027,16 @@ static int w_PMPI_Alltoallw_c(const void *abi_sendbuf,
     const MPI_Comm    comm              = mpiwrapper_comm_fromabi(abi_comm);   \
     const MPI_Info    info              = mpiwrapper_info_fromabi(abi_info);   \
                                                                                \
-    int ntypes = 0;                                                            \
+    int nranks = 0;                                                            \
     {                                                                          \
-      const int ierror = mpiwrapper_comm_extent(comm, &ntypes);                \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
       if (ierror != MPI_SUCCESS) {                                             \
         *abi_request = MPIABI_REQUEST_NULL;                                    \
         return mpiwrapper_errorcode_toabi(ierror);                             \
       }                                                                        \
     }                                                                          \
                                                                                \
-    const size_t  nstaged = (size_t)ntypes + (size_t)ntypes;                   \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
     MPI_Datatype *block   = NULL;                                              \
     if (nstaged <= SIZE_MAX / sizeof *block)                                   \
       block = malloc(nstaged * sizeof *block);                                 \
@@ -1494,13 +2045,13 @@ static int w_PMPI_Alltoallw_c(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     }                                                                          \
     MPI_Datatype *const sendtypes = block;                                     \
-    MPI_Datatype *const recvtypes = block + ntypes;                            \
+    MPI_Datatype *const recvtypes = block + nranks;                            \
                                                                                \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       sendtypes[i] = sendtypes_ignored                                         \
                          ? MPI_DATATYPE_NULL                                   \
                          : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
                                                                                \
     MPI_Request request;                                                       \
@@ -1564,7 +2115,7 @@ static int w_PMPI_Alltoallw_init(const void *abi_sendbuf,
 /* --------------------------------------------------- MPI_Alltoallw_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Alltoallw_init_c
-#define BODY_MPI_Alltoallw_init_c(TARGET)                                      \
+#define BODY_MPI_Alltoallw_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const void *const      sendbuf           =                                 \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -1582,16 +2133,16 @@ static int w_PMPI_Alltoallw_init(const void *abi_sendbuf,
     const MPI_Info         info              =                                 \
         mpiwrapper_info_fromabi(abi_info);                                     \
                                                                                \
-    int ntypes = 0;                                                            \
+    int nranks = 0;                                                            \
     {                                                                          \
-      const int ierror = mpiwrapper_comm_extent(comm, &ntypes);                \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
       if (ierror != MPI_SUCCESS) {                                             \
         *abi_request = MPIABI_REQUEST_NULL;                                    \
         return mpiwrapper_errorcode_toabi(ierror);                             \
       }                                                                        \
     }                                                                          \
                                                                                \
-    const size_t  nstaged = (size_t)ntypes + (size_t)ntypes;                   \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
     MPI_Datatype *block   = NULL;                                              \
     if (nstaged <= SIZE_MAX / sizeof *block)                                   \
       block = malloc(nstaged * sizeof *block);                                 \
@@ -1600,13 +2151,13 @@ static int w_PMPI_Alltoallw_init(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     }                                                                          \
     MPI_Datatype *const sendtypes = block;                                     \
-    MPI_Datatype *const recvtypes = block + ntypes;                            \
+    MPI_Datatype *const recvtypes = block + nranks;                            \
                                                                                \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       sendtypes[i] = sendtypes_ignored                                         \
                          ? MPI_DATATYPE_NULL                                   \
                          : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
                                                                                \
     MPI_Request request;                                                       \
@@ -1627,8 +2178,104 @@ static int w_PMPI_Alltoallw_init(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Alltoallw_init)
+#define BODY_MPI_Alltoallw_init_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const void *const sendbuf           =                                      \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    const int         sendtypes_ignored = abi_sendbuf == MPIABI_IN_PLACE;      \
+    void *const       recvbuf           =                                      \
+        mpiwrapper_recvbuf_fromabi(abi_recvbuf);                               \
+    const MPI_Comm    comm              = mpiwrapper_comm_fromabi(abi_comm);   \
+    const MPI_Info    info              = mpiwrapper_info_fromabi(abi_info);   \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t   nstaged        = (size_t)nranks;                            \
+    const size_t   off_sendcounts = 0;                                         \
+    const size_t   off_sdispls    =                                            \
+        mpiwrapper_staged_next(off_sendcounts, (size_t)nranks, sizeof(int));   \
+    const size_t   off_sendtypes  =                                            \
+        mpiwrapper_staged_next(off_sdispls, (size_t)nranks, sizeof(int));      \
+    const size_t   off_recvcounts =                                            \
+        mpiwrapper_staged_next(off_sendtypes, (size_t)nranks, sizeof(MPI_Datatype)); \
+    const size_t   off_rdispls    =                                            \
+        mpiwrapper_staged_next(off_recvcounts, (size_t)nranks, sizeof(int));   \
+    const size_t   off_recvtypes  =                                            \
+        mpiwrapper_staged_next(off_rdispls, (size_t)nranks, sizeof(int));      \
+    const size_t   nbytes         =                                            \
+        mpiwrapper_staged_next(off_recvtypes, (size_t)nranks, sizeof(MPI_Datatype)); \
+    unsigned char *block          = NULL;                                      \
+    if (nbytes != SIZE_MAX) block = malloc(nbytes);                            \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const          sendcounts = (int *)(block + off_sendcounts);          \
+    int *const          sdispls    = (int *)(block + off_sdispls);             \
+    MPI_Datatype *const sendtypes  = (MPI_Datatype *)(block + off_sendtypes);  \
+    int *const          recvcounts = (int *)(block + off_recvcounts);          \
+    int *const          rdispls    = (int *)(block + off_rdispls);             \
+    MPI_Datatype *const recvtypes  = (MPI_Datatype *)(block + off_recvtypes);  \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      sendtypes[i] = sendtypes_ignored                                         \
+                         ? MPI_DATATYPE_NULL                                   \
+                         : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtypes,       \
+                                recvbuf, recvcounts, rdispls, recvtypes, comm, \
+                                info, &request);                               \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Alltoallw_init_c(TARGET)                                      \
+#define BODY_MPI_Alltoallw_init_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -1656,7 +2303,7 @@ static int w_MPI_Alltoallw_init_c(const void *abi_sendbuf,
                                   const MPIABI_Datatype abi_recvtypes[],
                                   MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_Alltoallw_init_c(MPI_Alltoallw_init_c)
+    BODY_MPI_Alltoallw_init_c(MPI_Alltoallw_init_c, MPI_Alltoallw_init)
 static int w_PMPI_Alltoallw_init_c(const void *abi_sendbuf,
                                    const MPIABI_Count abi_sendcounts[],
                                    const MPIABI_Aint abi_sdispls[],
@@ -1667,7 +2314,7 @@ static int w_PMPI_Alltoallw_init_c(const void *abi_sendbuf,
                                    const MPIABI_Datatype abi_recvtypes[],
                                    MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_Alltoallw_init_c(PMPI_Alltoallw_init_c)
+    BODY_MPI_Alltoallw_init_c(PMPI_Alltoallw_init_c, PMPI_Alltoallw_init)
 
 /* ------------------------------------------------------------ MPI_Barrier */
 
@@ -1761,7 +2408,7 @@ static int w_PMPI_Bcast(void *abi_buffer, int abi_count,
 /* ------------------------------------------------------------ MPI_Bcast_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Bcast_c
-#define BODY_MPI_Bcast_c(TARGET)                                               \
+#define BODY_MPI_Bcast_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     void *const        buffer   = mpiwrapper_recvbuf_fromabi(abi_buffer);      \
     const MPI_Count    count    = abi_count;                                   \
@@ -1772,8 +2419,23 @@ static int w_PMPI_Bcast(void *abi_buffer, int abi_count,
     const int ierror = TARGET(buffer, count, datatype, root, comm);            \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Bcast)
+#define BODY_MPI_Bcast_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    void *const buffer = mpiwrapper_recvbuf_fromabi(abi_buffer);               \
+    int         count  = 0;                                                    \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(buffer, count, datatype, root, comm);          \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Bcast_c(TARGET)                                               \
+#define BODY_MPI_Bcast_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_buffer;                                                          \
     (void)abi_count;                                                           \
@@ -1786,10 +2448,12 @@ static int w_PMPI_Bcast(void *abi_buffer, int abi_count,
 
 static int w_MPI_Bcast_c(void *abi_buffer, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_root,
-                         MPIABI_Comm abi_comm) BODY_MPI_Bcast_c(MPI_Bcast_c)
+                         MPIABI_Comm abi_comm)
+    BODY_MPI_Bcast_c(MPI_Bcast_c, MPI_Bcast)
 static int w_PMPI_Bcast_c(void *abi_buffer, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_root,
-                          MPIABI_Comm abi_comm) BODY_MPI_Bcast_c(PMPI_Bcast_c)
+                          MPIABI_Comm abi_comm)
+    BODY_MPI_Bcast_c(PMPI_Bcast_c, PMPI_Bcast)
 
 /* --------------------------------------------------------- MPI_Bcast_init */
 
@@ -1842,7 +2506,7 @@ static int w_PMPI_Bcast_init(void *abi_buffer, int abi_count,
 /* ------------------------------------------------------- MPI_Bcast_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Bcast_init_c
-#define BODY_MPI_Bcast_init_c(TARGET)                                          \
+#define BODY_MPI_Bcast_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     void *const        buffer   = mpiwrapper_recvbuf_fromabi(abi_buffer);      \
     const MPI_Count    count    = abi_count;                                   \
@@ -1861,8 +2525,33 @@ static int w_PMPI_Bcast_init(void *abi_buffer, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Bcast_init)
+#define BODY_MPI_Bcast_init_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    void *const buffer = mpiwrapper_recvbuf_fromabi(abi_buffer);               \
+    int         count  = 0;                                                    \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buffer, count, datatype, root, comm, info, &request);         \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Bcast_init_c(TARGET)                                          \
+#define BODY_MPI_Bcast_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_buffer;                                                          \
     (void)abi_count;                                                           \
@@ -1880,12 +2569,12 @@ static int w_MPI_Bcast_init_c(void *abi_buffer, MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, int abi_root,
                               MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Bcast_init_c(MPI_Bcast_init_c)
+    BODY_MPI_Bcast_init_c(MPI_Bcast_init_c, MPI_Bcast_init)
 static int w_PMPI_Bcast_init_c(void *abi_buffer, MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype, int abi_root,
                                MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Bcast_init_c(PMPI_Bcast_init_c)
+    BODY_MPI_Bcast_init_c(PMPI_Bcast_init_c, PMPI_Bcast_init)
 
 /* -------------------------------------------------------------- MPI_Bsend */
 
@@ -1926,7 +2615,7 @@ static int w_PMPI_Bsend(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------------ MPI_Bsend_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Bsend_c
-#define BODY_MPI_Bsend_c(TARGET)                                               \
+#define BODY_MPI_Bsend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -1938,8 +2627,24 @@ static int w_PMPI_Bsend(const void *abi_buf, int abi_count,
     const int ierror = TARGET(buf, count, datatype, dest, tag, comm);          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Bsend)
+#define BODY_MPI_Bsend_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(buf, count, datatype, dest, tag, comm);        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Bsend_c(TARGET)                                               \
+#define BODY_MPI_Bsend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -1954,11 +2659,11 @@ static int w_PMPI_Bsend(const void *abi_buf, int abi_count,
 static int w_MPI_Bsend_c(const void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_dest,
                          int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Bsend_c(MPI_Bsend_c)
+    BODY_MPI_Bsend_c(MPI_Bsend_c, MPI_Bsend)
 static int w_PMPI_Bsend_c(const void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_dest,
                           int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Bsend_c(PMPI_Bsend_c)
+    BODY_MPI_Bsend_c(PMPI_Bsend_c, PMPI_Bsend)
 
 /* --------------------------------------------------------- MPI_Bsend_init */
 
@@ -2011,7 +2716,7 @@ static int w_PMPI_Bsend_init(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------- MPI_Bsend_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Bsend_init_c
-#define BODY_MPI_Bsend_init_c(TARGET)                                          \
+#define BODY_MPI_Bsend_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -2030,8 +2735,33 @@ static int w_PMPI_Bsend_init(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Bsend_init)
+#define BODY_MPI_Bsend_init_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Bsend_init_c(TARGET)                                          \
+#define BODY_MPI_Bsend_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -2049,12 +2779,12 @@ static int w_MPI_Bsend_init_c(const void *abi_buf, MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, int abi_dest,
                               int abi_tag, MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Bsend_init_c(MPI_Bsend_init_c)
+    BODY_MPI_Bsend_init_c(MPI_Bsend_init_c, MPI_Bsend_init)
 static int w_PMPI_Bsend_init_c(const void *abi_buf, MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype, int abi_dest,
                                int abi_tag, MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Bsend_init_c(PMPI_Bsend_init_c)
+    BODY_MPI_Bsend_init_c(PMPI_Bsend_init_c, PMPI_Bsend_init)
 
 /* ------------------------------------------------------- MPI_Buffer_flush */
 
@@ -3558,7 +4288,10 @@ static int w_PMPI_Dims_create(int abi_nnodes, int abi_ndims, int abi_dims[])
   {                                                                            \
     const MPI_Comm comm_old = mpiwrapper_comm_fromabi(abi_comm_old);           \
     const int      n        = abi_n;                                           \
-    if (n < 0) return MPIABI_ERR_COUNT;                                        \
+    if (n < 0) {                                                               \
+      *abi_comm_dist_graph = MPIABI_COMM_NULL;                                 \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     const int *const degrees = abi_degrees;                                    \
     const int *const weights = mpiwrapper_weights_fromabi(abi_weights);        \
@@ -3576,6 +4309,8 @@ static int w_PMPI_Dims_create(int abi_nnodes, int abi_ndims, int abi_dims[])
     int  destinations_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];             \
     int *destinations = NULL;                                                  \
     int  abi_ierror   = MPIABI_ERR_INTERN;                                     \
+                                                                               \
+    *abi_comm_dist_graph = MPIABI_COMM_NULL;                                   \
                                                                                \
     sources = mpiwrapper_stage(sources_stack, sizeof sources_stack, (size_t)n, \
                                sizeof *sources);                               \
@@ -3653,8 +4388,14 @@ static int w_PMPI_Dist_graph_create(MPIABI_Comm abi_comm_old, int abi_n,
     const int *const sourceweights =                                           \
         mpiwrapper_weights_fromabi(abi_sourceweights);                         \
     const int        outdegree     = abi_outdegree;                            \
-    if (indegree < 0) return MPIABI_ERR_COUNT;                                 \
-    if (outdegree < 0) return MPIABI_ERR_COUNT;                                \
+    if (indegree < 0) {                                                        \
+      *abi_comm_dist_graph = MPIABI_COMM_NULL;                                 \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+    if (outdegree < 0) {                                                       \
+      *abi_comm_dist_graph = MPIABI_COMM_NULL;                                 \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     const int *const destweights = mpiwrapper_weights_fromabi(abi_destweights);\
     const MPI_Info   info        = mpiwrapper_info_fromabi(abi_info);          \
@@ -3665,6 +4406,8 @@ static int w_PMPI_Dist_graph_create(MPIABI_Comm abi_comm_old, int abi_n,
     int  destinations_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];             \
     int *destinations = NULL;                                                  \
     int  abi_ierror   = MPIABI_ERR_INTERN;                                     \
+                                                                               \
+    *abi_comm_dist_graph = MPIABI_COMM_NULL;                                   \
                                                                                \
     sources = mpiwrapper_stage(sources_stack, sizeof sources_stack,            \
                                (size_t)indegree, sizeof *sources);             \
@@ -3938,7 +4681,7 @@ static int w_PMPI_Exscan(const void *abi_sendbuf, void *abi_recvbuf,
 /* ----------------------------------------------------------- MPI_Exscan_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Exscan_c
-#define BODY_MPI_Exscan_c(TARGET)                                              \
+#define BODY_MPI_Exscan_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -3951,8 +4694,25 @@ static int w_PMPI_Exscan(const void *abi_sendbuf, void *abi_recvbuf,
     const int ierror = TARGET(sendbuf, recvbuf, count, datatype, op, comm);    \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Exscan)
+#define BODY_MPI_Exscan_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(sendbuf, recvbuf, count, datatype, op, comm);  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Exscan_c(TARGET)                                              \
+#define BODY_MPI_Exscan_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -3967,12 +4727,12 @@ static int w_PMPI_Exscan(const void *abi_sendbuf, void *abi_recvbuf,
 static int w_MPI_Exscan_c(const void *abi_sendbuf, void *abi_recvbuf,
                           MPIABI_Count abi_count, MPIABI_Datatype abi_datatype,
                           MPIABI_Op abi_op, MPIABI_Comm abi_comm)
-    BODY_MPI_Exscan_c(MPI_Exscan_c)
+    BODY_MPI_Exscan_c(MPI_Exscan_c, MPI_Exscan)
 static int w_PMPI_Exscan_c(const void *abi_sendbuf, void *abi_recvbuf,
                            MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                            MPIABI_Comm abi_comm)
-    BODY_MPI_Exscan_c(PMPI_Exscan_c)
+    BODY_MPI_Exscan_c(PMPI_Exscan_c, PMPI_Exscan)
 
 /* -------------------------------------------------------- MPI_Exscan_init */
 
@@ -4029,7 +4789,7 @@ static int w_PMPI_Exscan_init(const void *abi_sendbuf, void *abi_recvbuf,
 /* ------------------------------------------------------ MPI_Exscan_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Exscan_init_c
-#define BODY_MPI_Exscan_init_c(TARGET)                                         \
+#define BODY_MPI_Exscan_init_c(TARGET, FALLBACK)                               \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -4050,8 +4810,35 @@ static int w_PMPI_Exscan_init(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Exscan_init)
+#define BODY_MPI_Exscan_init_c(TARGET, FALLBACK)                               \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, comm, info, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Exscan_init_c(TARGET)                                         \
+#define BODY_MPI_Exscan_init_c(TARGET, FALLBACK)                               \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -4071,13 +4858,13 @@ static int w_MPI_Exscan_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                                MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                                MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Exscan_init_c(MPI_Exscan_init_c)
+    BODY_MPI_Exscan_init_c(MPI_Exscan_init_c, MPI_Exscan_init)
 static int w_PMPI_Exscan_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                                 MPIABI_Count abi_count,
                                 MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                                 MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_Exscan_init_c(PMPI_Exscan_init_c)
+    BODY_MPI_Exscan_init_c(PMPI_Exscan_init_c, PMPI_Exscan_init)
 
 /* ------------------------------------------------------- MPI_Fetch_and_op */
 
@@ -4500,7 +5287,7 @@ static int w_PMPI_File_get_type_extent(MPIABI_File abi_fh,
 /* --------------------------------------------- MPI_File_get_type_extent_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_get_type_extent_c
-#define BODY_MPI_File_get_type_extent_c(TARGET)                                \
+#define BODY_MPI_File_get_type_extent_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
@@ -4509,8 +5296,20 @@ static int w_PMPI_File_get_type_extent(MPIABI_File abi_fh,
     const int ierror = TARGET(fh, datatype, extent);                           \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_get_type_extent)
+#define BODY_MPI_File_get_type_extent_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Aint  extent;                                                          \
+    const int ierror = FALLBACK(fh, datatype, &extent);                        \
+                                                                               \
+    *abi_extent = extent;                                                      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_get_type_extent_c(TARGET)                                \
+#define BODY_MPI_File_get_type_extent_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_datatype;                                                        \
@@ -4523,11 +5322,13 @@ static int w_PMPI_File_get_type_extent(MPIABI_File abi_fh,
 static int w_MPI_File_get_type_extent_c(MPIABI_File abi_fh,
                                         MPIABI_Datatype abi_datatype,
                                         MPIABI_Count *abi_extent)
-    BODY_MPI_File_get_type_extent_c(MPI_File_get_type_extent_c)
+    BODY_MPI_File_get_type_extent_c(MPI_File_get_type_extent_c,
+                                    MPI_File_get_type_extent)
 static int w_PMPI_File_get_type_extent_c(MPIABI_File abi_fh,
                                          MPIABI_Datatype abi_datatype,
                                          MPIABI_Count *abi_extent)
-    BODY_MPI_File_get_type_extent_c(PMPI_File_get_type_extent_c)
+    BODY_MPI_File_get_type_extent_c(PMPI_File_get_type_extent_c,
+                                    PMPI_File_get_type_extent)
 
 /* --------------------------------------------------------- MPI_File_iread */
 
@@ -4573,7 +5374,7 @@ static int w_PMPI_File_iread(MPIABI_File abi_fh, void *abi_buf, int abi_count,
 /* ------------------------------------------------------- MPI_File_iread_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iread_c
-#define BODY_MPI_File_iread_c(TARGET)                                          \
+#define BODY_MPI_File_iread_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -4589,8 +5390,30 @@ static int w_PMPI_File_iread(MPIABI_File abi_fh, void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iread)
+#define BODY_MPI_File_iread_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, buf, count, datatype, &request);         \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iread_c(TARGET)                                          \
+#define BODY_MPI_File_iread_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -4606,12 +5429,12 @@ static int w_MPI_File_iread_c(MPIABI_File abi_fh, void *abi_buf,
                               MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype,
                               MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_c(MPI_File_iread_c)
+    BODY_MPI_File_iread_c(MPI_File_iread_c, MPI_File_iread)
 static int w_PMPI_File_iread_c(MPIABI_File abi_fh, void *abi_buf,
                                MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype,
                                MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_c(PMPI_File_iread_c)
+    BODY_MPI_File_iread_c(PMPI_File_iread_c, PMPI_File_iread)
 
 /* ----------------------------------------------------- MPI_File_iread_all */
 
@@ -4657,7 +5480,7 @@ static int w_PMPI_File_iread_all(MPIABI_File abi_fh, void *abi_buf,
 /* --------------------------------------------------- MPI_File_iread_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iread_all_c
-#define BODY_MPI_File_iread_all_c(TARGET)                                      \
+#define BODY_MPI_File_iread_all_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -4673,8 +5496,30 @@ static int w_PMPI_File_iread_all(MPIABI_File abi_fh, void *abi_buf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iread_all)
+#define BODY_MPI_File_iread_all_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, buf, count, datatype, &request);         \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iread_all_c(TARGET)                                      \
+#define BODY_MPI_File_iread_all_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -4690,12 +5535,12 @@ static int w_MPI_File_iread_all_c(MPIABI_File abi_fh, void *abi_buf,
                                   MPIABI_Count abi_count,
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_all_c(MPI_File_iread_all_c)
+    BODY_MPI_File_iread_all_c(MPI_File_iread_all_c, MPI_File_iread_all)
 static int w_PMPI_File_iread_all_c(MPIABI_File abi_fh, void *abi_buf,
                                    MPIABI_Count abi_count,
                                    MPIABI_Datatype abi_datatype,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_all_c(PMPI_File_iread_all_c)
+    BODY_MPI_File_iread_all_c(PMPI_File_iread_all_c, PMPI_File_iread_all)
 
 /* ------------------------------------------------------ MPI_File_iread_at */
 
@@ -4745,7 +5590,7 @@ static int w_PMPI_File_iread_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
 /* ---------------------------------------------------- MPI_File_iread_at_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iread_at_c
-#define BODY_MPI_File_iread_at_c(TARGET)                                       \
+#define BODY_MPI_File_iread_at_c(TARGET, FALLBACK)                             \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -4762,8 +5607,31 @@ static int w_PMPI_File_iread_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iread_at)
+#define BODY_MPI_File_iread_at_c(TARGET, FALLBACK)                             \
+  {                                                                            \
+    const MPI_File   fh     = mpiwrapper_file_fromabi(abi_fh);                 \
+    const MPI_Offset offset = abi_offset;                                      \
+    void *const      buf    = mpiwrapper_recvbuf_fromabi(abi_buf);             \
+    int              count  = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, offset, buf, count, datatype, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iread_at_c(TARGET)                                       \
+#define BODY_MPI_File_iread_at_c(TARGET, FALLBACK)                             \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -4780,12 +5648,12 @@ static int w_MPI_File_iread_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
                                  void *abi_buf, MPIABI_Count abi_count,
                                  MPIABI_Datatype abi_datatype,
                                  MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_at_c(MPI_File_iread_at_c)
+    BODY_MPI_File_iread_at_c(MPI_File_iread_at_c, MPI_File_iread_at)
 static int w_PMPI_File_iread_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
                                   void *abi_buf, MPIABI_Count abi_count,
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_at_c(PMPI_File_iread_at_c)
+    BODY_MPI_File_iread_at_c(PMPI_File_iread_at_c, PMPI_File_iread_at)
 
 /* -------------------------------------------------- MPI_File_iread_at_all */
 
@@ -4836,7 +5704,7 @@ static int w_PMPI_File_iread_at_all(MPIABI_File abi_fh,
 /* ------------------------------------------------ MPI_File_iread_at_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iread_at_all_c
-#define BODY_MPI_File_iread_at_all_c(TARGET)                                   \
+#define BODY_MPI_File_iread_at_all_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -4853,8 +5721,31 @@ static int w_PMPI_File_iread_at_all(MPIABI_File abi_fh,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iread_at_all)
+#define BODY_MPI_File_iread_at_all_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_File   fh     = mpiwrapper_file_fromabi(abi_fh);                 \
+    const MPI_Offset offset = abi_offset;                                      \
+    void *const      buf    = mpiwrapper_recvbuf_fromabi(abi_buf);             \
+    int              count  = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, offset, buf, count, datatype, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iread_at_all_c(TARGET)                                   \
+#define BODY_MPI_File_iread_at_all_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -4872,13 +5763,15 @@ static int w_MPI_File_iread_at_all_c(MPIABI_File abi_fh,
                                      MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_at_all_c(MPI_File_iread_at_all_c)
+    BODY_MPI_File_iread_at_all_c(MPI_File_iread_at_all_c,
+                                 MPI_File_iread_at_all)
 static int w_PMPI_File_iread_at_all_c(MPIABI_File abi_fh,
                                       MPIABI_Offset abi_offset, void *abi_buf,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_at_all_c(PMPI_File_iread_at_all_c)
+    BODY_MPI_File_iread_at_all_c(PMPI_File_iread_at_all_c,
+                                 PMPI_File_iread_at_all)
 
 /* -------------------------------------------------- MPI_File_iread_shared */
 
@@ -4925,7 +5818,7 @@ static int w_PMPI_File_iread_shared(MPIABI_File abi_fh, void *abi_buf,
 /* ------------------------------------------------ MPI_File_iread_shared_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iread_shared_c
-#define BODY_MPI_File_iread_shared_c(TARGET)                                   \
+#define BODY_MPI_File_iread_shared_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -4941,8 +5834,30 @@ static int w_PMPI_File_iread_shared(MPIABI_File abi_fh, void *abi_buf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iread_shared)
+#define BODY_MPI_File_iread_shared_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, buf, count, datatype, &request);         \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iread_shared_c(TARGET)                                   \
+#define BODY_MPI_File_iread_shared_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -4958,12 +5873,14 @@ static int w_MPI_File_iread_shared_c(MPIABI_File abi_fh, void *abi_buf,
                                      MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_shared_c(MPI_File_iread_shared_c)
+    BODY_MPI_File_iread_shared_c(MPI_File_iread_shared_c,
+                                 MPI_File_iread_shared)
 static int w_PMPI_File_iread_shared_c(MPIABI_File abi_fh, void *abi_buf,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Request *abi_request)
-    BODY_MPI_File_iread_shared_c(PMPI_File_iread_shared_c)
+    BODY_MPI_File_iread_shared_c(PMPI_File_iread_shared_c,
+                                 PMPI_File_iread_shared)
 
 /* -------------------------------------------------------- MPI_File_iwrite */
 
@@ -5009,7 +5926,7 @@ static int w_PMPI_File_iwrite(MPIABI_File abi_fh, const void *abi_buf,
 /* ------------------------------------------------------ MPI_File_iwrite_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iwrite_c
-#define BODY_MPI_File_iwrite_c(TARGET)                                         \
+#define BODY_MPI_File_iwrite_c(TARGET, FALLBACK)                               \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -5025,8 +5942,30 @@ static int w_PMPI_File_iwrite(MPIABI_File abi_fh, const void *abi_buf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iwrite)
+#define BODY_MPI_File_iwrite_c(TARGET, FALLBACK)                               \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, buf, count, datatype, &request);         \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iwrite_c(TARGET)                                         \
+#define BODY_MPI_File_iwrite_c(TARGET, FALLBACK)                               \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -5042,12 +5981,12 @@ static int w_MPI_File_iwrite_c(MPIABI_File abi_fh, const void *abi_buf,
                                MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype,
                                MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_c(MPI_File_iwrite_c)
+    BODY_MPI_File_iwrite_c(MPI_File_iwrite_c, MPI_File_iwrite)
 static int w_PMPI_File_iwrite_c(MPIABI_File abi_fh, const void *abi_buf,
                                 MPIABI_Count abi_count,
                                 MPIABI_Datatype abi_datatype,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_c(PMPI_File_iwrite_c)
+    BODY_MPI_File_iwrite_c(PMPI_File_iwrite_c, PMPI_File_iwrite)
 
 /* ---------------------------------------------------- MPI_File_iwrite_all */
 
@@ -5093,7 +6032,7 @@ static int w_PMPI_File_iwrite_all(MPIABI_File abi_fh, const void *abi_buf,
 /* -------------------------------------------------- MPI_File_iwrite_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iwrite_all_c
-#define BODY_MPI_File_iwrite_all_c(TARGET)                                     \
+#define BODY_MPI_File_iwrite_all_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -5109,8 +6048,30 @@ static int w_PMPI_File_iwrite_all(MPIABI_File abi_fh, const void *abi_buf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iwrite_all)
+#define BODY_MPI_File_iwrite_all_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, buf, count, datatype, &request);         \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iwrite_all_c(TARGET)                                     \
+#define BODY_MPI_File_iwrite_all_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -5126,12 +6087,12 @@ static int w_MPI_File_iwrite_all_c(MPIABI_File abi_fh, const void *abi_buf,
                                    MPIABI_Count abi_count,
                                    MPIABI_Datatype abi_datatype,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_all_c(MPI_File_iwrite_all_c)
+    BODY_MPI_File_iwrite_all_c(MPI_File_iwrite_all_c, MPI_File_iwrite_all)
 static int w_PMPI_File_iwrite_all_c(MPIABI_File abi_fh, const void *abi_buf,
                                     MPIABI_Count abi_count,
                                     MPIABI_Datatype abi_datatype,
                                     MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_all_c(PMPI_File_iwrite_all_c)
+    BODY_MPI_File_iwrite_all_c(PMPI_File_iwrite_all_c, PMPI_File_iwrite_all)
 
 /* ----------------------------------------------------- MPI_File_iwrite_at */
 
@@ -5181,7 +6142,7 @@ static int w_PMPI_File_iwrite_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
 /* --------------------------------------------------- MPI_File_iwrite_at_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iwrite_at_c
-#define BODY_MPI_File_iwrite_at_c(TARGET)                                      \
+#define BODY_MPI_File_iwrite_at_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -5198,8 +6159,31 @@ static int w_PMPI_File_iwrite_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iwrite_at)
+#define BODY_MPI_File_iwrite_at_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const MPI_File    fh     = mpiwrapper_file_fromabi(abi_fh);                \
+    const MPI_Offset  offset = abi_offset;                                     \
+    const void *const buf    = mpiwrapper_sendbuf_fromabi(abi_buf);            \
+    int               count  = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, offset, buf, count, datatype, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iwrite_at_c(TARGET)                                      \
+#define BODY_MPI_File_iwrite_at_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -5216,13 +6200,13 @@ static int w_MPI_File_iwrite_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
                                   const void *abi_buf, MPIABI_Count abi_count,
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_at_c(MPI_File_iwrite_at_c)
+    BODY_MPI_File_iwrite_at_c(MPI_File_iwrite_at_c, MPI_File_iwrite_at)
 static int w_PMPI_File_iwrite_at_c(MPIABI_File abi_fh,
                                    MPIABI_Offset abi_offset,
                                    const void *abi_buf, MPIABI_Count abi_count,
                                    MPIABI_Datatype abi_datatype,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_at_c(PMPI_File_iwrite_at_c)
+    BODY_MPI_File_iwrite_at_c(PMPI_File_iwrite_at_c, PMPI_File_iwrite_at)
 
 /* ------------------------------------------------- MPI_File_iwrite_at_all */
 
@@ -5274,7 +6258,7 @@ static int w_PMPI_File_iwrite_at_all(MPIABI_File abi_fh,
 /* ----------------------------------------------- MPI_File_iwrite_at_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iwrite_at_all_c
-#define BODY_MPI_File_iwrite_at_all_c(TARGET)                                  \
+#define BODY_MPI_File_iwrite_at_all_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -5291,8 +6275,31 @@ static int w_PMPI_File_iwrite_at_all(MPIABI_File abi_fh,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iwrite_at_all)
+#define BODY_MPI_File_iwrite_at_all_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const MPI_File    fh     = mpiwrapper_file_fromabi(abi_fh);                \
+    const MPI_Offset  offset = abi_offset;                                     \
+    const void *const buf    = mpiwrapper_sendbuf_fromabi(abi_buf);            \
+    int               count  = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, offset, buf, count, datatype, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iwrite_at_all_c(TARGET)                                  \
+#define BODY_MPI_File_iwrite_at_all_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -5311,14 +6318,16 @@ static int w_MPI_File_iwrite_at_all_c(MPIABI_File abi_fh,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_at_all_c(MPI_File_iwrite_at_all_c)
+    BODY_MPI_File_iwrite_at_all_c(MPI_File_iwrite_at_all_c,
+                                  MPI_File_iwrite_at_all)
 static int w_PMPI_File_iwrite_at_all_c(MPIABI_File abi_fh,
                                        MPIABI_Offset abi_offset,
                                        const void *abi_buf,
                                        MPIABI_Count abi_count,
                                        MPIABI_Datatype abi_datatype,
                                        MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_at_all_c(PMPI_File_iwrite_at_all_c)
+    BODY_MPI_File_iwrite_at_all_c(PMPI_File_iwrite_at_all_c,
+                                  PMPI_File_iwrite_at_all)
 
 /* ------------------------------------------------- MPI_File_iwrite_shared */
 
@@ -5366,7 +6375,7 @@ static int w_PMPI_File_iwrite_shared(MPIABI_File abi_fh, const void *abi_buf,
 /* ----------------------------------------------- MPI_File_iwrite_shared_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_iwrite_shared_c
-#define BODY_MPI_File_iwrite_shared_c(TARGET)                                  \
+#define BODY_MPI_File_iwrite_shared_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -5382,8 +6391,30 @@ static int w_PMPI_File_iwrite_shared(MPIABI_File abi_fh, const void *abi_buf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_iwrite_shared)
+#define BODY_MPI_File_iwrite_shared_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(fh, buf, count, datatype, &request);         \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_iwrite_shared_c(TARGET)                                  \
+#define BODY_MPI_File_iwrite_shared_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -5399,12 +6430,14 @@ static int w_MPI_File_iwrite_shared_c(MPIABI_File abi_fh, const void *abi_buf,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_shared_c(MPI_File_iwrite_shared_c)
+    BODY_MPI_File_iwrite_shared_c(MPI_File_iwrite_shared_c,
+                                  MPI_File_iwrite_shared)
 static int w_PMPI_File_iwrite_shared_c(MPIABI_File abi_fh, const void *abi_buf,
                                        MPIABI_Count abi_count,
                                        MPIABI_Datatype abi_datatype,
                                        MPIABI_Request *abi_request)
-    BODY_MPI_File_iwrite_shared_c(PMPI_File_iwrite_shared_c)
+    BODY_MPI_File_iwrite_shared_c(PMPI_File_iwrite_shared_c,
+                                  PMPI_File_iwrite_shared)
 
 /* ---------------------------------------------------------- MPI_File_open */
 
@@ -5515,7 +6548,7 @@ static int w_PMPI_File_read(MPIABI_File abi_fh, void *abi_buf, int abi_count,
 /* -------------------------------------------------------- MPI_File_read_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_c
-#define BODY_MPI_File_read_c(TARGET)                                           \
+#define BODY_MPI_File_read_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -5531,8 +6564,29 @@ static int w_PMPI_File_read(MPIABI_File abi_fh, void *abi_buf, int abi_count,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read)
+#define BODY_MPI_File_read_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_c(TARGET)                                           \
+#define BODY_MPI_File_read_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -5547,12 +6601,12 @@ static int w_MPI_File_read_c(MPIABI_File abi_fh, void *abi_buf,
                              MPIABI_Count abi_count,
                              MPIABI_Datatype abi_datatype,
                              MPIABI_Status *abi_status)
-    BODY_MPI_File_read_c(MPI_File_read_c)
+    BODY_MPI_File_read_c(MPI_File_read_c, MPI_File_read)
 static int w_PMPI_File_read_c(MPIABI_File abi_fh, void *abi_buf,
                               MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype,
                               MPIABI_Status *abi_status)
-    BODY_MPI_File_read_c(PMPI_File_read_c)
+    BODY_MPI_File_read_c(PMPI_File_read_c, PMPI_File_read)
 
 /* ------------------------------------------------------ MPI_File_read_all */
 
@@ -5597,7 +6651,7 @@ static int w_PMPI_File_read_all(MPIABI_File abi_fh, void *abi_buf,
 /* ---------------------------------------------------- MPI_File_read_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_all_c
-#define BODY_MPI_File_read_all_c(TARGET)                                       \
+#define BODY_MPI_File_read_all_c(TARGET, FALLBACK)                             \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -5613,8 +6667,29 @@ static int w_PMPI_File_read_all(MPIABI_File abi_fh, void *abi_buf,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_all)
+#define BODY_MPI_File_read_all_c(TARGET, FALLBACK)                             \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_all_c(TARGET)                                       \
+#define BODY_MPI_File_read_all_c(TARGET, FALLBACK)                             \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -5629,12 +6704,12 @@ static int w_MPI_File_read_all_c(MPIABI_File abi_fh, void *abi_buf,
                                  MPIABI_Count abi_count,
                                  MPIABI_Datatype abi_datatype,
                                  MPIABI_Status *abi_status)
-    BODY_MPI_File_read_all_c(MPI_File_read_all_c)
+    BODY_MPI_File_read_all_c(MPI_File_read_all_c, MPI_File_read_all)
 static int w_PMPI_File_read_all_c(MPIABI_File abi_fh, void *abi_buf,
                                   MPIABI_Count abi_count,
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Status *abi_status)
-    BODY_MPI_File_read_all_c(PMPI_File_read_all_c)
+    BODY_MPI_File_read_all_c(PMPI_File_read_all_c, PMPI_File_read_all)
 
 /* ------------------------------------------------ MPI_File_read_all_begin */
 
@@ -5672,7 +6747,7 @@ static int w_PMPI_File_read_all_begin(MPIABI_File abi_fh, void *abi_buf,
 /* ---------------------------------------------- MPI_File_read_all_begin_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_all_begin_c
-#define BODY_MPI_File_read_all_begin_c(TARGET)                                 \
+#define BODY_MPI_File_read_all_begin_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -5682,8 +6757,22 @@ static int w_PMPI_File_read_all_begin(MPIABI_File abi_fh, void *abi_buf,
     const int ierror = TARGET(fh, buf, count, datatype);                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_all_begin)
+#define BODY_MPI_File_read_all_begin_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror = FALLBACK(fh, buf, count, datatype);                     \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_all_begin_c(TARGET)                                 \
+#define BODY_MPI_File_read_all_begin_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -5696,11 +6785,13 @@ static int w_PMPI_File_read_all_begin(MPIABI_File abi_fh, void *abi_buf,
 static int w_MPI_File_read_all_begin_c(MPIABI_File abi_fh, void *abi_buf,
                                        MPIABI_Count abi_count,
                                        MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_read_all_begin_c(MPI_File_read_all_begin_c)
+    BODY_MPI_File_read_all_begin_c(MPI_File_read_all_begin_c,
+                                   MPI_File_read_all_begin)
 static int w_PMPI_File_read_all_begin_c(MPIABI_File abi_fh, void *abi_buf,
                                         MPIABI_Count abi_count,
                                         MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_read_all_begin_c(PMPI_File_read_all_begin_c)
+    BODY_MPI_File_read_all_begin_c(PMPI_File_read_all_begin_c,
+                                   PMPI_File_read_all_begin)
 
 /* -------------------------------------------------- MPI_File_read_all_end */
 
@@ -5783,7 +6874,7 @@ static int w_PMPI_File_read_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
 /* ----------------------------------------------------- MPI_File_read_at_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_at_c
-#define BODY_MPI_File_read_at_c(TARGET)                                        \
+#define BODY_MPI_File_read_at_c(TARGET, FALLBACK)                              \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -5801,8 +6892,30 @@ static int w_PMPI_File_read_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_at)
+#define BODY_MPI_File_read_at_c(TARGET, FALLBACK)                              \
+  {                                                                            \
+    const MPI_File   fh     = mpiwrapper_file_fromabi(abi_fh);                 \
+    const MPI_Offset offset = abi_offset;                                      \
+    void *const      buf    = mpiwrapper_recvbuf_fromabi(abi_buf);             \
+    int              count  = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, offset, buf, count, datatype,                             \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_at_c(TARGET)                                        \
+#define BODY_MPI_File_read_at_c(TARGET, FALLBACK)                              \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -5818,12 +6931,12 @@ static int w_MPI_File_read_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
                                 void *abi_buf, MPIABI_Count abi_count,
                                 MPIABI_Datatype abi_datatype,
                                 MPIABI_Status *abi_status)
-    BODY_MPI_File_read_at_c(MPI_File_read_at_c)
+    BODY_MPI_File_read_at_c(MPI_File_read_at_c, MPI_File_read_at)
 static int w_PMPI_File_read_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
                                  void *abi_buf, MPIABI_Count abi_count,
                                  MPIABI_Datatype abi_datatype,
                                  MPIABI_Status *abi_status)
-    BODY_MPI_File_read_at_c(PMPI_File_read_at_c)
+    BODY_MPI_File_read_at_c(PMPI_File_read_at_c, PMPI_File_read_at)
 
 /* --------------------------------------------------- MPI_File_read_at_all */
 
@@ -5873,7 +6986,7 @@ static int w_PMPI_File_read_at_all(MPIABI_File abi_fh,
 /* ------------------------------------------------- MPI_File_read_at_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_at_all_c
-#define BODY_MPI_File_read_at_all_c(TARGET)                                    \
+#define BODY_MPI_File_read_at_all_c(TARGET, FALLBACK)                          \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -5891,8 +7004,30 @@ static int w_PMPI_File_read_at_all(MPIABI_File abi_fh,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_at_all)
+#define BODY_MPI_File_read_at_all_c(TARGET, FALLBACK)                          \
+  {                                                                            \
+    const MPI_File   fh     = mpiwrapper_file_fromabi(abi_fh);                 \
+    const MPI_Offset offset = abi_offset;                                      \
+    void *const      buf    = mpiwrapper_recvbuf_fromabi(abi_buf);             \
+    int              count  = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, offset, buf, count, datatype,                             \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_at_all_c(TARGET)                                    \
+#define BODY_MPI_File_read_at_all_c(TARGET, FALLBACK)                          \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -5909,13 +7044,13 @@ static int w_MPI_File_read_at_all_c(MPIABI_File abi_fh,
                                     MPIABI_Count abi_count,
                                     MPIABI_Datatype abi_datatype,
                                     MPIABI_Status *abi_status)
-    BODY_MPI_File_read_at_all_c(MPI_File_read_at_all_c)
+    BODY_MPI_File_read_at_all_c(MPI_File_read_at_all_c, MPI_File_read_at_all)
 static int w_PMPI_File_read_at_all_c(MPIABI_File abi_fh,
                                      MPIABI_Offset abi_offset, void *abi_buf,
                                      MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Status *abi_status)
-    BODY_MPI_File_read_at_all_c(PMPI_File_read_at_all_c)
+    BODY_MPI_File_read_at_all_c(PMPI_File_read_at_all_c, PMPI_File_read_at_all)
 
 /* --------------------------------------------- MPI_File_read_at_all_begin */
 
@@ -5957,7 +7092,7 @@ static int w_PMPI_File_read_at_all_begin(MPIABI_File abi_fh,
 /* ------------------------------------------- MPI_File_read_at_all_begin_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_at_all_begin_c
-#define BODY_MPI_File_read_at_all_begin_c(TARGET)                              \
+#define BODY_MPI_File_read_at_all_begin_c(TARGET, FALLBACK)                    \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -5968,8 +7103,23 @@ static int w_PMPI_File_read_at_all_begin(MPIABI_File abi_fh,
     const int ierror = TARGET(fh, offset, buf, count, datatype);               \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_at_all_begin)
+#define BODY_MPI_File_read_at_all_begin_c(TARGET, FALLBACK)                    \
+  {                                                                            \
+    const MPI_File   fh     = mpiwrapper_file_fromabi(abi_fh);                 \
+    const MPI_Offset offset = abi_offset;                                      \
+    void *const      buf    = mpiwrapper_recvbuf_fromabi(abi_buf);             \
+    int              count  = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror = FALLBACK(fh, offset, buf, count, datatype);             \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_at_all_begin_c(TARGET)                              \
+#define BODY_MPI_File_read_at_all_begin_c(TARGET, FALLBACK)                    \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -5985,13 +7135,15 @@ static int w_MPI_File_read_at_all_begin_c(MPIABI_File abi_fh,
                                           void *abi_buf,
                                           MPIABI_Count abi_count,
                                           MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_read_at_all_begin_c(MPI_File_read_at_all_begin_c)
+    BODY_MPI_File_read_at_all_begin_c(MPI_File_read_at_all_begin_c,
+                                      MPI_File_read_at_all_begin)
 static int w_PMPI_File_read_at_all_begin_c(MPIABI_File abi_fh,
                                            MPIABI_Offset abi_offset,
                                            void *abi_buf,
                                            MPIABI_Count abi_count,
                                            MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_read_at_all_begin_c(PMPI_File_read_at_all_begin_c)
+    BODY_MPI_File_read_at_all_begin_c(PMPI_File_read_at_all_begin_c,
+                                      PMPI_File_read_at_all_begin)
 
 /* ----------------------------------------------- MPI_File_read_at_all_end */
 
@@ -6070,7 +7222,7 @@ static int w_PMPI_File_read_ordered(MPIABI_File abi_fh, void *abi_buf,
 /* ------------------------------------------------ MPI_File_read_ordered_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_ordered_c
-#define BODY_MPI_File_read_ordered_c(TARGET)                                   \
+#define BODY_MPI_File_read_ordered_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -6086,8 +7238,29 @@ static int w_PMPI_File_read_ordered(MPIABI_File abi_fh, void *abi_buf,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_ordered)
+#define BODY_MPI_File_read_ordered_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_ordered_c(TARGET)                                   \
+#define BODY_MPI_File_read_ordered_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -6102,12 +7275,14 @@ static int w_MPI_File_read_ordered_c(MPIABI_File abi_fh, void *abi_buf,
                                      MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Status *abi_status)
-    BODY_MPI_File_read_ordered_c(MPI_File_read_ordered_c)
+    BODY_MPI_File_read_ordered_c(MPI_File_read_ordered_c,
+                                 MPI_File_read_ordered)
 static int w_PMPI_File_read_ordered_c(MPIABI_File abi_fh, void *abi_buf,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Status *abi_status)
-    BODY_MPI_File_read_ordered_c(PMPI_File_read_ordered_c)
+    BODY_MPI_File_read_ordered_c(PMPI_File_read_ordered_c,
+                                 PMPI_File_read_ordered)
 
 /* -------------------------------------------- MPI_File_read_ordered_begin */
 
@@ -6145,7 +7320,7 @@ static int w_PMPI_File_read_ordered_begin(MPIABI_File abi_fh, void *abi_buf,
 /* ------------------------------------------ MPI_File_read_ordered_begin_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_ordered_begin_c
-#define BODY_MPI_File_read_ordered_begin_c(TARGET)                             \
+#define BODY_MPI_File_read_ordered_begin_c(TARGET, FALLBACK)                   \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -6155,8 +7330,22 @@ static int w_PMPI_File_read_ordered_begin(MPIABI_File abi_fh, void *abi_buf,
     const int ierror = TARGET(fh, buf, count, datatype);                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_ordered_begin)
+#define BODY_MPI_File_read_ordered_begin_c(TARGET, FALLBACK)                   \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror = FALLBACK(fh, buf, count, datatype);                     \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_ordered_begin_c(TARGET)                             \
+#define BODY_MPI_File_read_ordered_begin_c(TARGET, FALLBACK)                   \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -6169,11 +7358,13 @@ static int w_PMPI_File_read_ordered_begin(MPIABI_File abi_fh, void *abi_buf,
 static int w_MPI_File_read_ordered_begin_c(MPIABI_File abi_fh, void *abi_buf,
                                            MPIABI_Count abi_count,
                                            MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_read_ordered_begin_c(MPI_File_read_ordered_begin_c)
+    BODY_MPI_File_read_ordered_begin_c(MPI_File_read_ordered_begin_c,
+                                       MPI_File_read_ordered_begin)
 static int w_PMPI_File_read_ordered_begin_c(MPIABI_File abi_fh, void *abi_buf,
                                             MPIABI_Count abi_count,
                                             MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_read_ordered_begin_c(PMPI_File_read_ordered_begin_c)
+    BODY_MPI_File_read_ordered_begin_c(PMPI_File_read_ordered_begin_c,
+                                       PMPI_File_read_ordered_begin)
 
 /* ---------------------------------------------- MPI_File_read_ordered_end */
 
@@ -6251,7 +7442,7 @@ static int w_PMPI_File_read_shared(MPIABI_File abi_fh, void *abi_buf,
 /* ------------------------------------------------- MPI_File_read_shared_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_read_shared_c
-#define BODY_MPI_File_read_shared_c(TARGET)                                    \
+#define BODY_MPI_File_read_shared_c(TARGET, FALLBACK)                          \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
@@ -6267,8 +7458,29 @@ static int w_PMPI_File_read_shared(MPIABI_File abi_fh, void *abi_buf,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_read_shared)
+#define BODY_MPI_File_read_shared_c(TARGET, FALLBACK)                          \
+  {                                                                            \
+    const MPI_File fh    = mpiwrapper_file_fromabi(abi_fh);                    \
+    void *const    buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                \
+    int            count = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_read_shared_c(TARGET)                                    \
+#define BODY_MPI_File_read_shared_c(TARGET, FALLBACK)                          \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -6283,12 +7495,12 @@ static int w_MPI_File_read_shared_c(MPIABI_File abi_fh, void *abi_buf,
                                     MPIABI_Count abi_count,
                                     MPIABI_Datatype abi_datatype,
                                     MPIABI_Status *abi_status)
-    BODY_MPI_File_read_shared_c(MPI_File_read_shared_c)
+    BODY_MPI_File_read_shared_c(MPI_File_read_shared_c, MPI_File_read_shared)
 static int w_PMPI_File_read_shared_c(MPIABI_File abi_fh, void *abi_buf,
                                      MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Status *abi_status)
-    BODY_MPI_File_read_shared_c(PMPI_File_read_shared_c)
+    BODY_MPI_File_read_shared_c(PMPI_File_read_shared_c, PMPI_File_read_shared)
 
 /* ---------------------------------------------------------- MPI_File_seek */
 
@@ -6554,7 +7766,7 @@ static int w_PMPI_File_write(MPIABI_File abi_fh, const void *abi_buf,
 /* ------------------------------------------------------- MPI_File_write_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_c
-#define BODY_MPI_File_write_c(TARGET)                                          \
+#define BODY_MPI_File_write_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -6570,8 +7782,29 @@ static int w_PMPI_File_write(MPIABI_File abi_fh, const void *abi_buf,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write)
+#define BODY_MPI_File_write_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_c(TARGET)                                          \
+#define BODY_MPI_File_write_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -6586,12 +7819,12 @@ static int w_MPI_File_write_c(MPIABI_File abi_fh, const void *abi_buf,
                               MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype,
                               MPIABI_Status *abi_status)
-    BODY_MPI_File_write_c(MPI_File_write_c)
+    BODY_MPI_File_write_c(MPI_File_write_c, MPI_File_write)
 static int w_PMPI_File_write_c(MPIABI_File abi_fh, const void *abi_buf,
                                MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype,
                                MPIABI_Status *abi_status)
-    BODY_MPI_File_write_c(PMPI_File_write_c)
+    BODY_MPI_File_write_c(PMPI_File_write_c, PMPI_File_write)
 
 /* ----------------------------------------------------- MPI_File_write_all */
 
@@ -6636,7 +7869,7 @@ static int w_PMPI_File_write_all(MPIABI_File abi_fh, const void *abi_buf,
 /* --------------------------------------------------- MPI_File_write_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_all_c
-#define BODY_MPI_File_write_all_c(TARGET)                                      \
+#define BODY_MPI_File_write_all_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -6652,8 +7885,29 @@ static int w_PMPI_File_write_all(MPIABI_File abi_fh, const void *abi_buf,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_all)
+#define BODY_MPI_File_write_all_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_all_c(TARGET)                                      \
+#define BODY_MPI_File_write_all_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -6668,12 +7922,12 @@ static int w_MPI_File_write_all_c(MPIABI_File abi_fh, const void *abi_buf,
                                   MPIABI_Count abi_count,
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Status *abi_status)
-    BODY_MPI_File_write_all_c(MPI_File_write_all_c)
+    BODY_MPI_File_write_all_c(MPI_File_write_all_c, MPI_File_write_all)
 static int w_PMPI_File_write_all_c(MPIABI_File abi_fh, const void *abi_buf,
                                    MPIABI_Count abi_count,
                                    MPIABI_Datatype abi_datatype,
                                    MPIABI_Status *abi_status)
-    BODY_MPI_File_write_all_c(PMPI_File_write_all_c)
+    BODY_MPI_File_write_all_c(PMPI_File_write_all_c, PMPI_File_write_all)
 
 /* ----------------------------------------------- MPI_File_write_all_begin */
 
@@ -6711,7 +7965,7 @@ static int w_PMPI_File_write_all_begin(MPIABI_File abi_fh, const void *abi_buf,
 /* --------------------------------------------- MPI_File_write_all_begin_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_all_begin_c
-#define BODY_MPI_File_write_all_begin_c(TARGET)                                \
+#define BODY_MPI_File_write_all_begin_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -6721,8 +7975,22 @@ static int w_PMPI_File_write_all_begin(MPIABI_File abi_fh, const void *abi_buf,
     const int ierror = TARGET(fh, buf, count, datatype);                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_all_begin)
+#define BODY_MPI_File_write_all_begin_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror = FALLBACK(fh, buf, count, datatype);                     \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_all_begin_c(TARGET)                                \
+#define BODY_MPI_File_write_all_begin_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -6736,12 +8004,14 @@ static int w_MPI_File_write_all_begin_c(MPIABI_File abi_fh,
                                         const void *abi_buf,
                                         MPIABI_Count abi_count,
                                         MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_write_all_begin_c(MPI_File_write_all_begin_c)
+    BODY_MPI_File_write_all_begin_c(MPI_File_write_all_begin_c,
+                                    MPI_File_write_all_begin)
 static int w_PMPI_File_write_all_begin_c(MPIABI_File abi_fh,
                                          const void *abi_buf,
                                          MPIABI_Count abi_count,
                                          MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_write_all_begin_c(PMPI_File_write_all_begin_c)
+    BODY_MPI_File_write_all_begin_c(PMPI_File_write_all_begin_c,
+                                    PMPI_File_write_all_begin)
 
 /* ------------------------------------------------- MPI_File_write_all_end */
 
@@ -6824,7 +8094,7 @@ static int w_PMPI_File_write_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
 /* ---------------------------------------------------- MPI_File_write_at_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_at_c
-#define BODY_MPI_File_write_at_c(TARGET)                                       \
+#define BODY_MPI_File_write_at_c(TARGET, FALLBACK)                             \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -6842,8 +8112,30 @@ static int w_PMPI_File_write_at(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_at)
+#define BODY_MPI_File_write_at_c(TARGET, FALLBACK)                             \
+  {                                                                            \
+    const MPI_File    fh     = mpiwrapper_file_fromabi(abi_fh);                \
+    const MPI_Offset  offset = abi_offset;                                     \
+    const void *const buf    = mpiwrapper_sendbuf_fromabi(abi_buf);            \
+    int               count  = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, offset, buf, count, datatype,                             \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_at_c(TARGET)                                       \
+#define BODY_MPI_File_write_at_c(TARGET, FALLBACK)                             \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -6859,12 +8151,12 @@ static int w_MPI_File_write_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
                                  const void *abi_buf, MPIABI_Count abi_count,
                                  MPIABI_Datatype abi_datatype,
                                  MPIABI_Status *abi_status)
-    BODY_MPI_File_write_at_c(MPI_File_write_at_c)
+    BODY_MPI_File_write_at_c(MPI_File_write_at_c, MPI_File_write_at)
 static int w_PMPI_File_write_at_c(MPIABI_File abi_fh, MPIABI_Offset abi_offset,
                                   const void *abi_buf, MPIABI_Count abi_count,
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Status *abi_status)
-    BODY_MPI_File_write_at_c(PMPI_File_write_at_c)
+    BODY_MPI_File_write_at_c(PMPI_File_write_at_c, PMPI_File_write_at)
 
 /* -------------------------------------------------- MPI_File_write_at_all */
 
@@ -6916,7 +8208,7 @@ static int w_PMPI_File_write_at_all(MPIABI_File abi_fh,
 /* ------------------------------------------------ MPI_File_write_at_all_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_at_all_c
-#define BODY_MPI_File_write_at_all_c(TARGET)                                   \
+#define BODY_MPI_File_write_at_all_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -6934,8 +8226,30 @@ static int w_PMPI_File_write_at_all(MPIABI_File abi_fh,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_at_all)
+#define BODY_MPI_File_write_at_all_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_File    fh     = mpiwrapper_file_fromabi(abi_fh);                \
+    const MPI_Offset  offset = abi_offset;                                     \
+    const void *const buf    = mpiwrapper_sendbuf_fromabi(abi_buf);            \
+    int               count  = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, offset, buf, count, datatype,                             \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_at_all_c(TARGET)                                   \
+#define BODY_MPI_File_write_at_all_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -6953,14 +8267,16 @@ static int w_MPI_File_write_at_all_c(MPIABI_File abi_fh,
                                      MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Status *abi_status)
-    BODY_MPI_File_write_at_all_c(MPI_File_write_at_all_c)
+    BODY_MPI_File_write_at_all_c(MPI_File_write_at_all_c,
+                                 MPI_File_write_at_all)
 static int w_PMPI_File_write_at_all_c(MPIABI_File abi_fh,
                                       MPIABI_Offset abi_offset,
                                       const void *abi_buf,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Status *abi_status)
-    BODY_MPI_File_write_at_all_c(PMPI_File_write_at_all_c)
+    BODY_MPI_File_write_at_all_c(PMPI_File_write_at_all_c,
+                                 PMPI_File_write_at_all)
 
 /* -------------------------------------------- MPI_File_write_at_all_begin */
 
@@ -7002,7 +8318,7 @@ static int w_PMPI_File_write_at_all_begin(MPIABI_File abi_fh,
 /* ------------------------------------------ MPI_File_write_at_all_begin_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_at_all_begin_c
-#define BODY_MPI_File_write_at_all_begin_c(TARGET)                             \
+#define BODY_MPI_File_write_at_all_begin_c(TARGET, FALLBACK)                   \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const MPI_Offset   offset   = abi_offset;                                  \
@@ -7013,8 +8329,23 @@ static int w_PMPI_File_write_at_all_begin(MPIABI_File abi_fh,
     const int ierror = TARGET(fh, offset, buf, count, datatype);               \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_at_all_begin)
+#define BODY_MPI_File_write_at_all_begin_c(TARGET, FALLBACK)                   \
+  {                                                                            \
+    const MPI_File    fh     = mpiwrapper_file_fromabi(abi_fh);                \
+    const MPI_Offset  offset = abi_offset;                                     \
+    const void *const buf    = mpiwrapper_sendbuf_fromabi(abi_buf);            \
+    int               count  = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror = FALLBACK(fh, offset, buf, count, datatype);             \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_at_all_begin_c(TARGET)                             \
+#define BODY_MPI_File_write_at_all_begin_c(TARGET, FALLBACK)                   \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_offset;                                                          \
@@ -7030,13 +8361,15 @@ static int w_MPI_File_write_at_all_begin_c(MPIABI_File abi_fh,
                                            const void *abi_buf,
                                            MPIABI_Count abi_count,
                                            MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_write_at_all_begin_c(MPI_File_write_at_all_begin_c)
+    BODY_MPI_File_write_at_all_begin_c(MPI_File_write_at_all_begin_c,
+                                       MPI_File_write_at_all_begin)
 static int w_PMPI_File_write_at_all_begin_c(MPIABI_File abi_fh,
                                             MPIABI_Offset abi_offset,
                                             const void *abi_buf,
                                             MPIABI_Count abi_count,
                                             MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_write_at_all_begin_c(PMPI_File_write_at_all_begin_c)
+    BODY_MPI_File_write_at_all_begin_c(PMPI_File_write_at_all_begin_c,
+                                       PMPI_File_write_at_all_begin)
 
 /* ---------------------------------------------- MPI_File_write_at_all_end */
 
@@ -7117,7 +8450,7 @@ static int w_PMPI_File_write_ordered(MPIABI_File abi_fh, const void *abi_buf,
 /* ----------------------------------------------- MPI_File_write_ordered_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_ordered_c
-#define BODY_MPI_File_write_ordered_c(TARGET)                                  \
+#define BODY_MPI_File_write_ordered_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -7133,8 +8466,29 @@ static int w_PMPI_File_write_ordered(MPIABI_File abi_fh, const void *abi_buf,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_ordered)
+#define BODY_MPI_File_write_ordered_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_ordered_c(TARGET)                                  \
+#define BODY_MPI_File_write_ordered_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -7149,12 +8503,14 @@ static int w_MPI_File_write_ordered_c(MPIABI_File abi_fh, const void *abi_buf,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Status *abi_status)
-    BODY_MPI_File_write_ordered_c(MPI_File_write_ordered_c)
+    BODY_MPI_File_write_ordered_c(MPI_File_write_ordered_c,
+                                  MPI_File_write_ordered)
 static int w_PMPI_File_write_ordered_c(MPIABI_File abi_fh, const void *abi_buf,
                                        MPIABI_Count abi_count,
                                        MPIABI_Datatype abi_datatype,
                                        MPIABI_Status *abi_status)
-    BODY_MPI_File_write_ordered_c(PMPI_File_write_ordered_c)
+    BODY_MPI_File_write_ordered_c(PMPI_File_write_ordered_c,
+                                  PMPI_File_write_ordered)
 
 /* ------------------------------------------- MPI_File_write_ordered_begin */
 
@@ -7192,7 +8548,7 @@ static int w_PMPI_File_write_ordered_begin(MPIABI_File abi_fh,
 /* ----------------------------------------- MPI_File_write_ordered_begin_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_ordered_begin_c
-#define BODY_MPI_File_write_ordered_begin_c(TARGET)                            \
+#define BODY_MPI_File_write_ordered_begin_c(TARGET, FALLBACK)                  \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -7202,8 +8558,22 @@ static int w_PMPI_File_write_ordered_begin(MPIABI_File abi_fh,
     const int ierror = TARGET(fh, buf, count, datatype);                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_ordered_begin)
+#define BODY_MPI_File_write_ordered_begin_c(TARGET, FALLBACK)                  \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror = FALLBACK(fh, buf, count, datatype);                     \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_ordered_begin_c(TARGET)                            \
+#define BODY_MPI_File_write_ordered_begin_c(TARGET, FALLBACK)                  \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -7217,12 +8587,14 @@ static int w_MPI_File_write_ordered_begin_c(MPIABI_File abi_fh,
                                             const void *abi_buf,
                                             MPIABI_Count abi_count,
                                             MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_write_ordered_begin_c(MPI_File_write_ordered_begin_c)
+    BODY_MPI_File_write_ordered_begin_c(MPI_File_write_ordered_begin_c,
+                                        MPI_File_write_ordered_begin)
 static int w_PMPI_File_write_ordered_begin_c(MPIABI_File abi_fh,
                                              const void *abi_buf,
                                              MPIABI_Count abi_count,
                                              MPIABI_Datatype abi_datatype)
-    BODY_MPI_File_write_ordered_begin_c(PMPI_File_write_ordered_begin_c)
+    BODY_MPI_File_write_ordered_begin_c(PMPI_File_write_ordered_begin_c,
+                                        PMPI_File_write_ordered_begin)
 
 /* --------------------------------------------- MPI_File_write_ordered_end */
 
@@ -7303,7 +8675,7 @@ static int w_PMPI_File_write_shared(MPIABI_File abi_fh, const void *abi_buf,
 /* ------------------------------------------------ MPI_File_write_shared_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_write_shared_c
-#define BODY_MPI_File_write_shared_c(TARGET)                                   \
+#define BODY_MPI_File_write_shared_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_File     fh       = mpiwrapper_file_fromabi(abi_fh);             \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
@@ -7319,8 +8691,29 @@ static int w_PMPI_File_write_shared(MPIABI_File abi_fh, const void *abi_buf,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_File_write_shared)
+#define BODY_MPI_File_write_shared_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_File    fh    = mpiwrapper_file_fromabi(abi_fh);                 \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(fh, buf, count, datatype,                                     \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_File_write_shared_c(TARGET)                                   \
+#define BODY_MPI_File_write_shared_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_fh;                                                              \
     (void)abi_buf;                                                             \
@@ -7335,12 +8728,14 @@ static int w_MPI_File_write_shared_c(MPIABI_File abi_fh, const void *abi_buf,
                                      MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Status *abi_status)
-    BODY_MPI_File_write_shared_c(MPI_File_write_shared_c)
+    BODY_MPI_File_write_shared_c(MPI_File_write_shared_c,
+                                 MPI_File_write_shared)
 static int w_PMPI_File_write_shared_c(MPIABI_File abi_fh, const void *abi_buf,
                                       MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Status *abi_status)
-    BODY_MPI_File_write_shared_c(PMPI_File_write_shared_c)
+    BODY_MPI_File_write_shared_c(PMPI_File_write_shared_c,
+                                 PMPI_File_write_shared)
 
 /* ----------------------------------------------------------- MPI_Free_mem */
 
@@ -7412,7 +8807,7 @@ static int w_PMPI_Gather(const void *abi_sendbuf, int abi_sendcount,
 /* ----------------------------------------------------------- MPI_Gather_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Gather_c
-#define BODY_MPI_Gather_c(TARGET)                                              \
+#define BODY_MPI_Gather_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -7429,8 +8824,31 @@ static int w_PMPI_Gather(const void *abi_sendbuf, int abi_sendcount,
                root, comm);                                                    \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Gather)
+#define BODY_MPI_Gather_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 root, comm);                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Gather_c(TARGET)                                              \
+#define BODY_MPI_Gather_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -7448,13 +8866,14 @@ static int w_MPI_Gather_c(const void *abi_sendbuf, MPIABI_Count abi_sendcount,
                           MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                           MPIABI_Count abi_recvcount,
                           MPIABI_Datatype abi_recvtype, int abi_root,
-                          MPIABI_Comm abi_comm) BODY_MPI_Gather_c(MPI_Gather_c)
+                          MPIABI_Comm abi_comm)
+    BODY_MPI_Gather_c(MPI_Gather_c, MPI_Gather)
 static int w_PMPI_Gather_c(const void *abi_sendbuf, MPIABI_Count abi_sendcount,
                            MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                            MPIABI_Count abi_recvcount,
                            MPIABI_Datatype abi_recvtype, int abi_root,
                            MPIABI_Comm abi_comm)
-    BODY_MPI_Gather_c(PMPI_Gather_c)
+    BODY_MPI_Gather_c(PMPI_Gather_c, PMPI_Gather)
 
 /* -------------------------------------------------------- MPI_Gather_init */
 
@@ -7518,7 +8937,7 @@ static int w_PMPI_Gather_init(const void *abi_sendbuf, int abi_sendcount,
 /* ------------------------------------------------------ MPI_Gather_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Gather_init_c
-#define BODY_MPI_Gather_init_c(TARGET)                                         \
+#define BODY_MPI_Gather_init_c(TARGET, FALLBACK)                               \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -7542,8 +8961,42 @@ static int w_PMPI_Gather_init(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Gather_init)
+#define BODY_MPI_Gather_init_c(TARGET, FALLBACK)                               \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 root, comm, info, &request);                                  \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Gather_init_c(TARGET)                                         \
+#define BODY_MPI_Gather_init_c(TARGET, FALLBACK)                               \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -7567,7 +9020,7 @@ static int w_MPI_Gather_init_c(const void *abi_sendbuf,
                                MPIABI_Datatype abi_recvtype, int abi_root,
                                MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Gather_init_c(MPI_Gather_init_c)
+    BODY_MPI_Gather_init_c(MPI_Gather_init_c, MPI_Gather_init)
 static int w_PMPI_Gather_init_c(const void *abi_sendbuf,
                                 MPIABI_Count abi_sendcount,
                                 MPIABI_Datatype abi_sendtype,
@@ -7575,7 +9028,7 @@ static int w_PMPI_Gather_init_c(const void *abi_sendbuf,
                                 MPIABI_Datatype abi_recvtype, int abi_root,
                                 MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_Gather_init_c(PMPI_Gather_init_c)
+    BODY_MPI_Gather_init_c(PMPI_Gather_init_c, PMPI_Gather_init)
 
 /* ------------------------------------------------------------ MPI_Gatherv */
 
@@ -7628,7 +9081,7 @@ static int w_PMPI_Gatherv(const void *abi_sendbuf, int abi_sendcount,
 /* ---------------------------------------------------------- MPI_Gatherv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Gatherv_c
-#define BODY_MPI_Gatherv_c(TARGET)                                             \
+#define BODY_MPI_Gatherv_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -7649,8 +9102,66 @@ static int w_PMPI_Gatherv(const void *abi_sendbuf, int abi_sendcount,
                recvtype, root, comm);                                          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Gatherv)
+#define BODY_MPI_Gatherv_c(TARGET, FALLBACK)                                   \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_root_extent(comm, root, &nranks);          \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int  recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *recvcounts = NULL;                                                    \
+    int  displs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *displs     = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nranks, sizeof *recvcounts);         \
+    if (!recvcounts) goto done;                                                \
+    displs = mpiwrapper_stage(displs_stack, sizeof displs_stack,               \
+                              (size_t)nranks, sizeof *displs);                 \
+    if (!displs) goto done;                                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs,  \
+                   recvtype, root, comm);                                      \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    mpiwrapper_unstage(displs, displs_stack);                                  \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Gatherv_c(TARGET)                                             \
+#define BODY_MPI_Gatherv_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -7671,7 +9182,7 @@ static int w_MPI_Gatherv_c(const void *abi_sendbuf, MPIABI_Count abi_sendcount,
                            const MPIABI_Aint abi_displs[],
                            MPIABI_Datatype abi_recvtype, int abi_root,
                            MPIABI_Comm abi_comm)
-    BODY_MPI_Gatherv_c(MPI_Gatherv_c)
+    BODY_MPI_Gatherv_c(MPI_Gatherv_c, MPI_Gatherv)
 static int w_PMPI_Gatherv_c(const void *abi_sendbuf,
                             MPIABI_Count abi_sendcount,
                             MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
@@ -7679,7 +9190,7 @@ static int w_PMPI_Gatherv_c(const void *abi_sendbuf,
                             const MPIABI_Aint abi_displs[],
                             MPIABI_Datatype abi_recvtype, int abi_root,
                             MPIABI_Comm abi_comm)
-    BODY_MPI_Gatherv_c(PMPI_Gatherv_c)
+    BODY_MPI_Gatherv_c(PMPI_Gatherv_c, PMPI_Gatherv)
 
 /* ------------------------------------------------------- MPI_Gatherv_init */
 
@@ -7748,7 +9259,7 @@ static int w_PMPI_Gatherv_init(const void *abi_sendbuf, int abi_sendcount,
 /* ----------------------------------------------------- MPI_Gatherv_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Gatherv_init_c
-#define BODY_MPI_Gatherv_init_c(TARGET)                                        \
+#define BODY_MPI_Gatherv_init_c(TARGET, FALLBACK)                              \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -7776,8 +9287,77 @@ static int w_PMPI_Gatherv_init(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Gatherv_init)
+#define BODY_MPI_Gatherv_init_c(TARGET, FALLBACK)                              \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_root_extent(comm, root, &nranks);          \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+    int *const displs     = block + nranks;                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcount, sendtype, recvbuf,         \
+                                recvcounts, displs, recvtype, root, comm, info,\
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Gatherv_init_c(TARGET)                                        \
+#define BODY_MPI_Gatherv_init_c(TARGET, FALLBACK)                              \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -7804,7 +9384,7 @@ static int w_MPI_Gatherv_init_c(const void *abi_sendbuf,
                                 MPIABI_Datatype abi_recvtype, int abi_root,
                                 MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_Gatherv_init_c(MPI_Gatherv_init_c)
+    BODY_MPI_Gatherv_init_c(MPI_Gatherv_init_c, MPI_Gatherv_init)
 static int w_PMPI_Gatherv_init_c(const void *abi_sendbuf,
                                  MPIABI_Count abi_sendcount,
                                  MPIABI_Datatype abi_sendtype,
@@ -7814,7 +9394,7 @@ static int w_PMPI_Gatherv_init_c(const void *abi_sendbuf,
                                  MPIABI_Datatype abi_recvtype, int abi_root,
                                  MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                  MPIABI_Request *abi_request)
-    BODY_MPI_Gatherv_init_c(PMPI_Gatherv_init_c)
+    BODY_MPI_Gatherv_init_c(PMPI_Gatherv_init_c, PMPI_Gatherv_init)
 
 /* ---------------------------------------------------------------- MPI_Get */
 
@@ -7868,7 +9448,7 @@ static int w_PMPI_Get(void *abi_origin_addr, int abi_origin_count,
 /* -------------------------------------------------------------- MPI_Get_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Get_c
-#define BODY_MPI_Get_c(TARGET)                                                 \
+#define BODY_MPI_Get_c(TARGET, FALLBACK)                                       \
   {                                                                            \
     void *const        origin_addr     =                                       \
         mpiwrapper_recvbuf_fromabi(abi_origin_addr);                           \
@@ -7888,8 +9468,34 @@ static int w_PMPI_Get(void *abi_origin_addr, int abi_origin_count,
                target_disp, target_count, target_datatype, win);               \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Get)
+#define BODY_MPI_Get_c(TARGET, FALLBACK)                                       \
+  {                                                                            \
+    void *const        origin_addr     =                                       \
+        mpiwrapper_recvbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(origin_addr, origin_count, origin_datatype, target_rank,      \
+                 target_disp, target_count, target_datatype, win);             \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Get_c(TARGET)                                                 \
+#define BODY_MPI_Get_c(TARGET, FALLBACK)                                       \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -7908,13 +9514,14 @@ static int w_MPI_Get_c(void *abi_origin_addr, MPIABI_Count abi_origin_count,
                        int abi_target_rank, MPIABI_Aint abi_target_disp,
                        MPIABI_Count abi_target_count,
                        MPIABI_Datatype abi_target_datatype, MPIABI_Win abi_win)
-    BODY_MPI_Get_c(MPI_Get_c)
+    BODY_MPI_Get_c(MPI_Get_c, MPI_Get)
 static int w_PMPI_Get_c(void *abi_origin_addr, MPIABI_Count abi_origin_count,
                         MPIABI_Datatype abi_origin_datatype,
                         int abi_target_rank, MPIABI_Aint abi_target_disp,
                         MPIABI_Count abi_target_count,
                         MPIABI_Datatype abi_target_datatype,
-                        MPIABI_Win abi_win) BODY_MPI_Get_c(PMPI_Get_c)
+                        MPIABI_Win abi_win)
+    BODY_MPI_Get_c(PMPI_Get_c, PMPI_Get)
 
 /* ----------------------------------------------------- MPI_Get_accumulate */
 
@@ -7991,7 +9598,7 @@ static int w_PMPI_Get_accumulate(const void *abi_origin_addr,
 /* --------------------------------------------------- MPI_Get_accumulate_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Get_accumulate_c
-#define BODY_MPI_Get_accumulate_c(TARGET)                                      \
+#define BODY_MPI_Get_accumulate_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const void *const  origin_addr     =                                       \
         mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
@@ -8018,8 +9625,43 @@ static int w_PMPI_Get_accumulate(const void *abi_origin_addr,
                target_count, target_datatype, op, win);                        \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Get_accumulate)
+#define BODY_MPI_Get_accumulate_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const void *const  origin_addr     =                                       \
+        mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    void *const        result_addr     =                                       \
+        mpiwrapper_recvbuf_fromabi(abi_result_addr);                           \
+    int                result_count    = 0;                                    \
+    const MPI_Datatype result_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_result_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_result_count, &result_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Op       op              = mpiwrapper_op_fromabi(abi_op);        \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(origin_addr, origin_count, origin_datatype, result_addr,      \
+                 result_count, result_datatype, target_rank, target_disp,      \
+                 target_count, target_datatype, op, win);                      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Get_accumulate_c(TARGET)                                      \
+#define BODY_MPI_Get_accumulate_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -8048,7 +9690,7 @@ static int w_MPI_Get_accumulate_c(const void *abi_origin_addr,
                                   MPIABI_Count abi_target_count,
                                   MPIABI_Datatype abi_target_datatype,
                                   MPIABI_Op abi_op, MPIABI_Win abi_win)
-    BODY_MPI_Get_accumulate_c(MPI_Get_accumulate_c)
+    BODY_MPI_Get_accumulate_c(MPI_Get_accumulate_c, MPI_Get_accumulate)
 static int w_PMPI_Get_accumulate_c(const void *abi_origin_addr,
                                    MPIABI_Count abi_origin_count,
                                    MPIABI_Datatype abi_origin_datatype,
@@ -8060,7 +9702,7 @@ static int w_PMPI_Get_accumulate_c(const void *abi_origin_addr,
                                    MPIABI_Count abi_target_count,
                                    MPIABI_Datatype abi_target_datatype,
                                    MPIABI_Op abi_op, MPIABI_Win abi_win)
-    BODY_MPI_Get_accumulate_c(PMPI_Get_accumulate_c)
+    BODY_MPI_Get_accumulate_c(PMPI_Get_accumulate_c, PMPI_Get_accumulate)
 
 /* -------------------------------------------------------- MPI_Get_address */
 
@@ -8165,6 +9807,8 @@ static int w_PMPI_Get_version(int *abi_version, int *abi_subversion)
     int *edges      = NULL;                                                    \
     int  abi_ierror = MPIABI_ERR_INTERN;                                       \
                                                                                \
+    *abi_comm_graph = MPIABI_COMM_NULL;                                        \
+                                                                               \
     edges = mpiwrapper_stage(edges_stack, sizeof edges_stack, (size_t)nedges,  \
                              sizeof *edges);                                   \
     if (!edges) goto done;                                                     \
@@ -8267,11 +9911,16 @@ static int w_PMPI_Graph_get(MPIABI_Comm abi_comm, int abi_maxindex,
     const int *const indx   = abi_indx;                                        \
                                                                                \
     const int nedges = nnodes > 0 ? indx[nnodes - 1] : 0;                      \
-    if (nedges < 0) return MPIABI_ERR_ARG;                                     \
+    if (nedges < 0) {                                                          \
+      *abi_newrank = 0;                                                        \
+      return MPIABI_ERR_ARG;                                                   \
+    }                                                                          \
                                                                                \
     int  edges_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
     int *edges      = NULL;                                                    \
     int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    *abi_newrank = 0;                                                          \
                                                                                \
     edges = mpiwrapper_stage(edges_stack, sizeof edges_stack, (size_t)nedges,  \
                              sizeof *edges);                                   \
@@ -8517,11 +10166,16 @@ static int w_PMPI_Group_difference(MPIABI_Group abi_group1,
   {                                                                            \
     const MPI_Group group = mpiwrapper_group_fromabi(abi_group);               \
     const int       n     = abi_n;                                             \
-    if (n < 0) return MPIABI_ERR_COUNT;                                        \
+    if (n < 0) {                                                               \
+      *abi_newgroup = MPIABI_GROUP_NULL;                                       \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int  ranks_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
     int *ranks      = NULL;                                                    \
     int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    *abi_newgroup = MPIABI_GROUP_NULL;                                         \
                                                                                \
     ranks = mpiwrapper_stage(ranks_stack, sizeof ranks_stack, (size_t)n,       \
                              sizeof *ranks);                                   \
@@ -8633,11 +10287,16 @@ static int w_PMPI_Group_from_session_pset(MPIABI_Session abi_session,
   {                                                                            \
     const MPI_Group group = mpiwrapper_group_fromabi(abi_group);               \
     const int       n     = abi_n;                                             \
-    if (n < 0) return MPIABI_ERR_COUNT;                                        \
+    if (n < 0) {                                                               \
+      *abi_newgroup = MPIABI_GROUP_NULL;                                       \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int  ranks_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
     int *ranks      = NULL;                                                    \
     int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    *abi_newgroup = MPIABI_GROUP_NULL;                                         \
                                                                                \
     ranks = mpiwrapper_stage(ranks_stack, sizeof ranks_stack, (size_t)n,       \
                              sizeof *ranks);                                   \
@@ -8998,7 +10657,7 @@ static int w_PMPI_Iallgather(const void *abi_sendbuf, int abi_sendcount,
 /* ------------------------------------------------------- MPI_Iallgather_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Iallgather_c
-#define BODY_MPI_Iallgather_c(TARGET)                                          \
+#define BODY_MPI_Iallgather_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -9020,8 +10679,40 @@ static int w_PMPI_Iallgather(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Iallgather)
+#define BODY_MPI_Iallgather_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, &request);                                              \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Iallgather_c(TARGET)                                          \
+#define BODY_MPI_Iallgather_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -9043,7 +10734,7 @@ static int w_MPI_Iallgather_c(const void *abi_sendbuf,
                               MPIABI_Datatype abi_recvtype,
                               MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Iallgather_c(MPI_Iallgather_c)
+    BODY_MPI_Iallgather_c(MPI_Iallgather_c, MPI_Iallgather)
 static int w_PMPI_Iallgather_c(const void *abi_sendbuf,
                                MPIABI_Count abi_sendcount,
                                MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
@@ -9051,7 +10742,7 @@ static int w_PMPI_Iallgather_c(const void *abi_sendbuf,
                                MPIABI_Datatype abi_recvtype,
                                MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Iallgather_c(PMPI_Iallgather_c)
+    BODY_MPI_Iallgather_c(PMPI_Iallgather_c, PMPI_Iallgather)
 
 /* -------------------------------------------------------- MPI_Iallgatherv */
 
@@ -9115,7 +10806,7 @@ static int w_PMPI_Iallgatherv(const void *abi_sendbuf, int abi_sendcount,
 /* ------------------------------------------------------ MPI_Iallgatherv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Iallgatherv_c
-#define BODY_MPI_Iallgatherv_c(TARGET)                                         \
+#define BODY_MPI_Iallgatherv_c(TARGET, FALLBACK)                               \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -9141,8 +10832,74 @@ static int w_PMPI_Iallgatherv(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Iallgatherv)
+#define BODY_MPI_Iallgatherv_c(TARGET, FALLBACK)                               \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+    int *const displs     = block + nranks;                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcount, sendtype, recvbuf,         \
+                                recvcounts, displs, recvtype, comm, &request); \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Iallgatherv_c(TARGET)                                         \
+#define BODY_MPI_Iallgatherv_c(TARGET, FALLBACK)                               \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -9166,7 +10923,7 @@ static int w_MPI_Iallgatherv_c(const void *abi_sendbuf,
                                MPIABI_Datatype abi_recvtype,
                                MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Iallgatherv_c(MPI_Iallgatherv_c)
+    BODY_MPI_Iallgatherv_c(MPI_Iallgatherv_c, MPI_Iallgatherv)
 static int w_PMPI_Iallgatherv_c(const void *abi_sendbuf,
                                 MPIABI_Count abi_sendcount,
                                 MPIABI_Datatype abi_sendtype,
@@ -9176,7 +10933,7 @@ static int w_PMPI_Iallgatherv_c(const void *abi_sendbuf,
                                 MPIABI_Datatype abi_recvtype,
                                 MPIABI_Comm abi_comm,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_Iallgatherv_c(PMPI_Iallgatherv_c)
+    BODY_MPI_Iallgatherv_c(PMPI_Iallgatherv_c, PMPI_Iallgatherv)
 
 /* --------------------------------------------------------- MPI_Iallreduce */
 
@@ -9230,7 +10987,7 @@ static int w_PMPI_Iallreduce(const void *abi_sendbuf, void *abi_recvbuf,
 /* ------------------------------------------------------- MPI_Iallreduce_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Iallreduce_c
-#define BODY_MPI_Iallreduce_c(TARGET)                                          \
+#define BODY_MPI_Iallreduce_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -9250,8 +11007,34 @@ static int w_PMPI_Iallreduce(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Iallreduce)
+#define BODY_MPI_Iallreduce_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, comm, &request);       \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Iallreduce_c(TARGET)                                          \
+#define BODY_MPI_Iallreduce_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -9270,13 +11053,13 @@ static int w_MPI_Iallreduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                               MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                               MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Iallreduce_c(MPI_Iallreduce_c)
+    BODY_MPI_Iallreduce_c(MPI_Iallreduce_c, MPI_Iallreduce)
 static int w_PMPI_Iallreduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                                MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                                MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Iallreduce_c(PMPI_Iallreduce_c)
+    BODY_MPI_Iallreduce_c(PMPI_Iallreduce_c, PMPI_Iallreduce)
 
 /* ---------------------------------------------------------- MPI_Ialltoall */
 
@@ -9333,7 +11116,7 @@ static int w_PMPI_Ialltoall(const void *abi_sendbuf, int abi_sendcount,
 /* -------------------------------------------------------- MPI_Ialltoall_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ialltoall_c
-#define BODY_MPI_Ialltoall_c(TARGET)                                           \
+#define BODY_MPI_Ialltoall_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -9355,8 +11138,40 @@ static int w_PMPI_Ialltoall(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ialltoall)
+#define BODY_MPI_Ialltoall_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, &request);                                              \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ialltoall_c(TARGET)                                           \
+#define BODY_MPI_Ialltoall_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -9377,7 +11192,7 @@ static int w_MPI_Ialltoall_c(const void *abi_sendbuf,
                              MPIABI_Count abi_recvcount,
                              MPIABI_Datatype abi_recvtype,
                              MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Ialltoall_c(MPI_Ialltoall_c)
+    BODY_MPI_Ialltoall_c(MPI_Ialltoall_c, MPI_Ialltoall)
 static int w_PMPI_Ialltoall_c(const void *abi_sendbuf,
                               MPIABI_Count abi_sendcount,
                               MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
@@ -9385,7 +11200,7 @@ static int w_PMPI_Ialltoall_c(const void *abi_sendbuf,
                               MPIABI_Datatype abi_recvtype,
                               MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Ialltoall_c(PMPI_Ialltoall_c)
+    BODY_MPI_Ialltoall_c(PMPI_Ialltoall_c, PMPI_Ialltoall)
 
 /* --------------------------------------------------------- MPI_Ialltoallv */
 
@@ -9454,7 +11269,7 @@ static int w_PMPI_Ialltoallv(const void *abi_sendbuf,
 /* ------------------------------------------------------- MPI_Ialltoallv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ialltoallv_c
-#define BODY_MPI_Ialltoallv_c(TARGET)                                          \
+#define BODY_MPI_Ialltoallv_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -9481,8 +11296,84 @@ static int w_PMPI_Ialltoallv(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ialltoallv)
+#define BODY_MPI_Ialltoallv_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const  sendbuf  =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged =                                                    \
+        (size_t)nranks + (size_t)nranks + (size_t)nranks + (size_t)nranks;     \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const sendcounts = block;                                             \
+    int *const sdispls    = block + nranks;                                    \
+    int *const recvcounts = block + nranks + nranks;                           \
+    int *const rdispls    = block + nranks + nranks + nranks;                  \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtype,        \
+                                recvbuf, recvcounts, rdispls, recvtype, comm,  \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Ialltoallv_c(TARGET)                                          \
+#define BODY_MPI_Ialltoallv_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -9508,7 +11399,7 @@ static int w_MPI_Ialltoallv_c(const void *abi_sendbuf,
                               MPIABI_Datatype abi_recvtype,
                               MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Ialltoallv_c(MPI_Ialltoallv_c)
+    BODY_MPI_Ialltoallv_c(MPI_Ialltoallv_c, MPI_Ialltoallv)
 static int w_PMPI_Ialltoallv_c(const void *abi_sendbuf,
                                const MPIABI_Count abi_sendcounts[],
                                const MPIABI_Aint abi_sdispls[],
@@ -9518,7 +11409,7 @@ static int w_PMPI_Ialltoallv_c(const void *abi_sendbuf,
                                MPIABI_Datatype abi_recvtype,
                                MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Ialltoallv_c(PMPI_Ialltoallv_c)
+    BODY_MPI_Ialltoallv_c(PMPI_Ialltoallv_c, PMPI_Ialltoallv)
 
 /* --------------------------------------------------------- MPI_Ialltoallw */
 
@@ -9536,16 +11427,16 @@ static int w_PMPI_Ialltoallv_c(const void *abi_sendbuf,
     const int *const  rdispls           = abi_rdispls;                         \
     const MPI_Comm    comm              = mpiwrapper_comm_fromabi(abi_comm);   \
                                                                                \
-    int ntypes = 0;                                                            \
+    int nranks = 0;                                                            \
     {                                                                          \
-      const int ierror = mpiwrapper_comm_extent(comm, &ntypes);                \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
       if (ierror != MPI_SUCCESS) {                                             \
         *abi_request = MPIABI_REQUEST_NULL;                                    \
         return mpiwrapper_errorcode_toabi(ierror);                             \
       }                                                                        \
     }                                                                          \
                                                                                \
-    const size_t  nstaged = (size_t)ntypes + (size_t)ntypes;                   \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
     MPI_Datatype *block   = NULL;                                              \
     if (nstaged <= SIZE_MAX / sizeof *block)                                   \
       block = malloc(nstaged * sizeof *block);                                 \
@@ -9554,13 +11445,13 @@ static int w_PMPI_Ialltoallv_c(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     }                                                                          \
     MPI_Datatype *const sendtypes = block;                                     \
-    MPI_Datatype *const recvtypes = block + ntypes;                            \
+    MPI_Datatype *const recvtypes = block + nranks;                            \
                                                                                \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       sendtypes[i] = sendtypes_ignored                                         \
                          ? MPI_DATATYPE_NULL                                   \
                          : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
                                                                                \
     MPI_Request request;                                                       \
@@ -9620,7 +11511,7 @@ static int w_PMPI_Ialltoallw(const void *abi_sendbuf,
 /* ------------------------------------------------------- MPI_Ialltoallw_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ialltoallw_c
-#define BODY_MPI_Ialltoallw_c(TARGET)                                          \
+#define BODY_MPI_Ialltoallw_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const      sendbuf           =                                 \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -9636,16 +11527,16 @@ static int w_PMPI_Ialltoallw(const void *abi_sendbuf,
     const MPI_Comm         comm              =                                 \
         mpiwrapper_comm_fromabi(abi_comm);                                     \
                                                                                \
-    int ntypes = 0;                                                            \
+    int nranks = 0;                                                            \
     {                                                                          \
-      const int ierror = mpiwrapper_comm_extent(comm, &ntypes);                \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
       if (ierror != MPI_SUCCESS) {                                             \
         *abi_request = MPIABI_REQUEST_NULL;                                    \
         return mpiwrapper_errorcode_toabi(ierror);                             \
       }                                                                        \
     }                                                                          \
                                                                                \
-    const size_t  nstaged = (size_t)ntypes + (size_t)ntypes;                   \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
     MPI_Datatype *block   = NULL;                                              \
     if (nstaged <= SIZE_MAX / sizeof *block)                                   \
       block = malloc(nstaged * sizeof *block);                                 \
@@ -9654,13 +11545,13 @@ static int w_PMPI_Ialltoallw(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     }                                                                          \
     MPI_Datatype *const sendtypes = block;                                     \
-    MPI_Datatype *const recvtypes = block + ntypes;                            \
+    MPI_Datatype *const recvtypes = block + nranks;                            \
                                                                                \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       sendtypes[i] = sendtypes_ignored                                         \
                          ? MPI_DATATYPE_NULL                                   \
                          : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
-    for (int i = 0; i < ntypes; ++i)                                           \
+    for (int i = 0; i < nranks; ++i)                                           \
       recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
                                                                                \
     MPI_Request request;                                                       \
@@ -9680,8 +11571,103 @@ static int w_PMPI_Ialltoallw(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ialltoallw)
+#define BODY_MPI_Ialltoallw_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const sendbuf           =                                      \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    const int         sendtypes_ignored = abi_sendbuf == MPIABI_IN_PLACE;      \
+    void *const       recvbuf           =                                      \
+        mpiwrapper_recvbuf_fromabi(abi_recvbuf);                               \
+    const MPI_Comm    comm              = mpiwrapper_comm_fromabi(abi_comm);   \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t   nstaged        = (size_t)nranks;                            \
+    const size_t   off_sendcounts = 0;                                         \
+    const size_t   off_sdispls    =                                            \
+        mpiwrapper_staged_next(off_sendcounts, (size_t)nranks, sizeof(int));   \
+    const size_t   off_sendtypes  =                                            \
+        mpiwrapper_staged_next(off_sdispls, (size_t)nranks, sizeof(int));      \
+    const size_t   off_recvcounts =                                            \
+        mpiwrapper_staged_next(off_sendtypes, (size_t)nranks, sizeof(MPI_Datatype)); \
+    const size_t   off_rdispls    =                                            \
+        mpiwrapper_staged_next(off_recvcounts, (size_t)nranks, sizeof(int));   \
+    const size_t   off_recvtypes  =                                            \
+        mpiwrapper_staged_next(off_rdispls, (size_t)nranks, sizeof(int));      \
+    const size_t   nbytes         =                                            \
+        mpiwrapper_staged_next(off_recvtypes, (size_t)nranks, sizeof(MPI_Datatype)); \
+    unsigned char *block          = NULL;                                      \
+    if (nbytes != SIZE_MAX) block = malloc(nbytes);                            \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const          sendcounts = (int *)(block + off_sendcounts);          \
+    int *const          sdispls    = (int *)(block + off_sdispls);             \
+    MPI_Datatype *const sendtypes  = (MPI_Datatype *)(block + off_sendtypes);  \
+    int *const          recvcounts = (int *)(block + off_recvcounts);          \
+    int *const          rdispls    = (int *)(block + off_rdispls);             \
+    MPI_Datatype *const recvtypes  = (MPI_Datatype *)(block + off_recvtypes);  \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      sendtypes[i] = sendtypes_ignored                                         \
+                         ? MPI_DATATYPE_NULL                                   \
+                         : mpiwrapper_datatype_fromabi(abi_sendtypes[i]);      \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtypes,       \
+                                recvbuf, recvcounts, rdispls, recvtypes, comm, \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Ialltoallw_c(TARGET)                                          \
+#define BODY_MPI_Ialltoallw_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -9708,7 +11694,7 @@ static int w_MPI_Ialltoallw_c(const void *abi_sendbuf,
                               const MPIABI_Datatype abi_recvtypes[],
                               MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Ialltoallw_c(MPI_Ialltoallw_c)
+    BODY_MPI_Ialltoallw_c(MPI_Ialltoallw_c, MPI_Ialltoallw)
 static int w_PMPI_Ialltoallw_c(const void *abi_sendbuf,
                                const MPIABI_Count abi_sendcounts[],
                                const MPIABI_Aint abi_sdispls[],
@@ -9719,7 +11705,7 @@ static int w_PMPI_Ialltoallw_c(const void *abi_sendbuf,
                                const MPIABI_Datatype abi_recvtypes[],
                                MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Ialltoallw_c(PMPI_Ialltoallw_c)
+    BODY_MPI_Ialltoallw_c(PMPI_Ialltoallw_c, PMPI_Ialltoallw)
 
 /* ----------------------------------------------------------- MPI_Ibarrier */
 
@@ -9798,7 +11784,7 @@ static int w_PMPI_Ibcast(void *abi_buffer, int abi_count,
 /* ----------------------------------------------------------- MPI_Ibcast_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ibcast_c
-#define BODY_MPI_Ibcast_c(TARGET)                                              \
+#define BODY_MPI_Ibcast_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     void *const        buffer   = mpiwrapper_recvbuf_fromabi(abi_buffer);      \
     const MPI_Count    count    = abi_count;                                   \
@@ -9815,8 +11801,32 @@ static int w_PMPI_Ibcast(void *abi_buffer, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ibcast)
+#define BODY_MPI_Ibcast_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    void *const buffer = mpiwrapper_recvbuf_fromabi(abi_buffer);               \
+    int         count  = 0;                                                    \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buffer, count, datatype, root, comm, &request);               \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ibcast_c(TARGET)                                              \
+#define BODY_MPI_Ibcast_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_buffer;                                                          \
     (void)abi_count;                                                           \
@@ -9832,11 +11842,11 @@ static int w_PMPI_Ibcast(void *abi_buffer, int abi_count,
 static int w_MPI_Ibcast_c(void *abi_buffer, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_root,
                           MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Ibcast_c(MPI_Ibcast_c)
+    BODY_MPI_Ibcast_c(MPI_Ibcast_c, MPI_Ibcast)
 static int w_PMPI_Ibcast_c(void *abi_buffer, MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype, int abi_root,
                            MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Ibcast_c(PMPI_Ibcast_c)
+    BODY_MPI_Ibcast_c(PMPI_Ibcast_c, PMPI_Ibcast)
 
 /* ------------------------------------------------------------- MPI_Ibsend */
 
@@ -9889,7 +11899,7 @@ static int w_PMPI_Ibsend(const void *abi_buf, int abi_count,
 /* ----------------------------------------------------------- MPI_Ibsend_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ibsend_c
-#define BODY_MPI_Ibsend_c(TARGET)                                              \
+#define BODY_MPI_Ibsend_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -9908,8 +11918,33 @@ static int w_PMPI_Ibsend(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ibsend)
+#define BODY_MPI_Ibsend_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ibsend_c(TARGET)                                              \
+#define BODY_MPI_Ibsend_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -9927,12 +11962,12 @@ static int w_MPI_Ibsend_c(const void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_dest,
                           int abi_tag, MPIABI_Comm abi_comm,
                           MPIABI_Request *abi_request)
-    BODY_MPI_Ibsend_c(MPI_Ibsend_c)
+    BODY_MPI_Ibsend_c(MPI_Ibsend_c, MPI_Ibsend)
 static int w_PMPI_Ibsend_c(const void *abi_buf, MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype, int abi_dest,
                            int abi_tag, MPIABI_Comm abi_comm,
                            MPIABI_Request *abi_request)
-    BODY_MPI_Ibsend_c(PMPI_Ibsend_c)
+    BODY_MPI_Ibsend_c(PMPI_Ibsend_c, PMPI_Ibsend)
 
 /* ------------------------------------------------------------ MPI_Iexscan */
 
@@ -9986,7 +12021,7 @@ static int w_PMPI_Iexscan(const void *abi_sendbuf, void *abi_recvbuf,
 /* ---------------------------------------------------------- MPI_Iexscan_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Iexscan_c
-#define BODY_MPI_Iexscan_c(TARGET)                                             \
+#define BODY_MPI_Iexscan_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -10006,8 +12041,34 @@ static int w_PMPI_Iexscan(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Iexscan)
+#define BODY_MPI_Iexscan_c(TARGET, FALLBACK)                                   \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, comm, &request);       \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Iexscan_c(TARGET)                                             \
+#define BODY_MPI_Iexscan_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -10025,12 +12086,12 @@ static int w_MPI_Iexscan_c(const void *abi_sendbuf, void *abi_recvbuf,
                            MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                            MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Iexscan_c(MPI_Iexscan_c)
+    BODY_MPI_Iexscan_c(MPI_Iexscan_c, MPI_Iexscan)
 static int w_PMPI_Iexscan_c(const void *abi_sendbuf, void *abi_recvbuf,
                             MPIABI_Count abi_count,
                             MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                             MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Iexscan_c(PMPI_Iexscan_c)
+    BODY_MPI_Iexscan_c(PMPI_Iexscan_c, PMPI_Iexscan)
 
 /* ------------------------------------------------------------ MPI_Igather */
 
@@ -10091,7 +12152,7 @@ static int w_PMPI_Igather(const void *abi_sendbuf, int abi_sendcount,
 /* ---------------------------------------------------------- MPI_Igather_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Igather_c
-#define BODY_MPI_Igather_c(TARGET)                                             \
+#define BODY_MPI_Igather_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -10114,8 +12175,41 @@ static int w_PMPI_Igather(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Igather)
+#define BODY_MPI_Igather_c(TARGET, FALLBACK)                                   \
+  {                                                                            \
+    const void *const  sendbuf   =                                             \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 root, comm, &request);                                        \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Igather_c(TARGET)                                             \
+#define BODY_MPI_Igather_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -10136,14 +12230,14 @@ static int w_MPI_Igather_c(const void *abi_sendbuf, MPIABI_Count abi_sendcount,
                            MPIABI_Count abi_recvcount,
                            MPIABI_Datatype abi_recvtype, int abi_root,
                            MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Igather_c(MPI_Igather_c)
+    BODY_MPI_Igather_c(MPI_Igather_c, MPI_Igather)
 static int w_PMPI_Igather_c(const void *abi_sendbuf,
                             MPIABI_Count abi_sendcount,
                             MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                             MPIABI_Count abi_recvcount,
                             MPIABI_Datatype abi_recvtype, int abi_root,
                             MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Igather_c(PMPI_Igather_c)
+    BODY_MPI_Igather_c(PMPI_Igather_c, PMPI_Igather)
 
 /* ----------------------------------------------------------- MPI_Igatherv */
 
@@ -10206,7 +12300,7 @@ static int w_PMPI_Igatherv(const void *abi_sendbuf, int abi_sendcount,
 /* --------------------------------------------------------- MPI_Igatherv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Igatherv_c
-#define BODY_MPI_Igatherv_c(TARGET)                                            \
+#define BODY_MPI_Igatherv_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -10233,8 +12327,76 @@ static int w_PMPI_Igatherv(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Igatherv)
+#define BODY_MPI_Igatherv_c(TARGET, FALLBACK)                                  \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_root_extent(comm, root, &nranks);          \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+    int *const displs     = block + nranks;                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcount, sendtype, recvbuf,         \
+                                recvcounts, displs, recvtype, root, comm,      \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Igatherv_c(TARGET)                                            \
+#define BODY_MPI_Igatherv_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -10258,7 +12420,7 @@ static int w_MPI_Igatherv_c(const void *abi_sendbuf,
                             const MPIABI_Aint abi_displs[],
                             MPIABI_Datatype abi_recvtype, int abi_root,
                             MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Igatherv_c(MPI_Igatherv_c)
+    BODY_MPI_Igatherv_c(MPI_Igatherv_c, MPI_Igatherv)
 static int w_PMPI_Igatherv_c(const void *abi_sendbuf,
                              MPIABI_Count abi_sendcount,
                              MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
@@ -10266,7 +12428,7 @@ static int w_PMPI_Igatherv_c(const void *abi_sendbuf,
                              const MPIABI_Aint abi_displs[],
                              MPIABI_Datatype abi_recvtype, int abi_root,
                              MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Igatherv_c(PMPI_Igatherv_c)
+    BODY_MPI_Igatherv_c(PMPI_Igatherv_c, PMPI_Igatherv)
 
 /* ------------------------------------------------------------ MPI_Improbe */
 
@@ -10365,7 +12527,7 @@ static int w_PMPI_Imrecv(void *abi_buf, int abi_count,
 /* ----------------------------------------------------------- MPI_Imrecv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Imrecv_c
-#define BODY_MPI_Imrecv_c(TARGET)                                              \
+#define BODY_MPI_Imrecv_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -10382,8 +12544,31 @@ static int w_PMPI_Imrecv(void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Imrecv)
+#define BODY_MPI_Imrecv_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    void *const buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                   \
+    int         count = 0;                                                     \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    MPI_Message        message  = mpiwrapper_message_fromabi(*abi_message);    \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror = FALLBACK(buf, count, datatype, &message, &request);   \
+                                                                               \
+    *abi_message = mpiwrapper_message_toabi(message);                          \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Imrecv_c(TARGET)                                              \
+#define BODY_MPI_Imrecv_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -10399,12 +12584,12 @@ static int w_MPI_Imrecv_c(void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype,
                           MPIABI_Message *abi_message,
                           MPIABI_Request *abi_request)
-    BODY_MPI_Imrecv_c(MPI_Imrecv_c)
+    BODY_MPI_Imrecv_c(MPI_Imrecv_c, MPI_Imrecv)
 static int w_PMPI_Imrecv_c(void *abi_buf, MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype,
                            MPIABI_Message *abi_message,
                            MPIABI_Request *abi_request)
-    BODY_MPI_Imrecv_c(PMPI_Imrecv_c)
+    BODY_MPI_Imrecv_c(PMPI_Imrecv_c, PMPI_Imrecv)
 
 /* ------------------------------------------------ MPI_Ineighbor_allgather */
 
@@ -10466,7 +12651,7 @@ static int w_PMPI_Ineighbor_allgather(const void *abi_sendbuf,
 /* ---------------------------------------------- MPI_Ineighbor_allgather_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ineighbor_allgather_c
-#define BODY_MPI_Ineighbor_allgather_c(TARGET)                                 \
+#define BODY_MPI_Ineighbor_allgather_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -10487,8 +12672,39 @@ static int w_PMPI_Ineighbor_allgather(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ineighbor_allgather)
+#define BODY_MPI_Ineighbor_allgather_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, &request);                                              \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ineighbor_allgather_c(TARGET)                                 \
+#define BODY_MPI_Ineighbor_allgather_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -10511,7 +12727,8 @@ static int w_MPI_Ineighbor_allgather_c(const void *abi_sendbuf,
                                        MPIABI_Datatype abi_recvtype,
                                        MPIABI_Comm abi_comm,
                                        MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_allgather_c(MPI_Ineighbor_allgather_c)
+    BODY_MPI_Ineighbor_allgather_c(MPI_Ineighbor_allgather_c,
+                                   MPI_Ineighbor_allgather)
 static int w_PMPI_Ineighbor_allgather_c(const void *abi_sendbuf,
                                         MPIABI_Count abi_sendcount,
                                         MPIABI_Datatype abi_sendtype,
@@ -10520,7 +12737,8 @@ static int w_PMPI_Ineighbor_allgather_c(const void *abi_sendbuf,
                                         MPIABI_Datatype abi_recvtype,
                                         MPIABI_Comm abi_comm,
                                         MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_allgather_c(PMPI_Ineighbor_allgather_c)
+    BODY_MPI_Ineighbor_allgather_c(PMPI_Ineighbor_allgather_c,
+                                   PMPI_Ineighbor_allgather)
 
 /* ----------------------------------------------- MPI_Ineighbor_allgatherv */
 
@@ -10588,7 +12806,7 @@ static int w_PMPI_Ineighbor_allgatherv(const void *abi_sendbuf,
 /* --------------------------------------------- MPI_Ineighbor_allgatherv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ineighbor_allgatherv_c
-#define BODY_MPI_Ineighbor_allgatherv_c(TARGET)                                \
+#define BODY_MPI_Ineighbor_allgatherv_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -10614,8 +12832,74 @@ static int w_PMPI_Ineighbor_allgatherv(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ineighbor_allgatherv)
+#define BODY_MPI_Ineighbor_allgatherv_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const void *const sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);     \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nrecvtypes + (size_t)nrecvtypes;           \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+    int *const displs     = block + nrecvtypes;                                \
+                                                                               \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcount, sendtype, recvbuf,         \
+                                recvcounts, displs, recvtype, comm, &request); \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Ineighbor_allgatherv_c(TARGET)                                \
+#define BODY_MPI_Ineighbor_allgatherv_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -10640,7 +12924,8 @@ static int w_MPI_Ineighbor_allgatherv_c(const void *abi_sendbuf,
                                         MPIABI_Datatype abi_recvtype,
                                         MPIABI_Comm abi_comm,
                                         MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_allgatherv_c(MPI_Ineighbor_allgatherv_c)
+    BODY_MPI_Ineighbor_allgatherv_c(MPI_Ineighbor_allgatherv_c,
+                                    MPI_Ineighbor_allgatherv)
 static int w_PMPI_Ineighbor_allgatherv_c(const void *abi_sendbuf,
                                          MPIABI_Count abi_sendcount,
                                          MPIABI_Datatype abi_sendtype,
@@ -10650,7 +12935,8 @@ static int w_PMPI_Ineighbor_allgatherv_c(const void *abi_sendbuf,
                                          MPIABI_Datatype abi_recvtype,
                                          MPIABI_Comm abi_comm,
                                          MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_allgatherv_c(PMPI_Ineighbor_allgatherv_c)
+    BODY_MPI_Ineighbor_allgatherv_c(PMPI_Ineighbor_allgatherv_c,
+                                    PMPI_Ineighbor_allgatherv)
 
 /* ------------------------------------------------- MPI_Ineighbor_alltoall */
 
@@ -10711,7 +12997,7 @@ static int w_PMPI_Ineighbor_alltoall(const void *abi_sendbuf,
 /* ----------------------------------------------- MPI_Ineighbor_alltoall_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ineighbor_alltoall_c
-#define BODY_MPI_Ineighbor_alltoall_c(TARGET)                                  \
+#define BODY_MPI_Ineighbor_alltoall_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -10732,8 +13018,39 @@ static int w_PMPI_Ineighbor_alltoall(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ineighbor_alltoall)
+#define BODY_MPI_Ineighbor_alltoall_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, &request);                                              \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ineighbor_alltoall_c(TARGET)                                  \
+#define BODY_MPI_Ineighbor_alltoall_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -10756,7 +13073,8 @@ static int w_MPI_Ineighbor_alltoall_c(const void *abi_sendbuf,
                                       MPIABI_Datatype abi_recvtype,
                                       MPIABI_Comm abi_comm,
                                       MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_alltoall_c(MPI_Ineighbor_alltoall_c)
+    BODY_MPI_Ineighbor_alltoall_c(MPI_Ineighbor_alltoall_c,
+                                  MPI_Ineighbor_alltoall)
 static int w_PMPI_Ineighbor_alltoall_c(const void *abi_sendbuf,
                                        MPIABI_Count abi_sendcount,
                                        MPIABI_Datatype abi_sendtype,
@@ -10765,7 +13083,8 @@ static int w_PMPI_Ineighbor_alltoall_c(const void *abi_sendbuf,
                                        MPIABI_Datatype abi_recvtype,
                                        MPIABI_Comm abi_comm,
                                        MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_alltoall_c(PMPI_Ineighbor_alltoall_c)
+    BODY_MPI_Ineighbor_alltoall_c(PMPI_Ineighbor_alltoall_c,
+                                  PMPI_Ineighbor_alltoall)
 
 /* ------------------------------------------------ MPI_Ineighbor_alltoallv */
 
@@ -10837,7 +13156,7 @@ static int w_PMPI_Ineighbor_alltoallv(const void *abi_sendbuf,
 /* ---------------------------------------------- MPI_Ineighbor_alltoallv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ineighbor_alltoallv_c
-#define BODY_MPI_Ineighbor_alltoallv_c(TARGET)                                 \
+#define BODY_MPI_Ineighbor_alltoallv_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -10864,8 +13183,84 @@ static int w_PMPI_Ineighbor_alltoallv(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ineighbor_alltoallv)
+#define BODY_MPI_Ineighbor_alltoallv_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const void *const  sendbuf  = mpiwrapper_sendbuf_fromabi(abi_sendbuf);     \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged =                                                    \
+        (size_t)nsendtypes + (size_t)nsendtypes + (size_t)nrecvtypes + (size_t)nrecvtypes; \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const sendcounts = block;                                             \
+    int *const sdispls    = block + nsendtypes;                                \
+    int *const recvcounts = block + nsendtypes + nsendtypes;                   \
+    int *const rdispls    = block + nsendtypes + nsendtypes + nrecvtypes;      \
+                                                                               \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtype,        \
+                                recvbuf, recvcounts, rdispls, recvtype, comm,  \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Ineighbor_alltoallv_c(TARGET)                                 \
+#define BODY_MPI_Ineighbor_alltoallv_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -10892,7 +13287,8 @@ static int w_MPI_Ineighbor_alltoallv_c(const void *abi_sendbuf,
                                        MPIABI_Datatype abi_recvtype,
                                        MPIABI_Comm abi_comm,
                                        MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_alltoallv_c(MPI_Ineighbor_alltoallv_c)
+    BODY_MPI_Ineighbor_alltoallv_c(MPI_Ineighbor_alltoallv_c,
+                                   MPI_Ineighbor_alltoallv)
 static int w_PMPI_Ineighbor_alltoallv_c(const void *abi_sendbuf,
                                         const MPIABI_Count abi_sendcounts[],
                                         const MPIABI_Aint abi_sdispls[],
@@ -10903,7 +13299,8 @@ static int w_PMPI_Ineighbor_alltoallv_c(const void *abi_sendbuf,
                                         MPIABI_Datatype abi_recvtype,
                                         MPIABI_Comm abi_comm,
                                         MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_alltoallv_c(PMPI_Ineighbor_alltoallv_c)
+    BODY_MPI_Ineighbor_alltoallv_c(PMPI_Ineighbor_alltoallv_c,
+                                   PMPI_Ineighbor_alltoallv)
 
 /* ------------------------------------------------ MPI_Ineighbor_alltoallw */
 
@@ -11005,7 +13402,7 @@ static int w_PMPI_Ineighbor_alltoallw(const void *abi_sendbuf,
 /* ---------------------------------------------- MPI_Ineighbor_alltoallw_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ineighbor_alltoallw_c
-#define BODY_MPI_Ineighbor_alltoallw_c(TARGET)                                 \
+#define BODY_MPI_Ineighbor_alltoallw_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -11060,8 +13457,83 @@ static int w_PMPI_Ineighbor_alltoallw(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ineighbor_alltoallw)
+#define BODY_MPI_Ineighbor_alltoallw_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const void *const     sendbuf = mpiwrapper_sendbuf_fromabi(abi_sendbuf);   \
+    const MPI_Aint *const sdispls = (const MPI_Aint *)abi_sdispls;             \
+    void *const           recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);   \
+    const MPI_Aint *const rdispls = (const MPI_Aint *)abi_rdispls;             \
+    const MPI_Comm        comm    = mpiwrapper_comm_fromabi(abi_comm);         \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t   nstaged        = (size_t)nsendtypes + (size_t)nrecvtypes;   \
+    const size_t   off_sendcounts = 0;                                         \
+    const size_t   off_sendtypes  =                                            \
+        mpiwrapper_staged_next(off_sendcounts, (size_t)nsendtypes, sizeof(int)); \
+    const size_t   off_recvcounts =                                            \
+        mpiwrapper_staged_next(off_sendtypes, (size_t)nsendtypes, sizeof(MPI_Datatype)); \
+    const size_t   off_recvtypes  =                                            \
+        mpiwrapper_staged_next(off_recvcounts, (size_t)nrecvtypes, sizeof(int)); \
+    const size_t   nbytes         =                                            \
+        mpiwrapper_staged_next(off_recvtypes, (size_t)nrecvtypes, sizeof(MPI_Datatype)); \
+    unsigned char *block          = NULL;                                      \
+    if (nbytes != SIZE_MAX) block = malloc(nbytes);                            \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const          sendcounts = (int *)(block + off_sendcounts);          \
+    MPI_Datatype *const sendtypes  = (MPI_Datatype *)(block + off_sendtypes);  \
+    int *const          recvcounts = (int *)(block + off_recvcounts);          \
+    MPI_Datatype *const recvtypes  = (MPI_Datatype *)(block + off_recvtypes);  \
+                                                                               \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      sendtypes[i] = mpiwrapper_datatype_fromabi(abi_sendtypes[i]);            \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtypes,       \
+                                recvbuf, recvcounts, rdispls, recvtypes, comm, \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Ineighbor_alltoallw_c(TARGET)                                 \
+#define BODY_MPI_Ineighbor_alltoallw_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -11088,7 +13560,8 @@ static int w_MPI_Ineighbor_alltoallw_c(const void *abi_sendbuf,
                                        const MPIABI_Datatype abi_recvtypes[],
                                        MPIABI_Comm abi_comm,
                                        MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_alltoallw_c(MPI_Ineighbor_alltoallw_c)
+    BODY_MPI_Ineighbor_alltoallw_c(MPI_Ineighbor_alltoallw_c,
+                                   MPI_Ineighbor_alltoallw)
 static int w_PMPI_Ineighbor_alltoallw_c(const void *abi_sendbuf,
                                         const MPIABI_Count abi_sendcounts[],
                                         const MPIABI_Aint abi_sdispls[],
@@ -11099,7 +13572,8 @@ static int w_PMPI_Ineighbor_alltoallw_c(const void *abi_sendbuf,
                                         const MPIABI_Datatype abi_recvtypes[],
                                         MPIABI_Comm abi_comm,
                                         MPIABI_Request *abi_request)
-    BODY_MPI_Ineighbor_alltoallw_c(PMPI_Ineighbor_alltoallw_c)
+    BODY_MPI_Ineighbor_alltoallw_c(PMPI_Ineighbor_alltoallw_c,
+                                   PMPI_Ineighbor_alltoallw)
 
 /* -------------------------------------------------------- MPI_Info_create */
 
@@ -11637,7 +14111,7 @@ static int w_PMPI_Irecv(void *abi_buf, int abi_count,
 /* ------------------------------------------------------------ MPI_Irecv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Irecv_c
-#define BODY_MPI_Irecv_c(TARGET)                                               \
+#define BODY_MPI_Irecv_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -11656,8 +14130,33 @@ static int w_PMPI_Irecv(void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Irecv)
+#define BODY_MPI_Irecv_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    void *const buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                   \
+    int         count = 0;                                                     \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          source   = mpiwrapper_rank_fromabi(abi_source);         \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, source, tag, comm, &request);           \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Irecv_c(TARGET)                                               \
+#define BODY_MPI_Irecv_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -11675,12 +14174,12 @@ static int w_MPI_Irecv_c(void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_source,
                          int abi_tag, MPIABI_Comm abi_comm,
                          MPIABI_Request *abi_request)
-    BODY_MPI_Irecv_c(MPI_Irecv_c)
+    BODY_MPI_Irecv_c(MPI_Irecv_c, MPI_Irecv)
 static int w_PMPI_Irecv_c(void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_source,
                           int abi_tag, MPIABI_Comm abi_comm,
                           MPIABI_Request *abi_request)
-    BODY_MPI_Irecv_c(PMPI_Irecv_c)
+    BODY_MPI_Irecv_c(PMPI_Irecv_c, PMPI_Irecv)
 
 /* ------------------------------------------------------------ MPI_Ireduce */
 
@@ -11736,7 +14235,7 @@ static int w_PMPI_Ireduce(const void *abi_sendbuf, void *abi_recvbuf,
 /* ---------------------------------------------------------- MPI_Ireduce_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ireduce_c
-#define BODY_MPI_Ireduce_c(TARGET)                                             \
+#define BODY_MPI_Ireduce_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -11757,8 +14256,35 @@ static int w_PMPI_Ireduce(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ireduce)
+#define BODY_MPI_Ireduce_c(TARGET, FALLBACK)                                   \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, root, comm, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ireduce_c(TARGET)                                             \
+#define BODY_MPI_Ireduce_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -11778,13 +14304,13 @@ static int w_MPI_Ireduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                            MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                            int abi_root, MPIABI_Comm abi_comm,
                            MPIABI_Request *abi_request)
-    BODY_MPI_Ireduce_c(MPI_Ireduce_c)
+    BODY_MPI_Ireduce_c(MPI_Ireduce_c, MPI_Ireduce)
 static int w_PMPI_Ireduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                             MPIABI_Count abi_count,
                             MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                             int abi_root, MPIABI_Comm abi_comm,
                             MPIABI_Request *abi_request)
-    BODY_MPI_Ireduce_c(PMPI_Ireduce_c)
+    BODY_MPI_Ireduce_c(PMPI_Ireduce_c, PMPI_Ireduce)
 
 /* ---------------------------------------------------- MPI_Ireduce_scatter */
 
@@ -11840,7 +14366,7 @@ static int w_PMPI_Ireduce_scatter(const void *abi_sendbuf, void *abi_recvbuf,
 /* -------------------------------------------------- MPI_Ireduce_scatter_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ireduce_scatter_c
-#define BODY_MPI_Ireduce_scatter_c(TARGET)                                     \
+#define BODY_MPI_Ireduce_scatter_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -11862,8 +14388,61 @@ static int w_PMPI_Ireduce_scatter(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ireduce_scatter)
+#define BODY_MPI_Ireduce_scatter_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const void *const  sendbuf  =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks;                                    \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, recvbuf, recvcounts, datatype, op,    \
+                                comm, &request);                               \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Ireduce_scatter_c(TARGET)                                     \
+#define BODY_MPI_Ireduce_scatter_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -11882,13 +14461,13 @@ static int w_MPI_Ireduce_scatter_c(const void *abi_sendbuf, void *abi_recvbuf,
                                    MPIABI_Datatype abi_datatype,
                                    MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_Ireduce_scatter_c(MPI_Ireduce_scatter_c)
+    BODY_MPI_Ireduce_scatter_c(MPI_Ireduce_scatter_c, MPI_Ireduce_scatter)
 static int w_PMPI_Ireduce_scatter_c(const void *abi_sendbuf, void *abi_recvbuf,
                                     const MPIABI_Count abi_recvcounts[],
                                     MPIABI_Datatype abi_datatype,
                                     MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                                     MPIABI_Request *abi_request)
-    BODY_MPI_Ireduce_scatter_c(PMPI_Ireduce_scatter_c)
+    BODY_MPI_Ireduce_scatter_c(PMPI_Ireduce_scatter_c, PMPI_Ireduce_scatter)
 
 /* ---------------------------------------------- MPI_Ireduce_scatter_block */
 
@@ -11944,7 +14523,7 @@ static int w_PMPI_Ireduce_scatter_block(const void *abi_sendbuf,
 /* -------------------------------------------- MPI_Ireduce_scatter_block_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ireduce_scatter_block_c
-#define BODY_MPI_Ireduce_scatter_block_c(TARGET)                               \
+#define BODY_MPI_Ireduce_scatter_block_c(TARGET, FALLBACK)                     \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -11964,8 +14543,34 @@ static int w_PMPI_Ireduce_scatter_block(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ireduce_scatter_block)
+#define BODY_MPI_Ireduce_scatter_block_c(TARGET, FALLBACK)                     \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    int               recvcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, recvcount, datatype, op, comm, &request);   \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ireduce_scatter_block_c(TARGET)                               \
+#define BODY_MPI_Ireduce_scatter_block_c(TARGET, FALLBACK)                     \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -11986,7 +14591,8 @@ static int w_MPI_Ireduce_scatter_block_c(const void *abi_sendbuf,
                                          MPIABI_Op abi_op,
                                          MPIABI_Comm abi_comm,
                                          MPIABI_Request *abi_request)
-    BODY_MPI_Ireduce_scatter_block_c(MPI_Ireduce_scatter_block_c)
+    BODY_MPI_Ireduce_scatter_block_c(MPI_Ireduce_scatter_block_c,
+                                     MPI_Ireduce_scatter_block)
 static int w_PMPI_Ireduce_scatter_block_c(const void *abi_sendbuf,
                                           void *abi_recvbuf,
                                           MPIABI_Count abi_recvcount,
@@ -11994,7 +14600,8 @@ static int w_PMPI_Ireduce_scatter_block_c(const void *abi_sendbuf,
                                           MPIABI_Op abi_op,
                                           MPIABI_Comm abi_comm,
                                           MPIABI_Request *abi_request)
-    BODY_MPI_Ireduce_scatter_block_c(PMPI_Ireduce_scatter_block_c)
+    BODY_MPI_Ireduce_scatter_block_c(PMPI_Ireduce_scatter_block_c,
+                                     PMPI_Ireduce_scatter_block)
 
 /* ------------------------------------------------------------- MPI_Irsend */
 
@@ -12047,7 +14654,7 @@ static int w_PMPI_Irsend(const void *abi_buf, int abi_count,
 /* ----------------------------------------------------------- MPI_Irsend_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Irsend_c
-#define BODY_MPI_Irsend_c(TARGET)                                              \
+#define BODY_MPI_Irsend_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -12066,8 +14673,33 @@ static int w_PMPI_Irsend(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Irsend)
+#define BODY_MPI_Irsend_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Irsend_c(TARGET)                                              \
+#define BODY_MPI_Irsend_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -12085,12 +14717,12 @@ static int w_MPI_Irsend_c(const void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_dest,
                           int abi_tag, MPIABI_Comm abi_comm,
                           MPIABI_Request *abi_request)
-    BODY_MPI_Irsend_c(MPI_Irsend_c)
+    BODY_MPI_Irsend_c(MPI_Irsend_c, MPI_Irsend)
 static int w_PMPI_Irsend_c(const void *abi_buf, MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype, int abi_dest,
                            int abi_tag, MPIABI_Comm abi_comm,
                            MPIABI_Request *abi_request)
-    BODY_MPI_Irsend_c(PMPI_Irsend_c)
+    BODY_MPI_Irsend_c(PMPI_Irsend_c, PMPI_Irsend)
 
 /* ----------------------------------------------------- MPI_Is_thread_main */
 
@@ -12166,7 +14798,7 @@ static int w_PMPI_Iscan(const void *abi_sendbuf, void *abi_recvbuf,
 /* ------------------------------------------------------------ MPI_Iscan_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Iscan_c
-#define BODY_MPI_Iscan_c(TARGET)                                               \
+#define BODY_MPI_Iscan_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -12186,8 +14818,34 @@ static int w_PMPI_Iscan(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Iscan)
+#define BODY_MPI_Iscan_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, comm, &request);       \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Iscan_c(TARGET)                                               \
+#define BODY_MPI_Iscan_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -12205,12 +14863,12 @@ static int w_MPI_Iscan_c(const void *abi_sendbuf, void *abi_recvbuf,
                          MPIABI_Count abi_count, MPIABI_Datatype abi_datatype,
                          MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                          MPIABI_Request *abi_request)
-    BODY_MPI_Iscan_c(MPI_Iscan_c)
+    BODY_MPI_Iscan_c(MPI_Iscan_c, MPI_Iscan)
 static int w_PMPI_Iscan_c(const void *abi_sendbuf, void *abi_recvbuf,
                           MPIABI_Count abi_count, MPIABI_Datatype abi_datatype,
                           MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                           MPIABI_Request *abi_request)
-    BODY_MPI_Iscan_c(PMPI_Iscan_c)
+    BODY_MPI_Iscan_c(PMPI_Iscan_c, PMPI_Iscan)
 
 /* ----------------------------------------------------------- MPI_Iscatter */
 
@@ -12271,7 +14929,7 @@ static int w_PMPI_Iscatter(const void *abi_sendbuf, int abi_sendcount,
 /* --------------------------------------------------------- MPI_Iscatter_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Iscatter_c
-#define BODY_MPI_Iscatter_c(TARGET)                                            \
+#define BODY_MPI_Iscatter_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -12294,8 +14952,41 @@ static int w_PMPI_Iscatter(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Iscatter)
+#define BODY_MPI_Iscatter_c(TARGET, FALLBACK)                                  \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   =                                             \
+        mpiwrapper_recvbuf_inplace_fromabi(abi_recvbuf);                       \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 root, comm, &request);                                        \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Iscatter_c(TARGET)                                            \
+#define BODY_MPI_Iscatter_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -12317,14 +15008,14 @@ static int w_MPI_Iscatter_c(const void *abi_sendbuf,
                             MPIABI_Count abi_recvcount,
                             MPIABI_Datatype abi_recvtype, int abi_root,
                             MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Iscatter_c(MPI_Iscatter_c)
+    BODY_MPI_Iscatter_c(MPI_Iscatter_c, MPI_Iscatter)
 static int w_PMPI_Iscatter_c(const void *abi_sendbuf,
                              MPIABI_Count abi_sendcount,
                              MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                              MPIABI_Count abi_recvcount,
                              MPIABI_Datatype abi_recvtype, int abi_root,
                              MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Iscatter_c(PMPI_Iscatter_c)
+    BODY_MPI_Iscatter_c(PMPI_Iscatter_c, PMPI_Iscatter)
 
 /* ---------------------------------------------------------- MPI_Iscatterv */
 
@@ -12389,7 +15080,7 @@ static int w_PMPI_Iscatterv(const void *abi_sendbuf,
 /* -------------------------------------------------------- MPI_Iscatterv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Iscatterv_c
-#define BODY_MPI_Iscatterv_c(TARGET)                                           \
+#define BODY_MPI_Iscatterv_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -12416,8 +15107,75 @@ static int w_PMPI_Iscatterv(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Iscatterv)
+#define BODY_MPI_Iscatterv_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   =                                             \
+        mpiwrapper_recvbuf_inplace_fromabi(abi_recvbuf);                       \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_root_extent(comm, root, &nranks);          \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const sendcounts = block;                                             \
+    int *const displs     = block + nranks;                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, displs, sendtype, recvbuf,\
+                                recvcount, recvtype, root, comm, &request);    \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_NONBLOCKING))                \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Iscatterv_c(TARGET)                                           \
+#define BODY_MPI_Iscatterv_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -12441,7 +15199,7 @@ static int w_MPI_Iscatterv_c(const void *abi_sendbuf,
                              MPIABI_Count abi_recvcount,
                              MPIABI_Datatype abi_recvtype, int abi_root,
                              MPIABI_Comm abi_comm, MPIABI_Request *abi_request)
-    BODY_MPI_Iscatterv_c(MPI_Iscatterv_c)
+    BODY_MPI_Iscatterv_c(MPI_Iscatterv_c, MPI_Iscatterv)
 static int w_PMPI_Iscatterv_c(const void *abi_sendbuf,
                               const MPIABI_Count abi_sendcounts[],
                               const MPIABI_Aint abi_displs[],
@@ -12450,7 +15208,7 @@ static int w_PMPI_Iscatterv_c(const void *abi_sendbuf,
                               MPIABI_Datatype abi_recvtype, int abi_root,
                               MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Iscatterv_c(PMPI_Iscatterv_c)
+    BODY_MPI_Iscatterv_c(PMPI_Iscatterv_c, PMPI_Iscatterv)
 
 /* -------------------------------------------------------------- MPI_Isend */
 
@@ -12501,7 +15259,7 @@ static int w_PMPI_Isend(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------------ MPI_Isend_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Isend_c
-#define BODY_MPI_Isend_c(TARGET)                                               \
+#define BODY_MPI_Isend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -12520,8 +15278,33 @@ static int w_PMPI_Isend(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Isend)
+#define BODY_MPI_Isend_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Isend_c(TARGET)                                               \
+#define BODY_MPI_Isend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -12539,12 +15322,12 @@ static int w_MPI_Isend_c(const void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_dest,
                          int abi_tag, MPIABI_Comm abi_comm,
                          MPIABI_Request *abi_request)
-    BODY_MPI_Isend_c(MPI_Isend_c)
+    BODY_MPI_Isend_c(MPI_Isend_c, MPI_Isend)
 static int w_PMPI_Isend_c(const void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_dest,
                           int abi_tag, MPIABI_Comm abi_comm,
                           MPIABI_Request *abi_request)
-    BODY_MPI_Isend_c(PMPI_Isend_c)
+    BODY_MPI_Isend_c(PMPI_Isend_c, PMPI_Isend)
 
 /* ---------------------------------------------------------- MPI_Isendrecv */
 
@@ -12612,7 +15395,7 @@ static int w_PMPI_Isendrecv(const void *abi_sendbuf, int abi_sendcount,
 /* -------------------------------------------------------- MPI_Isendrecv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Isendrecv_c
-#define BODY_MPI_Isendrecv_c(TARGET)                                           \
+#define BODY_MPI_Isendrecv_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -12637,8 +15420,43 @@ static int w_PMPI_Isendrecv(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Isendrecv)
+#define BODY_MPI_Isendrecv_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    const int          dest      = mpiwrapper_rank_fromabi(abi_dest);          \
+    const int          sendtag   = mpiwrapper_tag_fromabi(abi_sendtag);        \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          source   = mpiwrapper_rank_fromabi(abi_source);         \
+    const int          recvtag  = mpiwrapper_tag_fromabi(abi_recvtag);         \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, dest, sendtag, recvbuf,         \
+                 recvcount, recvtype, source, recvtag, comm, &request);        \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Isendrecv_c(TARGET)                                           \
+#define BODY_MPI_Isendrecv_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -12665,7 +15483,7 @@ static int w_MPI_Isendrecv_c(const void *abi_sendbuf,
                              MPIABI_Datatype abi_recvtype, int abi_source,
                              int abi_recvtag, MPIABI_Comm abi_comm,
                              MPIABI_Request *abi_request)
-    BODY_MPI_Isendrecv_c(MPI_Isendrecv_c)
+    BODY_MPI_Isendrecv_c(MPI_Isendrecv_c, MPI_Isendrecv)
 static int w_PMPI_Isendrecv_c(const void *abi_sendbuf,
                               MPIABI_Count abi_sendcount,
                               MPIABI_Datatype abi_sendtype, int abi_dest,
@@ -12674,7 +15492,7 @@ static int w_PMPI_Isendrecv_c(const void *abi_sendbuf,
                               MPIABI_Datatype abi_recvtype, int abi_source,
                               int abi_recvtag, MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Isendrecv_c(PMPI_Isendrecv_c)
+    BODY_MPI_Isendrecv_c(PMPI_Isendrecv_c, PMPI_Isendrecv)
 
 /* -------------------------------------------------- MPI_Isendrecv_replace */
 
@@ -12734,7 +15552,7 @@ static int w_PMPI_Isendrecv_replace(void *abi_buf, int abi_count,
 /* ------------------------------------------------ MPI_Isendrecv_replace_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Isendrecv_replace_c
-#define BODY_MPI_Isendrecv_replace_c(TARGET)                                   \
+#define BODY_MPI_Isendrecv_replace_c(TARGET, FALLBACK)                         \
   {                                                                            \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -12756,8 +15574,36 @@ static int w_PMPI_Isendrecv_replace(void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Isendrecv_replace)
+#define BODY_MPI_Isendrecv_replace_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    void *const buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                   \
+    int         count = 0;                                                     \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          sendtag  = mpiwrapper_tag_fromabi(abi_sendtag);         \
+    const int          source   = mpiwrapper_rank_fromabi(abi_source);         \
+    const int          recvtag  = mpiwrapper_tag_fromabi(abi_recvtag);         \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, sendtag, source, recvtag, comm,   \
+                 &request);                                                    \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Isendrecv_replace_c(TARGET)                                   \
+#define BODY_MPI_Isendrecv_replace_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -12779,14 +15625,16 @@ static int w_MPI_Isendrecv_replace_c(void *abi_buf, MPIABI_Count abi_count,
                                      int abi_source, int abi_recvtag,
                                      MPIABI_Comm abi_comm,
                                      MPIABI_Request *abi_request)
-    BODY_MPI_Isendrecv_replace_c(MPI_Isendrecv_replace_c)
+    BODY_MPI_Isendrecv_replace_c(MPI_Isendrecv_replace_c,
+                                 MPI_Isendrecv_replace)
 static int w_PMPI_Isendrecv_replace_c(void *abi_buf, MPIABI_Count abi_count,
                                       MPIABI_Datatype abi_datatype,
                                       int abi_dest, int abi_sendtag,
                                       int abi_source, int abi_recvtag,
                                       MPIABI_Comm abi_comm,
                                       MPIABI_Request *abi_request)
-    BODY_MPI_Isendrecv_replace_c(PMPI_Isendrecv_replace_c)
+    BODY_MPI_Isendrecv_replace_c(PMPI_Isendrecv_replace_c,
+                                 PMPI_Isendrecv_replace)
 
 /* ------------------------------------------------------------- MPI_Issend */
 
@@ -12839,7 +15687,7 @@ static int w_PMPI_Issend(const void *abi_buf, int abi_count,
 /* ----------------------------------------------------------- MPI_Issend_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Issend_c
-#define BODY_MPI_Issend_c(TARGET)                                              \
+#define BODY_MPI_Issend_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -12858,8 +15706,33 @@ static int w_PMPI_Issend(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Issend)
+#define BODY_MPI_Issend_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Issend_c(TARGET)                                              \
+#define BODY_MPI_Issend_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -12877,12 +15750,12 @@ static int w_MPI_Issend_c(const void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_dest,
                           int abi_tag, MPIABI_Comm abi_comm,
                           MPIABI_Request *abi_request)
-    BODY_MPI_Issend_c(MPI_Issend_c)
+    BODY_MPI_Issend_c(MPI_Issend_c, MPI_Issend)
 static int w_PMPI_Issend_c(const void *abi_buf, MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype, int abi_dest,
                            int abi_tag, MPIABI_Comm abi_comm,
                            MPIABI_Request *abi_request)
-    BODY_MPI_Issend_c(PMPI_Issend_c)
+    BODY_MPI_Issend_c(PMPI_Issend_c, PMPI_Issend)
 
 /* ------------------------------------------------------------- MPI_Mprobe */
 
@@ -12976,7 +15849,7 @@ static int w_PMPI_Mrecv(void *abi_buf, int abi_count,
 /* ------------------------------------------------------------ MPI_Mrecv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Mrecv_c
-#define BODY_MPI_Mrecv_c(TARGET)                                               \
+#define BODY_MPI_Mrecv_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -12995,8 +15868,31 @@ static int w_PMPI_Mrecv(void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Mrecv)
+#define BODY_MPI_Mrecv_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    void *const buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                   \
+    int         count = 0;                                                     \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    MPI_Message        message  = mpiwrapper_message_fromabi(*abi_message);    \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(buf, count, datatype, &message,                               \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    *abi_message = mpiwrapper_message_toabi(message);                          \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Mrecv_c(TARGET)                                               \
+#define BODY_MPI_Mrecv_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -13011,12 +15907,12 @@ static int w_MPI_Mrecv_c(void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype,
                          MPIABI_Message *abi_message,
                          MPIABI_Status *abi_status)
-    BODY_MPI_Mrecv_c(MPI_Mrecv_c)
+    BODY_MPI_Mrecv_c(MPI_Mrecv_c, MPI_Mrecv)
 static int w_PMPI_Mrecv_c(void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype,
                           MPIABI_Message *abi_message,
                           MPIABI_Status *abi_status)
-    BODY_MPI_Mrecv_c(PMPI_Mrecv_c)
+    BODY_MPI_Mrecv_c(PMPI_Mrecv_c, PMPI_Mrecv)
 
 /* ------------------------------------------------- MPI_Neighbor_allgather */
 
@@ -13067,7 +15963,7 @@ static int w_PMPI_Neighbor_allgather(const void *abi_sendbuf,
 /* ----------------------------------------------- MPI_Neighbor_allgather_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_allgather_c
-#define BODY_MPI_Neighbor_allgather_c(TARGET)                                  \
+#define BODY_MPI_Neighbor_allgather_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -13082,8 +15978,29 @@ static int w_PMPI_Neighbor_allgather(const void *abi_sendbuf,
                comm);                                                          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_allgather)
+#define BODY_MPI_Neighbor_allgather_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm);                                                        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Neighbor_allgather_c(TARGET)                                  \
+#define BODY_MPI_Neighbor_allgather_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -13103,7 +16020,8 @@ static int w_MPI_Neighbor_allgather_c(const void *abi_sendbuf,
                                       MPIABI_Count abi_recvcount,
                                       MPIABI_Datatype abi_recvtype,
                                       MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_allgather_c(MPI_Neighbor_allgather_c)
+    BODY_MPI_Neighbor_allgather_c(MPI_Neighbor_allgather_c,
+                                  MPI_Neighbor_allgather)
 static int w_PMPI_Neighbor_allgather_c(const void *abi_sendbuf,
                                        MPIABI_Count abi_sendcount,
                                        MPIABI_Datatype abi_sendtype,
@@ -13111,7 +16029,8 @@ static int w_PMPI_Neighbor_allgather_c(const void *abi_sendbuf,
                                        MPIABI_Count abi_recvcount,
                                        MPIABI_Datatype abi_recvtype,
                                        MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_allgather_c(PMPI_Neighbor_allgather_c)
+    BODY_MPI_Neighbor_allgather_c(PMPI_Neighbor_allgather_c,
+                                  PMPI_Neighbor_allgather)
 
 /* -------------------------------------------- MPI_Neighbor_allgather_init */
 
@@ -13177,7 +16096,7 @@ static int w_PMPI_Neighbor_allgather_init(const void *abi_sendbuf,
 /* ------------------------------------------ MPI_Neighbor_allgather_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_allgather_init_c
-#define BODY_MPI_Neighbor_allgather_init_c(TARGET)                             \
+#define BODY_MPI_Neighbor_allgather_init_c(TARGET, FALLBACK)                   \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -13199,8 +16118,40 @@ static int w_PMPI_Neighbor_allgather_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_allgather_init)
+#define BODY_MPI_Neighbor_allgather_init_c(TARGET, FALLBACK)                   \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, info, &request);                                        \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Neighbor_allgather_init_c(TARGET)                             \
+#define BODY_MPI_Neighbor_allgather_init_c(TARGET, FALLBACK)                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -13225,7 +16176,8 @@ static int w_MPI_Neighbor_allgather_init_c(const void *abi_sendbuf,
                                            MPIABI_Comm abi_comm,
                                            MPIABI_Info abi_info,
                                            MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_allgather_init_c(MPI_Neighbor_allgather_init_c)
+    BODY_MPI_Neighbor_allgather_init_c(MPI_Neighbor_allgather_init_c,
+                                       MPI_Neighbor_allgather_init)
 static int w_PMPI_Neighbor_allgather_init_c(const void *abi_sendbuf,
                                             MPIABI_Count abi_sendcount,
                                             MPIABI_Datatype abi_sendtype,
@@ -13235,7 +16187,8 @@ static int w_PMPI_Neighbor_allgather_init_c(const void *abi_sendbuf,
                                             MPIABI_Comm abi_comm,
                                             MPIABI_Info abi_info,
                                             MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_allgather_init_c(PMPI_Neighbor_allgather_init_c)
+    BODY_MPI_Neighbor_allgather_init_c(PMPI_Neighbor_allgather_init_c,
+                                       PMPI_Neighbor_allgather_init)
 
 /* ------------------------------------------------ MPI_Neighbor_allgatherv */
 
@@ -13293,7 +16246,7 @@ static int w_PMPI_Neighbor_allgatherv(const void *abi_sendbuf,
 /* ---------------------------------------------- MPI_Neighbor_allgatherv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_allgatherv_c
-#define BODY_MPI_Neighbor_allgatherv_c(TARGET)                                 \
+#define BODY_MPI_Neighbor_allgatherv_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -13313,8 +16266,65 @@ static int w_PMPI_Neighbor_allgatherv(const void *abi_sendbuf,
                recvtype, comm);                                                \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_allgatherv)
+#define BODY_MPI_Neighbor_allgatherv_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const void *const sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);     \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int  recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *recvcounts = NULL;                                                    \
+    int  displs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *displs     = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nrecvtypes, sizeof *recvcounts);     \
+    if (!recvcounts) goto done;                                                \
+    displs = mpiwrapper_stage(displs_stack, sizeof displs_stack,               \
+                              (size_t)nrecvtypes, sizeof *displs);             \
+    if (!displs) goto done;                                                    \
+                                                                               \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcounts, displs,  \
+                   recvtype, comm);                                            \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    mpiwrapper_unstage(displs, displs_stack);                                  \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Neighbor_allgatherv_c(TARGET)                                 \
+#define BODY_MPI_Neighbor_allgatherv_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -13336,7 +16346,8 @@ static int w_MPI_Neighbor_allgatherv_c(const void *abi_sendbuf,
                                        const MPIABI_Aint abi_displs[],
                                        MPIABI_Datatype abi_recvtype,
                                        MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_allgatherv_c(MPI_Neighbor_allgatherv_c)
+    BODY_MPI_Neighbor_allgatherv_c(MPI_Neighbor_allgatherv_c,
+                                   MPI_Neighbor_allgatherv)
 static int w_PMPI_Neighbor_allgatherv_c(const void *abi_sendbuf,
                                         MPIABI_Count abi_sendcount,
                                         MPIABI_Datatype abi_sendtype,
@@ -13345,7 +16356,8 @@ static int w_PMPI_Neighbor_allgatherv_c(const void *abi_sendbuf,
                                         const MPIABI_Aint abi_displs[],
                                         MPIABI_Datatype abi_recvtype,
                                         MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_allgatherv_c(PMPI_Neighbor_allgatherv_c)
+    BODY_MPI_Neighbor_allgatherv_c(PMPI_Neighbor_allgatherv_c,
+                                   PMPI_Neighbor_allgatherv)
 
 /* ------------------------------------------- MPI_Neighbor_allgatherv_init */
 
@@ -13417,7 +16429,7 @@ static int w_PMPI_Neighbor_allgatherv_init(const void *abi_sendbuf,
 /* ----------------------------------------- MPI_Neighbor_allgatherv_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_allgatherv_init_c
-#define BODY_MPI_Neighbor_allgatherv_init_c(TARGET)                            \
+#define BODY_MPI_Neighbor_allgatherv_init_c(TARGET, FALLBACK)                  \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -13444,8 +16456,76 @@ static int w_PMPI_Neighbor_allgatherv_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_allgatherv_init)
+#define BODY_MPI_Neighbor_allgatherv_init_c(TARGET, FALLBACK)                  \
+  {                                                                            \
+    const void *const sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);     \
+    int               sendcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nrecvtypes + (size_t)nrecvtypes;           \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+    int *const displs     = block + nrecvtypes;                                \
+                                                                               \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcount, sendtype, recvbuf,         \
+                                recvcounts, displs, recvtype, comm, info,      \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Neighbor_allgatherv_init_c(TARGET)                            \
+#define BODY_MPI_Neighbor_allgatherv_init_c(TARGET, FALLBACK)                  \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -13467,13 +16547,15 @@ static int w_MPI_Neighbor_allgatherv_init_c(const void *abi_sendbuf,
     void *abi_recvbuf, const MPIABI_Count abi_recvcounts[],
     const MPIABI_Aint abi_displs[], MPIABI_Datatype abi_recvtype,
     MPIABI_Comm abi_comm, MPIABI_Info abi_info, MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_allgatherv_init_c(MPI_Neighbor_allgatherv_init_c)
+    BODY_MPI_Neighbor_allgatherv_init_c(MPI_Neighbor_allgatherv_init_c,
+                                        MPI_Neighbor_allgatherv_init)
 static int w_PMPI_Neighbor_allgatherv_init_c(const void *abi_sendbuf,
     MPIABI_Count abi_sendcount, MPIABI_Datatype abi_sendtype,
     void *abi_recvbuf, const MPIABI_Count abi_recvcounts[],
     const MPIABI_Aint abi_displs[], MPIABI_Datatype abi_recvtype,
     MPIABI_Comm abi_comm, MPIABI_Info abi_info, MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_allgatherv_init_c(PMPI_Neighbor_allgatherv_init_c)
+    BODY_MPI_Neighbor_allgatherv_init_c(PMPI_Neighbor_allgatherv_init_c,
+                                        PMPI_Neighbor_allgatherv_init)
 
 /* -------------------------------------------------- MPI_Neighbor_alltoall */
 
@@ -13523,7 +16605,7 @@ static int w_PMPI_Neighbor_alltoall(const void *abi_sendbuf, int abi_sendcount,
 /* ------------------------------------------------ MPI_Neighbor_alltoall_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_alltoall_c
-#define BODY_MPI_Neighbor_alltoall_c(TARGET)                                   \
+#define BODY_MPI_Neighbor_alltoall_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -13538,8 +16620,29 @@ static int w_PMPI_Neighbor_alltoall(const void *abi_sendbuf, int abi_sendcount,
                comm);                                                          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_alltoall)
+#define BODY_MPI_Neighbor_alltoall_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm);                                                        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Neighbor_alltoall_c(TARGET)                                   \
+#define BODY_MPI_Neighbor_alltoall_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -13559,7 +16662,8 @@ static int w_MPI_Neighbor_alltoall_c(const void *abi_sendbuf,
                                      MPIABI_Count abi_recvcount,
                                      MPIABI_Datatype abi_recvtype,
                                      MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_alltoall_c(MPI_Neighbor_alltoall_c)
+    BODY_MPI_Neighbor_alltoall_c(MPI_Neighbor_alltoall_c,
+                                 MPI_Neighbor_alltoall)
 static int w_PMPI_Neighbor_alltoall_c(const void *abi_sendbuf,
                                       MPIABI_Count abi_sendcount,
                                       MPIABI_Datatype abi_sendtype,
@@ -13567,7 +16671,8 @@ static int w_PMPI_Neighbor_alltoall_c(const void *abi_sendbuf,
                                       MPIABI_Count abi_recvcount,
                                       MPIABI_Datatype abi_recvtype,
                                       MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_alltoall_c(PMPI_Neighbor_alltoall_c)
+    BODY_MPI_Neighbor_alltoall_c(PMPI_Neighbor_alltoall_c,
+                                 PMPI_Neighbor_alltoall)
 
 /* --------------------------------------------- MPI_Neighbor_alltoall_init */
 
@@ -13633,7 +16738,7 @@ static int w_PMPI_Neighbor_alltoall_init(const void *abi_sendbuf,
 /* ------------------------------------------- MPI_Neighbor_alltoall_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_alltoall_init_c
-#define BODY_MPI_Neighbor_alltoall_init_c(TARGET)                              \
+#define BODY_MPI_Neighbor_alltoall_init_c(TARGET, FALLBACK)                    \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -13655,8 +16760,40 @@ static int w_PMPI_Neighbor_alltoall_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_alltoall_init)
+#define BODY_MPI_Neighbor_alltoall_init_c(TARGET, FALLBACK)                    \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 comm, info, &request);                                        \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Neighbor_alltoall_init_c(TARGET)                              \
+#define BODY_MPI_Neighbor_alltoall_init_c(TARGET, FALLBACK)                    \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -13681,7 +16818,8 @@ static int w_MPI_Neighbor_alltoall_init_c(const void *abi_sendbuf,
                                           MPIABI_Comm abi_comm,
                                           MPIABI_Info abi_info,
                                           MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_alltoall_init_c(MPI_Neighbor_alltoall_init_c)
+    BODY_MPI_Neighbor_alltoall_init_c(MPI_Neighbor_alltoall_init_c,
+                                      MPI_Neighbor_alltoall_init)
 static int w_PMPI_Neighbor_alltoall_init_c(const void *abi_sendbuf,
                                            MPIABI_Count abi_sendcount,
                                            MPIABI_Datatype abi_sendtype,
@@ -13691,7 +16829,8 @@ static int w_PMPI_Neighbor_alltoall_init_c(const void *abi_sendbuf,
                                            MPIABI_Comm abi_comm,
                                            MPIABI_Info abi_info,
                                            MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_alltoall_init_c(PMPI_Neighbor_alltoall_init_c)
+    BODY_MPI_Neighbor_alltoall_init_c(PMPI_Neighbor_alltoall_init_c,
+                                      PMPI_Neighbor_alltoall_init)
 
 /* ------------------------------------------------- MPI_Neighbor_alltoallv */
 
@@ -13753,7 +16892,7 @@ static int w_PMPI_Neighbor_alltoallv(const void *abi_sendbuf,
 /* ----------------------------------------------- MPI_Neighbor_alltoallv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_alltoallv_c
-#define BODY_MPI_Neighbor_alltoallv_c(TARGET)                                  \
+#define BODY_MPI_Neighbor_alltoallv_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -13774,8 +16913,83 @@ static int w_PMPI_Neighbor_alltoallv(const void *abi_sendbuf,
                rdispls, recvtype, comm);                                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_alltoallv)
+#define BODY_MPI_Neighbor_alltoallv_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const void *const  sendbuf  = mpiwrapper_sendbuf_fromabi(abi_sendbuf);     \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int  sendcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *sendcounts = NULL;                                                    \
+    int  sdispls_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                  \
+    int *sdispls    = NULL;                                                    \
+    int  recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *recvcounts = NULL;                                                    \
+    int  rdispls_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                  \
+    int *rdispls    = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    sendcounts = mpiwrapper_stage(sendcounts_stack, sizeof sendcounts_stack,   \
+                                  (size_t)nsendtypes, sizeof *sendcounts);     \
+    if (!sendcounts) goto done;                                                \
+    sdispls = mpiwrapper_stage(sdispls_stack, sizeof sdispls_stack,            \
+                               (size_t)nsendtypes, sizeof *sdispls);           \
+    if (!sdispls) goto done;                                                   \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nrecvtypes, sizeof *recvcounts);     \
+    if (!recvcounts) goto done;                                                \
+    rdispls = mpiwrapper_stage(rdispls_stack, sizeof rdispls_stack,            \
+                               (size_t)nrecvtypes, sizeof *rdispls);           \
+    if (!rdispls) goto done;                                                   \
+                                                                               \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcounts, sdispls, sendtype, recvbuf, recvcounts,\
+                   rdispls, recvtype, comm);                                   \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(sendcounts, sendcounts_stack);                          \
+    mpiwrapper_unstage(sdispls, sdispls_stack);                                \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    mpiwrapper_unstage(rdispls, rdispls_stack);                                \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Neighbor_alltoallv_c(TARGET)                                  \
+#define BODY_MPI_Neighbor_alltoallv_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -13799,7 +17013,8 @@ static int w_MPI_Neighbor_alltoallv_c(const void *abi_sendbuf,
                                       const MPIABI_Aint abi_rdispls[],
                                       MPIABI_Datatype abi_recvtype,
                                       MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_alltoallv_c(MPI_Neighbor_alltoallv_c)
+    BODY_MPI_Neighbor_alltoallv_c(MPI_Neighbor_alltoallv_c,
+                                  MPI_Neighbor_alltoallv)
 static int w_PMPI_Neighbor_alltoallv_c(const void *abi_sendbuf,
                                        const MPIABI_Count abi_sendcounts[],
                                        const MPIABI_Aint abi_sdispls[],
@@ -13809,7 +17024,8 @@ static int w_PMPI_Neighbor_alltoallv_c(const void *abi_sendbuf,
                                        const MPIABI_Aint abi_rdispls[],
                                        MPIABI_Datatype abi_recvtype,
                                        MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_alltoallv_c(PMPI_Neighbor_alltoallv_c)
+    BODY_MPI_Neighbor_alltoallv_c(PMPI_Neighbor_alltoallv_c,
+                                  PMPI_Neighbor_alltoallv)
 
 /* -------------------------------------------- MPI_Neighbor_alltoallv_init */
 
@@ -13885,7 +17101,7 @@ static int w_PMPI_Neighbor_alltoallv_init(const void *abi_sendbuf,
 /* ------------------------------------------ MPI_Neighbor_alltoallv_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_alltoallv_init_c
-#define BODY_MPI_Neighbor_alltoallv_init_c(TARGET)                             \
+#define BODY_MPI_Neighbor_alltoallv_init_c(TARGET, FALLBACK)                   \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -13913,8 +17129,85 @@ static int w_PMPI_Neighbor_alltoallv_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_alltoallv_init)
+#define BODY_MPI_Neighbor_alltoallv_init_c(TARGET, FALLBACK)                   \
+  {                                                                            \
+    const void *const  sendbuf  = mpiwrapper_sendbuf_fromabi(abi_sendbuf);     \
+    const MPI_Datatype sendtype = mpiwrapper_datatype_fromabi(abi_sendtype);   \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged =                                                    \
+        (size_t)nsendtypes + (size_t)nsendtypes + (size_t)nrecvtypes + (size_t)nrecvtypes; \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const sendcounts = block;                                             \
+    int *const sdispls    = block + nsendtypes;                                \
+    int *const recvcounts = block + nsendtypes + nsendtypes;                   \
+    int *const rdispls    = block + nsendtypes + nsendtypes + nrecvtypes;      \
+                                                                               \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sdispls[i], &sdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_rdispls[i], &rdispls[i])) {               \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtype,        \
+                                recvbuf, recvcounts, rdispls, recvtype, comm,  \
+                                info, &request);                               \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Neighbor_alltoallv_init_c(TARGET)                             \
+#define BODY_MPI_Neighbor_alltoallv_init_c(TARGET, FALLBACK)                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -13938,14 +17231,16 @@ static int w_MPI_Neighbor_alltoallv_init_c(const void *abi_sendbuf,
     const MPIABI_Count abi_recvcounts[], const MPIABI_Aint abi_rdispls[],
     MPIABI_Datatype abi_recvtype, MPIABI_Comm abi_comm, MPIABI_Info abi_info,
     MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_alltoallv_init_c(MPI_Neighbor_alltoallv_init_c)
+    BODY_MPI_Neighbor_alltoallv_init_c(MPI_Neighbor_alltoallv_init_c,
+                                       MPI_Neighbor_alltoallv_init)
 static int w_PMPI_Neighbor_alltoallv_init_c(const void *abi_sendbuf,
     const MPIABI_Count abi_sendcounts[], const MPIABI_Aint abi_sdispls[],
     MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
     const MPIABI_Count abi_recvcounts[], const MPIABI_Aint abi_rdispls[],
     MPIABI_Datatype abi_recvtype, MPIABI_Comm abi_comm, MPIABI_Info abi_info,
     MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_alltoallv_init_c(PMPI_Neighbor_alltoallv_init_c)
+    BODY_MPI_Neighbor_alltoallv_init_c(PMPI_Neighbor_alltoallv_init_c,
+                                       PMPI_Neighbor_alltoallv_init)
 
 /* ------------------------------------------------- MPI_Neighbor_alltoallw */
 
@@ -14038,7 +17333,7 @@ static int w_PMPI_Neighbor_alltoallw(const void *abi_sendbuf,
 /* ----------------------------------------------- MPI_Neighbor_alltoallw_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_alltoallw_c
-#define BODY_MPI_Neighbor_alltoallw_c(TARGET)                                  \
+#define BODY_MPI_Neighbor_alltoallw_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -14088,8 +17383,77 @@ static int w_PMPI_Neighbor_alltoallw(const void *abi_sendbuf,
     mpiwrapper_unstage(recvtypes, recvtypes_stack);                            \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_alltoallw)
+#define BODY_MPI_Neighbor_alltoallw_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const void *const     sendbuf = mpiwrapper_sendbuf_fromabi(abi_sendbuf);   \
+    const MPI_Aint *const sdispls = (const MPI_Aint *)abi_sdispls;             \
+    void *const           recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);   \
+    const MPI_Aint *const rdispls = (const MPI_Aint *)abi_rdispls;             \
+    const MPI_Comm        comm    = mpiwrapper_comm_fromabi(abi_comm);         \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int           sendcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];      \
+    int          *sendcounts = NULL;                                           \
+    MPI_Datatype  sendtypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
+    MPI_Datatype *sendtypes  = NULL;                                           \
+    int           recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];      \
+    int          *recvcounts = NULL;                                           \
+    MPI_Datatype  recvtypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
+    MPI_Datatype *recvtypes  = NULL;                                           \
+    int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    sendcounts = mpiwrapper_stage(sendcounts_stack, sizeof sendcounts_stack,   \
+                                  (size_t)nsendtypes, sizeof *sendcounts);     \
+    if (!sendcounts) goto done;                                                \
+    sendtypes = mpiwrapper_stage(sendtypes_stack, sizeof sendtypes_stack,      \
+                                 (size_t)nsendtypes, sizeof *sendtypes);       \
+    if (!sendtypes) goto done;                                                 \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nrecvtypes, sizeof *recvcounts);     \
+    if (!recvcounts) goto done;                                                \
+    recvtypes = mpiwrapper_stage(recvtypes_stack, sizeof recvtypes_stack,      \
+                                 (size_t)nrecvtypes, sizeof *recvtypes);       \
+    if (!recvtypes) goto done;                                                 \
+                                                                               \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      sendtypes[i] = mpiwrapper_datatype_fromabi(abi_sendtypes[i]);            \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcounts, sdispls, sendtypes, recvbuf,           \
+                   recvcounts, rdispls, recvtypes, comm);                      \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(sendcounts, sendcounts_stack);                          \
+    mpiwrapper_unstage(sendtypes, sendtypes_stack);                            \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    mpiwrapper_unstage(recvtypes, recvtypes_stack);                            \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Neighbor_alltoallw_c(TARGET)                                  \
+#define BODY_MPI_Neighbor_alltoallw_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -14113,7 +17477,8 @@ static int w_MPI_Neighbor_alltoallw_c(const void *abi_sendbuf,
                                       const MPIABI_Aint abi_rdispls[],
                                       const MPIABI_Datatype abi_recvtypes[],
                                       MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_alltoallw_c(MPI_Neighbor_alltoallw_c)
+    BODY_MPI_Neighbor_alltoallw_c(MPI_Neighbor_alltoallw_c,
+                                  MPI_Neighbor_alltoallw)
 static int w_PMPI_Neighbor_alltoallw_c(const void *abi_sendbuf,
                                        const MPIABI_Count abi_sendcounts[],
                                        const MPIABI_Aint abi_sdispls[],
@@ -14123,7 +17488,8 @@ static int w_PMPI_Neighbor_alltoallw_c(const void *abi_sendbuf,
                                        const MPIABI_Aint abi_rdispls[],
                                        const MPIABI_Datatype abi_recvtypes[],
                                        MPIABI_Comm abi_comm)
-    BODY_MPI_Neighbor_alltoallw_c(PMPI_Neighbor_alltoallw_c)
+    BODY_MPI_Neighbor_alltoallw_c(PMPI_Neighbor_alltoallw_c,
+                                  PMPI_Neighbor_alltoallw)
 
 /* -------------------------------------------- MPI_Neighbor_alltoallw_init */
 
@@ -14220,7 +17586,7 @@ static int w_PMPI_Neighbor_alltoallw_init(const void *abi_sendbuf,
 /* ------------------------------------------ MPI_Neighbor_alltoallw_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Neighbor_alltoallw_init_c
-#define BODY_MPI_Neighbor_alltoallw_init_c(TARGET)                             \
+#define BODY_MPI_Neighbor_alltoallw_init_c(TARGET, FALLBACK)                   \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -14277,8 +17643,84 @@ static int w_PMPI_Neighbor_alltoallw_init(const void *abi_sendbuf,
       return MPIABI_ERR_INTERN;                                                \
     return MPIABI_SUCCESS;                                                     \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Neighbor_alltoallw_init)
+#define BODY_MPI_Neighbor_alltoallw_init_c(TARGET, FALLBACK)                   \
+  {                                                                            \
+    const void *const     sendbuf = mpiwrapper_sendbuf_fromabi(abi_sendbuf);   \
+    const MPI_Aint *const sdispls = (const MPI_Aint *)abi_sdispls;             \
+    void *const           recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);   \
+    const MPI_Aint *const rdispls = (const MPI_Aint *)abi_rdispls;             \
+    const MPI_Comm        comm    = mpiwrapper_comm_fromabi(abi_comm);         \
+    const MPI_Info        info    = mpiwrapper_info_fromabi(abi_info);         \
+                                                                               \
+    int nsendtypes = 0, nrecvtypes = 0;                                        \
+    {                                                                          \
+      const int ierror =                                                       \
+          mpiwrapper_neighbor_extents(comm, &nrecvtypes, &nsendtypes);         \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t   nstaged        = (size_t)nsendtypes + (size_t)nrecvtypes;   \
+    const size_t   off_sendcounts = 0;                                         \
+    const size_t   off_sendtypes  =                                            \
+        mpiwrapper_staged_next(off_sendcounts, (size_t)nsendtypes, sizeof(int)); \
+    const size_t   off_recvcounts =                                            \
+        mpiwrapper_staged_next(off_sendtypes, (size_t)nsendtypes, sizeof(MPI_Datatype)); \
+    const size_t   off_recvtypes  =                                            \
+        mpiwrapper_staged_next(off_recvcounts, (size_t)nrecvtypes, sizeof(int)); \
+    const size_t   nbytes         =                                            \
+        mpiwrapper_staged_next(off_recvtypes, (size_t)nrecvtypes, sizeof(MPI_Datatype)); \
+    unsigned char *block          = NULL;                                      \
+    if (nbytes != SIZE_MAX) block = malloc(nbytes);                            \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const          sendcounts = (int *)(block + off_sendcounts);          \
+    MPI_Datatype *const sendtypes  = (MPI_Datatype *)(block + off_sendtypes);  \
+    int *const          recvcounts = (int *)(block + off_recvcounts);          \
+    MPI_Datatype *const recvtypes  = (MPI_Datatype *)(block + off_recvtypes);  \
+                                                                               \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nsendtypes; ++i)                                       \
+      sendtypes[i] = mpiwrapper_datatype_fromabi(abi_sendtypes[i]);            \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nrecvtypes; ++i)                                       \
+      recvtypes[i] = mpiwrapper_datatype_fromabi(abi_recvtypes[i]);            \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, sdispls, sendtypes,       \
+                                recvbuf, recvcounts, rdispls, recvtypes, comm, \
+                                info, &request);                               \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Neighbor_alltoallw_init_c(TARGET)                             \
+#define BODY_MPI_Neighbor_alltoallw_init_c(TARGET, FALLBACK)                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -14302,14 +17744,16 @@ static int w_MPI_Neighbor_alltoallw_init_c(const void *abi_sendbuf,
     const MPIABI_Count abi_recvcounts[], const MPIABI_Aint abi_rdispls[],
     const MPIABI_Datatype abi_recvtypes[], MPIABI_Comm abi_comm,
     MPIABI_Info abi_info, MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_alltoallw_init_c(MPI_Neighbor_alltoallw_init_c)
+    BODY_MPI_Neighbor_alltoallw_init_c(MPI_Neighbor_alltoallw_init_c,
+                                       MPI_Neighbor_alltoallw_init)
 static int w_PMPI_Neighbor_alltoallw_init_c(const void *abi_sendbuf,
     const MPIABI_Count abi_sendcounts[], const MPIABI_Aint abi_sdispls[],
     const MPIABI_Datatype abi_sendtypes[], void *abi_recvbuf,
     const MPIABI_Count abi_recvcounts[], const MPIABI_Aint abi_rdispls[],
     const MPIABI_Datatype abi_recvtypes[], MPIABI_Comm abi_comm,
     MPIABI_Info abi_info, MPIABI_Request *abi_request)
-    BODY_MPI_Neighbor_alltoallw_init_c(PMPI_Neighbor_alltoallw_init_c)
+    BODY_MPI_Neighbor_alltoallw_init_c(PMPI_Neighbor_alltoallw_init_c,
+                                       PMPI_Neighbor_alltoallw_init)
 
 /* ----------------------------------------------------- MPI_Op_commutative */
 
@@ -14403,7 +17847,7 @@ static int w_PMPI_Pack(const void *abi_inbuf, int abi_incount,
 /* ------------------------------------------------------------- MPI_Pack_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Pack_c
-#define BODY_MPI_Pack_c(TARGET)                                                \
+#define BODY_MPI_Pack_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
     const MPI_Count    incount  = abi_incount;                                 \
@@ -14417,8 +17861,31 @@ static int w_PMPI_Pack(const void *abi_inbuf, int abi_incount,
         TARGET(inbuf, incount, datatype, outbuf, outsize, position, comm);     \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Pack)
+#define BODY_MPI_Pack_c(TARGET, FALLBACK)                                      \
+  {                                                                            \
+    const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
+    int                incount  = 0;                                           \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    void *const        outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);      \
+    int                outsize  = 0;                                           \
+    int                position = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_incount, &incount))                         \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_outsize, &outsize))                         \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(*abi_position, &position))                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Comm comm = mpiwrapper_comm_fromabi(abi_comm);                   \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(inbuf, incount, datatype, outbuf, outsize, &position, comm);  \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Pack_c(TARGET)                                                \
+#define BODY_MPI_Pack_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     (void)abi_inbuf;                                                           \
     (void)abi_incount;                                                         \
@@ -14434,11 +17901,13 @@ static int w_PMPI_Pack(const void *abi_inbuf, int abi_incount,
 static int w_MPI_Pack_c(const void *abi_inbuf, MPIABI_Count abi_incount,
                         MPIABI_Datatype abi_datatype, void *abi_outbuf,
                         MPIABI_Count abi_outsize, MPIABI_Count *abi_position,
-                        MPIABI_Comm abi_comm) BODY_MPI_Pack_c(MPI_Pack_c)
+                        MPIABI_Comm abi_comm)
+    BODY_MPI_Pack_c(MPI_Pack_c, MPI_Pack)
 static int w_PMPI_Pack_c(const void *abi_inbuf, MPIABI_Count abi_incount,
                          MPIABI_Datatype abi_datatype, void *abi_outbuf,
                          MPIABI_Count abi_outsize, MPIABI_Count *abi_position,
-                         MPIABI_Comm abi_comm) BODY_MPI_Pack_c(PMPI_Pack_c)
+                         MPIABI_Comm abi_comm)
+    BODY_MPI_Pack_c(PMPI_Pack_c, PMPI_Pack)
 
 /* ------------------------------------------------------ MPI_Pack_external */
 
@@ -14485,7 +17954,7 @@ static int w_PMPI_Pack_external(const char *abi_datarep, const void *abi_inbuf,
 /* ---------------------------------------------------- MPI_Pack_external_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Pack_external_c
-#define BODY_MPI_Pack_external_c(TARGET)                                       \
+#define BODY_MPI_Pack_external_c(TARGET, FALLBACK)                             \
   {                                                                            \
     const char *const  datarep  = abi_datarep;                                 \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
@@ -14499,8 +17968,31 @@ static int w_PMPI_Pack_external(const char *abi_datarep, const void *abi_inbuf,
         TARGET(datarep, inbuf, incount, datatype, outbuf, outsize, position);  \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Pack_external)
+#define BODY_MPI_Pack_external_c(TARGET, FALLBACK)                             \
+  {                                                                            \
+    const char *const  datarep  = abi_datarep;                                 \
+    const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
+    int                incount  = 0;                                           \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    void *const        outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);      \
+    MPI_Aint           outsize  = 0;                                           \
+    MPI_Aint           position = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_incount, &incount))                         \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_aint(abi_outsize, &outsize))                        \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_aint(*abi_position, &position))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(datarep, inbuf, incount, datatype, outbuf, outsize,           \
+                 &position);                                                   \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Pack_external_c(TARGET)                                       \
+#define BODY_MPI_Pack_external_c(TARGET, FALLBACK)                             \
   {                                                                            \
     (void)abi_datarep;                                                         \
     (void)abi_inbuf;                                                           \
@@ -14519,14 +18011,14 @@ static int w_MPI_Pack_external_c(const char *abi_datarep,
                                  MPIABI_Datatype abi_datatype,
                                  void *abi_outbuf, MPIABI_Count abi_outsize,
                                  MPIABI_Count *abi_position)
-    BODY_MPI_Pack_external_c(MPI_Pack_external_c)
+    BODY_MPI_Pack_external_c(MPI_Pack_external_c, MPI_Pack_external)
 static int w_PMPI_Pack_external_c(const char *abi_datarep,
                                   const void *abi_inbuf,
                                   MPIABI_Count abi_incount,
                                   MPIABI_Datatype abi_datatype,
                                   void *abi_outbuf, MPIABI_Count abi_outsize,
                                   MPIABI_Count *abi_position)
-    BODY_MPI_Pack_external_c(PMPI_Pack_external_c)
+    BODY_MPI_Pack_external_c(PMPI_Pack_external_c, PMPI_Pack_external)
 
 /* ------------------------------------------------- MPI_Pack_external_size */
 
@@ -14565,7 +18057,7 @@ static int w_PMPI_Pack_external_size(const char *abi_datarep, int abi_incount,
 /* ----------------------------------------------- MPI_Pack_external_size_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Pack_external_size_c
-#define BODY_MPI_Pack_external_size_c(TARGET)                                  \
+#define BODY_MPI_Pack_external_size_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const char *const  datarep  = abi_datarep;                                 \
     const MPI_Count    incount  = abi_incount;                                 \
@@ -14575,8 +18067,26 @@ static int w_PMPI_Pack_external_size(const char *abi_datarep, int abi_incount,
     const int ierror = TARGET(datarep, incount, datatype, size);               \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Pack_external_size)
+#define BODY_MPI_Pack_external_size_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const char *const datarep = abi_datarep;                                   \
+    int               incount = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_incount, &incount)) {                       \
+      *abi_size = 0;                                                           \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    MPI_Aint  size;                                                            \
+    const int ierror = FALLBACK(datarep, incount, datatype, &size);            \
+                                                                               \
+    *abi_size = size;                                                          \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Pack_external_size_c(TARGET)                                  \
+#define BODY_MPI_Pack_external_size_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_datarep;                                                         \
     (void)abi_incount;                                                         \
@@ -14591,12 +18101,14 @@ static int w_MPI_Pack_external_size_c(const char *abi_datarep,
                                       MPIABI_Count abi_incount,
                                       MPIABI_Datatype abi_datatype,
                                       MPIABI_Count *abi_size)
-    BODY_MPI_Pack_external_size_c(MPI_Pack_external_size_c)
+    BODY_MPI_Pack_external_size_c(MPI_Pack_external_size_c,
+                                  MPI_Pack_external_size)
 static int w_PMPI_Pack_external_size_c(const char *abi_datarep,
                                        MPIABI_Count abi_incount,
                                        MPIABI_Datatype abi_datatype,
                                        MPIABI_Count *abi_size)
-    BODY_MPI_Pack_external_size_c(PMPI_Pack_external_size_c)
+    BODY_MPI_Pack_external_size_c(PMPI_Pack_external_size_c,
+                                  PMPI_Pack_external_size)
 
 /* ---------------------------------------------------------- MPI_Pack_size */
 
@@ -14633,7 +18145,7 @@ static int w_PMPI_Pack_size(int abi_incount, MPIABI_Datatype abi_datatype,
 /* -------------------------------------------------------- MPI_Pack_size_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Pack_size_c
-#define BODY_MPI_Pack_size_c(TARGET)                                           \
+#define BODY_MPI_Pack_size_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const MPI_Count    incount  = abi_incount;                                 \
     const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
@@ -14643,8 +18155,26 @@ static int w_PMPI_Pack_size(int abi_incount, MPIABI_Datatype abi_datatype,
     const int ierror = TARGET(incount, datatype, comm, size);                  \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Pack_size)
+#define BODY_MPI_Pack_size_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    int incount = 0;                                                           \
+    if (!mpiwrapper_narrow_int(abi_incount, &incount)) {                       \
+      *abi_size = 0;                                                           \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int       size;                                                            \
+    const int ierror = FALLBACK(incount, datatype, comm, &size);               \
+                                                                               \
+    *abi_size = size;                                                          \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Pack_size_c(TARGET)                                           \
+#define BODY_MPI_Pack_size_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_incount;                                                         \
     (void)abi_datatype;                                                        \
@@ -14658,11 +18188,11 @@ static int w_PMPI_Pack_size(int abi_incount, MPIABI_Datatype abi_datatype,
 static int w_MPI_Pack_size_c(MPIABI_Count abi_incount,
                              MPIABI_Datatype abi_datatype,
                              MPIABI_Comm abi_comm, MPIABI_Count *abi_size)
-    BODY_MPI_Pack_size_c(MPI_Pack_size_c)
+    BODY_MPI_Pack_size_c(MPI_Pack_size_c, MPI_Pack_size)
 static int w_PMPI_Pack_size_c(MPIABI_Count abi_incount,
                               MPIABI_Datatype abi_datatype,
                               MPIABI_Comm abi_comm, MPIABI_Count *abi_size)
-    BODY_MPI_Pack_size_c(PMPI_Pack_size_c)
+    BODY_MPI_Pack_size_c(PMPI_Pack_size_c, PMPI_Pack_size)
 
 /* ----------------------------------------------------------- MPI_Parrived */
 
@@ -15002,7 +18532,7 @@ static int w_PMPI_Put(const void *abi_origin_addr, int abi_origin_count,
 /* -------------------------------------------------------------- MPI_Put_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Put_c
-#define BODY_MPI_Put_c(TARGET)                                                 \
+#define BODY_MPI_Put_c(TARGET, FALLBACK)                                       \
   {                                                                            \
     const void *const  origin_addr     =                                       \
         mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
@@ -15022,8 +18552,34 @@ static int w_PMPI_Put(const void *abi_origin_addr, int abi_origin_count,
                target_disp, target_count, target_datatype, win);               \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Put)
+#define BODY_MPI_Put_c(TARGET, FALLBACK)                                       \
+  {                                                                            \
+    const void *const  origin_addr     =                                       \
+        mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(origin_addr, origin_count, origin_datatype, target_rank,      \
+                 target_disp, target_count, target_datatype, win);             \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Put_c(TARGET)                                                 \
+#define BODY_MPI_Put_c(TARGET, FALLBACK)                                       \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -15043,14 +18599,15 @@ static int w_MPI_Put_c(const void *abi_origin_addr,
                        int abi_target_rank, MPIABI_Aint abi_target_disp,
                        MPIABI_Count abi_target_count,
                        MPIABI_Datatype abi_target_datatype, MPIABI_Win abi_win)
-    BODY_MPI_Put_c(MPI_Put_c)
+    BODY_MPI_Put_c(MPI_Put_c, MPI_Put)
 static int w_PMPI_Put_c(const void *abi_origin_addr,
                         MPIABI_Count abi_origin_count,
                         MPIABI_Datatype abi_origin_datatype,
                         int abi_target_rank, MPIABI_Aint abi_target_disp,
                         MPIABI_Count abi_target_count,
                         MPIABI_Datatype abi_target_datatype,
-                        MPIABI_Win abi_win) BODY_MPI_Put_c(PMPI_Put_c)
+                        MPIABI_Win abi_win)
+    BODY_MPI_Put_c(PMPI_Put_c, PMPI_Put)
 
 /* ------------------------------------------------------- MPI_Query_thread */
 
@@ -15146,7 +18703,7 @@ static int w_PMPI_Raccumulate(const void *abi_origin_addr,
 /* ------------------------------------------------------ MPI_Raccumulate_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Raccumulate_c
-#define BODY_MPI_Raccumulate_c(TARGET)                                         \
+#define BODY_MPI_Raccumulate_c(TARGET, FALLBACK)                               \
   {                                                                            \
     const void *const  origin_addr     =                                       \
         mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
@@ -15173,8 +18730,46 @@ static int w_PMPI_Raccumulate(const void *abi_origin_addr,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Raccumulate)
+#define BODY_MPI_Raccumulate_c(TARGET, FALLBACK)                               \
+  {                                                                            \
+    const void *const  origin_addr     =                                       \
+        mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Op       op              = mpiwrapper_op_fromabi(abi_op);        \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(origin_addr, origin_count, origin_datatype, target_rank,      \
+                 target_disp, target_count, target_datatype, op, win,          \
+                 &request);                                                    \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Raccumulate_c(TARGET)                                         \
+#define BODY_MPI_Raccumulate_c(TARGET, FALLBACK)                               \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -15200,7 +18795,7 @@ static int w_MPI_Raccumulate_c(const void *abi_origin_addr,
                                MPIABI_Datatype abi_target_datatype,
                                MPIABI_Op abi_op, MPIABI_Win abi_win,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Raccumulate_c(MPI_Raccumulate_c)
+    BODY_MPI_Raccumulate_c(MPI_Raccumulate_c, MPI_Raccumulate)
 static int w_PMPI_Raccumulate_c(const void *abi_origin_addr,
                                 MPIABI_Count abi_origin_count,
                                 MPIABI_Datatype abi_origin_datatype,
@@ -15210,7 +18805,7 @@ static int w_PMPI_Raccumulate_c(const void *abi_origin_addr,
                                 MPIABI_Datatype abi_target_datatype,
                                 MPIABI_Op abi_op, MPIABI_Win abi_win,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_Raccumulate_c(PMPI_Raccumulate_c)
+    BODY_MPI_Raccumulate_c(PMPI_Raccumulate_c, PMPI_Raccumulate)
 
 /* --------------------------------------------------------------- MPI_Recv */
 
@@ -15260,7 +18855,7 @@ static int w_PMPI_Recv(void *abi_buf, int abi_count,
 /* ------------------------------------------------------------- MPI_Recv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Recv_c
-#define BODY_MPI_Recv_c(TARGET)                                                \
+#define BODY_MPI_Recv_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -15279,8 +18874,31 @@ static int w_PMPI_Recv(void *abi_buf, int abi_count,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Recv)
+#define BODY_MPI_Recv_c(TARGET, FALLBACK)                                      \
+  {                                                                            \
+    void *const buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                   \
+    int         count = 0;                                                     \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          source   = mpiwrapper_rank_fromabi(abi_source);         \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(buf, count, datatype, source, tag, comm,                      \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Recv_c(TARGET)                                                \
+#define BODY_MPI_Recv_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -15296,12 +18914,13 @@ static int w_PMPI_Recv(void *abi_buf, int abi_count,
 static int w_MPI_Recv_c(void *abi_buf, MPIABI_Count abi_count,
                         MPIABI_Datatype abi_datatype, int abi_source,
                         int abi_tag, MPIABI_Comm abi_comm,
-                        MPIABI_Status *abi_status) BODY_MPI_Recv_c(MPI_Recv_c)
+                        MPIABI_Status *abi_status)
+    BODY_MPI_Recv_c(MPI_Recv_c, MPI_Recv)
 static int w_PMPI_Recv_c(void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_source,
                          int abi_tag, MPIABI_Comm abi_comm,
                          MPIABI_Status *abi_status)
-    BODY_MPI_Recv_c(PMPI_Recv_c)
+    BODY_MPI_Recv_c(PMPI_Recv_c, PMPI_Recv)
 
 /* ---------------------------------------------------------- MPI_Recv_init */
 
@@ -15354,7 +18973,7 @@ static int w_PMPI_Recv_init(void *abi_buf, int abi_count,
 /* -------------------------------------------------------- MPI_Recv_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Recv_init_c
-#define BODY_MPI_Recv_init_c(TARGET)                                           \
+#define BODY_MPI_Recv_init_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -15373,8 +18992,33 @@ static int w_PMPI_Recv_init(void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Recv_init)
+#define BODY_MPI_Recv_init_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    void *const buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                   \
+    int         count = 0;                                                     \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          source   = mpiwrapper_rank_fromabi(abi_source);         \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, source, tag, comm, &request);           \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Recv_init_c(TARGET)                                           \
+#define BODY_MPI_Recv_init_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -15392,12 +19036,12 @@ static int w_MPI_Recv_init_c(void *abi_buf, MPIABI_Count abi_count,
                              MPIABI_Datatype abi_datatype, int abi_source,
                              int abi_tag, MPIABI_Comm abi_comm,
                              MPIABI_Request *abi_request)
-    BODY_MPI_Recv_init_c(MPI_Recv_init_c)
+    BODY_MPI_Recv_init_c(MPI_Recv_init_c, MPI_Recv_init)
 static int w_PMPI_Recv_init_c(void *abi_buf, MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, int abi_source,
                               int abi_tag, MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Recv_init_c(PMPI_Recv_init_c)
+    BODY_MPI_Recv_init_c(PMPI_Recv_init_c, PMPI_Recv_init)
 
 /* ------------------------------------------------------------- MPI_Reduce */
 
@@ -15443,7 +19087,7 @@ static int w_PMPI_Reduce(const void *abi_sendbuf, void *abi_recvbuf,
 /* ----------------------------------------------------------- MPI_Reduce_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Reduce_c
-#define BODY_MPI_Reduce_c(TARGET)                                              \
+#define BODY_MPI_Reduce_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -15458,8 +19102,27 @@ static int w_PMPI_Reduce(const void *abi_sendbuf, void *abi_recvbuf,
         TARGET(sendbuf, recvbuf, count, datatype, op, root, comm);             \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Reduce)
+#define BODY_MPI_Reduce_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, root, comm);           \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Reduce_c(TARGET)                                              \
+#define BODY_MPI_Reduce_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -15475,12 +19138,12 @@ static int w_PMPI_Reduce(const void *abi_sendbuf, void *abi_recvbuf,
 static int w_MPI_Reduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                           MPIABI_Count abi_count, MPIABI_Datatype abi_datatype,
                           MPIABI_Op abi_op, int abi_root, MPIABI_Comm abi_comm)
-    BODY_MPI_Reduce_c(MPI_Reduce_c)
+    BODY_MPI_Reduce_c(MPI_Reduce_c, MPI_Reduce)
 static int w_PMPI_Reduce_c(const void *abi_sendbuf, void *abi_recvbuf,
                            MPIABI_Count abi_count,
                            MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                            int abi_root, MPIABI_Comm abi_comm)
-    BODY_MPI_Reduce_c(PMPI_Reduce_c)
+    BODY_MPI_Reduce_c(PMPI_Reduce_c, PMPI_Reduce)
 
 /* -------------------------------------------------------- MPI_Reduce_init */
 
@@ -15541,7 +19204,7 @@ static int w_PMPI_Reduce_init(const void *abi_sendbuf, void *abi_recvbuf,
 /* ------------------------------------------------------ MPI_Reduce_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Reduce_init_c
-#define BODY_MPI_Reduce_init_c(TARGET)                                         \
+#define BODY_MPI_Reduce_init_c(TARGET, FALLBACK)                               \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -15564,8 +19227,37 @@ static int w_PMPI_Reduce_init(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Reduce_init)
+#define BODY_MPI_Reduce_init_c(TARGET, FALLBACK)                               \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, root, comm, info,      \
+                 &request);                                                    \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Reduce_init_c(TARGET)                                         \
+#define BODY_MPI_Reduce_init_c(TARGET, FALLBACK)                               \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -15587,14 +19279,14 @@ static int w_MPI_Reduce_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                                int abi_root, MPIABI_Comm abi_comm,
                                MPIABI_Info abi_info,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Reduce_init_c(MPI_Reduce_init_c)
+    BODY_MPI_Reduce_init_c(MPI_Reduce_init_c, MPI_Reduce_init)
 static int w_PMPI_Reduce_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                                 MPIABI_Count abi_count,
                                 MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                                 int abi_root, MPIABI_Comm abi_comm,
                                 MPIABI_Info abi_info,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_Reduce_init_c(PMPI_Reduce_init_c)
+    BODY_MPI_Reduce_init_c(PMPI_Reduce_init_c, PMPI_Reduce_init)
 
 /* ------------------------------------------------------- MPI_Reduce_local */
 
@@ -15634,7 +19326,7 @@ static int w_PMPI_Reduce_local(const void *abi_inbuf, void *abi_inoutbuf,
 /* ----------------------------------------------------- MPI_Reduce_local_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Reduce_local_c
-#define BODY_MPI_Reduce_local_c(TARGET)                                        \
+#define BODY_MPI_Reduce_local_c(TARGET, FALLBACK)                              \
   {                                                                            \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
     void *const        inoutbuf = mpiwrapper_recvbuf_fromabi(abi_inoutbuf);    \
@@ -15645,8 +19337,23 @@ static int w_PMPI_Reduce_local(const void *abi_inbuf, void *abi_inoutbuf,
     const int ierror = TARGET(inbuf, inoutbuf, count, datatype, op);           \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Reduce_local)
+#define BODY_MPI_Reduce_local_c(TARGET, FALLBACK)                              \
+  {                                                                            \
+    const void *const inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);        \
+    void *const       inoutbuf = mpiwrapper_recvbuf_fromabi(abi_inoutbuf);     \
+    int               count    = 0;                                            \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+                                                                               \
+    const int ierror = FALLBACK(inbuf, inoutbuf, count, datatype, op);         \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Reduce_local_c(TARGET)                                        \
+#define BODY_MPI_Reduce_local_c(TARGET, FALLBACK)                              \
   {                                                                            \
     (void)abi_inbuf;                                                           \
     (void)abi_inoutbuf;                                                        \
@@ -15660,12 +19367,12 @@ static int w_PMPI_Reduce_local(const void *abi_inbuf, void *abi_inoutbuf,
 static int w_MPI_Reduce_local_c(const void *abi_inbuf, void *abi_inoutbuf,
                                 MPIABI_Count abi_count,
                                 MPIABI_Datatype abi_datatype, MPIABI_Op abi_op)
-    BODY_MPI_Reduce_local_c(MPI_Reduce_local_c)
+    BODY_MPI_Reduce_local_c(MPI_Reduce_local_c, MPI_Reduce_local)
 static int w_PMPI_Reduce_local_c(const void *abi_inbuf, void *abi_inoutbuf,
                                  MPIABI_Count abi_count,
                                  MPIABI_Datatype abi_datatype,
                                  MPIABI_Op abi_op)
-    BODY_MPI_Reduce_local_c(PMPI_Reduce_local_c)
+    BODY_MPI_Reduce_local_c(PMPI_Reduce_local_c, PMPI_Reduce_local)
 
 /* ----------------------------------------------------- MPI_Reduce_scatter */
 
@@ -15711,7 +19418,7 @@ static int w_PMPI_Reduce_scatter(const void *abi_sendbuf, void *abi_recvbuf,
 /* --------------------------------------------------- MPI_Reduce_scatter_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Reduce_scatter_c
-#define BODY_MPI_Reduce_scatter_c(TARGET)                                      \
+#define BODY_MPI_Reduce_scatter_c(TARGET, FALLBACK)                            \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -15727,8 +19434,49 @@ static int w_PMPI_Reduce_scatter(const void *abi_sendbuf, void *abi_recvbuf,
         TARGET(sendbuf, recvbuf, recvcounts, datatype, op, comm);              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Reduce_scatter)
+#define BODY_MPI_Reduce_scatter_c(TARGET, FALLBACK)                            \
+  {                                                                            \
+    const void *const  sendbuf  =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int  recvcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *recvcounts = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    recvcounts = mpiwrapper_stage(recvcounts_stack, sizeof recvcounts_stack,   \
+                                  (size_t)nranks, sizeof *recvcounts);         \
+    if (!recvcounts) goto done;                                                \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, recvbuf, recvcounts, datatype, op, comm);          \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(recvcounts, recvcounts_stack);                          \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Reduce_scatter_c(TARGET)                                      \
+#define BODY_MPI_Reduce_scatter_c(TARGET, FALLBACK)                            \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -15744,12 +19492,12 @@ static int w_MPI_Reduce_scatter_c(const void *abi_sendbuf, void *abi_recvbuf,
                                   const MPIABI_Count abi_recvcounts[],
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Op abi_op, MPIABI_Comm abi_comm)
-    BODY_MPI_Reduce_scatter_c(MPI_Reduce_scatter_c)
+    BODY_MPI_Reduce_scatter_c(MPI_Reduce_scatter_c, MPI_Reduce_scatter)
 static int w_PMPI_Reduce_scatter_c(const void *abi_sendbuf, void *abi_recvbuf,
                                    const MPIABI_Count abi_recvcounts[],
                                    MPIABI_Datatype abi_datatype,
                                    MPIABI_Op abi_op, MPIABI_Comm abi_comm)
-    BODY_MPI_Reduce_scatter_c(PMPI_Reduce_scatter_c)
+    BODY_MPI_Reduce_scatter_c(PMPI_Reduce_scatter_c, PMPI_Reduce_scatter)
 
 /* ----------------------------------------------- MPI_Reduce_scatter_block */
 
@@ -15794,7 +19542,7 @@ static int w_PMPI_Reduce_scatter_block(const void *abi_sendbuf,
 /* --------------------------------------------- MPI_Reduce_scatter_block_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Reduce_scatter_block_c
-#define BODY_MPI_Reduce_scatter_block_c(TARGET)                                \
+#define BODY_MPI_Reduce_scatter_block_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -15807,8 +19555,26 @@ static int w_PMPI_Reduce_scatter_block(const void *abi_sendbuf,
     const int ierror = TARGET(sendbuf, recvbuf, recvcount, datatype, op, comm);\
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Reduce_scatter_block)
+#define BODY_MPI_Reduce_scatter_block_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    int               recvcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, recvbuf, recvcount, datatype, op, comm);             \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Reduce_scatter_block_c(TARGET)                                \
+#define BODY_MPI_Reduce_scatter_block_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -15825,14 +19591,16 @@ static int w_MPI_Reduce_scatter_block_c(const void *abi_sendbuf,
                                         MPIABI_Count abi_recvcount,
                                         MPIABI_Datatype abi_datatype,
                                         MPIABI_Op abi_op, MPIABI_Comm abi_comm)
-    BODY_MPI_Reduce_scatter_block_c(MPI_Reduce_scatter_block_c)
+    BODY_MPI_Reduce_scatter_block_c(MPI_Reduce_scatter_block_c,
+                                    MPI_Reduce_scatter_block)
 static int w_PMPI_Reduce_scatter_block_c(const void *abi_sendbuf,
                                          void *abi_recvbuf,
                                          MPIABI_Count abi_recvcount,
                                          MPIABI_Datatype abi_datatype,
                                          MPIABI_Op abi_op,
                                          MPIABI_Comm abi_comm)
-    BODY_MPI_Reduce_scatter_block_c(PMPI_Reduce_scatter_block_c)
+    BODY_MPI_Reduce_scatter_block_c(PMPI_Reduce_scatter_block_c,
+                                    PMPI_Reduce_scatter_block)
 
 /* ------------------------------------------ MPI_Reduce_scatter_block_init */
 
@@ -15897,7 +19665,7 @@ static int w_PMPI_Reduce_scatter_block_init(const void *abi_sendbuf,
 /* ---------------------------------------- MPI_Reduce_scatter_block_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Reduce_scatter_block_init_c
-#define BODY_MPI_Reduce_scatter_block_init_c(TARGET)                           \
+#define BODY_MPI_Reduce_scatter_block_init_c(TARGET, FALLBACK)                 \
   {                                                                            \
     const void *const  sendbuf   =                                             \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -15919,8 +19687,36 @@ static int w_PMPI_Reduce_scatter_block_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Reduce_scatter_block_init)
+#define BODY_MPI_Reduce_scatter_block_init_c(TARGET, FALLBACK)                 \
+  {                                                                            \
+    const void *const sendbuf   =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    int               recvcount = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, recvcount, datatype, op, comm, info,        \
+                 &request);                                                    \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Reduce_scatter_block_init_c(TARGET)                           \
+#define BODY_MPI_Reduce_scatter_block_init_c(TARGET, FALLBACK)                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -15943,7 +19739,8 @@ static int w_MPI_Reduce_scatter_block_init_c(const void *abi_sendbuf,
                                              MPIABI_Comm abi_comm,
                                              MPIABI_Info abi_info,
                                              MPIABI_Request *abi_request)
-    BODY_MPI_Reduce_scatter_block_init_c(MPI_Reduce_scatter_block_init_c)
+    BODY_MPI_Reduce_scatter_block_init_c(MPI_Reduce_scatter_block_init_c,
+                                         MPI_Reduce_scatter_block_init)
 static int w_PMPI_Reduce_scatter_block_init_c(const void *abi_sendbuf,
                                               void *abi_recvbuf,
                                               MPIABI_Count abi_recvcount,
@@ -15952,7 +19749,8 @@ static int w_PMPI_Reduce_scatter_block_init_c(const void *abi_sendbuf,
                                               MPIABI_Comm abi_comm,
                                               MPIABI_Info abi_info,
                                               MPIABI_Request *abi_request)
-    BODY_MPI_Reduce_scatter_block_init_c(PMPI_Reduce_scatter_block_init_c)
+    BODY_MPI_Reduce_scatter_block_init_c(PMPI_Reduce_scatter_block_init_c,
+                                         PMPI_Reduce_scatter_block_init)
 
 /* ------------------------------------------------ MPI_Reduce_scatter_init */
 
@@ -16015,7 +19813,7 @@ static int w_PMPI_Reduce_scatter_init(const void *abi_sendbuf,
 /* ---------------------------------------------- MPI_Reduce_scatter_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Reduce_scatter_init_c
-#define BODY_MPI_Reduce_scatter_init_c(TARGET)                                 \
+#define BODY_MPI_Reduce_scatter_init_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -16039,8 +19837,62 @@ static int w_PMPI_Reduce_scatter_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Reduce_scatter_init)
+#define BODY_MPI_Reduce_scatter_init_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const void *const  sendbuf  =                                              \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const        recvbuf  = mpiwrapper_recvbuf_fromabi(abi_recvbuf);     \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_comm_extent(comm, &nranks);                \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks;                                    \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const recvcounts = block;                                             \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_recvcounts[i], &recvcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, recvbuf, recvcounts, datatype, op,    \
+                                comm, info, &request);                         \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Reduce_scatter_init_c(TARGET)                                 \
+#define BODY_MPI_Reduce_scatter_init_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -16062,7 +19914,8 @@ static int w_MPI_Reduce_scatter_init_c(const void *abi_sendbuf,
                                        MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                                        MPIABI_Info abi_info,
                                        MPIABI_Request *abi_request)
-    BODY_MPI_Reduce_scatter_init_c(MPI_Reduce_scatter_init_c)
+    BODY_MPI_Reduce_scatter_init_c(MPI_Reduce_scatter_init_c,
+                                   MPI_Reduce_scatter_init)
 static int w_PMPI_Reduce_scatter_init_c(const void *abi_sendbuf,
                                         void *abi_recvbuf,
                                         const MPIABI_Count abi_recvcounts[],
@@ -16070,7 +19923,8 @@ static int w_PMPI_Reduce_scatter_init_c(const void *abi_sendbuf,
                                         MPIABI_Op abi_op, MPIABI_Comm abi_comm,
                                         MPIABI_Info abi_info,
                                         MPIABI_Request *abi_request)
-    BODY_MPI_Reduce_scatter_init_c(PMPI_Reduce_scatter_init_c)
+    BODY_MPI_Reduce_scatter_init_c(PMPI_Reduce_scatter_init_c,
+                                   PMPI_Reduce_scatter_init)
 
 /* ------------------------------------------------------- MPI_Request_free */
 
@@ -16145,7 +19999,10 @@ static int w_PMPI_Request_get_status(MPIABI_Request abi_request, int *abi_flag,
 #define BODY_MPI_Request_get_status_all(TARGET)                                \
   {                                                                            \
     const int count = abi_count;                                               \
-    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+    if (count < 0) {                                                           \
+      *abi_flag = 0;                                                           \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const flag   = abi_flag;                                              \
     const int  ignore = abi_array_of_statuses == MPIABI_STATUSES_IGNORE;       \
@@ -16155,6 +20012,8 @@ static int w_PMPI_Request_get_status(MPIABI_Request abi_request, int *abi_flag,
     MPI_Status   statuses_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Status)];  \
     MPI_Status  *statuses   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_flag = 0;                                                             \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)count, sizeof *requests);              \
@@ -16213,7 +20072,11 @@ static int w_PMPI_Request_get_status_all(int abi_count,
 #define BODY_MPI_Request_get_status_any(TARGET)                                \
   {                                                                            \
     const int count = abi_count;                                               \
-    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+    if (count < 0) {                                                           \
+      *abi_indx = 0;                                                           \
+      *abi_flag = 0;                                                           \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const indx   = abi_indx;                                              \
     int *const flag   = abi_flag;                                              \
@@ -16222,6 +20085,9 @@ static int w_PMPI_Request_get_status_all(int abi_count,
     MPI_Request  requests_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Request)]; \
     MPI_Request *requests   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_indx = 0;                                                             \
+    *abi_flag = 0;                                                             \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)count, sizeof *requests);              \
@@ -16274,7 +20140,10 @@ static int w_PMPI_Request_get_status_any(int abi_count,
 #define BODY_MPI_Request_get_status_some(TARGET)                               \
   {                                                                            \
     const int incount = abi_incount;                                           \
-    if (incount < 0) return MPIABI_ERR_COUNT;                                  \
+    if (incount < 0) {                                                         \
+      *abi_outcount = 0;                                                       \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const outcount = abi_outcount;                                        \
     int *const indices  = abi_array_of_indices;                                \
@@ -16285,6 +20154,8 @@ static int w_PMPI_Request_get_status_any(int abi_count,
     MPI_Status   statuses_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Status)];  \
     MPI_Status  *statuses   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_outcount = 0;                                                         \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)incount, sizeof *requests);            \
@@ -16401,7 +20272,7 @@ static int w_PMPI_Rget(void *abi_origin_addr, int abi_origin_count,
 /* ------------------------------------------------------------- MPI_Rget_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Rget_c
-#define BODY_MPI_Rget_c(TARGET)                                                \
+#define BODY_MPI_Rget_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     void *const        origin_addr     =                                       \
         mpiwrapper_recvbuf_fromabi(abi_origin_addr);                           \
@@ -16427,8 +20298,44 @@ static int w_PMPI_Rget(void *abi_origin_addr, int abi_origin_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Rget)
+#define BODY_MPI_Rget_c(TARGET, FALLBACK)                                      \
+  {                                                                            \
+    void *const        origin_addr     =                                       \
+        mpiwrapper_recvbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(origin_addr, origin_count, origin_datatype, target_rank,      \
+                 target_disp, target_count, target_datatype, win, &request);   \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Rget_c(TARGET)                                                \
+#define BODY_MPI_Rget_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -16450,14 +20357,14 @@ static int w_MPI_Rget_c(void *abi_origin_addr, MPIABI_Count abi_origin_count,
                         MPIABI_Count abi_target_count,
                         MPIABI_Datatype abi_target_datatype,
                         MPIABI_Win abi_win, MPIABI_Request *abi_request)
-    BODY_MPI_Rget_c(MPI_Rget_c)
+    BODY_MPI_Rget_c(MPI_Rget_c, MPI_Rget)
 static int w_PMPI_Rget_c(void *abi_origin_addr, MPIABI_Count abi_origin_count,
                          MPIABI_Datatype abi_origin_datatype,
                          int abi_target_rank, MPIABI_Aint abi_target_disp,
                          MPIABI_Count abi_target_count,
                          MPIABI_Datatype abi_target_datatype,
                          MPIABI_Win abi_win, MPIABI_Request *abi_request)
-    BODY_MPI_Rget_c(PMPI_Rget_c)
+    BODY_MPI_Rget_c(PMPI_Rget_c, PMPI_Rget)
 
 /* ---------------------------------------------------- MPI_Rget_accumulate */
 
@@ -16544,7 +20451,7 @@ static int w_PMPI_Rget_accumulate(const void *abi_origin_addr,
 /* -------------------------------------------------- MPI_Rget_accumulate_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Rget_accumulate_c
-#define BODY_MPI_Rget_accumulate_c(TARGET)                                     \
+#define BODY_MPI_Rget_accumulate_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const void *const  origin_addr     =                                       \
         mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
@@ -16577,8 +20484,55 @@ static int w_PMPI_Rget_accumulate(const void *abi_origin_addr,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Rget_accumulate)
+#define BODY_MPI_Rget_accumulate_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const void *const  origin_addr     =                                       \
+        mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    void *const        result_addr     =                                       \
+        mpiwrapper_recvbuf_fromabi(abi_result_addr);                           \
+    int                result_count    = 0;                                    \
+    const MPI_Datatype result_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_result_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_result_count, &result_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Op       op              = mpiwrapper_op_fromabi(abi_op);        \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(origin_addr, origin_count, origin_datatype, result_addr,      \
+                 result_count, result_datatype, target_rank, target_disp,      \
+                 target_count, target_datatype, op, win, &request);            \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Rget_accumulate_c(TARGET)                                     \
+#define BODY_MPI_Rget_accumulate_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -16610,7 +20564,7 @@ static int w_MPI_Rget_accumulate_c(const void *abi_origin_addr,
                                    MPIABI_Datatype abi_target_datatype,
                                    MPIABI_Op abi_op, MPIABI_Win abi_win,
                                    MPIABI_Request *abi_request)
-    BODY_MPI_Rget_accumulate_c(MPI_Rget_accumulate_c)
+    BODY_MPI_Rget_accumulate_c(MPI_Rget_accumulate_c, MPI_Rget_accumulate)
 static int w_PMPI_Rget_accumulate_c(const void *abi_origin_addr,
                                     MPIABI_Count abi_origin_count,
                                     MPIABI_Datatype abi_origin_datatype,
@@ -16623,7 +20577,7 @@ static int w_PMPI_Rget_accumulate_c(const void *abi_origin_addr,
                                     MPIABI_Datatype abi_target_datatype,
                                     MPIABI_Op abi_op, MPIABI_Win abi_win,
                                     MPIABI_Request *abi_request)
-    BODY_MPI_Rget_accumulate_c(PMPI_Rget_accumulate_c)
+    BODY_MPI_Rget_accumulate_c(PMPI_Rget_accumulate_c, PMPI_Rget_accumulate)
 
 /* --------------------------------------------------------------- MPI_Rput */
 
@@ -16686,7 +20640,7 @@ static int w_PMPI_Rput(const void *abi_origin_addr, int abi_origin_count,
 /* ------------------------------------------------------------- MPI_Rput_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Rput_c
-#define BODY_MPI_Rput_c(TARGET)                                                \
+#define BODY_MPI_Rput_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     const void *const  origin_addr     =                                       \
         mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
@@ -16712,8 +20666,44 @@ static int w_PMPI_Rput(const void *abi_origin_addr, int abi_origin_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Rput)
+#define BODY_MPI_Rput_c(TARGET, FALLBACK)                                      \
+  {                                                                            \
+    const void *const  origin_addr     =                                       \
+        mpiwrapper_sendbuf_fromabi(abi_origin_addr);                           \
+    int                origin_count    = 0;                                    \
+    const MPI_Datatype origin_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_origin_datatype);                      \
+    const int          target_rank     =                                       \
+        mpiwrapper_rank_fromabi(abi_target_rank);                              \
+    const MPI_Aint     target_disp     = abi_target_disp;                      \
+    int                target_count    = 0;                                    \
+    if (!mpiwrapper_narrow_int(abi_origin_count, &origin_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_target_count, &target_count)) {             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype target_datatype =                                       \
+        mpiwrapper_datatype_fromabi(abi_target_datatype);                      \
+    const MPI_Win      win             = mpiwrapper_win_fromabi(abi_win);      \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(origin_addr, origin_count, origin_datatype, target_rank,      \
+                 target_disp, target_count, target_datatype, win, &request);   \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Rput_c(TARGET)                                                \
+#define BODY_MPI_Rput_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     (void)abi_origin_addr;                                                     \
     (void)abi_origin_count;                                                    \
@@ -16736,7 +20726,7 @@ static int w_MPI_Rput_c(const void *abi_origin_addr,
                         MPIABI_Count abi_target_count,
                         MPIABI_Datatype abi_target_datatype,
                         MPIABI_Win abi_win, MPIABI_Request *abi_request)
-    BODY_MPI_Rput_c(MPI_Rput_c)
+    BODY_MPI_Rput_c(MPI_Rput_c, MPI_Rput)
 static int w_PMPI_Rput_c(const void *abi_origin_addr,
                          MPIABI_Count abi_origin_count,
                          MPIABI_Datatype abi_origin_datatype,
@@ -16744,7 +20734,7 @@ static int w_PMPI_Rput_c(const void *abi_origin_addr,
                          MPIABI_Count abi_target_count,
                          MPIABI_Datatype abi_target_datatype,
                          MPIABI_Win abi_win, MPIABI_Request *abi_request)
-    BODY_MPI_Rput_c(PMPI_Rput_c)
+    BODY_MPI_Rput_c(PMPI_Rput_c, PMPI_Rput)
 
 /* -------------------------------------------------------------- MPI_Rsend */
 
@@ -16785,7 +20775,7 @@ static int w_PMPI_Rsend(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------------ MPI_Rsend_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Rsend_c
-#define BODY_MPI_Rsend_c(TARGET)                                               \
+#define BODY_MPI_Rsend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -16797,8 +20787,24 @@ static int w_PMPI_Rsend(const void *abi_buf, int abi_count,
     const int ierror = TARGET(buf, count, datatype, dest, tag, comm);          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Rsend)
+#define BODY_MPI_Rsend_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(buf, count, datatype, dest, tag, comm);        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Rsend_c(TARGET)                                               \
+#define BODY_MPI_Rsend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -16813,11 +20819,11 @@ static int w_PMPI_Rsend(const void *abi_buf, int abi_count,
 static int w_MPI_Rsend_c(const void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_dest,
                          int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Rsend_c(MPI_Rsend_c)
+    BODY_MPI_Rsend_c(MPI_Rsend_c, MPI_Rsend)
 static int w_PMPI_Rsend_c(const void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_dest,
                           int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Rsend_c(PMPI_Rsend_c)
+    BODY_MPI_Rsend_c(PMPI_Rsend_c, PMPI_Rsend)
 
 /* --------------------------------------------------------- MPI_Rsend_init */
 
@@ -16870,7 +20876,7 @@ static int w_PMPI_Rsend_init(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------- MPI_Rsend_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Rsend_init_c
-#define BODY_MPI_Rsend_init_c(TARGET)                                          \
+#define BODY_MPI_Rsend_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -16889,8 +20895,33 @@ static int w_PMPI_Rsend_init(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Rsend_init)
+#define BODY_MPI_Rsend_init_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Rsend_init_c(TARGET)                                          \
+#define BODY_MPI_Rsend_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -16908,12 +20939,12 @@ static int w_MPI_Rsend_init_c(const void *abi_buf, MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, int abi_dest,
                               int abi_tag, MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Rsend_init_c(MPI_Rsend_init_c)
+    BODY_MPI_Rsend_init_c(MPI_Rsend_init_c, MPI_Rsend_init)
 static int w_PMPI_Rsend_init_c(const void *abi_buf, MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype, int abi_dest,
                                int abi_tag, MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Rsend_init_c(PMPI_Rsend_init_c)
+    BODY_MPI_Rsend_init_c(PMPI_Rsend_init_c, PMPI_Rsend_init)
 
 /* --------------------------------------------------------------- MPI_Scan */
 
@@ -16956,7 +20987,7 @@ static int w_PMPI_Scan(const void *abi_sendbuf, void *abi_recvbuf,
 /* ------------------------------------------------------------- MPI_Scan_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Scan_c
-#define BODY_MPI_Scan_c(TARGET)                                                \
+#define BODY_MPI_Scan_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -16969,8 +21000,25 @@ static int w_PMPI_Scan(const void *abi_sendbuf, void *abi_recvbuf,
     const int ierror = TARGET(sendbuf, recvbuf, count, datatype, op, comm);    \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Scan)
+#define BODY_MPI_Scan_c(TARGET, FALLBACK)                                      \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(sendbuf, recvbuf, count, datatype, op, comm);  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Scan_c(TARGET)                                                \
+#define BODY_MPI_Scan_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -16985,11 +21033,11 @@ static int w_PMPI_Scan(const void *abi_sendbuf, void *abi_recvbuf,
 static int w_MPI_Scan_c(const void *abi_sendbuf, void *abi_recvbuf,
                         MPIABI_Count abi_count, MPIABI_Datatype abi_datatype,
                         MPIABI_Op abi_op, MPIABI_Comm abi_comm)
-    BODY_MPI_Scan_c(MPI_Scan_c)
+    BODY_MPI_Scan_c(MPI_Scan_c, MPI_Scan)
 static int w_PMPI_Scan_c(const void *abi_sendbuf, void *abi_recvbuf,
                          MPIABI_Count abi_count, MPIABI_Datatype abi_datatype,
                          MPIABI_Op abi_op, MPIABI_Comm abi_comm)
-    BODY_MPI_Scan_c(PMPI_Scan_c)
+    BODY_MPI_Scan_c(PMPI_Scan_c, PMPI_Scan)
 
 /* ---------------------------------------------------------- MPI_Scan_init */
 
@@ -17045,7 +21093,7 @@ static int w_PMPI_Scan_init(const void *abi_sendbuf, void *abi_recvbuf,
 /* -------------------------------------------------------- MPI_Scan_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Scan_init_c
-#define BODY_MPI_Scan_init_c(TARGET)                                           \
+#define BODY_MPI_Scan_init_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const  sendbuf  =                                              \
         mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
@@ -17066,8 +21114,35 @@ static int w_PMPI_Scan_init(const void *abi_sendbuf, void *abi_recvbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Scan_init)
+#define BODY_MPI_Scan_init_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const sendbuf =                                                \
+        mpiwrapper_sendbuf_inplace_fromabi(abi_sendbuf);                       \
+    void *const       recvbuf = mpiwrapper_recvbuf_fromabi(abi_recvbuf);       \
+    int               count   = 0;                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Op       op       = mpiwrapper_op_fromabi(abi_op);               \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, recvbuf, count, datatype, op, comm, info, &request); \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Scan_init_c(TARGET)                                           \
+#define BODY_MPI_Scan_init_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_recvbuf;                                                         \
@@ -17087,13 +21162,13 @@ static int w_MPI_Scan_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                              MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                              MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                              MPIABI_Request *abi_request)
-    BODY_MPI_Scan_init_c(MPI_Scan_init_c)
+    BODY_MPI_Scan_init_c(MPI_Scan_init_c, MPI_Scan_init)
 static int w_PMPI_Scan_init_c(const void *abi_sendbuf, void *abi_recvbuf,
                               MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, MPIABI_Op abi_op,
                               MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Scan_init_c(PMPI_Scan_init_c)
+    BODY_MPI_Scan_init_c(PMPI_Scan_init_c, PMPI_Scan_init)
 
 /* ------------------------------------------------------------ MPI_Scatter */
 
@@ -17144,7 +21219,7 @@ static int w_PMPI_Scatter(const void *abi_sendbuf, int abi_sendcount,
 /* ---------------------------------------------------------- MPI_Scatter_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Scatter_c
-#define BODY_MPI_Scatter_c(TARGET)                                             \
+#define BODY_MPI_Scatter_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -17161,8 +21236,31 @@ static int w_PMPI_Scatter(const void *abi_sendbuf, int abi_sendcount,
                root, comm);                                                    \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Scatter)
+#define BODY_MPI_Scatter_c(TARGET, FALLBACK)                                   \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   =                                             \
+        mpiwrapper_recvbuf_inplace_fromabi(abi_recvbuf);                       \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 root, comm);                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Scatter_c(TARGET)                                             \
+#define BODY_MPI_Scatter_c(TARGET, FALLBACK)                                   \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -17181,14 +21279,14 @@ static int w_MPI_Scatter_c(const void *abi_sendbuf, MPIABI_Count abi_sendcount,
                            MPIABI_Count abi_recvcount,
                            MPIABI_Datatype abi_recvtype, int abi_root,
                            MPIABI_Comm abi_comm)
-    BODY_MPI_Scatter_c(MPI_Scatter_c)
+    BODY_MPI_Scatter_c(MPI_Scatter_c, MPI_Scatter)
 static int w_PMPI_Scatter_c(const void *abi_sendbuf,
                             MPIABI_Count abi_sendcount,
                             MPIABI_Datatype abi_sendtype, void *abi_recvbuf,
                             MPIABI_Count abi_recvcount,
                             MPIABI_Datatype abi_recvtype, int abi_root,
                             MPIABI_Comm abi_comm)
-    BODY_MPI_Scatter_c(PMPI_Scatter_c)
+    BODY_MPI_Scatter_c(PMPI_Scatter_c, PMPI_Scatter)
 
 /* ------------------------------------------------------- MPI_Scatter_init */
 
@@ -17253,7 +21351,7 @@ static int w_PMPI_Scatter_init(const void *abi_sendbuf, int abi_sendcount,
 /* ----------------------------------------------------- MPI_Scatter_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Scatter_init_c
-#define BODY_MPI_Scatter_init_c(TARGET)                                        \
+#define BODY_MPI_Scatter_init_c(TARGET, FALLBACK)                              \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -17277,8 +21375,42 @@ static int w_PMPI_Scatter_init(const void *abi_sendbuf, int abi_sendcount,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Scatter_init)
+#define BODY_MPI_Scatter_init_c(TARGET, FALLBACK)                              \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   =                                             \
+        mpiwrapper_recvbuf_inplace_fromabi(abi_recvbuf);                       \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype,   \
+                 root, comm, info, &request);                                  \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Scatter_init_c(TARGET)                                        \
+#define BODY_MPI_Scatter_init_c(TARGET, FALLBACK)                              \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -17302,7 +21434,7 @@ static int w_MPI_Scatter_init_c(const void *abi_sendbuf,
                                 MPIABI_Datatype abi_recvtype, int abi_root,
                                 MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                 MPIABI_Request *abi_request)
-    BODY_MPI_Scatter_init_c(MPI_Scatter_init_c)
+    BODY_MPI_Scatter_init_c(MPI_Scatter_init_c, MPI_Scatter_init)
 static int w_PMPI_Scatter_init_c(const void *abi_sendbuf,
                                  MPIABI_Count abi_sendcount,
                                  MPIABI_Datatype abi_sendtype,
@@ -17310,7 +21442,7 @@ static int w_PMPI_Scatter_init_c(const void *abi_sendbuf,
                                  MPIABI_Datatype abi_recvtype, int abi_root,
                                  MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                  MPIABI_Request *abi_request)
-    BODY_MPI_Scatter_init_c(PMPI_Scatter_init_c)
+    BODY_MPI_Scatter_init_c(PMPI_Scatter_init_c, PMPI_Scatter_init)
 
 /* ----------------------------------------------------------- MPI_Scatterv */
 
@@ -17364,7 +21496,7 @@ static int w_PMPI_Scatterv(const void *abi_sendbuf, const int abi_sendcounts[],
 /* --------------------------------------------------------- MPI_Scatterv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Scatterv_c
-#define BODY_MPI_Scatterv_c(TARGET)                                            \
+#define BODY_MPI_Scatterv_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -17385,8 +21517,66 @@ static int w_PMPI_Scatterv(const void *abi_sendbuf, const int abi_sendcounts[],
                recvtype, root, comm);                                          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Scatterv)
+#define BODY_MPI_Scatterv_c(TARGET, FALLBACK)                                  \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   =                                             \
+        mpiwrapper_recvbuf_inplace_fromabi(abi_recvbuf);                       \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_root_extent(comm, root, &nranks);          \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+                                                                               \
+    int  sendcounts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];               \
+    int *sendcounts = NULL;                                                    \
+    int  displs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *displs     = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    sendcounts = mpiwrapper_stage(sendcounts_stack, sizeof sendcounts_stack,   \
+                                  (size_t)nranks, sizeof *sendcounts);         \
+    if (!sendcounts) goto done;                                                \
+    displs = mpiwrapper_stage(displs_stack, sizeof displs_stack,               \
+                              (size_t)nranks, sizeof *displs);                 \
+    if (!displs) goto done;                                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(sendbuf, sendcounts, displs, sendtype, recvbuf, recvcount,  \
+                   recvtype, root, comm);                                      \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(sendcounts, sendcounts_stack);                          \
+    mpiwrapper_unstage(displs, displs_stack);                                  \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Scatterv_c(TARGET)                                            \
+#define BODY_MPI_Scatterv_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -17408,7 +21598,7 @@ static int w_MPI_Scatterv_c(const void *abi_sendbuf,
                             MPIABI_Count abi_recvcount,
                             MPIABI_Datatype abi_recvtype, int abi_root,
                             MPIABI_Comm abi_comm)
-    BODY_MPI_Scatterv_c(MPI_Scatterv_c)
+    BODY_MPI_Scatterv_c(MPI_Scatterv_c, MPI_Scatterv)
 static int w_PMPI_Scatterv_c(const void *abi_sendbuf,
                              const MPIABI_Count abi_sendcounts[],
                              const MPIABI_Aint abi_displs[],
@@ -17416,7 +21606,7 @@ static int w_PMPI_Scatterv_c(const void *abi_sendbuf,
                              MPIABI_Count abi_recvcount,
                              MPIABI_Datatype abi_recvtype, int abi_root,
                              MPIABI_Comm abi_comm)
-    BODY_MPI_Scatterv_c(PMPI_Scatterv_c)
+    BODY_MPI_Scatterv_c(PMPI_Scatterv_c, PMPI_Scatterv)
 
 /* ------------------------------------------------------ MPI_Scatterv_init */
 
@@ -17487,7 +21677,7 @@ static int w_PMPI_Scatterv_init(const void *abi_sendbuf,
 /* ---------------------------------------------------- MPI_Scatterv_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Scatterv_init_c
-#define BODY_MPI_Scatterv_init_c(TARGET)                                       \
+#define BODY_MPI_Scatterv_init_c(TARGET, FALLBACK)                             \
   {                                                                            \
     const void *const      sendbuf    =                                        \
         mpiwrapper_sendbuf_fromabi(abi_sendbuf);                               \
@@ -17515,8 +21705,77 @@ static int w_PMPI_Scatterv_init(const void *abi_sendbuf,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Scatterv_init)
+#define BODY_MPI_Scatterv_init_c(TARGET, FALLBACK)                             \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    void *const        recvbuf   =                                             \
+        mpiwrapper_recvbuf_inplace_fromabi(abi_recvbuf);                       \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount)) {                   \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          root     = mpiwrapper_rank_fromabi(abi_root);           \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const MPI_Info     info     = mpiwrapper_info_fromabi(abi_info);           \
+                                                                               \
+    int nranks = 0;                                                            \
+    {                                                                          \
+      const int ierror = mpiwrapper_root_extent(comm, root, &nranks);          \
+      if (ierror != MPI_SUCCESS) {                                             \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    const size_t  nstaged = (size_t)nranks + (size_t)nranks;                   \
+    int          *block   = NULL;                                              \
+    if (nstaged <= SIZE_MAX / sizeof *block)                                   \
+      block = malloc(nstaged * sizeof *block);                                 \
+    if (!block && nstaged > 0) {                                               \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_INTERN;                                                \
+    }                                                                          \
+    int *const sendcounts = block;                                             \
+    int *const displs     = block + nranks;                                    \
+                                                                               \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_sendcounts[i], &sendcounts[i])) {         \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+    for (int i = 0; i < nranks; ++i)                                           \
+      if (!mpiwrapper_narrow_int(abi_displs[i], &displs[i])) {                 \
+        free(block);                                                           \
+        *abi_request = MPIABI_REQUEST_NULL;                                    \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+      }                                                                        \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int ierror = FALLBACK(sendbuf, sendcounts, displs, sendtype, recvbuf,\
+                                recvcount, recvtype, root, comm, info,         \
+                                &request);                                     \
+    if (ierror != MPI_SUCCESS) {                                               \
+      free(block);                                                             \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    *abi_request = mpiwrapper_request_toabi(request);                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+                                                                               \
+    if (!mpiwrapper_staged_keep(request, block, nstaged,                       \
+                                MPIWRAPPER_STAGED_PERSISTENT))                 \
+      return MPIABI_ERR_INTERN;                                                \
+    return MPIABI_SUCCESS;                                                     \
+  }
 #else
-#define BODY_MPI_Scatterv_init_c(TARGET)                                       \
+#define BODY_MPI_Scatterv_init_c(TARGET, FALLBACK)                             \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcounts;                                                      \
@@ -17542,7 +21801,7 @@ static int w_MPI_Scatterv_init_c(const void *abi_sendbuf,
                                  MPIABI_Datatype abi_recvtype, int abi_root,
                                  MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                  MPIABI_Request *abi_request)
-    BODY_MPI_Scatterv_init_c(MPI_Scatterv_init_c)
+    BODY_MPI_Scatterv_init_c(MPI_Scatterv_init_c, MPI_Scatterv_init)
 static int w_PMPI_Scatterv_init_c(const void *abi_sendbuf,
                                   const MPIABI_Count abi_sendcounts[],
                                   const MPIABI_Aint abi_displs[],
@@ -17552,7 +21811,7 @@ static int w_PMPI_Scatterv_init_c(const void *abi_sendbuf,
                                   MPIABI_Datatype abi_recvtype, int abi_root,
                                   MPIABI_Comm abi_comm, MPIABI_Info abi_info,
                                   MPIABI_Request *abi_request)
-    BODY_MPI_Scatterv_init_c(PMPI_Scatterv_init_c)
+    BODY_MPI_Scatterv_init_c(PMPI_Scatterv_init_c, PMPI_Scatterv_init)
 
 /* --------------------------------------------------------------- MPI_Send */
 
@@ -17592,7 +21851,7 @@ static int w_PMPI_Send(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------------- MPI_Send_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Send_c
-#define BODY_MPI_Send_c(TARGET)                                                \
+#define BODY_MPI_Send_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -17604,8 +21863,24 @@ static int w_PMPI_Send(const void *abi_buf, int abi_count,
     const int ierror = TARGET(buf, count, datatype, dest, tag, comm);          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Send)
+#define BODY_MPI_Send_c(TARGET, FALLBACK)                                      \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(buf, count, datatype, dest, tag, comm);        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Send_c(TARGET)                                                \
+#define BODY_MPI_Send_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -17620,11 +21895,11 @@ static int w_PMPI_Send(const void *abi_buf, int abi_count,
 static int w_MPI_Send_c(const void *abi_buf, MPIABI_Count abi_count,
                         MPIABI_Datatype abi_datatype, int abi_dest,
                         int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Send_c(MPI_Send_c)
+    BODY_MPI_Send_c(MPI_Send_c, MPI_Send)
 static int w_PMPI_Send_c(const void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_dest,
                          int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Send_c(PMPI_Send_c)
+    BODY_MPI_Send_c(PMPI_Send_c, PMPI_Send)
 
 /* ---------------------------------------------------------- MPI_Send_init */
 
@@ -17677,7 +21952,7 @@ static int w_PMPI_Send_init(const void *abi_buf, int abi_count,
 /* -------------------------------------------------------- MPI_Send_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Send_init_c
-#define BODY_MPI_Send_init_c(TARGET)                                           \
+#define BODY_MPI_Send_init_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -17696,8 +21971,33 @@ static int w_PMPI_Send_init(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Send_init)
+#define BODY_MPI_Send_init_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Send_init_c(TARGET)                                           \
+#define BODY_MPI_Send_init_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -17715,12 +22015,12 @@ static int w_MPI_Send_init_c(const void *abi_buf, MPIABI_Count abi_count,
                              MPIABI_Datatype abi_datatype, int abi_dest,
                              int abi_tag, MPIABI_Comm abi_comm,
                              MPIABI_Request *abi_request)
-    BODY_MPI_Send_init_c(MPI_Send_init_c)
+    BODY_MPI_Send_init_c(MPI_Send_init_c, MPI_Send_init)
 static int w_PMPI_Send_init_c(const void *abi_buf, MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, int abi_dest,
                               int abi_tag, MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Send_init_c(PMPI_Send_init_c)
+    BODY_MPI_Send_init_c(PMPI_Send_init_c, PMPI_Send_init)
 
 /* ----------------------------------------------------------- MPI_Sendrecv */
 
@@ -17787,7 +22087,7 @@ static int w_PMPI_Sendrecv(const void *abi_sendbuf, int abi_sendcount,
 /* --------------------------------------------------------- MPI_Sendrecv_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Sendrecv_c
-#define BODY_MPI_Sendrecv_c(TARGET)                                            \
+#define BODY_MPI_Sendrecv_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
     const MPI_Count    sendcount = abi_sendcount;                              \
@@ -17812,8 +22112,39 @@ static int w_PMPI_Sendrecv(const void *abi_sendbuf, int abi_sendcount,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Sendrecv)
+#define BODY_MPI_Sendrecv_c(TARGET, FALLBACK)                                  \
+  {                                                                            \
+    const void *const  sendbuf   = mpiwrapper_sendbuf_fromabi(abi_sendbuf);    \
+    int                sendcount = 0;                                          \
+    const MPI_Datatype sendtype  = mpiwrapper_datatype_fromabi(abi_sendtype);  \
+    const int          dest      = mpiwrapper_rank_fromabi(abi_dest);          \
+    const int          sendtag   = mpiwrapper_tag_fromabi(abi_sendtag);        \
+    void *const        recvbuf   = mpiwrapper_recvbuf_fromabi(abi_recvbuf);    \
+    int                recvcount = 0;                                          \
+    if (!mpiwrapper_narrow_int(abi_sendcount, &sendcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_recvcount, &recvcount))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype recvtype = mpiwrapper_datatype_fromabi(abi_recvtype);   \
+    const int          source   = mpiwrapper_rank_fromabi(abi_source);         \
+    const int          recvtag  = mpiwrapper_tag_fromabi(abi_recvtag);         \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(sendbuf, sendcount, sendtype, dest, sendtag, recvbuf,         \
+                 recvcount, recvtype, source, recvtag, comm,                   \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Sendrecv_c(TARGET)                                            \
+#define BODY_MPI_Sendrecv_c(TARGET, FALLBACK)                                  \
   {                                                                            \
     (void)abi_sendbuf;                                                         \
     (void)abi_sendcount;                                                       \
@@ -17839,7 +22170,7 @@ static int w_MPI_Sendrecv_c(const void *abi_sendbuf,
                             MPIABI_Datatype abi_recvtype, int abi_source,
                             int abi_recvtag, MPIABI_Comm abi_comm,
                             MPIABI_Status *abi_status)
-    BODY_MPI_Sendrecv_c(MPI_Sendrecv_c)
+    BODY_MPI_Sendrecv_c(MPI_Sendrecv_c, MPI_Sendrecv)
 static int w_PMPI_Sendrecv_c(const void *abi_sendbuf,
                              MPIABI_Count abi_sendcount,
                              MPIABI_Datatype abi_sendtype, int abi_dest,
@@ -17848,7 +22179,7 @@ static int w_PMPI_Sendrecv_c(const void *abi_sendbuf,
                              MPIABI_Datatype abi_recvtype, int abi_source,
                              int abi_recvtag, MPIABI_Comm abi_comm,
                              MPIABI_Status *abi_status)
-    BODY_MPI_Sendrecv_c(PMPI_Sendrecv_c)
+    BODY_MPI_Sendrecv_c(PMPI_Sendrecv_c, PMPI_Sendrecv)
 
 /* --------------------------------------------------- MPI_Sendrecv_replace */
 
@@ -17906,7 +22237,7 @@ static int w_PMPI_Sendrecv_replace(void *abi_buf, int abi_count,
 /* ------------------------------------------------- MPI_Sendrecv_replace_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Sendrecv_replace_c
-#define BODY_MPI_Sendrecv_replace_c(TARGET)                                    \
+#define BODY_MPI_Sendrecv_replace_c(TARGET, FALLBACK)                          \
   {                                                                            \
     void *const        buf      = mpiwrapper_recvbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -17927,8 +22258,33 @@ static int w_PMPI_Sendrecv_replace(void *abi_buf, int abi_count,
     if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Sendrecv_replace)
+#define BODY_MPI_Sendrecv_replace_c(TARGET, FALLBACK)                          \
+  {                                                                            \
+    void *const buf   = mpiwrapper_recvbuf_fromabi(abi_buf);                   \
+    int         count = 0;                                                     \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          sendtag  = mpiwrapper_tag_fromabi(abi_sendtag);         \
+    const int          source   = mpiwrapper_rank_fromabi(abi_source);         \
+    const int          recvtag  = mpiwrapper_tag_fromabi(abi_recvtag);         \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+    const int          ignore   = abi_status == MPIABI_STATUS_IGNORE;          \
+                                                                               \
+    MPI_Status status;                                                         \
+    memset(&status, 0, sizeof status);                                         \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(buf, count, datatype, dest, sendtag, source, recvtag, comm,   \
+                 ignore ? MPI_STATUS_IGNORE : &status);                        \
+    if (!ignore) mpiwrapper_status_toabi_keep_error(&status, abi_status);      \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Sendrecv_replace_c(TARGET)                                    \
+#define BODY_MPI_Sendrecv_replace_c(TARGET, FALLBACK)                          \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -17948,14 +22304,14 @@ static int w_MPI_Sendrecv_replace_c(void *abi_buf, MPIABI_Count abi_count,
                                     int abi_sendtag, int abi_source,
                                     int abi_recvtag, MPIABI_Comm abi_comm,
                                     MPIABI_Status *abi_status)
-    BODY_MPI_Sendrecv_replace_c(MPI_Sendrecv_replace_c)
+    BODY_MPI_Sendrecv_replace_c(MPI_Sendrecv_replace_c, MPI_Sendrecv_replace)
 static int w_PMPI_Sendrecv_replace_c(void *abi_buf, MPIABI_Count abi_count,
                                      MPIABI_Datatype abi_datatype,
                                      int abi_dest, int abi_sendtag,
                                      int abi_source, int abi_recvtag,
                                      MPIABI_Comm abi_comm,
                                      MPIABI_Status *abi_status)
-    BODY_MPI_Sendrecv_replace_c(PMPI_Sendrecv_replace_c)
+    BODY_MPI_Sendrecv_replace_c(PMPI_Sendrecv_replace_c, PMPI_Sendrecv_replace)
 
 /* -------------------------------------------- MPI_Session_call_errhandler */
 
@@ -18277,7 +22633,7 @@ static int w_PMPI_Ssend(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------------ MPI_Ssend_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ssend_c
-#define BODY_MPI_Ssend_c(TARGET)                                               \
+#define BODY_MPI_Ssend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -18289,8 +22645,24 @@ static int w_PMPI_Ssend(const void *abi_buf, int abi_count,
     const int ierror = TARGET(buf, count, datatype, dest, tag, comm);          \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ssend)
+#define BODY_MPI_Ssend_c(TARGET, FALLBACK)                                     \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count))                             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror = FALLBACK(buf, count, datatype, dest, tag, comm);        \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ssend_c(TARGET)                                               \
+#define BODY_MPI_Ssend_c(TARGET, FALLBACK)                                     \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -18305,11 +22677,11 @@ static int w_PMPI_Ssend(const void *abi_buf, int abi_count,
 static int w_MPI_Ssend_c(const void *abi_buf, MPIABI_Count abi_count,
                          MPIABI_Datatype abi_datatype, int abi_dest,
                          int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Ssend_c(MPI_Ssend_c)
+    BODY_MPI_Ssend_c(MPI_Ssend_c, MPI_Ssend)
 static int w_PMPI_Ssend_c(const void *abi_buf, MPIABI_Count abi_count,
                           MPIABI_Datatype abi_datatype, int abi_dest,
                           int abi_tag, MPIABI_Comm abi_comm)
-    BODY_MPI_Ssend_c(PMPI_Ssend_c)
+    BODY_MPI_Ssend_c(PMPI_Ssend_c, PMPI_Ssend)
 
 /* --------------------------------------------------------- MPI_Ssend_init */
 
@@ -18362,7 +22734,7 @@ static int w_PMPI_Ssend_init(const void *abi_buf, int abi_count,
 /* ------------------------------------------------------- MPI_Ssend_init_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Ssend_init_c
-#define BODY_MPI_Ssend_init_c(TARGET)                                          \
+#define BODY_MPI_Ssend_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     const void *const  buf      = mpiwrapper_sendbuf_fromabi(abi_buf);         \
     const MPI_Count    count    = abi_count;                                   \
@@ -18381,8 +22753,33 @@ static int w_PMPI_Ssend_init(const void *abi_buf, int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Ssend_init)
+#define BODY_MPI_Ssend_init_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    const void *const buf   = mpiwrapper_sendbuf_fromabi(abi_buf);             \
+    int               count = 0;                                               \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_request = MPIABI_REQUEST_NULL;                                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const int          dest     = mpiwrapper_rank_fromabi(abi_dest);           \
+    const int          tag      = mpiwrapper_tag_fromabi(abi_tag);             \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    MPI_Request request;                                                       \
+    const int   ierror =                                                       \
+        FALLBACK(buf, count, datatype, dest, tag, comm, &request);             \
+                                                                               \
+    *abi_request = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_request_toabi(request)                     \
+                       : MPIABI_REQUEST_NULL;                                  \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Ssend_init_c(TARGET)                                          \
+#define BODY_MPI_Ssend_init_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_buf;                                                             \
     (void)abi_count;                                                           \
@@ -18400,12 +22797,12 @@ static int w_MPI_Ssend_init_c(const void *abi_buf, MPIABI_Count abi_count,
                               MPIABI_Datatype abi_datatype, int abi_dest,
                               int abi_tag, MPIABI_Comm abi_comm,
                               MPIABI_Request *abi_request)
-    BODY_MPI_Ssend_init_c(MPI_Ssend_init_c)
+    BODY_MPI_Ssend_init_c(MPI_Ssend_init_c, MPI_Ssend_init)
 static int w_PMPI_Ssend_init_c(const void *abi_buf, MPIABI_Count abi_count,
                                MPIABI_Datatype abi_datatype, int abi_dest,
                                int abi_tag, MPIABI_Comm abi_comm,
                                MPIABI_Request *abi_request)
-    BODY_MPI_Ssend_init_c(PMPI_Ssend_init_c)
+    BODY_MPI_Ssend_init_c(PMPI_Ssend_init_c, PMPI_Ssend_init)
 
 /* -------------------------------------------------------------- MPI_Start */
 
@@ -18653,7 +23050,10 @@ static int w_PMPI_Test(MPIABI_Request *abi_request, int *abi_flag,
 #define BODY_MPI_Testall(TARGET)                                               \
   {                                                                            \
     const int count = abi_count;                                               \
-    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+    if (count < 0) {                                                           \
+      *abi_flag = 0;                                                           \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const flag   = abi_flag;                                              \
     const int  ignore = abi_array_of_statuses == MPIABI_STATUSES_IGNORE;       \
@@ -18663,6 +23063,8 @@ static int w_PMPI_Test(MPIABI_Request *abi_request, int *abi_flag,
     MPI_Status   statuses_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Status)];  \
     MPI_Status  *statuses   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_flag = 0;                                                             \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)count, sizeof *requests);              \
@@ -18731,7 +23133,11 @@ static int w_PMPI_Testall(int abi_count,
 #define BODY_MPI_Testany(TARGET)                                               \
   {                                                                            \
     const int count = abi_count;                                               \
-    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+    if (count < 0) {                                                           \
+      *abi_indx = 0;                                                           \
+      *abi_flag = 0;                                                           \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const indx   = abi_indx;                                              \
     int *const flag   = abi_flag;                                              \
@@ -18740,6 +23146,9 @@ static int w_PMPI_Testall(int abi_count,
     MPI_Request  requests_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Request)]; \
     MPI_Request *requests   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_indx = 0;                                                             \
+    *abi_flag = 0;                                                             \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)count, sizeof *requests);              \
@@ -18806,7 +23215,10 @@ static int w_PMPI_Testany(int abi_count,
 #define BODY_MPI_Testsome(TARGET)                                              \
   {                                                                            \
     const int incount = abi_incount;                                           \
-    if (incount < 0) return MPIABI_ERR_COUNT;                                  \
+    if (incount < 0) {                                                         \
+      *abi_outcount = 0;                                                       \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const outcount = abi_outcount;                                        \
     int *const indices  = abi_array_of_indices;                                \
@@ -18817,6 +23229,8 @@ static int w_PMPI_Testany(int abi_count,
     MPI_Status   statuses_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Status)];  \
     MPI_Status  *statuses   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_outcount = 0;                                                         \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)incount, sizeof *requests);            \
@@ -18976,7 +23390,7 @@ static int w_PMPI_Type_contiguous(int abi_count, MPIABI_Datatype abi_oldtype,
 /* -------------------------------------------------- MPI_Type_contiguous_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_contiguous_c
-#define BODY_MPI_Type_contiguous_c(TARGET)                                     \
+#define BODY_MPI_Type_contiguous_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const MPI_Count    count   = abi_count;                                    \
     const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
@@ -18990,8 +23404,28 @@ static int w_PMPI_Type_contiguous(int abi_count, MPIABI_Datatype abi_oldtype,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_contiguous)
+#define BODY_MPI_Type_contiguous_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    int count = 0;                                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    MPI_Datatype newtype;                                                      \
+    const int    ierror = FALLBACK(count, oldtype, &newtype);                  \
+                                                                               \
+    *abi_newtype = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_datatype_toabi(newtype)                    \
+                       : MPIABI_DATATYPE_NULL;                                 \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_contiguous_c(TARGET)                                     \
+#define BODY_MPI_Type_contiguous_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_oldtype;                                                         \
@@ -19004,11 +23438,11 @@ static int w_PMPI_Type_contiguous(int abi_count, MPIABI_Datatype abi_oldtype,
 static int w_MPI_Type_contiguous_c(MPIABI_Count abi_count,
                                    MPIABI_Datatype abi_oldtype,
                                    MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_contiguous_c(MPI_Type_contiguous_c)
+    BODY_MPI_Type_contiguous_c(MPI_Type_contiguous_c, MPI_Type_contiguous)
 static int w_PMPI_Type_contiguous_c(MPIABI_Count abi_count,
                                     MPIABI_Datatype abi_oldtype,
                                     MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_contiguous_c(PMPI_Type_contiguous_c)
+    BODY_MPI_Type_contiguous_c(PMPI_Type_contiguous_c, PMPI_Type_contiguous)
 
 /* ------------------------------------------------- MPI_Type_create_darray */
 
@@ -19018,7 +23452,10 @@ static int w_PMPI_Type_contiguous_c(MPIABI_Count abi_count,
     const int size  = abi_size;                                                \
     const int rank  = mpiwrapper_rank_fromabi(abi_rank);                       \
     const int ndims = abi_ndims;                                               \
-    if (ndims < 0) return MPIABI_ERR_COUNT;                                    \
+    if (ndims < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     const int *const   gsizes  = abi_array_of_gsizes;                          \
     const int *const   psizes  = abi_array_of_psizes;                          \
@@ -19030,6 +23467,8 @@ static int w_PMPI_Type_contiguous_c(MPIABI_Count abi_count,
     int  dargs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
     int *dargs      = NULL;                                                    \
     int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
                                                                                \
     distribs = mpiwrapper_stage(distribs_stack, sizeof distribs_stack,         \
                                 (size_t)ndims, sizeof *distribs);              \
@@ -19100,12 +23539,15 @@ static int w_PMPI_Type_create_darray(int abi_size, int abi_rank, int abi_ndims,
 /* ----------------------------------------------- MPI_Type_create_darray_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_darray_c
-#define BODY_MPI_Type_create_darray_c(TARGET)                                  \
+#define BODY_MPI_Type_create_darray_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const int size  = abi_size;                                                \
     const int rank  = mpiwrapper_rank_fromabi(abi_rank);                       \
     const int ndims = abi_ndims;                                               \
-    if (ndims < 0) return MPIABI_ERR_COUNT;                                    \
+    if (ndims < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     const MPI_Count *const gsizes  = (const MPI_Count *)abi_array_of_gsizes;   \
     const int *const       psizes  = abi_array_of_psizes;                      \
@@ -19117,6 +23559,8 @@ static int w_PMPI_Type_create_darray(int abi_size, int abi_rank, int abi_ndims,
     int  dargs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
     int *dargs      = NULL;                                                    \
     int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
                                                                                \
     distribs = mpiwrapper_stage(distribs_stack, sizeof distribs_stack,         \
                                 (size_t)ndims, sizeof *distribs);              \
@@ -19148,8 +23592,73 @@ static int w_PMPI_Type_create_darray(int abi_size, int abi_rank, int abi_ndims,
     mpiwrapper_unstage(dargs, dargs_stack);                                    \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_darray)
+#define BODY_MPI_Type_create_darray_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const int size  = abi_size;                                                \
+    const int rank  = mpiwrapper_rank_fromabi(abi_rank);                       \
+    const int ndims = abi_ndims;                                               \
+    if (ndims < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+                                                                               \
+    const int *const   psizes  = abi_array_of_psizes;                          \
+    const int          order   = mpiwrapper_order_fromabi(abi_order);          \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  gsizes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *gsizes     = NULL;                                                    \
+    int  distribs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                 \
+    int *distribs   = NULL;                                                    \
+    int  dargs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
+    int *dargs      = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
+                                                                               \
+    gsizes = mpiwrapper_stage(gsizes_stack, sizeof gsizes_stack, (size_t)ndims,\
+                              sizeof *gsizes);                                 \
+    if (!gsizes) goto done;                                                    \
+    distribs = mpiwrapper_stage(distribs_stack, sizeof distribs_stack,         \
+                                (size_t)ndims, sizeof *distribs);              \
+    if (!distribs) goto done;                                                  \
+    dargs = mpiwrapper_stage(dargs_stack, sizeof dargs_stack, (size_t)ndims,   \
+                             sizeof *dargs);                                   \
+    if (!dargs) goto done;                                                     \
+                                                                               \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_gsizes[i], &gsizes[i])) {        \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < ndims; ++i)                                            \
+      distribs[i] = mpiwrapper_distribute_fromabi(abi_array_of_distribs[i]);   \
+    for (int i = 0; i < ndims; ++i)                                            \
+      dargs[i] = mpiwrapper_darg_fromabi(abi_array_of_dargs[i]);               \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(size, rank, ndims, gsizes, distribs, dargs, psizes, order,  \
+                   oldtype, &newtype);                                         \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(gsizes, gsizes_stack);                                  \
+    mpiwrapper_unstage(distribs, distribs_stack);                              \
+    mpiwrapper_unstage(dargs, dargs_stack);                                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_darray_c(TARGET)                                  \
+#define BODY_MPI_Type_create_darray_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_size;                                                            \
     (void)abi_rank;                                                            \
@@ -19171,13 +23680,15 @@ static int w_MPI_Type_create_darray_c(int abi_size, int abi_rank,
     const int abi_array_of_distribs[], const int abi_array_of_dargs[],
     const int abi_array_of_psizes[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_darray_c(MPI_Type_create_darray_c)
+    BODY_MPI_Type_create_darray_c(MPI_Type_create_darray_c,
+                                  MPI_Type_create_darray)
 static int w_PMPI_Type_create_darray_c(int abi_size, int abi_rank,
     int abi_ndims, const MPIABI_Count abi_array_of_gsizes[],
     const int abi_array_of_distribs[], const int abi_array_of_dargs[],
     const int abi_array_of_psizes[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_darray_c(PMPI_Type_create_darray_c)
+    BODY_MPI_Type_create_darray_c(PMPI_Type_create_darray_c,
+                                  PMPI_Type_create_darray)
 
 /* -------------------------------------------- MPI_Type_create_f90_complex */
 
@@ -19331,7 +23842,7 @@ static int w_PMPI_Type_create_hindexed(int abi_count,
 /* --------------------------------------------- MPI_Type_create_hindexed_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_hindexed_c
-#define BODY_MPI_Type_create_hindexed_c(TARGET)                                \
+#define BODY_MPI_Type_create_hindexed_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count *const blocklengths  =                                     \
@@ -19351,8 +23862,70 @@ static int w_PMPI_Type_create_hindexed(int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_hindexed)
+#define BODY_MPI_Type_create_hindexed_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    int count = 0;                                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int       blocklengths_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];        \
+    int      *blocklengths  = NULL;                                            \
+    MPI_Aint  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Aint)];  \
+    MPI_Aint *displacements = NULL;                                            \
+    int       abi_ierror    = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
+                                                                               \
+    blocklengths = mpiwrapper_stage(blocklengths_stack,                        \
+                                    sizeof blocklengths_stack, (size_t)count,  \
+                                    sizeof *blocklengths);                     \
+    if (!blocklengths) goto done;                                              \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_blocklengths[i], &blocklengths[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_aint(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklengths, displacements, oldtype, &newtype);     \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(blocklengths, blocklengths_stack);                      \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_hindexed_c(TARGET)                                \
+#define BODY_MPI_Type_create_hindexed_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_array_of_blocklengths;                                           \
@@ -19368,12 +23941,14 @@ static int w_MPI_Type_create_hindexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_c(MPI_Type_create_hindexed_c)
+    BODY_MPI_Type_create_hindexed_c(MPI_Type_create_hindexed_c,
+                                    MPI_Type_create_hindexed)
 static int w_PMPI_Type_create_hindexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_c(PMPI_Type_create_hindexed_c)
+    BODY_MPI_Type_create_hindexed_c(PMPI_Type_create_hindexed_c,
+                                    PMPI_Type_create_hindexed)
 
 /* ----------------------------------------- MPI_Type_create_hindexed_block */
 
@@ -19422,7 +23997,7 @@ static int w_PMPI_Type_create_hindexed_block(int abi_count,
 /* --------------------------------------- MPI_Type_create_hindexed_block_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_hindexed_block_c
-#define BODY_MPI_Type_create_hindexed_block_c(TARGET)                          \
+#define BODY_MPI_Type_create_hindexed_block_c(TARGET, FALLBACK)                \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count        blocklength   = abi_blocklength;                    \
@@ -19441,8 +24016,62 @@ static int w_PMPI_Type_create_hindexed_block(int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_hindexed_block)
+#define BODY_MPI_Type_create_hindexed_block_c(TARGET, FALLBACK)                \
+  {                                                                            \
+    int count       = 0;                                                       \
+    int blocklength = 0;                                                       \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_blocklength, &blocklength)) {               \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    MPI_Aint  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Aint)];  \
+    MPI_Aint *displacements = NULL;                                            \
+    int       abi_ierror    = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
+                                                                               \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_aint(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklength, displacements, oldtype, &newtype);      \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_hindexed_block_c(TARGET)                          \
+#define BODY_MPI_Type_create_hindexed_block_c(TARGET, FALLBACK)                \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_blocklength;                                                     \
@@ -19458,12 +24087,14 @@ static int w_MPI_Type_create_hindexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_block_c(MPI_Type_create_hindexed_block_c)
+    BODY_MPI_Type_create_hindexed_block_c(MPI_Type_create_hindexed_block_c,
+                                          MPI_Type_create_hindexed_block)
 static int w_PMPI_Type_create_hindexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_block_c(PMPI_Type_create_hindexed_block_c)
+    BODY_MPI_Type_create_hindexed_block_c(PMPI_Type_create_hindexed_block_c,
+                                          PMPI_Type_create_hindexed_block)
 
 /* ------------------------------------------------ MPI_Type_create_hvector */
 
@@ -19512,7 +24143,7 @@ static int w_PMPI_Type_create_hvector(int abi_count, int abi_blocklength,
 /* ---------------------------------------------- MPI_Type_create_hvector_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_hvector_c
-#define BODY_MPI_Type_create_hvector_c(TARGET)                                 \
+#define BODY_MPI_Type_create_hvector_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const MPI_Count    count       = abi_count;                                \
     const MPI_Count    blocklength = abi_blocklength;                          \
@@ -19529,8 +24160,39 @@ static int w_PMPI_Type_create_hvector(int abi_count, int abi_blocklength,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_hvector)
+#define BODY_MPI_Type_create_hvector_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    int      count       = 0;                                                  \
+    int      blocklength = 0;                                                  \
+    MPI_Aint stride      = 0;                                                  \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_blocklength, &blocklength)) {               \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_aint(abi_stride, &stride)) {                        \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    MPI_Datatype newtype;                                                      \
+    const int    ierror =                                                      \
+        FALLBACK(count, blocklength, stride, oldtype, &newtype);               \
+                                                                               \
+    *abi_newtype = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_datatype_toabi(newtype)                    \
+                       : MPIABI_DATATYPE_NULL;                                 \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_create_hvector_c(TARGET)                                 \
+#define BODY_MPI_Type_create_hvector_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_blocklength;                                                     \
@@ -19547,13 +24209,15 @@ static int w_MPI_Type_create_hvector_c(MPIABI_Count abi_count,
                                        MPIABI_Count abi_stride,
                                        MPIABI_Datatype abi_oldtype,
                                        MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hvector_c(MPI_Type_create_hvector_c)
+    BODY_MPI_Type_create_hvector_c(MPI_Type_create_hvector_c,
+                                   MPI_Type_create_hvector)
 static int w_PMPI_Type_create_hvector_c(MPIABI_Count abi_count,
                                         MPIABI_Count abi_blocklength,
                                         MPIABI_Count abi_stride,
                                         MPIABI_Datatype abi_oldtype,
                                         MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hvector_c(PMPI_Type_create_hvector_c)
+    BODY_MPI_Type_create_hvector_c(PMPI_Type_create_hvector_c,
+                                   PMPI_Type_create_hvector)
 
 /* ------------------------------------------ MPI_Type_create_indexed_block */
 
@@ -19601,7 +24265,7 @@ static int w_PMPI_Type_create_indexed_block(int abi_count, int abi_blocklength,
 /* ---------------------------------------- MPI_Type_create_indexed_block_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_indexed_block_c
-#define BODY_MPI_Type_create_indexed_block_c(TARGET)                           \
+#define BODY_MPI_Type_create_indexed_block_c(TARGET, FALLBACK)                 \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count        blocklength   = abi_blocklength;                    \
@@ -19620,8 +24284,62 @@ static int w_PMPI_Type_create_indexed_block(int abi_count, int abi_blocklength,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_indexed_block)
+#define BODY_MPI_Type_create_indexed_block_c(TARGET, FALLBACK)                 \
+  {                                                                            \
+    int count       = 0;                                                       \
+    int blocklength = 0;                                                       \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_blocklength, &blocklength)) {               \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];            \
+    int *displacements = NULL;                                                 \
+    int  abi_ierror    = MPIABI_ERR_INTERN;                                    \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
+                                                                               \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklength, displacements, oldtype, &newtype);      \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_indexed_block_c(TARGET)                           \
+#define BODY_MPI_Type_create_indexed_block_c(TARGET, FALLBACK)                 \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_blocklength;                                                     \
@@ -19637,12 +24355,14 @@ static int w_MPI_Type_create_indexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_indexed_block_c(MPI_Type_create_indexed_block_c)
+    BODY_MPI_Type_create_indexed_block_c(MPI_Type_create_indexed_block_c,
+                                         MPI_Type_create_indexed_block)
 static int w_PMPI_Type_create_indexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_indexed_block_c(PMPI_Type_create_indexed_block_c)
+    BODY_MPI_Type_create_indexed_block_c(PMPI_Type_create_indexed_block_c,
+                                         PMPI_Type_create_indexed_block)
 
 /* ------------------------------------------------ MPI_Type_create_resized */
 
@@ -19688,7 +24408,7 @@ static int w_PMPI_Type_create_resized(MPIABI_Datatype abi_oldtype,
 /* ---------------------------------------------- MPI_Type_create_resized_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_resized_c
-#define BODY_MPI_Type_create_resized_c(TARGET)                                 \
+#define BODY_MPI_Type_create_resized_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
     const MPI_Count    lb      = abi_lb;                                       \
@@ -19703,8 +24423,32 @@ static int w_PMPI_Type_create_resized(MPIABI_Datatype abi_oldtype,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_resized)
+#define BODY_MPI_Type_create_resized_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+    MPI_Aint           lb      = 0;                                            \
+    MPI_Aint           extent  = 0;                                            \
+    if (!mpiwrapper_narrow_aint(abi_lb, &lb)) {                                \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_aint(abi_extent, &extent)) {                        \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    MPI_Datatype newtype;                                                      \
+    const int    ierror = FALLBACK(oldtype, lb, extent, &newtype);             \
+                                                                               \
+    *abi_newtype = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_datatype_toabi(newtype)                    \
+                       : MPIABI_DATATYPE_NULL;                                 \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_create_resized_c(TARGET)                                 \
+#define BODY_MPI_Type_create_resized_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_oldtype;                                                         \
     (void)abi_lb;                                                              \
@@ -19719,12 +24463,14 @@ static int w_MPI_Type_create_resized_c(MPIABI_Datatype abi_oldtype,
                                        MPIABI_Count abi_lb,
                                        MPIABI_Count abi_extent,
                                        MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_resized_c(MPI_Type_create_resized_c)
+    BODY_MPI_Type_create_resized_c(MPI_Type_create_resized_c,
+                                   MPI_Type_create_resized)
 static int w_PMPI_Type_create_resized_c(MPIABI_Datatype abi_oldtype,
                                         MPIABI_Count abi_lb,
                                         MPIABI_Count abi_extent,
                                         MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_resized_c(PMPI_Type_create_resized_c)
+    BODY_MPI_Type_create_resized_c(PMPI_Type_create_resized_c,
+                                   PMPI_Type_create_resized)
 
 /* ------------------------------------------------- MPI_Type_create_struct */
 
@@ -19732,7 +24478,10 @@ static int w_PMPI_Type_create_resized_c(MPIABI_Datatype abi_oldtype,
 #define BODY_MPI_Type_create_struct(TARGET)                                    \
   {                                                                            \
     const int count = abi_count;                                               \
-    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+    if (count < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     const int *const      blocklengths  = abi_array_of_blocklengths;           \
     const MPI_Aint *const displacements =                                      \
@@ -19741,6 +24490,8 @@ static int w_PMPI_Type_create_resized_c(MPIABI_Datatype abi_oldtype,
     MPI_Datatype  types_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];  \
     MPI_Datatype *types      = NULL;                                           \
     int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
                                                                                \
     types = mpiwrapper_stage(types_stack, sizeof types_stack, (size_t)count,   \
                              sizeof *types);                                   \
@@ -19792,12 +24543,17 @@ static int w_PMPI_Type_create_struct(int abi_count,
 /* ----------------------------------------------- MPI_Type_create_struct_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_struct_c
-#define BODY_MPI_Type_create_struct_c(TARGET)                                  \
+#define BODY_MPI_Type_create_struct_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const MPI_Count count = abi_count;                                         \
-    if (count < 0) return MPIABI_ERR_COUNT;                                    \
-    if ((uint64_t)count > SIZE_MAX / sizeof(MPI_Datatype))                     \
+    if (count < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
       return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+    if ((uint64_t)count > SIZE_MAX / sizeof(MPI_Datatype)) {                   \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     const MPI_Count *const blocklengths  =                                     \
         (const MPI_Count *)abi_array_of_blocklengths;                          \
@@ -19807,6 +24563,8 @@ static int w_PMPI_Type_create_struct(int abi_count,
     MPI_Datatype  types_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];  \
     MPI_Datatype *types      = NULL;                                           \
     int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
                                                                                \
     types = mpiwrapper_stage(types_stack, sizeof types_stack, (size_t)count,   \
                              sizeof *types);                                   \
@@ -19831,8 +24589,76 @@ static int w_PMPI_Type_create_struct(int abi_count,
     mpiwrapper_unstage(types, types_stack);                                    \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_struct)
+#define BODY_MPI_Type_create_struct_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    int count = 0;                                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+                                                                               \
+    int           blocklengths_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];    \
+    int          *blocklengths  = NULL;                                        \
+    MPI_Aint      displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Aint)]; \
+    MPI_Aint     *displacements = NULL;                                        \
+    MPI_Datatype  types_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];  \
+    MPI_Datatype *types         = NULL;                                        \
+    int           abi_ierror    = MPIABI_ERR_INTERN;                           \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
+                                                                               \
+    blocklengths = mpiwrapper_stage(blocklengths_stack,                        \
+                                    sizeof blocklengths_stack, (size_t)count,  \
+                                    sizeof *blocklengths);                     \
+    if (!blocklengths) goto done;                                              \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+    types = mpiwrapper_stage(types_stack, sizeof types_stack, (size_t)count,   \
+                             sizeof *types);                                   \
+    if (!types) goto done;                                                     \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_blocklengths[i], &blocklengths[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_aint(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      types[i] = mpiwrapper_datatype_fromabi(abi_array_of_types[i]);           \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklengths, displacements, types, &newtype);       \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(blocklengths, blocklengths_stack);                      \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    mpiwrapper_unstage(types, types_stack);                                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_struct_c(TARGET)                                  \
+#define BODY_MPI_Type_create_struct_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_array_of_blocklengths;                                           \
@@ -19848,12 +24674,14 @@ static int w_MPI_Type_create_struct_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     const MPIABI_Datatype abi_array_of_types[], MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_struct_c(MPI_Type_create_struct_c)
+    BODY_MPI_Type_create_struct_c(MPI_Type_create_struct_c,
+                                  MPI_Type_create_struct)
 static int w_PMPI_Type_create_struct_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     const MPIABI_Datatype abi_array_of_types[], MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_struct_c(PMPI_Type_create_struct_c)
+    BODY_MPI_Type_create_struct_c(PMPI_Type_create_struct_c,
+                                  PMPI_Type_create_struct)
 
 /* ----------------------------------------------- MPI_Type_create_subarray */
 
@@ -19912,7 +24740,7 @@ static int w_PMPI_Type_create_subarray(int abi_ndims,
 /* --------------------------------------------- MPI_Type_create_subarray_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_subarray_c
-#define BODY_MPI_Type_create_subarray_c(TARGET)                                \
+#define BODY_MPI_Type_create_subarray_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const int              ndims    = abi_ndims;                               \
     const MPI_Count *const sizes    = (const MPI_Count *)abi_array_of_sizes;   \
@@ -19931,8 +24759,77 @@ static int w_PMPI_Type_create_subarray(int abi_ndims,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_subarray)
+#define BODY_MPI_Type_create_subarray_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const int ndims = abi_ndims;                                               \
+    if (ndims < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+                                                                               \
+    const int          order   = mpiwrapper_order_fromabi(abi_order);          \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  sizes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
+    int *sizes      = NULL;                                                    \
+    int  subsizes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                 \
+    int *subsizes   = NULL;                                                    \
+    int  starts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *starts     = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
+                                                                               \
+    sizes = mpiwrapper_stage(sizes_stack, sizeof sizes_stack, (size_t)ndims,   \
+                             sizeof *sizes);                                   \
+    if (!sizes) goto done;                                                     \
+    subsizes = mpiwrapper_stage(subsizes_stack, sizeof subsizes_stack,         \
+                                (size_t)ndims, sizeof *subsizes);              \
+    if (!subsizes) goto done;                                                  \
+    starts = mpiwrapper_stage(starts_stack, sizeof starts_stack, (size_t)ndims,\
+                              sizeof *starts);                                 \
+    if (!starts) goto done;                                                    \
+                                                                               \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_sizes[i], &sizes[i])) {          \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_subsizes[i], &subsizes[i])) {    \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_starts[i], &starts[i])) {        \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(ndims, sizes, subsizes, starts, order, oldtype, &newtype);  \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(sizes, sizes_stack);                                    \
+    mpiwrapper_unstage(subsizes, subsizes_stack);                              \
+    mpiwrapper_unstage(starts, starts_stack);                                  \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_subarray_c(TARGET)                                \
+#define BODY_MPI_Type_create_subarray_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_ndims;                                                           \
     (void)abi_array_of_sizes;                                                  \
@@ -19951,13 +24848,15 @@ static int w_MPI_Type_create_subarray_c(int abi_ndims,
     const MPIABI_Count abi_array_of_subsizes[],
     const MPIABI_Count abi_array_of_starts[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_subarray_c(MPI_Type_create_subarray_c)
+    BODY_MPI_Type_create_subarray_c(MPI_Type_create_subarray_c,
+                                    MPI_Type_create_subarray)
 static int w_PMPI_Type_create_subarray_c(int abi_ndims,
     const MPIABI_Count abi_array_of_sizes[],
     const MPIABI_Count abi_array_of_subsizes[],
     const MPIABI_Count abi_array_of_starts[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_subarray_c(PMPI_Type_create_subarray_c)
+    BODY_MPI_Type_create_subarray_c(PMPI_Type_create_subarray_c,
+                                    PMPI_Type_create_subarray)
 
 /* --------------------------------------------------- MPI_Type_delete_attr */
 
@@ -20184,7 +25083,7 @@ static int w_PMPI_Type_get_contents(MPIABI_Datatype abi_datatype,
 /* ------------------------------------------------ MPI_Type_get_contents_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_contents_c
-#define BODY_MPI_Type_get_contents_c(TARGET)                                   \
+#define BODY_MPI_Type_get_contents_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_Datatype datatype         =                                      \
         mpiwrapper_datatype_fromabi(abi_datatype);                             \
@@ -20230,8 +25129,62 @@ static int w_PMPI_Type_get_contents(MPIABI_Datatype abi_datatype,
     mpiwrapper_unstage(datatypes, datatypes_stack);                            \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_contents)
+#define BODY_MPI_Type_get_contents_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_Datatype datatype      =                                         \
+        mpiwrapper_datatype_fromabi(abi_datatype);                             \
+    int                max_integers  = 0;                                      \
+    int                max_addresses = 0;                                      \
+    int                max_datatypes = 0;                                      \
+    if (!mpiwrapper_narrow_int(abi_max_integers, &max_integers))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_max_addresses, &max_addresses))             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_max_datatypes, &max_datatypes))             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    int *const      integers  = abi_array_of_integers;                         \
+    MPI_Aint *const addresses = (MPI_Aint *)abi_array_of_addresses;            \
+                                                                               \
+    int ndatatypes = 0;                                                        \
+    {                                                                          \
+      const int ierror = mpiwrapper_type_ndatatypes(datatype, &ndatatypes);    \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+    if (ndatatypes > max_datatypes) ndatatypes = max_datatypes;                \
+    if (ndatatypes < 0) ndatatypes = 0;                                        \
+                                                                               \
+    MPI_Datatype  datatypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
+    MPI_Datatype *datatypes  = NULL;                                           \
+    int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    datatypes = mpiwrapper_stage(datatypes_stack, sizeof datatypes_stack,      \
+                                 (size_t)ndatatypes, sizeof *datatypes);       \
+    if (!datatypes) goto done;                                                 \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(datatype, max_integers, max_addresses, ndatatypes, integers,\
+                   addresses, datatypes);                                      \
+                                                                               \
+      (void)abi_max_large_counts;                                              \
+      (void)abi_array_of_large_counts;                                         \
+                                                                               \
+      if (ierror == MPI_SUCCESS)                                               \
+        for (int i = 0; i < ndatatypes; ++i)                                   \
+          abi_array_of_datatypes[i] = mpiwrapper_datatype_toabi(datatypes[i]); \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(datatypes, datatypes_stack);                            \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_get_contents_c(TARGET)                                   \
+#define BODY_MPI_Type_get_contents_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_max_integers;                                                    \
@@ -20255,14 +25208,16 @@ static int w_MPI_Type_get_contents_c(MPIABI_Datatype abi_datatype,
                                      MPIABI_Aint abi_array_of_addresses[],
                                      MPIABI_Count abi_array_of_large_counts[],
                                      MPIABI_Datatype abi_array_of_datatypes[])
-    BODY_MPI_Type_get_contents_c(MPI_Type_get_contents_c)
+    BODY_MPI_Type_get_contents_c(MPI_Type_get_contents_c,
+                                 MPI_Type_get_contents)
 static int w_PMPI_Type_get_contents_c(MPIABI_Datatype abi_datatype,
     MPIABI_Count abi_max_integers, MPIABI_Count abi_max_addresses,
     MPIABI_Count abi_max_large_counts, MPIABI_Count abi_max_datatypes,
     int abi_array_of_integers[], MPIABI_Aint abi_array_of_addresses[],
     MPIABI_Count abi_array_of_large_counts[],
     MPIABI_Datatype abi_array_of_datatypes[])
-    BODY_MPI_Type_get_contents_c(PMPI_Type_get_contents_c)
+    BODY_MPI_Type_get_contents_c(PMPI_Type_get_contents_c,
+                                 PMPI_Type_get_contents)
 
 /* -------------------------------------------------- MPI_Type_get_envelope */
 
@@ -20313,7 +25268,7 @@ static int w_PMPI_Type_get_envelope(MPIABI_Datatype abi_datatype,
 /* ------------------------------------------------ MPI_Type_get_envelope_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_envelope_c
-#define BODY_MPI_Type_get_envelope_c(TARGET)                                   \
+#define BODY_MPI_Type_get_envelope_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_Datatype datatype         =                                      \
         mpiwrapper_datatype_fromabi(abi_datatype);                             \
@@ -20330,8 +25285,28 @@ static int w_PMPI_Type_get_envelope(MPIABI_Datatype abi_datatype,
     *abi_combiner = mpiwrapper_combiner_toabi(combiner);                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_envelope)
+#define BODY_MPI_Type_get_envelope_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    int       num_integers;                                                    \
+    int       num_addresses;                                                   \
+    int       num_datatypes;                                                   \
+    int       combiner;                                                        \
+    const int ierror =                                                         \
+        FALLBACK(datatype, &num_integers, &num_addresses, &num_datatypes,      \
+                 &combiner);                                                   \
+                                                                               \
+    *abi_num_integers = num_integers;                                          \
+    *abi_num_addresses = num_addresses;                                        \
+    *abi_num_large_counts = 0;                                                 \
+    *abi_num_datatypes = num_datatypes;                                        \
+    *abi_combiner = mpiwrapper_combiner_toabi(combiner);                       \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_get_envelope_c(TARGET)                                   \
+#define BODY_MPI_Type_get_envelope_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_num_integers;                                                    \
@@ -20354,14 +25329,16 @@ static int w_MPI_Type_get_envelope_c(MPIABI_Datatype abi_datatype,
                                      MPIABI_Count *abi_num_large_counts,
                                      MPIABI_Count *abi_num_datatypes,
                                      int *abi_combiner)
-    BODY_MPI_Type_get_envelope_c(MPI_Type_get_envelope_c)
+    BODY_MPI_Type_get_envelope_c(MPI_Type_get_envelope_c,
+                                 MPI_Type_get_envelope)
 static int w_PMPI_Type_get_envelope_c(MPIABI_Datatype abi_datatype,
                                       MPIABI_Count *abi_num_integers,
                                       MPIABI_Count *abi_num_addresses,
                                       MPIABI_Count *abi_num_large_counts,
                                       MPIABI_Count *abi_num_datatypes,
                                       int *abi_combiner)
-    BODY_MPI_Type_get_envelope_c(PMPI_Type_get_envelope_c)
+    BODY_MPI_Type_get_envelope_c(PMPI_Type_get_envelope_c,
+                                 PMPI_Type_get_envelope)
 
 /* ---------------------------------------------------- MPI_Type_get_extent */
 
@@ -20395,9 +25372,11 @@ static int w_PMPI_Type_get_extent(MPIABI_Datatype abi_datatype,
     BODY_MPI_Type_get_extent(PMPI_Type_get_extent)
 
 /* -------------------------------------------------- MPI_Type_get_extent_c */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_extent_c
-#define BODY_MPI_Type_get_extent_c(TARGET)                                     \
+#define BODY_MPI_Type_get_extent_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
     MPI_Count *const   lb       = (MPI_Count *)abi_lb;                         \
@@ -20406,8 +25385,18 @@ static int w_PMPI_Type_get_extent(MPIABI_Datatype abi_datatype,
     const int ierror = TARGET(datatype, lb, extent);                           \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_extent_x)
+#define BODY_MPI_Type_get_extent_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    MPI_Count *const   lb       = (MPI_Count *)abi_lb;                         \
+    MPI_Count *const   extent   = (MPI_Count *)abi_extent;                     \
+                                                                               \
+    const int ierror = FALLBACK(datatype, lb, extent);                         \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_get_extent_c(TARGET)                                     \
+#define BODY_MPI_Type_get_extent_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_lb;                                                              \
@@ -20421,11 +25410,12 @@ static int w_PMPI_Type_get_extent(MPIABI_Datatype abi_datatype,
 static int w_MPI_Type_get_extent_c(MPIABI_Datatype abi_datatype,
                                    MPIABI_Count *abi_lb,
                                    MPIABI_Count *abi_extent)
-    BODY_MPI_Type_get_extent_c(MPI_Type_get_extent_c)
+    BODY_MPI_Type_get_extent_c(MPI_Type_get_extent_c, MPI_Type_get_extent_x)
 static int w_PMPI_Type_get_extent_c(MPIABI_Datatype abi_datatype,
                                     MPIABI_Count *abi_lb,
                                     MPIABI_Count *abi_extent)
-    BODY_MPI_Type_get_extent_c(PMPI_Type_get_extent_c)
+    BODY_MPI_Type_get_extent_c(PMPI_Type_get_extent_c, PMPI_Type_get_extent_x)
+#pragma GCC diagnostic pop
 
 /* -------------------------------------------------- MPI_Type_get_extent_x */
 #pragma GCC diagnostic push
@@ -20497,9 +25487,11 @@ static int w_PMPI_Type_get_true_extent(MPIABI_Datatype abi_datatype,
     BODY_MPI_Type_get_true_extent(PMPI_Type_get_true_extent)
 
 /* --------------------------------------------- MPI_Type_get_true_extent_c */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_true_extent_c
-#define BODY_MPI_Type_get_true_extent_c(TARGET)                                \
+#define BODY_MPI_Type_get_true_extent_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const MPI_Datatype datatype    = mpiwrapper_datatype_fromabi(abi_datatype);\
     MPI_Count *const   true_lb     = (MPI_Count *)abi_true_lb;                 \
@@ -20508,8 +25500,18 @@ static int w_PMPI_Type_get_true_extent(MPIABI_Datatype abi_datatype,
     const int ierror = TARGET(datatype, true_lb, true_extent);                 \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_true_extent_x)
+#define BODY_MPI_Type_get_true_extent_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const MPI_Datatype datatype    = mpiwrapper_datatype_fromabi(abi_datatype);\
+    MPI_Count *const   true_lb     = (MPI_Count *)abi_true_lb;                 \
+    MPI_Count *const   true_extent = (MPI_Count *)abi_true_extent;             \
+                                                                               \
+    const int ierror = FALLBACK(datatype, true_lb, true_extent);               \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_get_true_extent_c(TARGET)                                \
+#define BODY_MPI_Type_get_true_extent_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_true_lb;                                                         \
@@ -20523,11 +25525,14 @@ static int w_PMPI_Type_get_true_extent(MPIABI_Datatype abi_datatype,
 static int w_MPI_Type_get_true_extent_c(MPIABI_Datatype abi_datatype,
                                         MPIABI_Count *abi_true_lb,
                                         MPIABI_Count *abi_true_extent)
-    BODY_MPI_Type_get_true_extent_c(MPI_Type_get_true_extent_c)
+    BODY_MPI_Type_get_true_extent_c(MPI_Type_get_true_extent_c,
+                                    MPI_Type_get_true_extent_x)
 static int w_PMPI_Type_get_true_extent_c(MPIABI_Datatype abi_datatype,
                                          MPIABI_Count *abi_true_lb,
                                          MPIABI_Count *abi_true_extent)
-    BODY_MPI_Type_get_true_extent_c(PMPI_Type_get_true_extent_c)
+    BODY_MPI_Type_get_true_extent_c(PMPI_Type_get_true_extent_c,
+                                    PMPI_Type_get_true_extent_x)
+#pragma GCC diagnostic pop
 
 /* --------------------------------------------- MPI_Type_get_true_extent_x */
 #pragma GCC diagnostic push
@@ -20654,7 +25659,7 @@ static int w_PMPI_Type_indexed(int abi_count,
 /* ----------------------------------------------------- MPI_Type_indexed_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_indexed_c
-#define BODY_MPI_Type_indexed_c(TARGET)                                        \
+#define BODY_MPI_Type_indexed_c(TARGET, FALLBACK)                              \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count *const blocklengths  =                                     \
@@ -20674,8 +25679,70 @@ static int w_PMPI_Type_indexed(int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_indexed)
+#define BODY_MPI_Type_indexed_c(TARGET, FALLBACK)                              \
+  {                                                                            \
+    int count = 0;                                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) {                                                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  blocklengths_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];             \
+    int *blocklengths  = NULL;                                                 \
+    int  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];            \
+    int *displacements = NULL;                                                 \
+    int  abi_ierror    = MPIABI_ERR_INTERN;                                    \
+                                                                               \
+    *abi_newtype = MPIABI_DATATYPE_NULL;                                       \
+                                                                               \
+    blocklengths = mpiwrapper_stage(blocklengths_stack,                        \
+                                    sizeof blocklengths_stack, (size_t)count,  \
+                                    sizeof *blocklengths);                     \
+    if (!blocklengths) goto done;                                              \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_blocklengths[i], &blocklengths[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklengths, displacements, oldtype, &newtype);     \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(blocklengths, blocklengths_stack);                      \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_indexed_c(TARGET)                                        \
+#define BODY_MPI_Type_indexed_c(TARGET, FALLBACK)                              \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_array_of_blocklengths;                                           \
@@ -20691,12 +25758,12 @@ static int w_MPI_Type_indexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_indexed_c(MPI_Type_indexed_c)
+    BODY_MPI_Type_indexed_c(MPI_Type_indexed_c, MPI_Type_indexed)
 static int w_PMPI_Type_indexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_indexed_c(PMPI_Type_indexed_c)
+    BODY_MPI_Type_indexed_c(PMPI_Type_indexed_c, PMPI_Type_indexed)
 
 /* ---------------------------------------------------- MPI_Type_match_size */
 
@@ -20818,9 +25885,11 @@ static int w_PMPI_Type_size(MPIABI_Datatype abi_datatype, int *abi_size)
     BODY_MPI_Type_size(PMPI_Type_size)
 
 /* -------------------------------------------------------- MPI_Type_size_c */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_size_c
-#define BODY_MPI_Type_size_c(TARGET)                                           \
+#define BODY_MPI_Type_size_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
     MPI_Count *const   size     = (MPI_Count *)abi_size;                       \
@@ -20828,8 +25897,17 @@ static int w_PMPI_Type_size(MPIABI_Datatype abi_datatype, int *abi_size)
     const int ierror = TARGET(datatype, size);                                 \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_size_x)
+#define BODY_MPI_Type_size_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    MPI_Count *const   size     = (MPI_Count *)abi_size;                       \
+                                                                               \
+    const int ierror = FALLBACK(datatype, size);                               \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_size_c(TARGET)                                           \
+#define BODY_MPI_Type_size_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_size;                                                            \
@@ -20840,10 +25918,11 @@ static int w_PMPI_Type_size(MPIABI_Datatype abi_datatype, int *abi_size)
 
 static int w_MPI_Type_size_c(MPIABI_Datatype abi_datatype,
                              MPIABI_Count *abi_size)
-    BODY_MPI_Type_size_c(MPI_Type_size_c)
+    BODY_MPI_Type_size_c(MPI_Type_size_c, MPI_Type_size_x)
 static int w_PMPI_Type_size_c(MPIABI_Datatype abi_datatype,
                               MPIABI_Count *abi_size)
-    BODY_MPI_Type_size_c(PMPI_Type_size_c)
+    BODY_MPI_Type_size_c(PMPI_Type_size_c, PMPI_Type_size_x)
+#pragma GCC diagnostic pop
 
 /* -------------------------------------------------------- MPI_Type_size_x */
 #pragma GCC diagnostic push
@@ -20921,7 +26000,7 @@ static int w_PMPI_Type_vector(int abi_count, int abi_blocklength,
 /* ------------------------------------------------------ MPI_Type_vector_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_vector_c
-#define BODY_MPI_Type_vector_c(TARGET)                                         \
+#define BODY_MPI_Type_vector_c(TARGET, FALLBACK)                               \
   {                                                                            \
     const MPI_Count    count       = abi_count;                                \
     const MPI_Count    blocklength = abi_blocklength;                          \
@@ -20938,8 +26017,39 @@ static int w_PMPI_Type_vector(int abi_count, int abi_blocklength,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_vector)
+#define BODY_MPI_Type_vector_c(TARGET, FALLBACK)                               \
+  {                                                                            \
+    int count       = 0;                                                       \
+    int blocklength = 0;                                                       \
+    int stride      = 0;                                                       \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_blocklength, &blocklength)) {               \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_stride, &stride)) {                         \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    MPI_Datatype newtype;                                                      \
+    const int    ierror =                                                      \
+        FALLBACK(count, blocklength, stride, oldtype, &newtype);               \
+                                                                               \
+    *abi_newtype = (ierror == MPI_SUCCESS)                                     \
+                       ? mpiwrapper_datatype_toabi(newtype)                    \
+                       : MPIABI_DATATYPE_NULL;                                 \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_vector_c(TARGET)                                         \
+#define BODY_MPI_Type_vector_c(TARGET, FALLBACK)                               \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_blocklength;                                                     \
@@ -20956,13 +26066,13 @@ static int w_MPI_Type_vector_c(MPIABI_Count abi_count,
                                MPIABI_Count abi_stride,
                                MPIABI_Datatype abi_oldtype,
                                MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_vector_c(MPI_Type_vector_c)
+    BODY_MPI_Type_vector_c(MPI_Type_vector_c, MPI_Type_vector)
 static int w_PMPI_Type_vector_c(MPIABI_Count abi_count,
                                 MPIABI_Count abi_blocklength,
                                 MPIABI_Count abi_stride,
                                 MPIABI_Datatype abi_oldtype,
                                 MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_vector_c(PMPI_Type_vector_c)
+    BODY_MPI_Type_vector_c(PMPI_Type_vector_c, PMPI_Type_vector)
 
 /* ------------------------------------------------------------- MPI_Unpack */
 
@@ -21007,7 +26117,7 @@ static int w_PMPI_Unpack(const void *abi_inbuf, int abi_insize,
 /* ----------------------------------------------------------- MPI_Unpack_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Unpack_c
-#define BODY_MPI_Unpack_c(TARGET)                                              \
+#define BODY_MPI_Unpack_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
     const MPI_Count    insize   = abi_insize;                                  \
@@ -21021,8 +26131,31 @@ static int w_PMPI_Unpack(const void *abi_inbuf, int abi_insize,
         TARGET(inbuf, insize, position, outbuf, outcount, datatype, comm);     \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Unpack)
+#define BODY_MPI_Unpack_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);        \
+    int               insize   = 0;                                            \
+    int               position = 0;                                            \
+    void *const       outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);       \
+    int               outcount = 0;                                            \
+    if (!mpiwrapper_narrow_int(abi_insize, &insize))                           \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(*abi_position, &position))                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_outcount, &outcount))                       \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(inbuf, insize, &position, outbuf, outcount, datatype, comm);  \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Unpack_c(TARGET)                                              \
+#define BODY_MPI_Unpack_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_inbuf;                                                           \
     (void)abi_insize;                                                          \
@@ -21039,12 +26172,12 @@ static int w_MPI_Unpack_c(const void *abi_inbuf, MPIABI_Count abi_insize,
                           MPIABI_Count *abi_position, void *abi_outbuf,
                           MPIABI_Count abi_outcount,
                           MPIABI_Datatype abi_datatype, MPIABI_Comm abi_comm)
-    BODY_MPI_Unpack_c(MPI_Unpack_c)
+    BODY_MPI_Unpack_c(MPI_Unpack_c, MPI_Unpack)
 static int w_PMPI_Unpack_c(const void *abi_inbuf, MPIABI_Count abi_insize,
                            MPIABI_Count *abi_position, void *abi_outbuf,
                            MPIABI_Count abi_outcount,
                            MPIABI_Datatype abi_datatype, MPIABI_Comm abi_comm)
-    BODY_MPI_Unpack_c(PMPI_Unpack_c)
+    BODY_MPI_Unpack_c(PMPI_Unpack_c, PMPI_Unpack)
 
 /* ---------------------------------------------------- MPI_Unpack_external */
 
@@ -21094,7 +26227,7 @@ static int w_PMPI_Unpack_external(const char abi_datarep[],
 /* -------------------------------------------------- MPI_Unpack_external_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Unpack_external_c
-#define BODY_MPI_Unpack_external_c(TARGET)                                     \
+#define BODY_MPI_Unpack_external_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const char *const  datarep  = abi_datarep;                                 \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
@@ -21108,8 +26241,32 @@ static int w_PMPI_Unpack_external(const char abi_datarep[],
         TARGET(datarep, inbuf, insize, position, outbuf, outcount, datatype);  \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Unpack_external)
+#define BODY_MPI_Unpack_external_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const char *const datarep  = abi_datarep;                                  \
+    const void *const inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);        \
+    MPI_Aint          insize   = 0;                                            \
+    MPI_Aint          position = 0;                                            \
+    void *const       outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);       \
+    int               outcount = 0;                                            \
+    if (!mpiwrapper_narrow_aint(abi_insize, &insize))                          \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_aint(*abi_position, &position))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_outcount, &outcount))                       \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(datarep, inbuf, insize, &position, outbuf, outcount,          \
+                 datatype);                                                    \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Unpack_external_c(TARGET)                                     \
+#define BODY_MPI_Unpack_external_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_datarep;                                                         \
     (void)abi_inbuf;                                                           \
@@ -21128,7 +26285,7 @@ static int w_MPI_Unpack_external_c(const char abi_datarep[],
                                    MPIABI_Count *abi_position,
                                    void *abi_outbuf, MPIABI_Count abi_outcount,
                                    MPIABI_Datatype abi_datatype)
-    BODY_MPI_Unpack_external_c(MPI_Unpack_external_c)
+    BODY_MPI_Unpack_external_c(MPI_Unpack_external_c, MPI_Unpack_external)
 static int w_PMPI_Unpack_external_c(const char abi_datarep[],
                                     const void *abi_inbuf,
                                     MPIABI_Count abi_insize,
@@ -21136,7 +26293,7 @@ static int w_PMPI_Unpack_external_c(const char abi_datarep[],
                                     void *abi_outbuf,
                                     MPIABI_Count abi_outcount,
                                     MPIABI_Datatype abi_datatype)
-    BODY_MPI_Unpack_external_c(PMPI_Unpack_external_c)
+    BODY_MPI_Unpack_external_c(PMPI_Unpack_external_c, PMPI_Unpack_external)
 
 /* ----------------------------------------------------- MPI_Unpublish_name */
 
@@ -21287,7 +26444,10 @@ static int w_PMPI_Waitall(int abi_count,
 #define BODY_MPI_Waitany(TARGET)                                               \
   {                                                                            \
     const int count = abi_count;                                               \
-    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+    if (count < 0) {                                                           \
+      *abi_indx = 0;                                                           \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const indx   = abi_indx;                                              \
     const int  ignore = abi_status == MPIABI_STATUS_IGNORE;                    \
@@ -21295,6 +26455,8 @@ static int w_PMPI_Waitall(int abi_count,
     MPI_Request  requests_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Request)]; \
     MPI_Request *requests   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_indx = 0;                                                             \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)count, sizeof *requests);              \
@@ -21356,7 +26518,10 @@ static int w_PMPI_Waitany(int abi_count,
 #define BODY_MPI_Waitsome(TARGET)                                              \
   {                                                                            \
     const int incount = abi_incount;                                           \
-    if (incount < 0) return MPIABI_ERR_COUNT;                                  \
+    if (incount < 0) {                                                         \
+      *abi_outcount = 0;                                                       \
+      return MPIABI_ERR_COUNT;                                                 \
+    }                                                                          \
                                                                                \
     int *const outcount = abi_outcount;                                        \
     int *const indices  = abi_array_of_indices;                                \
@@ -21367,6 +26532,8 @@ static int w_PMPI_Waitany(int abi_count,
     MPI_Status   statuses_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Status)];  \
     MPI_Status  *statuses   = NULL;                                            \
     int          abi_ierror = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    *abi_outcount = 0;                                                         \
                                                                                \
     requests = mpiwrapper_stage(requests_stack, sizeof requests_stack,         \
                                 (size_t)incount, sizeof *requests);            \
@@ -21481,7 +26648,7 @@ static int w_PMPI_Win_allocate(MPIABI_Aint abi_size, int abi_disp_unit,
 /* ----------------------------------------------------- MPI_Win_allocate_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Win_allocate_c
-#define BODY_MPI_Win_allocate_c(TARGET)                                        \
+#define BODY_MPI_Win_allocate_c(TARGET, FALLBACK)                              \
   {                                                                            \
     const MPI_Aint size      = abi_size;                                       \
     const MPI_Aint disp_unit = abi_disp_unit;                                  \
@@ -21498,8 +26665,31 @@ static int w_PMPI_Win_allocate(MPIABI_Aint abi_size, int abi_disp_unit,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Win_allocate)
+#define BODY_MPI_Win_allocate_c(TARGET, FALLBACK)                              \
+  {                                                                            \
+    const MPI_Aint size      = abi_size;                                       \
+    int            disp_unit = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_disp_unit, &disp_unit)) {                   \
+      *abi_win = MPIABI_WIN_NULL;                                              \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Info info    = mpiwrapper_info_fromabi(abi_info);                \
+    const MPI_Comm comm    = mpiwrapper_comm_fromabi(abi_comm);                \
+    void *const    baseptr = mpiwrapper_recvbuf_fromabi(abi_baseptr);          \
+                                                                               \
+    MPI_Win   win;                                                             \
+    const int ierror = FALLBACK(size, disp_unit, info, comm, baseptr, &win);   \
+                                                                               \
+    *abi_win = (ierror == MPI_SUCCESS)                                         \
+                   ? mpiwrapper_win_toabi(win)                                 \
+                   : MPIABI_WIN_NULL;                                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Win_allocate_c(TARGET)                                        \
+#define BODY_MPI_Win_allocate_c(TARGET, FALLBACK)                              \
   {                                                                            \
     (void)abi_size;                                                            \
     (void)abi_disp_unit;                                                       \
@@ -21516,12 +26706,12 @@ static int w_MPI_Win_allocate_c(MPIABI_Aint abi_size,
                                 MPIABI_Aint abi_disp_unit,
                                 MPIABI_Info abi_info, MPIABI_Comm abi_comm,
                                 void *abi_baseptr, MPIABI_Win *abi_win)
-    BODY_MPI_Win_allocate_c(MPI_Win_allocate_c)
+    BODY_MPI_Win_allocate_c(MPI_Win_allocate_c, MPI_Win_allocate)
 static int w_PMPI_Win_allocate_c(MPIABI_Aint abi_size,
                                  MPIABI_Aint abi_disp_unit,
                                  MPIABI_Info abi_info, MPIABI_Comm abi_comm,
                                  void *abi_baseptr, MPIABI_Win *abi_win)
-    BODY_MPI_Win_allocate_c(PMPI_Win_allocate_c)
+    BODY_MPI_Win_allocate_c(PMPI_Win_allocate_c, PMPI_Win_allocate)
 
 /* ------------------------------------------------ MPI_Win_allocate_shared */
 
@@ -21571,7 +26761,7 @@ static int w_PMPI_Win_allocate_shared(MPIABI_Aint abi_size, int abi_disp_unit,
 /* ---------------------------------------------- MPI_Win_allocate_shared_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Win_allocate_shared_c
-#define BODY_MPI_Win_allocate_shared_c(TARGET)                                 \
+#define BODY_MPI_Win_allocate_shared_c(TARGET, FALLBACK)                       \
   {                                                                            \
     const MPI_Aint size      = abi_size;                                       \
     const MPI_Aint disp_unit = abi_disp_unit;                                  \
@@ -21588,8 +26778,31 @@ static int w_PMPI_Win_allocate_shared(MPIABI_Aint abi_size, int abi_disp_unit,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Win_allocate_shared)
+#define BODY_MPI_Win_allocate_shared_c(TARGET, FALLBACK)                       \
+  {                                                                            \
+    const MPI_Aint size      = abi_size;                                       \
+    int            disp_unit = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_disp_unit, &disp_unit)) {                   \
+      *abi_win = MPIABI_WIN_NULL;                                              \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Info info    = mpiwrapper_info_fromabi(abi_info);                \
+    const MPI_Comm comm    = mpiwrapper_comm_fromabi(abi_comm);                \
+    void *const    baseptr = mpiwrapper_recvbuf_fromabi(abi_baseptr);          \
+                                                                               \
+    MPI_Win   win;                                                             \
+    const int ierror = FALLBACK(size, disp_unit, info, comm, baseptr, &win);   \
+                                                                               \
+    *abi_win = (ierror == MPI_SUCCESS)                                         \
+                   ? mpiwrapper_win_toabi(win)                                 \
+                   : MPIABI_WIN_NULL;                                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Win_allocate_shared_c(TARGET)                                 \
+#define BODY_MPI_Win_allocate_shared_c(TARGET, FALLBACK)                       \
   {                                                                            \
     (void)abi_size;                                                            \
     (void)abi_disp_unit;                                                       \
@@ -21607,13 +26820,15 @@ static int w_MPI_Win_allocate_shared_c(MPIABI_Aint abi_size,
                                        MPIABI_Info abi_info,
                                        MPIABI_Comm abi_comm, void *abi_baseptr,
                                        MPIABI_Win *abi_win)
-    BODY_MPI_Win_allocate_shared_c(MPI_Win_allocate_shared_c)
+    BODY_MPI_Win_allocate_shared_c(MPI_Win_allocate_shared_c,
+                                   MPI_Win_allocate_shared)
 static int w_PMPI_Win_allocate_shared_c(MPIABI_Aint abi_size,
                                         MPIABI_Aint abi_disp_unit,
                                         MPIABI_Info abi_info,
                                         MPIABI_Comm abi_comm,
                                         void *abi_baseptr, MPIABI_Win *abi_win)
-    BODY_MPI_Win_allocate_shared_c(PMPI_Win_allocate_shared_c)
+    BODY_MPI_Win_allocate_shared_c(PMPI_Win_allocate_shared_c,
+                                   PMPI_Win_allocate_shared)
 
 /* --------------------------------------------------------- MPI_Win_attach */
 
@@ -21738,7 +26953,7 @@ static int w_PMPI_Win_create(void *abi_base, MPIABI_Aint abi_size,
 /* ------------------------------------------------------- MPI_Win_create_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Win_create_c
-#define BODY_MPI_Win_create_c(TARGET)                                          \
+#define BODY_MPI_Win_create_c(TARGET, FALLBACK)                                \
   {                                                                            \
     void *const    base      = mpiwrapper_recvbuf_fromabi(abi_base);           \
     const MPI_Aint size      = abi_size;                                       \
@@ -21755,8 +26970,31 @@ static int w_PMPI_Win_create(void *abi_base, MPIABI_Aint abi_size,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Win_create)
+#define BODY_MPI_Win_create_c(TARGET, FALLBACK)                                \
+  {                                                                            \
+    void *const    base      = mpiwrapper_recvbuf_fromabi(abi_base);           \
+    const MPI_Aint size      = abi_size;                                       \
+    int            disp_unit = 0;                                              \
+    if (!mpiwrapper_narrow_int(abi_disp_unit, &disp_unit)) {                   \
+      *abi_win = MPIABI_WIN_NULL;                                              \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+                                                                               \
+    const MPI_Info info = mpiwrapper_info_fromabi(abi_info);                   \
+    const MPI_Comm comm = mpiwrapper_comm_fromabi(abi_comm);                   \
+                                                                               \
+    MPI_Win   win;                                                             \
+    const int ierror = FALLBACK(base, size, disp_unit, info, comm, &win);      \
+                                                                               \
+    *abi_win = (ierror == MPI_SUCCESS)                                         \
+                   ? mpiwrapper_win_toabi(win)                                 \
+                   : MPIABI_WIN_NULL;                                          \
+    if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Win_create_c(TARGET)                                          \
+#define BODY_MPI_Win_create_c(TARGET, FALLBACK)                                \
   {                                                                            \
     (void)abi_base;                                                            \
     (void)abi_size;                                                            \
@@ -21772,11 +27010,11 @@ static int w_PMPI_Win_create(void *abi_base, MPIABI_Aint abi_size,
 static int w_MPI_Win_create_c(void *abi_base, MPIABI_Aint abi_size,
                               MPIABI_Aint abi_disp_unit, MPIABI_Info abi_info,
                               MPIABI_Comm abi_comm, MPIABI_Win *abi_win)
-    BODY_MPI_Win_create_c(MPI_Win_create_c)
+    BODY_MPI_Win_create_c(MPI_Win_create_c, MPI_Win_create)
 static int w_PMPI_Win_create_c(void *abi_base, MPIABI_Aint abi_size,
                                MPIABI_Aint abi_disp_unit, MPIABI_Info abi_info,
                                MPIABI_Comm abi_comm, MPIABI_Win *abi_win)
-    BODY_MPI_Win_create_c(PMPI_Win_create_c)
+    BODY_MPI_Win_create_c(PMPI_Win_create_c, PMPI_Win_create)
 
 /* ------------------------------------------------- MPI_Win_create_dynamic */
 
@@ -22355,7 +27593,7 @@ static int w_PMPI_Win_shared_query(MPIABI_Win abi_win, int abi_rank,
 /* ------------------------------------------------- MPI_Win_shared_query_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Win_shared_query_c
-#define BODY_MPI_Win_shared_query_c(TARGET)                                    \
+#define BODY_MPI_Win_shared_query_c(TARGET, FALLBACK)                          \
   {                                                                            \
     const MPI_Win   win       = mpiwrapper_win_fromabi(abi_win);               \
     const int       rank      = mpiwrapper_rank_fromabi(abi_rank);             \
@@ -22366,8 +27604,22 @@ static int w_PMPI_Win_shared_query(MPIABI_Win abi_win, int abi_rank,
     const int ierror = TARGET(win, rank, size, disp_unit, baseptr);            \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Win_shared_query)
+#define BODY_MPI_Win_shared_query_c(TARGET, FALLBACK)                          \
+  {                                                                            \
+    const MPI_Win   win     = mpiwrapper_win_fromabi(abi_win);                 \
+    const int       rank    = mpiwrapper_rank_fromabi(abi_rank);               \
+    MPI_Aint *const size    = (MPI_Aint *)abi_size;                            \
+    void *const     baseptr = mpiwrapper_recvbuf_fromabi(abi_baseptr);         \
+                                                                               \
+    int       disp_unit;                                                       \
+    const int ierror = FALLBACK(win, rank, size, &disp_unit, baseptr);         \
+                                                                               \
+    *abi_disp_unit = disp_unit;                                                \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Win_shared_query_c(TARGET)                                    \
+#define BODY_MPI_Win_shared_query_c(TARGET, FALLBACK)                          \
   {                                                                            \
     (void)abi_win;                                                             \
     (void)abi_rank;                                                            \
@@ -22384,12 +27636,12 @@ static int w_MPI_Win_shared_query_c(MPIABI_Win abi_win, int abi_rank,
                                     MPIABI_Aint *abi_size,
                                     MPIABI_Aint *abi_disp_unit,
                                     void *abi_baseptr)
-    BODY_MPI_Win_shared_query_c(MPI_Win_shared_query_c)
+    BODY_MPI_Win_shared_query_c(MPI_Win_shared_query_c, MPI_Win_shared_query)
 static int w_PMPI_Win_shared_query_c(MPIABI_Win abi_win, int abi_rank,
                                      MPIABI_Aint *abi_size,
                                      MPIABI_Aint *abi_disp_unit,
                                      void *abi_baseptr)
-    BODY_MPI_Win_shared_query_c(PMPI_Win_shared_query_c)
+    BODY_MPI_Win_shared_query_c(PMPI_Win_shared_query_c, PMPI_Win_shared_query)
 
 /* ---------------------------------------------------------- MPI_Win_start */
 
@@ -23029,6 +28281,7 @@ static int w_PMPI_T_cvar_get_num(int *abi_num_cvar)
       const int ierror = mpiwrapper_cvar_bind(cvar_index, &tool_bind);         \
       if (ierror != MPI_SUCCESS) {                                             \
         *abi_handle = MPIABI_T_CVAR_HANDLE_NULL;                               \
+        *abi_count = 0;                                                        \
         return mpiwrapper_errorcode_toabi(ierror);                             \
       }                                                                        \
     }                                                                          \
@@ -23363,6 +28616,11 @@ static int w_PMPI_T_event_get_index(const char *abi_name, int *abi_event_index)
     MPI_Datatype  datatypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
     MPI_Datatype *datatypes  = NULL;                                           \
     int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    if (abi_enumtype) *abi_enumtype = MPIABI_T_ENUM_NULL;                      \
+    if (abi_info) *abi_info = MPIABI_INFO_NULL;                                \
+    if (abi_verbosity) *abi_verbosity = 0;                                     \
+    if (abi_bind) *abi_bind = 0;                                               \
                                                                                \
     if (!datatypes_absent) {                                                   \
       datatypes = mpiwrapper_stage(datatypes_stack, sizeof datatypes_stack,    \
@@ -23892,6 +29150,7 @@ static int w_PMPI_T_pvar_get_num(int *abi_num_pvar)
       const int ierror = mpiwrapper_pvar_bind(pvar_index, &tool_bind);         \
       if (ierror != MPI_SUCCESS) {                                             \
         *abi_handle = MPIABI_T_PVAR_HANDLE_NULL;                               \
+        *abi_count = 0;                                                        \
         return mpiwrapper_errorcode_toabi(ierror);                             \
       }                                                                        \
     }                                                                          \

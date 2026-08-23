@@ -22,6 +22,7 @@
 
 #include "internal.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -255,6 +256,82 @@ static void test_staging(void)
 
   p = mpiwrapper_stage(stack, sizeof stack, SIZE_MAX / 2, sizeof(int) * 4);
   CHECK(p == NULL, "an overflowing staging must fail rather than wrap");
+}
+
+/* ------------------------------------------------- large-count narrowing -- */
+
+/* NOTES.md #5.10's boundary primitive, checked white box because every
+ * behavioural test of it can only reach the two obvious sides. What decides
+ * whether a legal call is refused, or an illegal one silently wraps, is
+ * exactly the four values around each limit -- and one of them, INT_MIN, is
+ * the case a `v < -INT_MAX` spelling gets wrong by one.
+ */
+static void test_narrowing(void)
+{
+  int out = 0xdead;
+
+  CHECK(mpiwrapper_narrow_int(0, &out) && out == 0, "0 must narrow");
+  CHECK(mpiwrapper_narrow_int(1, &out) && out == 1, "1 must narrow");
+  CHECK(mpiwrapper_narrow_int(-1, &out) && out == -1, "-1 must narrow");
+  CHECK(mpiwrapper_narrow_int(INT_MAX, &out) && out == INT_MAX,
+        "INT_MAX must narrow to itself");
+  CHECK(mpiwrapper_narrow_int(INT_MIN, &out) && out == INT_MIN,
+        "INT_MIN must narrow to itself -- the off-by-one a `v < -INT_MAX` "
+        "test gets wrong");
+  CHECK(!mpiwrapper_narrow_int((MPIABI_Count)INT_MAX + 1, &out),
+        "INT_MAX + 1 must be refused");
+  CHECK(!mpiwrapper_narrow_int((MPIABI_Count)INT_MIN - 1, &out),
+        "INT_MIN - 1 must be refused");
+
+  /* A refusal must leave the destination alone, because the caller's early
+   * return has other work to do before returning and must not see a value
+   * that looks converted.
+   */
+  out = 0xdead;
+  CHECK(!mpiwrapper_narrow_int((MPIABI_Count)INT_MAX + 1, &out)
+            && out == 0xdead,
+        "a refused narrowing must not write the destination");
+
+  /* MPI_Aint is the same width as MPIABI_Count on every host but the 32-bit
+   * rows, so the interesting assertion is the one that holds either way:
+   * everything representable narrows, and the check folds away where the
+   * types match.
+   */
+  MPI_Aint a = 0;
+  CHECK(mpiwrapper_narrow_aint(0, &a) && a == 0, "0 must narrow to MPI_Aint");
+  CHECK(mpiwrapper_narrow_aint(-1, &a) && a == -1,
+        "-1 must narrow to MPI_Aint");
+
+  /* Computed once, in MPIABI_Count, and cast rather than recomputed. Spelling
+   * the expected value `(MPI_Aint)INT_MAX + 1` does the arithmetic in whatever
+   * MPI_Aint promotes to -- which on the i386 row is a 32-bit int, so it
+   * overflows at compile time and gcc rejects it under -Werror=overflow. The
+   * branch it sits in is dead there, and that does not help: both arms are
+   * compiled either way.
+   */
+  const MPIABI_Count over_int = (MPIABI_Count)INT_MAX + 1;
+  if (sizeof(MPI_Aint) == sizeof(MPIABI_Count)) {
+    CHECK(mpiwrapper_narrow_aint(over_int, &a) && a == (MPI_Aint)over_int,
+          "a 64-bit MPI_Aint must take anything an MPIABI_Count holds");
+  } else {
+    CHECK(!mpiwrapper_narrow_aint(over_int, &a),
+          "a 32-bit MPI_Aint must refuse INT_MAX + 1");
+  }
+
+  /* mpiwrapper_staged_next, the mixed-block layout. Every offset it returns
+   * must be aligned for anything, and an overflowing layout must come back as
+   * the poison value rather than as a small number.
+   */
+  const size_t first = mpiwrapper_staged_next(0, 3, sizeof(int));
+  CHECK(first >= 3 * sizeof(int), "the layout must leave room for the array");
+  CHECK(first % MPIWRAPPER_STAGED_ALIGN == 0,
+        "every staged array must start suitably aligned, got %zu", first);
+  CHECK(mpiwrapper_staged_next(first, 0, sizeof(MPI_Datatype)) == first,
+        "an empty array must consume nothing");
+  CHECK(mpiwrapper_staged_next(0, SIZE_MAX / 2, 4) == SIZE_MAX,
+        "an overflowing layout must poison rather than wrap");
+  CHECK(mpiwrapper_staged_next(SIZE_MAX, 1, 1) == SIZE_MAX,
+        "the poison value must be sticky");
 }
 
 /* ------------------------------------------- the dynamic-handle collision probe */
@@ -793,6 +870,7 @@ int main(int argc, char **argv)
     test_dynamic_handles();
     test_staged_requests();
     test_staged_policy();
+    test_narrowing();
     test_keyvals();
     test_error_codes();
     test_serialization();

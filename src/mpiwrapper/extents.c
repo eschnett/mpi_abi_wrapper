@@ -36,6 +36,40 @@ int mpiwrapper_comm_extent(MPI_Comm comm, int *n)
   return inter ? PMPI_Comm_remote_size(comm, n) : PMPI_Comm_size(comm, n);
 }
 
+/* The same group, but zero wherever the array is *not significant* -- which is
+ * every rank but the root, for MPI_Gatherv's recvcounts/displs and
+ * MPI_Scatterv's sendcounts/displs (MPI-5.0 6.6).
+ *
+ * This exists only for the large-count fallback (NOTES.md #5.10), and the
+ * reason it has to is the sharpest hazard in that whole mechanism. A count
+ * array crosses as a pointer cast normally, so nothing reads it and a non-root
+ * rank may legally pass a null pointer or an uninitialized array -- and real
+ * programs do, because the standard says they may. Narrowing has to read it.
+ * Answering zero here is what keeps the staging loop from ever touching it.
+ *
+ * The intercommunicator case is not the intracommunicator one with a different
+ * group. There, `root` is MPI_ROOT at the single root in the local group,
+ * MPI_PROC_NULL at every other member of it, and a rank in the *other* group
+ * at every member of the receiving one -- so the test is against MPI_ROOT and
+ * never against this process's own rank, which would answer wrongly for both
+ * of the other two cases.
+ */
+int mpiwrapper_root_extent(MPI_Comm comm, int root, int *n)
+{
+  int inter  = 0;
+  int ierror = PMPI_Comm_test_inter(comm, &inter);
+  if (ierror != MPI_SUCCESS) return ierror;
+
+  *n = 0;
+  if (inter)
+    return root == MPI_ROOT ? PMPI_Comm_remote_size(comm, n) : MPI_SUCCESS;
+
+  int rank = 0;
+  ierror   = PMPI_Comm_rank(comm, &rank);
+  if (ierror != MPI_SUCCESS) return ierror;
+  return rank == root ? PMPI_Comm_size(comm, n) : MPI_SUCCESS;
+}
+
 /* The neighbourhood collectives' send and receive arrays are sized by the
  * number of outgoing and incoming neighbours, which depends on which of the
  * three topologies the communicator carries. A Cartesian communicator has
@@ -119,14 +153,24 @@ int mpiwrapper_type_ndatatypes_c(MPI_Datatype datatype, MPI_Count *ndatatypes)
   return PMPI_Type_get_envelope_c(datatype, &nintegers, &naddresses,
                                   &nlarge_counts, ndatatypes, &combiner);
 #else
-  /* Unreachable in any implementation that has MPI_Type_get_contents_c at all
-   * -- both arrived in MPI-4.0 -- but the guard is what keeps this file
-   * compiling against one that has neither, where the generated body it serves
-   * is a stub anyway.
+  /* No large-count envelope, so ask the small one -- which is the whole answer
+   * here, not an approximation of it. A datatype's envelope is a property of
+   * the constructor that built it (dev/large-count-envelope/), and over an
+   * implementation with no `_c` constructors every datatype that can exist was
+   * built by a small-count one. So there is nothing the small envelope fails
+   * to see, and MPI_Type_get_contents_c's fallback body reports
+   * num_large_counts = 0 for the same reason (NOTES.md #5.10, #13.2).
+   *
+   * This arm used to answer MPI_ERR_ARG on the grounds that it was
+   * unreachable, both forms having arrived in MPI-4.0 together. The fallback
+   * reaches it.
    */
-  (void)datatype;
-  *ndatatypes = 0;
-  return MPI_ERR_ARG;
+  int       nintegers = 0, naddresses = 0, nd = 0, combiner = 0;
+  const int ierror =
+      PMPI_Type_get_envelope(datatype, &nintegers, &naddresses, &nd,
+                             &combiner);
+  *ndatatypes = nd;
+  return ierror;
 #endif
 }
 

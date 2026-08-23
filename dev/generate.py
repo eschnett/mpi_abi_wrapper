@@ -95,6 +95,20 @@ FROZEN = {
     # get wrong silently (NOTES.md #5.7, #6.3). Frozen so that a routine
     # entering or leaving the set is a deliberate act.
     "staged past return": 8,
+    # Large-count entry points that get a fallback body for an implementation
+    # that does not have them (NOTES.md #5.10). The ABI declares 159 `_c` forms
+    # and no released Open MPI has any of them, so this number is how much of
+    # that surface is served rather than refused. Frozen because an entry point
+    # joining or leaving the set changes what a build over an MPI-3
+    # implementation can do.
+    "large-count fallbacks": 148,
+    # And where that fallback's temporaries outlive the call, which the tally
+    # above cannot see and which "staged past return" answers only for the
+    # primary body. The two differ because a vector collective's count arrays
+    # are a pointer cast in one and a staged block in the other (NOTES.md
+    # #5.7); frozen separately so that a routine entering either set stays a
+    # deliberate act.
+    "narrowed staged past return": 18,
 }
 
 # ---------------------------------------------------------------------------
@@ -297,6 +311,28 @@ ALIAS_TYPEDEF_PAIRS = {
     ("MPI_Delete_function", "MPI_Comm_delete_attr_function"),
 }
 
+# What a large-count entry point falls back to where the implementation does
+# not have it (NOTES.md #5.10). The default is its own small twin -- MPI_Send
+# for MPI_Send_c -- and this table names the entry points for which that is the
+# wrong answer.
+#
+# All three are MPI-3.0's `_x` forms, which already answer in MPI_Count and so
+# are *exact*: same signature, same types, no narrowing check, and no ceiling.
+# Preferring them over the small twin is not a style choice -- MPI_Type_size
+# reports an int, so a datatype larger than 2 GiB would come back as
+# MPI_UNDEFINED where MPI_Type_size_x gives the answer. Deprecated in MPI-4.1
+# means "do not write new code against it", not "absent" (NOTES.md #8), and
+# every implementation at the enforced MPI-3.0 floor has them.
+#
+# MPI_Get_elements_c and MPI_Status_set_elements_c belong to this group too and
+# are not here: they consume a status in the *in* direction, so they are
+# hand-written, and hw_status.c names their `_x` fallbacks itself.
+LARGE_COUNT_ALT = {
+    "MPI_Type_size_c": "MPI_Type_size_x",
+    "MPI_Type_get_extent_c": "MPI_Type_get_extent_x",
+    "MPI_Type_get_true_extent_c": "MPI_Type_get_true_extent_x",
+}
+
 # ---------------------------------------------------------------------------
 # Named tables: the per-(routine, parameter) exceptions
 # ---------------------------------------------------------------------------
@@ -408,7 +444,7 @@ class Extent:
 
 # The group whose size sizes MPI_Alltoallw's datatype arrays -- the *remote*
 # group on an intercommunicator, which extents.c handles.
-_COMM_PROBE = ("int ntypes = 0;", "mpiwrapper_comm_extent(comm, &ntypes)")
+_COMM_PROBE = ("int nranks = 0;", "mpiwrapper_comm_extent(comm, &nranks)")
 
 # The neighbourhood forms instead take one degree per direction. indegree sizes
 # the receive arrays and outdegree the send ones, which is the argument order
@@ -419,6 +455,14 @@ _NEIGHBOR_PROBE = ("int nsendtypes = 0, nrecvtypes = 0;",
 _DIST_PROBE = ("int nsources = 0, ndestinations = 0;",
                "mpiwrapper_dist_graph_extents(comm, &nsources, &ndestinations)")
 
+# The same group as _COMM_PROBE, but zero wherever the array is not significant
+# -- MPI_Gatherv's and MPI_Scatterv's vector arrays away from the root. Only
+# the large-count fallback needs it (NOTES.md #5.10): a count array is a
+# pointer cast normally, so nothing reads it and a non-root rank may legally
+# pass a null one, and narrowing has to read it.
+_ROOT_PROBE = ("int nranks = 0;",
+               "mpiwrapper_root_extent(comm, root, &nranks)")
+
 ARRAY_EXTENT = {}
 
 # The twelve *alltoallw* forms. Their datatype arrays are the one array class
@@ -427,7 +471,8 @@ ARRAY_EXTENT = {}
 for _base in ("Alltoallw", "Alltoallw_c", "Alltoallw_init", "Alltoallw_init_c",
               "Ialltoallw", "Ialltoallw_c"):
     for _p in ("sendtypes", "recvtypes"):
-        ARRAY_EXTENT[("MPI_" + _base, _p)] = Extent("ntypes", probe=_COMM_PROBE)
+        ARRAY_EXTENT[("MPI_" + _base, _p)] = Extent("nranks",
+                                                    probe=_COMM_PROBE)
 for _base in ("Neighbor_alltoallw", "Neighbor_alltoallw_c",
               "Neighbor_alltoallw_init", "Neighbor_alltoallw_init_c",
               "Ineighbor_alltoallw", "Ineighbor_alltoallw_c"):
@@ -435,6 +480,66 @@ for _base in ("Neighbor_alltoallw", "Neighbor_alltoallw_c",
         "nsendtypes", probe=_NEIGHBOR_PROBE)
     ARRAY_EXTENT[("MPI_" + _base, "recvtypes")] = Extent(
         "nrecvtypes", probe=_NEIGHBOR_PROBE)
+
+# The vector collectives' count and displacement arrays, which apis.json gives
+# a length of `*` and which only the large-count fallback ever stages -- in
+# every other body they are a pointer cast (HISTORY.md #1.9).
+#
+# Each family is listed once and spelled three ways, because a large-count
+# vector collective always comes as a blocking, a nonblocking and a persistent
+# form and there is no reason for the three to disagree about how long their
+# arrays are. The nonblocking and persistent ones additionally have to keep the
+# block alive past their return, which they get from #5.7's existing machinery
+# rather than from anything here.
+#
+# The two shapes are "sized by the group" and "sized by the group, at the root
+# only". Getting the second wrong is not a wrong answer but a fault, so
+# assign_fallbacks cross-checks every one of these against apis.json's own
+# root_only flag.
+def _vector_forms(family):
+    """The blocking, nonblocking and persistent spellings of one collective.
+
+    `Alltoallv` -> MPI_Alltoallv_c, MPI_Ialltoallv_c, MPI_Alltoallv_init_c.
+    The nonblocking spelling lowercases the first letter after its I, which is
+    the standard's convention and not a rule anything else here relies on.
+    """
+    return (f"MPI_{family}_c",
+            f"MPI_I{family[0].lower()}{family[1:]}_c",
+            f"MPI_{family}_init_c")
+
+
+for _family in ("Alltoallv", "Alltoallw"):
+    for _name in _vector_forms(_family):
+        for _p in ("sendcounts", "sdispls", "recvcounts", "rdispls"):
+            ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_COMM_PROBE)
+for _name in _vector_forms("Allgatherv"):
+    for _p in ("recvcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_COMM_PROBE)
+for _name in _vector_forms("Gatherv"):
+    for _p in ("recvcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_ROOT_PROBE)
+for _name in _vector_forms("Scatterv"):
+    for _p in ("sendcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_ROOT_PROBE)
+for _name in _vector_forms("Reduce_scatter"):
+    ARRAY_EXTENT[(_name, "recvcounts")] = Extent("nranks", probe=_COMM_PROBE)
+
+# The neighbourhood vector forms, sized by degree rather than by group size.
+# MPI_Neighbor_alltoallw's displacements are already MPI_Aint in the small
+# form, so only its counts narrow and only they appear here.
+for _name in _vector_forms("Neighbor_allgatherv"):
+    for _p in ("recvcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nrecvtypes",
+                                           probe=_NEIGHBOR_PROBE)
+for _name in _vector_forms("Neighbor_alltoallv"):
+    for _p, _n in (("sendcounts", "nsendtypes"), ("sdispls", "nsendtypes"),
+                   ("recvcounts", "nrecvtypes"), ("rdispls", "nrecvtypes")):
+        ARRAY_EXTENT[(_name, _p)] = Extent(_n, probe=_NEIGHBOR_PROBE)
+for _name in _vector_forms("Neighbor_alltoallw"):
+    ARRAY_EXTENT[(_name, "sendcounts")] = Extent("nsendtypes",
+                                                 probe=_NEIGHBOR_PROBE)
+    ARRAY_EXTENT[(_name, "recvcounts")] = Extent("nrecvtypes",
+                                                 probe=_NEIGHBOR_PROBE)
 
 # The graph constructors. `edges` is as long as the last entry of the index
 # array says, which is an expression over two other parameters rather than an
@@ -492,6 +597,19 @@ ARRAY_EXTENT[("MPI_Type_get_contents", "array_of_datatypes")] = Extent(
            "mpiwrapper_type_ndatatypes(datatype, &ndatatypes)"),
     pre=["if (ndatatypes > max_datatypes) ndatatypes = max_datatypes;",
          "if (ndatatypes < 0) ndatatypes = 0;"])
+# The few extents whose answer differs between an entry point's two arms.
+# MPI_Type_get_contents_c is the only one so far, and the difference is not
+# cosmetic: its own extent asks the *large-count* envelope, which the fallback
+# is being emitted precisely because the implementation does not have it.
+FALLBACK_ARRAY_EXTENT = {
+    ("MPI_Type_get_contents_c", "array_of_datatypes"): Extent(
+        "ndatatypes", ctype="int",
+        probe=("int ndatatypes = 0;",
+               "mpiwrapper_type_ndatatypes(datatype, &ndatatypes)"),
+        pre=["if (ndatatypes > max_datatypes) ndatatypes = max_datatypes;",
+             "if (ndatatypes < 0) ndatatypes = 0;"]),
+}
+
 ARRAY_EXTENT[("MPI_Type_get_contents_c", "array_of_datatypes")] = Extent(
     "ndatatypes", ctype="MPI_Count",
     probe=("MPI_Count ndatatypes = 0;",
@@ -782,7 +900,7 @@ _ADDED_RE = re.compile(r"added:\s*MPI-(\d+)\.(\d+)")
 
 class Param:
     __slots__ = ("base", "name", "suffix", "kind", "direction", "length",
-                 "constant", "cls")
+                 "constant", "cls", "root_only")
 
     def __init__(self, base, name, suffix):
         self.base = base
@@ -793,6 +911,11 @@ class Param:
         self.length = None
         self.constant = False
         self.cls = None
+        # apis.json's own flag for "not significant except at the root". Read
+        # only to cross-check the extent table (NOTES.md #5.10): an array a
+        # fallback narrows has to be *read*, and reading one at a rank where it
+        # is not significant faults on a legal program.
+        self.root_only = False
 
     @property
     def is_array(self):
@@ -816,7 +939,8 @@ class Param:
 
 class EntryPoint:
     __slots__ = ("name", "ret", "params", "deprecated", "deprecated_in",
-                 "status", "detail", "ret_kind", "unguarded")
+                 "status", "detail", "ret_kind", "unguarded", "fallback",
+                 "fallback_params", "is_fallback")
 
     def __init__(self, name, ret, params, deprecated, deprecated_in=None):
         self.name = name
@@ -831,6 +955,15 @@ class EntryPoint:
         self.status = None   # 'generated' | 'hand-written' | 'deferred'
         self.detail = None   # the reason, for gen/report.txt
         self.unguarded = False  # true where the body never calls the impl
+        # The implementation entry point this one falls back to where the
+        # implementation does not have it, or None (NOTES.md #5.10), and the
+        # parameter list that body converts to -- the twin's types under this
+        # entry point's ABI-side names.
+        self.fallback = None
+        self.fallback_params = None
+        # True only on the stand-in as_fallback builds, so that the few tables
+        # whose answer differs between the two arms can say so.
+        self.is_fallback = False
 
     @property
     def base(self):
@@ -1267,6 +1400,10 @@ def array_extent(ep, p):
     otherwise, which is where every `*` and every partly-filled OUT array is
     accounted for by hand.
     """
+    if ep.is_fallback:
+        named = FALLBACK_ARRAY_EXTENT.get((ep.name, p.name))
+        if named is not None:
+            return named
     named = ARRAY_EXTENT.get((ep.name, p.name))
     if named is not None:
         return named
@@ -1579,13 +1716,19 @@ class Staged:
     is allocated, and both must suppress the copy back -- which for the null
     case is not an optimization but the whole point, since the destination is
     the null pointer.
+
+    `narrow_fn` names the mpiwrapper_narrow_* that fills each element where the
+    fallback body has to narrow the array rather than map it (NOTES.md #5.10).
+    It is the one conversion here that can *fail*, which is why it is a
+    separate field rather than another `family`: a family produces an
+    expression and this produces a statement with an early exit.
     """
 
     __slots__ = ("p", "name", "elem", "mode", "extent", "family", "ignored",
-                 "skip", "skip_arg")
+                 "skip", "skip_arg", "narrow_fn")
 
     def __init__(self, p, name, elem, mode, extent, family, ignored=False,
-                 skip=None, skip_arg=None):
+                 skip=None, skip_arg=None, narrow_fn=None):
         self.p = p
         self.name = name
         self.elem = elem
@@ -1595,10 +1738,29 @@ class Staged:
         self.ignored = ignored   # MPI_IN_PLACE makes this argument ignored
         self.skip = skip
         self.skip_arg = skip_arg
+        self.narrow_fn = narrow_fn
+
+    def narrow_loop(self, ind, on_fail):
+        """The checked conversion loop, for an array the fallback narrows.
+
+        `on_fail` is what to do with the element that does not fit, which
+        differs between the two assemblers: one has a `done:` label to jump to
+        and the other has a block to free.
+        """
+        lines = [ind + f"for ({self.extent.ctype} i = 0; "
+                       f"i < {self.extent.alloc}; ++i)",
+                 ind + f"  if (!{self.narrow_fn}(abi_{self.p.name}[i], "
+                       f"&{self.name}[i])) {{"]
+        lines += [ind + "    " + ln for ln in on_fail]
+        lines.append(ind + "  }")
+        return lines
 
     def fill(self, lead):
         """The conversion loop's assignment, `lead` being everything up to and
         including the `= `."""
+        assert self.family, (
+            f"{self.p.name}: staged with neither a conversion family nor a "
+            "narrowing function, so there is nothing to fill it with")
         convert = f"mpiwrapper_{self.family}_fromabi(abi_{self.p.name}[i])"
         if not self.ignored:
             return [f"{lead}{convert};"]
@@ -1613,8 +1775,15 @@ def impl_null_handle(kind):
     return "MPI_" + HANDLE_KIND[kind].upper() + "_NULL"
 
 
-def emit_body(ep):
-    """The lines of BODY_MPI_X(TARGET), or None if some class blocks it."""
+def emit_body(ep, target="TARGET"):
+    """The lines of BODY_MPI_X(TARGET), or None if some class blocks it.
+
+    `target` is the macro parameter the call is written against. It is TARGET
+    for the body that calls the entry point's own name and FALLBACK for the one
+    that calls what it falls back to over an implementation lacking it
+    (NOTES.md #5.10); the two arms of that #if chain are otherwise the same
+    text, which is the point.
+    """
     if ep.name in STATUS_FIELD:
         return emit_status_field(ep)
 
@@ -1679,15 +1848,15 @@ def emit_body(ep):
             return extent
         if extent.alloc not in checked_lengths:
             checked_lengths.add(extent.alloc)
-            checks.append((extent.alloc,
-                           f"if ({extent.alloc} < 0) return MPIABI_ERR_COUNT;"))
+            checks.extend(guarded_check(
+                ep, extent.alloc, f"{extent.alloc} < 0", "MPIABI_ERR_COUNT"))
         if extent.ctype != "int":
             # The length is wider than size_t may be, so the byte count can
             # overflow before mpiwrapper_stage sees it.
-            checks.append((extent.alloc,
-                           f"if ((uint64_t){extent.alloc} > SIZE_MAX / "
-                           f"sizeof({elem}))"))
-            checks.append((extent.alloc, "  return MPIABI_ERR_COUNT;"))
+            checks.extend(guarded_check(
+                ep, extent.alloc,
+                f"(uint64_t){extent.alloc} > SIZE_MAX / sizeof({elem})",
+                "MPIABI_ERR_COUNT"))
         return extent
 
     for p in ep.params:
@@ -1706,6 +1875,68 @@ def emit_body(ep):
             else:
                 decls.append(("const " + p.base, name, abi))
             args.append(name)
+        elif cls == "narrow_in":
+            # NOTES.md #5.10. The local cannot be initialized and const like
+            # every other one here, because the whole point is that the
+            # conversion can fail: `const int count = abi_count;` *is* the
+            # defect. So it is declared defined, then filled by the check that
+            # decides whether it can be.
+            decls.append((p.base, name, "0"))
+            # ARG_SUBSTITUTE applies here for the same reason it applies to a
+            # passthrough, and forgetting it is not a style slip: the local is
+            # still the caller's value, because the extent clamp reads it, but
+            # what reaches the implementation is the substitute. Passing the
+            # caller's max_datatypes instead is the shape
+            # dev/get-contents-extent/ measured Open MPI 5.0.6 dereferencing
+            # past the end of.
+            substitute = ARG_SUBSTITUTE.get((ep.name, p.name))
+            # And the rejection owes the caller exactly what decision 6's stub
+            # owes: every out parameter defined. This is the same early return
+            # the stub makes, for a narrower reason, and a caller that ignores
+            # the return code -- which the standard permits and real code does
+            # -- would otherwise read its own uninitialized stack. Without this
+            # a rejected MPI_Type_create_resized_c hands back an
+            # uninitialized MPI_Datatype.
+            checks += guarded_check(ep, name,
+                                    f"!{NARROW_FN[p.base]}({abi}, &{name})",
+                                    "MPIABI_ERR_VALUE_TOO_LARGE")
+            args.append(substitute or name)
+        elif cls == "large_only_zero":
+            # Nothing to ask the implementation for, and a caller that reads it
+            # must find a defined zero rather than its own stack.
+            post.append(writeback(abi, f"*{abi} = 0;"))
+        elif cls == "large_only_void":
+            # Either a capacity the fallback does not need (nothing will be
+            # written) or the array that nothing will be written to. Neither
+            # reaches the implementation, and an unread parameter is a -Werror
+            # failure without this.
+            post.append((f"(void){abi};",))
+        elif cls == "narrow_inout":
+            # The caller's value in and the implementation's value out, through
+            # one object (NOTES.md #5.10). Only the in half can fail, and the
+            # out half is a widening that cannot -- so this is narrow_in and
+            # widen_out sharing a local, which is exactly what the parameter
+            # is.
+            #
+            # The ceiling here is the lowest in the whole mechanism and it is
+            # worth knowing: the small twin's `position` is an int, so a pack
+            # buffer above 2 GiB cannot be walked at all over an
+            # implementation that lacks the `_c` form. #13.2 has it.
+            decls.append((p.pointee(), name, "0"))
+            checks += guarded_check(
+                ep, name, f"!{NARROW_FN[p.pointee()]}(*{abi}, &{name})",
+                "MPIABI_ERR_VALUE_TOO_LARGE")
+            post.append(writeback(abi, f"*{abi} = {name};"))
+            args.append("&" + name)
+        elif cls == "widen_out":
+            # The twin reports a narrower type than the ABI declares, so the
+            # answer widens on the way back and cannot be lost. The caller's
+            # pointer cannot be passed through -- it points at the wrong
+            # type -- so this keeps a local and writes it back, which is the
+            # shape every converted OUT scalar here has.
+            outs.append((p.pointee(), name, "0" if nullable else None))
+            post.append(writeback(abi, f"*{abi} = {name};"))
+            args.append(out_pointer(p, name, abi) if nullable else "&" + name)
         elif cls == "array_passthrough":
             ptr = local_type(p).rstrip()
             if (ep.name, p.name) in CONST_MISMATCH:
@@ -1897,6 +2128,15 @@ def emit_body(ep):
             post.append((f"if (!ignore) "
                          f"mpiwrapper_status_toabi_keep_error(&status, {abi});",))
             status_local = True
+        elif cls == "array_narrow_in":
+            # NOTES.md #5.10. The same staged temporary #5.7 requires of every
+            # converted array -- the elements are a different size, so there is
+            # nothing to cast -- filled by a loop that can fail partway.
+            elem = p.elem_type()
+            extent = use(array_extent(ep, p), elem)
+            staged.append(Staged(p, name, elem, "in", extent, None,
+                                 narrow_fn=NARROW_FN[elem]))
+            args.append(name)
         elif cls in ("array_convert_in", "array_stage_inout",
                      "array_stage_out", "array_status_out"):
             elem = "MPI_Status" if cls == "array_status_out" else p.elem_type()
@@ -1961,7 +2201,7 @@ def emit_body(ep):
 
     return assemble(ep, decls, outs, post, args, staged, checks, handle_out,
                     status_local, probes, pre, rejects, extent_post, maps,
-                    releases, late_decls)
+                    releases, late_decls, target)
 
 
 def length_type(ep, length):
@@ -1981,6 +2221,20 @@ def stages_past_return(ep):
     """
     return (ep.status == "generated" and request_out(ep) is not None
             and any(p.cls == "array_convert_in" for p in ep.params))
+
+
+def fallback_stages_past_return(ep):
+    """True where the *fallback* body's staged temporaries outlive its call.
+
+    stages_past_return asks this of the primary body. The two answers differ,
+    and that is the whole reason both are frozen (NOTES.md #5.7): a vector
+    collective's count and displacement arrays are a pointer cast in the
+    primary body and a staged temporary in the fallback, so the fallback keeps
+    a block alive past its return where the primary keeps nothing.
+    """
+    return (ep.fallback_params is not None and request_out(ep) is not None
+            and any(p.cls in ("array_convert_in", "array_narrow_in")
+                    for p in ep.fallback_params))
 
 
 def request_out(ep):
@@ -2029,10 +2283,10 @@ def staged_kind(ep):
 
 def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
              status_local, probes, pre, rejects, extent_post, maps, releases,
-             late_decls=()):
+             late_decls=(), target="TARGET"):
     if staged and any(s.mode == "in" for s in staged) and request_out(ep):
         return assemble_outliving(ep, decls, args, staged, checks, probes, pre,
-                                  rejects)
+                                  rejects, target)
 
     # Absolute indentation, including the two columns the body macro adds:
     # the outer brace sits at column 3 and statements at column 5, which is
@@ -2077,6 +2331,14 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         rows.append(("int", "abi_ierror", "MPIABI_ERR_INTERN"))
         body += [ind + ln for ln in align(rows, ind)]
         body.append("")
+        # Every `goto done` below is a failure exit, but `done:` is where the
+        # success path leaves too, so the outs cannot be defined at the label.
+        # They are defined here instead -- once, before the first jump to it
+        # (NOTES.md #7 decision 6).
+        defined = out_defined(ep, ind)
+        if defined:
+            body += defined
+            body.append("")
         for s in staged:
             # An array the caller does not want is not allocated at all, which
             # is the point of testing MPI_STATUSES_IGNORE -- or MPI_T's null
@@ -2109,6 +2371,22 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         for s in staged:
             if s.mode not in ("in", "inout"):
                 continue
+            if s.narrow_fn:
+                # The one conversion loop that can fail. It leaves through the
+                # same `done:` every other failure here uses, so the stack
+                # buffers are unstaged exactly once and abi_ierror carries the
+                # reason -- but the out parameters have to be defined *here*
+                # rather than at the label, because the success path writes
+                # them and then falls through it. Without this a refused
+                # MPI_Type_create_struct_c returns the handle the caller
+                # happened to leave in the variable, which is decision 6's
+                # defect on a path decision 6 does not reach; the scratch
+                # check for this stage is what found it.
+                loops += s.narrow_loop(
+                    ind, [ln.strip() for ln in out_defined(ep, "")]
+                    + ["abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;",
+                       "goto done;"])
+                continue
             loops.append(ind + f"for ({s.extent.ctype} i = 0; "
                                f"i < {s.extent.alloc}; ++i)")
             loops += s.fill(f"{ind}  {s.name}[i] = ")
@@ -2128,18 +2406,18 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         rows.append(("const int", "ierror", None))
         lines = [ind + ln for ln in align(rows, ind)]
         lines[-1] = lines[-1][:-1] + " ="
-        oneline = wrap("TARGET", args, ";", lines[-1] + " ",
-                       len(ind) + 4 + len("TARGET("))
+        oneline = wrap(target, args, ";", lines[-1] + " ",
+                       len(ind) + 4 + len(target + "("))
         if len(oneline) == 1:
             body += lines[:-1] + oneline
         else:
             body += lines
-            body += wrap("TARGET", args, ";", ind + "    ",
-                         len(ind) + 4 + len("TARGET("))
+            body += wrap(target, args, ";", ind + "    ",
+                         len(ind) + 4 + len(target + "("))
     else:
         body += [ind + ln for ln in align(rows, ind)]
-        body += wrap("return TARGET", args, ";", ind,
-                     len(ind) + len("return TARGET("))
+        body += wrap("return " + target, args, ";", ind,
+                     len(ind) + len("return " + target + "("))
         body.append("  }")
         return body
 
@@ -2180,7 +2458,8 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
     return body
 
 
-def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
+def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
+                       target="TARGET"):
     """The body of a routine whose staged arrays outlive it.
 
     A nonblocking or persistent collective may keep reading the arrays it was
@@ -2202,12 +2481,17 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
             f"{ep.name}: a routine that stages past its return may produce no "
             "handle but the request: " + ", ".join(p.name for p in others))
     elems = {s.elem for s in staged}
-    if len(elems) != 1 or any(s.mode != "in" for s in staged):
+    if any(s.mode != "in" for s in staged):
         raise SystemExit(
             f"{ep.name}: temporaries that outlive their call are carved out of "
-            "one block, so they must all be in-direction and of one element "
-            f"type; got {sorted(elems)}")
-    elem = elems.pop()
+            "one block, so they must all be in-direction; got "
+            + ", ".join(sorted({s.mode for s in staged})))
+    # One element type is the common case and keeps the simpler layout, which
+    # is every routine that stages past its return without the large-count
+    # fallback. Two arise only there, and only for the alltoallw family, whose
+    # datatype arrays are joined by narrowed counts and displacements.
+    mixed = len(elems) > 1
+    elem = None if mixed else elems.pop()
     ind = "    "
     body = ["  {"]
 
@@ -2224,26 +2508,76 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
     body += emit_extent_queries(ep, probes, pre, rejects, ind)
 
     total = " + ".join(f"(size_t){s.extent.alloc}" for s in staged)
-    rows = [("const size_t", "nstaged", total), (elem + " *", "block", "NULL")]
-    body += [ind + ln for ln in align(rows, ind)]
-    body.append(ind + "if (nstaged <= SIZE_MAX / sizeof *block)")
-    body.append(ind + "  block = malloc(nstaged * sizeof *block);")
-    body.append(ind + "if (!block && nstaged > 0) {")
-    body += null_out_handles(ep, ind + "  ")
-    body.append(ind + "  return MPIABI_ERR_INTERN;")
-    body.append(ind + "}")
+    if not mixed:
+        rows = [("const size_t", "nstaged", total),
+                (elem + " *", "block", "NULL")]
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append(ind + "if (nstaged <= SIZE_MAX / sizeof *block)")
+        body.append(ind + "  block = malloc(nstaged * sizeof *block);")
+        body.append(ind + "if (!block && nstaged > 0) {")
+        body += out_defined(ep, ind + "  ")
+        body.append(ind + "  return MPIABI_ERR_INTERN;")
+        body.append(ind + "}")
 
-    offset = None
-    rows = []
-    for s in staged:
-        init = "block" if offset is None else f"block + {offset}"
-        rows.append((elem + " *const", s.name, init))
-        offset = s.extent.alloc if offset is None \
-            else f"{offset} + {s.extent.alloc}"
-    body += [ind + ln for ln in align(rows, ind)]
-    body.append("")
+        offset = None
+        rows = []
+        for s in staged:
+            init = "block" if offset is None else f"block + {offset}"
+            rows.append((elem + " *const", s.name, init))
+            offset = s.extent.alloc if offset is None \
+                else f"{offset} + {s.extent.alloc}"
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append("")
+    else:
+        # Arrays of more than one element type in one block, so the offsets are
+        # in bytes and each is rounded up to the strictest alignment any of them
+        # could need (internal.h). `nstaged` stays an element count, because
+        # what mpiwrapper_staged_keep does with it is ask whether anything was
+        # staged at all.
+        # mpiwrapper_staged_keep reads nstaged only to ask whether anything
+        # was staged at all, so repeated extents collapse: six arrays sized by
+        # the same group make the same zero-test as one. This is not merely
+        # shorter -- the undeduped sum of MPI_Ialltoallw_c's six runs past the
+        # margin and reads as though the number meant something.
+        seen, terms = set(), []
+        for st in staged:
+            if st.extent.alloc not in seen:
+                seen.add(st.extent.alloc)
+                terms.append(f"(size_t){st.extent.alloc}")
+        rows = [("const size_t", "nstaged", " + ".join(terms))]
+        prev = "0"
+        for i, s in enumerate(staged):
+            rows.append((("const size_t" if i else "const size_t"),
+                         "off_" + s.name, prev))
+            prev = (f"mpiwrapper_staged_next(off_{s.name}, "
+                    f"(size_t){s.extent.alloc}, sizeof({s.elem}))")
+        rows.append(("const size_t", "nbytes", prev))
+        rows.append(("unsigned char *", "block", "NULL"))
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append(ind + "if (nbytes != SIZE_MAX) block = malloc(nbytes);")
+        body.append(ind + "if (!block && nstaged > 0) {")
+        body += out_defined(ep, ind + "  ")
+        body.append(ind + "  return MPIABI_ERR_INTERN;")
+        body.append(ind + "}")
+
+        rows = [(s.elem + " *const", s.name,
+                 f"({s.elem} *)(block + off_{s.name})") for s in staged]
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append("")
 
     for s in staged:
+        if s.narrow_fn:
+            # The one conversion loop that can fail, and this assembler has no
+            # `done:` to jump to: the block is already on the heap and nothing
+            # owns it yet, since the call that would hand it to the request
+            # table has not happened. So the element that does not fit frees it
+            # here and returns, leaving the request null like every other early
+            # return in this body.
+            body += s.narrow_loop(
+                ind, ["free(block);"]
+                + [ln.strip() for ln in out_defined(ep, "")]
+                + ["return MPIABI_ERR_VALUE_TOO_LARGE;"])
+            continue
         body.append(ind + f"for ({s.extent.ctype} i = 0; "
                           f"i < {s.extent.alloc}; ++i)")
         body += s.fill(f"{ind}  {s.name}[i] = ")
@@ -2251,11 +2585,11 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
 
     name = local_name(p_request)
     body.append(ind + f"{p_request.pointee()} {name};")
-    body += wrap("const int ierror = TARGET", args, ";", ind,
-                 len(ind) + len("const int ierror = TARGET("))
+    body += wrap("const int ierror = " + target, args, ";", ind,
+                 len(ind) + len("const int ierror = " + target + "("))
     body.append(ind + "if (ierror != MPI_SUCCESS) {")
     body.append(ind + "  free(block);")
-    body += null_out_handles(ep, ind + "  ")
+    body += out_defined(ep, ind + "  ")
     body.append(ind + "  return mpiwrapper_errorcode_toabi(ierror);")
     body.append(ind + "}")
     body.append("")
@@ -2363,6 +2697,50 @@ def null_out_handles(ep, ind):
     return lines
 
 
+def out_defined(ep, ind):
+    """Every out parameter of `ep`, given a defined value.
+
+    Decision 6 pairs null_out_handles with stub_out_zeros because either alone
+    leaves half the caller's outputs undefined, and a caller is allowed to
+    ignore the return code. Every early return in a generated body owes the
+    same pair, not just the stub -- see NOTES.md #7 decision 6.
+    """
+    return null_out_handles(ep, ind) + stub_out_zeros(ep, ind)
+
+
+def guarded_lines(ep, cond, err, ind="    "):
+    """`if (cond) return err;` with every out parameter defined first.
+
+    Every guard that leaves a generated body early owes the caller what
+    decision 6's stub owes -- a negative length, a `_c` value that will not
+    narrow, the inout narrowing, an array extent the implementation refuses --
+    and each of them built the same braced block by hand. The braces appear
+    only when there is something to put inside them, so a routine with no out
+    parameter keeps the flat form it always had.
+
+    The lines come back unindented, because the two consumers indent
+    differently; `ind` is passed only to decide whether the flat form fits in
+    79 columns.
+    """
+    defined = out_defined(ep, "  ")
+    if defined:
+        return ([f"if ({cond}) {{"] + defined
+                + [f"  return {err};", "}"])
+    oneline = f"if ({cond}) return {err};"
+    if len(ind) + len(oneline) <= 79:
+        return [oneline]
+    return [f"if ({cond})", f"  return {err};"]
+
+
+def guarded_check(ep, key, cond, err, ind="    "):
+    """guarded_lines as a `checks` entry.
+
+    `key` is the local whose declaration the check must follow; both
+    assemblers cut the declaration group at the last key mentioned.
+    """
+    return [(key, line) for line in guarded_lines(ep, cond, err, ind)]
+
+
 def emit_extent_queries(ep, probes, pre, rejects, ind):
     """The extent queries of an array whose length apis.json gives as `*`.
 
@@ -2373,13 +2751,13 @@ def emit_extent_queries(ep, probes, pre, rejects, ind):
         return []
     body = []
     for decl, call in probes:
-        nulls = null_out_handles(ep, ind + "    ")
+        defined = out_defined(ep, ind + "    ")
         body.append(ind + decl)
         body.append(ind + "{")
         body += assign("const int ierror", call, ind + "  ")
-        if nulls:
+        if defined:
             body.append(ind + "  if (ierror != MPI_SUCCESS) {")
-            body += nulls
+            body += defined
             body.append(ind + "    return mpiwrapper_errorcode_toabi(ierror);")
             body.append(ind + "  }")
         else:
@@ -2388,14 +2766,7 @@ def emit_extent_queries(ep, probes, pre, rejects, ind):
         body.append(ind + "}")
     body += [ind + line for line in pre]
     for cond, err in rejects:
-        nulls = null_out_handles(ep, ind + "  ")
-        if nulls:
-            body.append(ind + f"if ({cond}) {{")
-            body += nulls
-            body.append(ind + f"  return {err};")
-            body.append(ind + "}")
-        else:
-            body.append(ind + f"if ({cond}) return {err};")
+        body += [ind + line for line in guarded_lines(ep, cond, err, ind)]
     body.append("")
     return body
 
@@ -2498,8 +2869,7 @@ def emit_stub(ep):
     for p in ep.params:
         if p.name != "...":
             body.append(f"    (void)abi_{p.name};")
-    body += null_out_handles(ep, "    ")
-    body += stub_out_zeros(ep, "    ")
+    body += out_defined(ep, "    ")
     if ep.ret == "int":
         body.append("    return MPIABI_ERR_UNSUPPORTED_OPERATION;")
     elif ep.ret == "double":
@@ -2857,6 +3227,9 @@ def emit_wrappers_c(pairs, handwritten_bodies):
     """`pairs` is [(MPI_X, PMPI_X)] in header order."""
     out = [WRAPPERS_PREAMBLE]
     initializers = []
+    # A fallback always names an MPI_ entry point the ABI declares, so this
+    # covers every one of them (assign_fallbacks enforces it).
+    by_name = {ep.name: ep for ep, _ in pairs}
 
     for ep, pep in pairs:
         if ep.status == "abi-alias":
@@ -2867,7 +3240,12 @@ def emit_wrappers_c(pairs, handwritten_bodies):
             continue
 
         chunk = [banner(ep.name), ""]
-        head = f"#define BODY_{ep.name}(TARGET)"
+        # A fallback body needs a second macro parameter to call, and only the
+        # entry points that have one take it -- so every other entry point's
+        # emitted text is unchanged, and the diff of this feature is exactly
+        # the entry points it serves.
+        head = (f"#define BODY_{ep.name}(TARGET, FALLBACK)" if ep.fallback
+                else f"#define BODY_{ep.name}(TARGET)")
         stub = macro_lines(head, emit_stub(ep))
         if ep.status == "generated" and ep.unguarded:
             # A body that never reaches the implementation works over one that
@@ -2889,6 +3267,16 @@ def emit_wrappers_c(pairs, handwritten_bodies):
             # there.
             chunk.append(f"#ifdef MPIWRAPPER_HAVE_{ep.name}")
             chunk += body
+            if ep.fallback:
+                # NOTES.md #5.10: a large-count entry point the implementation
+                # lacks is served by what it falls back to, and reaches the
+                # stub only when that is missing too. So decision 6's stub
+                # stops meaning "the implementation lacks this" and starts
+                # meaning "the implementation lacks this and cannot be asked
+                # for it another way".
+                chunk.append(f"#elif defined(MPIWRAPPER_HAVE_{ep.fallback})")
+                chunk += macro_lines(head,
+                                     emit_body(as_fallback(ep), "FALLBACK"))
             chunk.append("#else")
             chunk += stub
             chunk.append("#endif")
@@ -2901,7 +3289,20 @@ def emit_wrappers_c(pairs, handwritten_bodies):
         # implementations attach a deprecation attribute to their own
         # declaration of it -- which -Werror turns into a build failure for
         # code whose whole job is to call it.
-        if ep.deprecated:
+        #
+        # A *fallback* to a deprecated name needs the same cover, and this is
+        # not hypothetical bookkeeping: all three of LARGE_COUNT_ALT's answers
+        # are MPI-4.1-deprecated `_x` forms, so MPI_Type_size_c's fallback arm
+        # calls a name the ABI header marks deprecated. Neither MPICH 4.3.1 nor
+        # Open MPI 5.0.10 attaches the attribute today -- checked in both
+        # headers rather than assumed -- so this arm currently protects a build
+        # that has not happened yet. It costs three lines and the alternative
+        # is a -Werror failure on the first implementation that adds it, in the
+        # one configuration nobody builds by default.
+        deprecation_cover = bool(
+            ep.deprecated
+            or (ep.fallback and by_name[ep.fallback].deprecated))
+        if deprecation_cover:
             chunk.insert(1, '#pragma GCC diagnostic push')
             chunk.insert(2, '#pragma GCC diagnostic ignored '
                             '"-Wdeprecated-declarations"')
@@ -2909,14 +3310,33 @@ def emit_wrappers_c(pairs, handwritten_bodies):
         for e in (ep, pep):
             head = signature("static " + abi_type(e.ret), "w_" + e.name,
                              e.params)
-            tail = f"BODY_{ep.name}({e.name})"
+            # The PMPI_ twin falls back to the fallback's own PMPI_ name, never
+            # across the shifted-name boundary: decision 7 gives PMPI its own
+            # slots precisely so an interposed MPI_ cannot capture our internal
+            # calls, and a fallback that reached MPI_X from w_PMPI_X_c would
+            # reintroduce exactly that.
+            if ep.fallback:
+                alt = ("P" + ep.fallback if e.name.startswith("PMPI_")
+                       else ep.fallback)
+                tail = f"BODY_{ep.name}({e.name}, {alt})"
+            else:
+                tail = f"BODY_{ep.name}({e.name})"
             if len(head[-1]) + 1 + len(tail) <= 79:
                 head[-1] += " " + tail
-            else:
+            elif len("    " + tail) <= 79:
                 head.append("    " + tail)
+            else:
+                # Two long names and a macro name do not fit on one line, so
+                # the fallback goes under the target at the open paren --
+                # clang-format's own shape, and the reason this arm exists at
+                # all is that the *_true_extent_c pair is 91 columns.
+                opening, rest = tail.split("(", 1)
+                first, second = rest.rsplit(", ", 1)
+                head.append(f"    {opening}({first},")
+                head.append(" " * (4 + len(opening) + 1) + second)
             chunk += head
             initializers.append((e.name, f"w_{e.name}"))
-        if ep.deprecated:
+        if deprecation_cover:
             chunk.append("#pragma GCC diagnostic pop")
         out.append("\n".join(chunk) + "\n")
 
@@ -3587,6 +4007,7 @@ def load(mpi_h_text):
             p.direction = ap["param_direction"]
             p.length = ap["length"]
             p.constant = ap["constant"]
+            p.root_only = ap["root_only"]
         ep.ret_kind = fn["return_kind"]
     return protos
 
@@ -3655,6 +4076,242 @@ def assign_status(protos, handwritten_bodies):
             tp.cls = p.cls
 
 
+# The integer types a large-count argument can be narrowed between. Anything
+# else differing between the two forms -- a function-pointer typedef, an array,
+# a parameter the `_c` form has and its twin does not -- is not this mechanism's
+# business, and leaves the entry point with decision 6's stub.
+NARROWABLE = {"int", "MPI_Aint", "MPI_Count", "MPI_Offset"}
+
+# What mpiwrapper_narrow_* to call for a destination type (NOTES.md #5.10).
+NARROW_FN = {"int": "mpiwrapper_narrow_int", "MPI_Aint": "mpiwrapper_narrow_aint"}
+
+
+def large_only_param(p):
+    """The class for a parameter the `_c` form has and its small twin lacks.
+
+    apis.json marks exactly three, across two entry points: MPI_Type_get_envelope's
+    `num_large_counts` and MPI_Type_get_contents' `max_large_counts` and
+    `array_of_large_counts`. They exist to carry the values a datatype built by
+    a large-count constructor reports, and over an implementation with no such
+    constructors there are none -- dev/large-count-envelope/ measured that the
+    envelope is a property of the constructor, and the fallback narrows every
+    constructor onto a small-count one. So the honest answer is zero of them,
+    and the array nobody will read is left alone.
+    """
+    if p.direction == "out" and p.is_pointer and not p.is_array:
+        return "large_only_zero"
+    return "large_only_void"
+
+
+def fallback_param(ep_name, p, ap):
+    """The parameter a fallback body converts to, or None if it cannot.
+
+    `p` is the large-count form's, `ap` the twin's at the same position. The
+    result carries the ABI-side identity of `p` -- its name is what `abi_<name>`
+    spells, and its kind is what the conversion tables are keyed on -- and the
+    implementation-side type of `ap`, which is what the twin actually takes.
+    """
+    # Matched on name and direction, deliberately not on kind. apis.json gives
+    # the two forms different kinds by design -- MPI_Type_size_c's `size` is
+    # POLYXFER_NUM_ELEM and MPI_Type_size_x's is XFER_NUM_ELEM, the POLY prefix
+    # being the standard's own marker for "this argument has a large-count
+    # twin" -- so requiring equality would reject exactly the pairs this
+    # mechanism exists to serve. What has to agree is the C type and the
+    # conversion class, both checked below; the kind kept is the large-count
+    # form's, because the signature being converted from is its.
+    if p.name != ap.name or p.direction != ap.direction:
+        return None
+    out = Param(ap.base, p.name, p.suffix)
+    out.kind, out.direction = p.kind, p.direction
+    out.length, out.constant = p.length, p.constant
+    out.root_only = p.root_only
+
+    if p.base == ap.base:
+        # Identical already: whatever the primary body does, the fallback does.
+        if p.cls != ap.cls:
+            return None
+        out.cls = p.cls
+        return out
+
+    # From here the two forms differ in width, and only a *passthrough* can do
+    # that and still mean the same thing. A class that already converts -- a
+    # handle, a rank, a status -- means they disagree about something other
+    # than width, which is not a case this mechanism knows how to serve. Both
+    # branches below check that; the array spelling of the class is
+    # array_passthrough, which is a *cast* today for exactly the reason it
+    # cannot be one here: equal-width elements (HISTORY.md #1.9).
+    if p.is_array or ap.is_array:
+        # An array cannot be cast the way an equal-width one is: the elements
+        # are a different size, so it has to be staged and converted one at a
+        # time (NOTES.md #5.7's rule, #5.10's reason). Only the in direction
+        # arises -- no large-count routine reports counts through an array.
+        if not (p.is_array and ap.is_array) or p.direction != "in":
+            return None
+        if p.cls != "array_passthrough" or ap.cls != "array_passthrough":
+            return None
+        if p.elem_type() not in NARROWABLE or ap.elem_type() not in NARROWABLE:
+            return None
+        if ap.elem_type() not in NARROW_FN:
+            return None
+        if p.length is None or p.length != ap.length:
+            return None
+        if not p.length.isidentifier():
+            # apis.json gives this array's length as `*`, meaning "ask the
+            # communicator". Those extents are named one at a time in
+            # ARRAY_EXTENT, and an array with no entry there cannot be sized,
+            # so it keeps the stub -- which is what still holds the
+            # nonblocking and persistent vector forms back.
+            extent = ARRAY_EXTENT.get((ep_name, p.name))
+            if extent is None:
+                return None
+            # **The cross-check that keeps a fault from being a typo.** An
+            # array not significant away from the root must be sized by the
+            # root-aware probe and nothing else: sizing MPI_Gatherv's
+            # recvcounts by the group everywhere would read, at every non-root
+            # rank, an array the standard lets the caller leave null.
+            if p.root_only != (extent.probe is _ROOT_PROBE):
+                raise SystemExit(
+                    f"{ep_name}: {p.name} is "
+                    + ("root-only in apis.json but sized by the group"
+                       if p.root_only else
+                       "sized by the root probe but not root-only in "
+                       "apis.json"))
+        out.cls = "array_narrow_in"
+        return out
+
+    if p.cls != "passthrough" or ap.cls != "passthrough":
+        return None
+
+    if not p.is_pointer and not ap.is_pointer:
+        if p.base not in NARROWABLE or ap.base not in NARROWABLE:
+            return None
+        if ap.base not in NARROW_FN:
+            return None
+        out.cls = "narrow_in"
+        return out
+
+    if p.is_pointer and ap.is_pointer and p.direction == "out":
+        # The twin reports a narrower type than the ABI declares, so the value
+        # widens on the way back and cannot be lost. The pointer itself cannot
+        # be passed through -- the two point at different types -- so the body
+        # keeps a local and writes it back.
+        if p.pointee() not in NARROWABLE or ap.pointee() not in NARROWABLE:
+            return None
+        out.cls = "widen_out"
+        return out
+
+    if p.is_pointer and ap.is_pointer and p.direction == "inout":
+        # MPI_Pack_c's and MPI_Unpack_c's `position`: the caller's offset in,
+        # the implementation's advanced offset out, through one object. Both
+        # halves are needed, and only the in half can fail.
+        if p.pointee() not in NARROWABLE or ap.pointee() not in NARROWABLE:
+            return None
+        if ap.pointee() not in NARROW_FN:
+            return None
+        out.cls = "narrow_inout"
+        return out
+
+    return None
+
+
+def assert_extent_table_is_real(protos):
+    """Every ARRAY_EXTENT key names an entry point and a parameter it has.
+
+    A typo here is silent in the worst way: the array simply has no extent, so
+    the entry point quietly keeps decision 6's stub and nothing says why. That
+    is the failure mode this table acquired the moment it started deciding
+    which large-count forms are served (NOTES.md #5.10) rather than only how
+    long an already-served array is.
+    """
+    for (name, param), _ in sorted(ARRAY_EXTENT.items()):
+        ep = protos.get(name)
+        if ep is None:
+            raise SystemExit(f"ARRAY_EXTENT names {name}, which the ABI header "
+                             "does not declare")
+        if not any(p.name == param for p in ep.params):
+            raise SystemExit(f"ARRAY_EXTENT names {name}'s {param!r}, which is "
+                             "not one of its parameters")
+
+
+def as_fallback(ep):
+    """`ep` with its fallback's parameter list, for emitting the middle arm.
+
+    A shallow stand-in rather than a mutation, so that the two bodies can be
+    emitted from the same EntryPoint in either order. It keeps the large-count
+    name, because every table emit_body consults -- the array extents, the
+    MPI_IN_PLACE sites, the argument substitutions -- is keyed on the entry
+    point the *caller* called, not on what it is forwarded to.
+    """
+    out = EntryPoint(ep.name, ep.ret, ep.fallback_params, ep.deprecated,
+                     ep.deprecated_in)
+    out.status, out.detail = ep.status, ep.detail
+    out.ret_kind, out.unguarded = ep.ret_kind, ep.unguarded
+    out.is_fallback = True
+    return out
+
+
+def assign_fallbacks(protos):
+    """Fill ep.fallback for every large-count entry point that can be served
+    over an implementation lacking it (NOTES.md #5.10).
+
+    The candidate is LARGE_COUNT_ALT's answer where there is one and the small
+    twin otherwise, and it has to be an entry point the ABI itself declares --
+    the guard the emitted body tests is MPIWRAPPER_HAVE_<candidate>, and
+    probe_impl.py only probes a name that is one.
+
+    **What is emittable is a property of the signature, and this is the whole
+    of the gate.** fallback_param decides it one parameter at a time: the
+    fallback body is the primary body converting to what the twin takes rather
+    than to what the `_c` form takes, so it exists exactly where every
+    parameter can be got from the ABI's to the twin's. One parameter that
+    cannot -- an array, an inout position, a callback typedef -- leaves
+    ep.fallback None and the entry point keeps decision 6's stub.
+
+    The synthetic parameter list is kept on ep.fallback_params, because
+    emit_body reads ep.params and the two bodies need different ones.
+    """
+    for name, ep in protos.items():
+        if name.startswith("PMPI_") or not name.endswith("_c"):
+            continue
+        if ep.status != "generated":
+            continue
+        alt = protos.get(LARGE_COUNT_ALT.get(name, name[:-2]))
+        if alt is None or alt.ret != ep.ret or alt.status != "generated":
+            continue
+        # Paired by name, not by position: the `_c` form may carry parameters
+        # its twin does not (apis.json's `large_only`), and those have to be
+        # recognised as extras rather than shifting every parameter after them
+        # onto the wrong partner.
+        by_name = {q.name: q for q in alt.params}
+        if any(q.name not in {r.name for r in ep.params} for q in alt.params):
+            continue      # the twin wants something the `_c` form cannot give
+        params = []
+        for q in ep.params:
+            ap = by_name.get(q.name)
+            if ap is None:
+                extra = Param(q.base, q.name, q.suffix)
+                extra.kind, extra.direction = q.kind, q.direction
+                extra.length, extra.constant = q.length, q.constant
+                extra.root_only = q.root_only
+                extra.cls = large_only_param(q)
+                params.append(extra)
+            else:
+                params.append(fallback_param(name, q, ap))
+        if any(q is None for q in params):
+            continue
+        ep.fallback, ep.fallback_params = alt.name, params
+        twin = protos["P" + name]
+        twin.fallback, twin.fallback_params = "P" + alt.name, params
+
+    named = set(LARGE_COUNT_ALT)
+    unserved = {n for n in named
+                if protos[n].status == "generated" and not protos[n].fallback}
+    if unserved:
+        raise SystemExit(
+            "LARGE_COUNT_ALT names an alternate whose signature does not "
+            "match: " + ", ".join(sorted(unserved)))
+
+
 def parse_handwritten_h():
     """The set of MPI_ names src/mpiwrapper/handwritten.h has a body for."""
     text = HANDWRITTEN_H.read_text()
@@ -3671,7 +4328,12 @@ def parse_handwritten_h():
 # Post-hoc assertions over the emitted text (NOTES.md #3)
 # ---------------------------------------------------------------------------
 
-_TARGET_CALL_RE = re.compile(r"\bTARGET\((?P<args>[^;]*?)\)\s*;", re.DOTALL)
+# Both arms of a large-count entry point's #if chain, so that the assertion
+# below covers the fallback body too. A fallback that let an ABI-typed
+# parameter through would be the same defect over an older implementation, and
+# it is the one this project would be least likely to notice by hand.
+_TARGET_CALL_RE = re.compile(r"\b(?:TARGET|FALLBACK)\((?P<args>[^;]*?)\)\s*;",
+                             re.DOTALL)
 
 
 def assert_no_abi_argument_reaches_the_call(wrappers_text):
@@ -3879,6 +4541,8 @@ def main():
 
     handwritten_bodies = parse_handwritten_h()
     assign_status(protos, handwritten_bodies)
+    assert_extent_table_is_real(protos)
+    assign_fallbacks(protos)
 
     names = list(protos)
     mpi_eps = [ep for n, ep in protos.items() if not n.startswith("PMPI_")]
@@ -3907,6 +4571,9 @@ def main():
         "deferred to S3": sum(1 for e in mpi_eps if e.status == "deferred"),
         "ABI-side aliases": sum(1 for e in mpi_eps if e.status == "abi-alias"),
         "staged past return": sum(1 for e in mpi_eps if stages_past_return(e)),
+        "large-count fallbacks": sum(1 for e in mpi_eps if e.fallback),
+        "narrowed staged past return":
+            sum(1 for e in mpi_eps if fallback_stages_past_return(e)),
     }
     drift = {k: (v, FROZEN[k]) for k, v in tallies.items() if v != FROZEN.get(k)}
     if drift:

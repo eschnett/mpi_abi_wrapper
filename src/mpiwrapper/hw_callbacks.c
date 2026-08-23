@@ -60,7 +60,7 @@ int mpiwrapper_w_PMPI_Op_create(MPIABI_User_function *abi_user_fn,
  * the trampoline's type is what the implementation stores (callbacks.c).
  */
 #ifdef MPIWRAPPER_HAVE_MPI_Op_create_c
-#  define BODY_MPI_Op_create_c(TARGET)                                         \
+#  define BODY_MPI_Op_create_c(TARGET, FALLBACK)                               \
     {                                                                          \
       const int slot = mpiwrapper_op_c_slot_alloc(abi_user_fn);                \
       if (slot < 0) {                                                          \
@@ -81,8 +81,38 @@ int mpiwrapper_w_PMPI_Op_create(MPIABI_User_function *abi_user_fn,
       if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;            \
       return MPIABI_SUCCESS;                                                   \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Op_create)
+#  define BODY_MPI_Op_create_c(TARGET, FALLBACK)                               \
+    {                                                                          \
+      /* NOTES.md #5.10. The caller's function takes an MPI_Count length       \
+       * and the implementation's callback hands out an int, so the            \
+       * trampoline has the small shape and widens on the way in -- which      \
+       * is exact, and is why this is the one part of the large-count          \
+       * fallback with no MPI_ERR_VALUE_TOO_LARGE arm. MPI_Op_create takes     \
+       * no count of its own, so the registration cannot overflow either.      \
+       */                                                                      \
+      const int slot = mpiwrapper_op_ca_slot_alloc(abi_user_fn);               \
+      if (slot < 0) {                                                          \
+        *abi_op = MPIABI_OP_NULL;                                              \
+        return MPIABI_ERR_INTERN;                                              \
+      }                                                                        \
+                                                                               \
+      const int commute = abi_commute;                                         \
+      MPI_Op    op;                                                            \
+      const int ierror = FALLBACK(mpiwrapper_op_ca_tramp(slot), commute,       \
+                                  &op);                                        \
+      if (ierror != MPI_SUCCESS) {                                             \
+        mpiwrapper_op_ca_slot_release(slot);                                   \
+        *abi_op = MPIABI_OP_NULL;                                              \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+      }                                                                        \
+                                                                               \
+      *abi_op = mpiwrapper_op_toabi(op);                                       \
+      if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;            \
+      return MPIABI_SUCCESS;                                                   \
+    }
 #else
-#  define BODY_MPI_Op_create_c(TARGET)                                         \
+#  define BODY_MPI_Op_create_c(TARGET, FALLBACK)                               \
     {                                                                          \
       (void)abi_user_fn;                                                       \
       (void)abi_commute;                                                       \
@@ -93,10 +123,10 @@ int mpiwrapper_w_PMPI_Op_create(MPIABI_User_function *abi_user_fn,
 
 int mpiwrapper_w_MPI_Op_create_c(MPIABI_User_function_c *abi_user_fn,
                                  int abi_commute, MPIABI_Op *abi_op)
-    BODY_MPI_Op_create_c(MPI_Op_create_c)
+    BODY_MPI_Op_create_c(MPI_Op_create_c, MPI_Op_create)
 int mpiwrapper_w_PMPI_Op_create_c(MPIABI_User_function_c *abi_user_fn,
                                   int abi_commute, MPIABI_Op *abi_op)
-    BODY_MPI_Op_create_c(PMPI_Op_create_c)
+    BODY_MPI_Op_create_c(PMPI_Op_create_c, PMPI_Op_create)
 
 /* -------------------------------------------------------- error handlers -- */
 
@@ -452,7 +482,7 @@ int mpiwrapper_w_PMPI_Register_datarep(
     void *abi_extra_state) BODY_MPI_Register_datarep(PMPI_Register_datarep)
 
 #ifdef MPIWRAPPER_HAVE_MPI_Register_datarep_c
-#  define BODY_MPI_Register_datarep_c(TARGET)                                  \
+#  define BODY_MPI_Register_datarep_c(TARGET, FALLBACK)                        \
     {                                                                          \
       const char *const datarep = abi_datarep;                                 \
                                                                                \
@@ -471,8 +501,34 @@ int mpiwrapper_w_PMPI_Register_datarep(
       if (ierror != MPI_SUCCESS) mpiwrapper_datarep_discard(state);            \
       return mpiwrapper_errorcode_toabi(ierror);                               \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Register_datarep)
+#  define BODY_MPI_Register_datarep_c(TARGET, FALLBACK)                        \
+    {                                                                          \
+      /* NOTES.md #5.10: the conversion functions become small-count           \
+       * trampolines that widen the count on the way into the caller's,        \
+       * which is exact. The extent function is the same type in both          \
+       * widths and is shared unchanged.                                       \
+       */                                                                      \
+      const char *const datarep = abi_datarep;                                 \
+                                                                               \
+      MPI_Datarep_conversion_function *read_fn;                                \
+      MPI_Datarep_conversion_function *write_fn;                               \
+      MPI_Datarep_extent_function     *extent_fn;                              \
+      void                            *state;                                  \
+      if (!mpiwrapper_datarep_ca_fns(abi_read_conversion_fn,                   \
+                                     abi_write_conversion_fn,                  \
+                                     abi_dtype_file_extent_fn,                 \
+                                     abi_extra_state, &read_fn, &write_fn,     \
+                                     &extent_fn, &state))                      \
+        return MPIABI_ERR_INTERN;                                              \
+                                                                               \
+      const int ierror =                                                       \
+          FALLBACK(datarep, read_fn, write_fn, extent_fn, state);              \
+      if (ierror != MPI_SUCCESS) mpiwrapper_datarep_discard(state);            \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }
 #else
-#  define BODY_MPI_Register_datarep_c(TARGET)                                  \
+#  define BODY_MPI_Register_datarep_c(TARGET, FALLBACK)                        \
     {                                                                          \
       (void)abi_datarep;                                                       \
       (void)abi_read_conversion_fn;                                            \
@@ -488,13 +544,15 @@ int mpiwrapper_w_MPI_Register_datarep_c(
     MPIABI_Datarep_conversion_function_c *abi_read_conversion_fn,
     MPIABI_Datarep_conversion_function_c *abi_write_conversion_fn,
     MPIABI_Datarep_extent_function       *abi_dtype_file_extent_fn,
-    void *abi_extra_state) BODY_MPI_Register_datarep_c(MPI_Register_datarep_c)
+    void *abi_extra_state) BODY_MPI_Register_datarep_c(MPI_Register_datarep_c,
+    MPI_Register_datarep)
 int mpiwrapper_w_PMPI_Register_datarep_c(
     const char *abi_datarep,
     MPIABI_Datarep_conversion_function_c *abi_read_conversion_fn,
     MPIABI_Datarep_conversion_function_c *abi_write_conversion_fn,
     MPIABI_Datarep_extent_function       *abi_dtype_file_extent_fn,
-    void *abi_extra_state) BODY_MPI_Register_datarep_c(PMPI_Register_datarep_c)
+    void *abi_extra_state) BODY_MPI_Register_datarep_c(PMPI_Register_datarep_c,
+    PMPI_Register_datarep)
 
 /* ------------------------------------------------------------ MPI_T events */
 

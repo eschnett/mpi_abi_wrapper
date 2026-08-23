@@ -63,6 +63,9 @@ developer option, which is what the cross test uses.
 | answered by `libmpi_abi` itself | **5** | `gen/report.txt` |
 | deferred | **0**, frozen | `gen/report.txt` |
 | staged past return | **8** | `gen/report.txt` |
+| large-count entry points | **159** | `grep -c '^int MPI_[A-Za-z0-9_]*_c(' gen/include/mpi.h` — 148 generated, 11 in the ledger |
+| — with a fallback body | **148** generated, all 11 hand-written | `gen/report.txt`; `NOTES.md` #5.10 |
+| — whose fallback stages past return | **18** | `gen/report.txt` |
 | handle classes | 11 | `gen/mpiwrapper/constants.c` |
 | predefined handles | 103 | `PREDEF(...)` rows in `constants.c` |
 | error classes | 80 | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
@@ -71,6 +74,14 @@ developer option, which is what the cross test uses.
 563 + 120 + 5 = 688. 683 × 2 = 1366 slots, while all 688 × 2 = 1376 names are
 still exported, because the five of §5 are implemented on the ABI side rather
 than forwarded.
+
+The two large-count rows are the ones that move with the implementation rather
+than with the ABI. All 159 `_c` entry points exist in every build; over MPICH
+≥ 4.0 the implementation answers them and over anything older the wrapper does,
+by narrowing each call onto its small twin (`NOTES.md` #5.10). The "staged past
+return" row above counts the *primary* bodies only; the fallback's 18 are
+frozen separately because a vector collective's count arrays are a pointer cast
+in one arm and a staged block in the other.
 
 **Every one of these is a frozen tally in `dev/generate.py`**, so a new
 `apis.json` or a new ABI header that reclassifies anything fails generation
@@ -83,13 +94,13 @@ check.
 .github/workflows/ ci.yaml -- ten CI jobs over thirty-eight legs, each calling a
                      ci-scripts entry point rather than repeating its recipe.
                      Twenty of those legs are the MPICH C suite: five
-                     environments x four shards, the MPICH ones gating. Three
-                     are report-only until first seen green: two MVAPICH and
-                     one Intel MPI (NOTES.md #9's third and fourth
+                     environments x four shards, the MPICH ones gating. The
+                     two MVAPICH legs are report-only for one upstream hang;
+                     the Intel MPI job gates (NOTES.md #9's third and fourth
                      implementations)
 bin/               mpicc.in, mpicxx.in -- the compiler wrappers, configured at install
 ci-scripts/        MPI install and build-shape checks
-  check-install.sh   the five-leg installed-prefix consumption test
+  check-install.sh   the six-leg installed-prefix consumption test
   install-mpich.sh, install-openmpi.sh, install-mvapich.sh
   linux-test.sh, run-linux-docker.sh
   linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
@@ -107,6 +118,7 @@ dev/               the Python generator and the dev-time cross-checks
   layout_hash.py     the vtable layout hash and its --check
   check_prototype.py the S1-reproduction check
   check-c-bindings.py  the MPI-5.0 Appendix A.3 cross-check
+  check_out_params.py  the out-parameter check over generated bodies
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
   dispatch-bench/ dlopen-probe/ get-contents-extent/ handle-map-bench/
@@ -320,16 +332,22 @@ Three routes, all generated from one source of truth for flags:
   bundled `FindMPI` already finds this project through compiler-wrapper
   interrogation, which `bin/mpicc.in` answers the way a real one would; the
   shipped `cmake/FindMPI.cmake` covers the case interrogation cannot reach.
+  Only the shim is exercised as a leg below — the interrogation path is
+  CMake's own behaviour against `bin/mpicc` and needs nothing from the
+  installed package files, so nothing here tests it.
 - **pkg-config** — `mpi_abi.pc`.
 
 `ci-scripts/check-install.sh` takes any `mpicc` as its one argument and runs
-five legs: `bin/mpicc`, `find_package(mpi_abi)`, `find_package(MPI)` via
-interrogation, `find_package(MPI)` via the shim, and `pkg-config` — each
-*building and running* a program from the installed prefix with
-`LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared — plus the prefix-exclusivity
-assertion. All five pass on macOS against a distro Open MPI and on Linux against
-MPICH 5.0.1 and Open MPI 5.0.10 built from source by
-`ci-scripts/install-mpich.sh` / `install-openmpi.sh`.
+**six** legs (`grep -c '^step "' ci-scripts/check-install.sh`): the configure,
+build and install into a prefix of its own, the prefix-exclusivity assertion,
+and then four route legs over the three consumption routes of `NOTES.md` #9 —
+`bin/mpicc`, `find_package(mpi_abi)`, `find_package(MPI)` via the shim, and
+`pkg-config` — each *building and running* a program from the installed prefix
+with `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared. `find_package` is two legs
+because this project ships two answers to it; the pkg-config leg reports itself
+skipped on a host with no pkg-config. All six pass on macOS against a distro
+Open MPI and on Linux against MPICH 5.0.1 and Open MPI 5.0.10 built from source
+by `ci-scripts/install-mpich.sh` / `install-openmpi.sh`.
 
 Those installers are far shorter than mpif's equivalents on purpose: mpif needs
 an MPI that already implements the standard ABI, hence its pinned MPICH `main`
@@ -346,7 +364,7 @@ outside the `MPI_*`/`PMPI_*` patterns.
 
 ## 10. Tests
 
-`ctest` runs everything below. Six need no MPI at all and are the cheapest gate
+`ctest` runs fifteen tests. Seven need no MPI at all and are the cheapest gate
 in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 `-DMPI_ABI_BUILD_WRAPPER=OFF`.
 
@@ -355,6 +373,7 @@ in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 | `headers-up-to-date`, `compile_mpi_h`, `compile_mpiabi_h`, `compile_both_headers` | no | both generated headers compile standalone and *together* in one TU, with no tag/typedef/macro/enumerator collision |
 | `generated-up-to-date` | no | a fresh generation reproduces `gen/` byte for byte, the frozen tallies hold, and all 688 are accounted for |
 | `prototype-reproduced` | no | the generator still reproduces `dev/s1-reference/`: **194 items, 190 exactly, 4 exempted with a reason** that fails when it stops firing |
+| `out-params-defined` | no | no early return in a generated body leaves an out handle or out scalar undefined — **415 of the 705 generated arms own one**, and the rule closed 71 such returns across 26 entry points, 22 of them in narrowing arms an earlier revision of the check could not see (`NOTES.md` #7 decision 6) |
 | `layout-hash` | no | `MPIWRAPPER_LAYOUT_HASH` still matches the slot list it summarizes |
 | `c-bindings-cross-check` | no | all 688 signatures match MPI-5.0 Appendix A.3, or are one of 8 named exemptions |
 | `exported-symbols` | no | `libmpi_abi`'s exports are exactly the header's 1376, both directions — the leg that needs no MPI, and the reason this test is registered outside the wrapper block. Given a wrapper it adds two more: `libmpiwrapper` exports exactly one symbol, and the application's only MPI dependency is `libmpi_abi`. Its summary names the legs it ran, so a no-MPI pass cannot be read as all three |
@@ -365,6 +384,7 @@ in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 | `abi_tools_test` | two ranks preferred | S3b's classes, the five ABI-side entry points and their sentinels, and **`MPI_T`'s null OUT pointers** — every query called twice, once for everything and once for one field |
 | `abi_converters_test` | two ranks preferred | S4a's 70. Two checks are not round trips: `_toint` against the header's own constant, and a status through Fortran and back asked `MPI_Get_count` |
 | `abi_state_test` | two ranks preferred | S4b's state, each check written against what a plausible-but-wrong body gets wrong |
+| `abi_large_count_test` | **two ranks required** for the vector rounds | the ABI's 159 `_c` entry points, over an implementation that has them and over one where they are the narrowing fallback — the same assertions either way, since the `_c` form and its small twin must agree. Its sharpest cases are a vector collective at a non-root rank passing a genuine `NULL`, a nonblocking one whose caller overwrites its own count arrays the instant it is posted, and a refused call's out handle |
 
 `mpiwrapper_selftest` compiles the conversion runtime into itself rather than
 loading the shared library, so it can walk the maps in both directions. That
@@ -459,14 +479,16 @@ has been *seen*, not what should happen.
 
 **The macOS rows now come from two machines, and the difference between them is
 the point.** On the one development laptop, MPICH 4.3.1, Open MPI 5.0.6 and Open
-MPI 5.0.10 each need `scripts/host-env.sh` in front of `ctest` or fail 6 of 13.
+MPI 5.0.10 each need `scripts/host-env.sh` in front of `ctest` or fail 6 of them.
 On GitHub's `macos-15` runners the same implementations need none of it. That is
 §12's attribution — the machine, not the MPI — measured on a second machine
 rather than argued from one.
 
-**Rows quoting 13/13 ran the whole of `ctest`** under
-`.github/workflows/ci.yaml`; the 6/6 rows quote only the tests that need an MPI,
-which are six of those thirteen. Both are green runs, counted differently.
+**Rows quoting 13/13 ran the whole of `ctest` as it stood then** under
+`.github/workflows/ci.yaml`; the 6/6 rows quote only the tests that need an MPI.
+Both are green runs, counted differently. The suite is **fourteen** tests since
+`abi_large_count_test` joined it, so a row recorded after that reads 14/14 --
+the older figures are left as they were measured rather than rewritten.
 
 **"two ranks" in this table is now checked rather than asserted.** It used to be
 neither: the tests accept one rank as well as two, so a launcher that answered

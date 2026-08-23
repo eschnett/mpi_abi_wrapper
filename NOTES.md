@@ -107,17 +107,26 @@ rather than as a list.
   `gen/report.txt`. An application must be able to link and start against any
   wrapper and discover at run time what is missing.
 - **The implementation is expected to provide the MPI-4.0 API.** That is what
-  makes the common case a 1:1 mapping with no large-count narrowing fallback,
-  since the `_c` variants exist there. It is an expectation, not a hard floor.
+  makes the common case a 1:1 mapping, since the `_c` variants exist there. It
+  is an expectation, not a hard floor.
 
   **And it is not met by any released Open MPI.** Open MPI 5.0.10 defines
   `MPI_VERSION 3` / `MPI_SUBVERSION 1` and has **no `_c` entry point at all** —
   `MPI_Send_c`, `MPI_Type_create_struct_c` and the rest of the family are simply
   absent from its header. So the MPI-4.0 configure check is a warning rather
-  than a hard error, and the enforced floor is MPI-3.0. What that costs is
-  exactly the large-count half of the surface: those slots become decision 6's
-  stubs. It is worth knowing that the mechanism is **load-bearing on day one**
-  and not a contingency for exotic implementations.
+  than a hard error, and the enforced floor is MPI-3.0. It is worth knowing that
+  the mechanism is **load-bearing on day one** and not a contingency for exotic
+  implementations.
+
+  What that used to cost was exactly the large-count half of the surface: all
+  159 `_c` entry points became decision 6's stubs, which is 148 of the 182
+  absent generated names on that implementation — 81% of the whole gap. **It no
+  longer costs that.** Where the implementation lacks the `_c` form but has its
+  small twin, the wrapper narrows the call rather than refusing it, and refuses
+  only the values that will not fit (§5.10, decision 6). The expectation above
+  is therefore about *cost*, not about capability: meeting it buys a 1:1 mapping
+  with no narrowing check and no staged count array, and failing it buys a
+  ceiling at `INT_MAX` rather than a missing entry point.
 
 ---
 
@@ -1054,6 +1063,23 @@ Four independent reasons, each sufficient:
   routine that hands back a request. That predicate produces exactly eight
   entry points, and the count is a frozen tally, so a ninth must be admitted
   deliberately.
+
+  **The narrowing fallback (§5.10) makes the predicate arm-dependent.** A `_c`
+  vector collective's count and displacement arrays cross as pointer casts in
+  the primary body and as staged `int` arrays in the narrowing body, so the
+  nonblocking and persistent vector forms stage past return **only where the
+  implementation lacks the `_c` entry point**. Rather than mutate the eight into
+  one number covering both arms and lose the distinction, the generator freezes
+  the two separately: `staged past return` stays **8** and describes the primary
+  bodies, and `narrowed staged past return` is **18**. A nineteenth still has to
+  be admitted deliberately, which is the whole point of freezing either number.
+
+  The two sets overlap rather than nest: four of the eighteen — the `_c`
+  spellings of `Alltoallw_init`, `Ialltoallw`, `Neighbor_alltoallw_init` and
+  `Ineighbor_alltoallw` — are already in the eight, because their *datatype*
+  arrays are staged in both arms. What the fallback adds to those four is a
+  second element type in the same block, which is why `mpiwrapper_staged_next`
+  exists.
 - **`MPI_STATUSES_IGNORE`** (NULL in the ABI) must short-circuit before any
   temporary is allocated.
 - **Stage for value mapping or for representation, never for spelling.** What an
@@ -1190,8 +1216,88 @@ not.
 |---|---|
 | `MPI_MAX_*` | cold paths only, and truncation is visible → run time |
 | `sizeof(MPI_Count)`/`MPI_Aint`/`MPI_Offset` | a narrowing check would land on `MPI_Send_c` and every large-count call → `_Static_assert` |
+| a large-count value against the *small* twin's `int` | a different question from the row above, and it goes the other way: there is no build-time answer, because whether the small twin is called at all depends on what the implementation has → run time (§5.10) |
 | status layout | **no runtime recourse exists** — nowhere to put a private part exceeding 20 bytes, and side storage keyed on a status address is unsound because statuses are freely copied → build failure |
 | dynamic handle collision | one compare, and only on object creation → run time |
+
+---
+
+### 5.10 Narrowing a large-count call onto a small-count implementation
+
+The ABI's surface is MPI-5.0 and includes **159 `_c` entry points**. An
+implementation below MPI-4.0 has none of them — every released Open MPI, and
+MPICH before 4.0 — and decision 6 used to answer all 159 with
+`MPI_ERR_UNSUPPORTED_OPERATION`. It no longer does. Where the `_c` form is
+missing but its small twin is present, the wrapper calls the small twin.
+
+**Why this is worth the machinery, stated once because the obvious reading is
+wrong:** `_c` is not the big-message API, it is *the* API. A program compiled
+against MPI-4 C bindings calls `MPI_Send_c` with `count = 1`. The narrowing
+fallback is therefore not a large-message feature — it is what makes the
+large-count half of the ABI usable at all on an implementation that predates it,
+and the ceiling it introduces sits above every count real programs pass.
+
+**Four fates, and which applies is a property of the signature.** The generator
+decides per entry point by diffing the `_c` prototype against its small twin;
+nothing here is keyed on a name.
+
+1. **Exact, by an `_x` twin.** MPI-3.0 already answers five of these questions
+   in `MPI_Count`: `MPI_Type_size_x`, `MPI_Type_get_extent_x`,
+   `MPI_Type_get_true_extent_x`, `MPI_Get_elements_x`,
+   `MPI_Status_set_elements_x`. Prefer them — they are exact, need no guard, and
+   are present on everything at the enforced MPI-3.0 floor. Deprecated in
+   MPI-4.1 means "do not write new code against it", not "absent" (§8).
+2. **Exact, by widening.** An out parameter that the small twin reports as `int`
+   or `MPI_Aint` always fits in an `MPI_Count`. Six entry points, no guard.
+3. **Narrowing, guarded.** Every in-direction value must be checked against the
+   small twin's type before the call.
+4. **No small twin either.** Decision 6's stub, unchanged.
+
+**The error class is `MPI_ERR_VALUE_TOO_LARGE`, not
+`MPI_ERR_UNSUPPORTED_OPERATION`.** MPI-4.0 has a class meaning exactly "a value
+is too large to be stored in the given parameter" and this is that case. Keeping
+the two apart is what lets a caller tell "this wrapper has no such entry point"
+from "the entry point is here and your value will not fit" — and the two need
+different responses, since the first is permanent and the second depends on the
+argument. It also keeps `test/`'s own `unsupported()` helper honest: that helper
+treats `MPI_ERR_UNSUPPORTED_OPERATION` as *skip this check*, so returning it for
+an oversized count would turn a real failure into a silent skip at 46 call
+sites.
+
+**Arrays must be staged, and this is where the fallback stops being free.** A
+count or displacement array crosses today as a pointer cast, because the ABI and
+the implementation agree on the representation of `MPI_Count` and `MPI_Aint`
+(`HISTORY.md` §1.9). Narrowed to `int` they do not agree, so §5.7's rule applies
+in full: allocate, convert element by element, and — for a routine that hands
+back a request — keep the block alive past return. That is a per-call allocation
+and an O(*n*) loop where there was a cast, on the v- and w-collectives, whose
+*n* is the communicator's size.
+
+**`root_only` is the hazard, and it is the one that can crash a legal program.**
+`MPI_Gatherv`'s `recvcounts` and `displs`, and `MPI_Scatterv`'s `sendcounts` and
+`displs`, are significant **only at the root**. Nothing reads them today, so a
+non-root rank may legally pass a null pointer or an uninitialized array.
+Narrowing has to read them, and reading them at a non-root rank faults on a
+program that was doing nothing wrong. So a narrowed array whose parameter is
+marked `root_only` in `dev/apis.json` is staged **only where it is
+significant** — which on an intercommunicator means testing `root` against
+`MPI_ROOT` rather than comparing it to the local rank. `apis.json` carries the
+flag on 59 parameters and the generator ignored it entirely before this rule
+existed.
+
+**What a caller can observe that a native MPI-4 implementation would not.** The
+envelope of a datatype is a property of the *constructor*, not of the values:
+`MPI_Type_contiguous_c(5, MPI_INT)` reports one large count and zero integers on
+MPICH, and the small `MPI_Type_get_envelope` **refuses** such a type with
+`MPI_ERR_TYPE` and the message "use MPI_Type_get_envelope_c to query large count
+datatype". Measured in `dev/large-count-envelope/`. Since the fallback builds
+every datatype through a small-count constructor, its envelope and contents
+answers are internally consistent and are exactly right for the types that can
+exist in such a build — but they differ from a native MPI-4 implementation's,
+and the small envelope succeeds where a native one refuses. §13.2 carries it as
+a limitation; the alternative is a side table of which types the caller built
+through the large-count entry points, keyed on a handle the implementation owns
+and recycles, which is the unsound shape §5.2 rejects for statuses.
 
 ---
 
@@ -1445,6 +1551,13 @@ the decision rather than working around it.
    expectation, warned about at configure time and not enforced, since no
    released Open MPI meets it. The enforced floor is **MPI-3.0**, verified with
    MPICH 3.1.4. §1, §9.
+
+   **Failing the MPI-4.0 expectation costs a ceiling, not a surface.** It used
+   to cost the whole large-count half: 159 entry points answering
+   `MPI_ERR_UNSUPPORTED_OPERATION`. The wrapper now narrows a `_c` call onto its
+   small twin and refuses only the values that will not fit (§5.10). What the
+   expectation buys is the absence of a narrowing check and of a staged count
+   array — a cost question — rather than whether the entry point works at all.
 4. **`mpiwrapper` exports exactly one symbol**, a getter carrying
    `MPI_ABI_VERSION`, `MPI_ABI_SUBVERSION`, a generated layout hash and the
    vtable's `sizeof`. **All four are checked for exact equality**; there is no
@@ -1463,6 +1576,18 @@ the decision rather than working around it.
    `dev/probe_impl.py` from the implementation's own header — not a version
    test, not `nm`, and not `#ifdef` on the implementation's own name for a
    constant. §3, `HISTORY.md` §1.19.
+
+   **The stub is the last arm, not the only alternative.** A large-count entry
+   point whose `_c` name is absent but whose small twin is present gets a
+   narrowing body instead, and reaches the stub only when neither name exists
+   (§5.10). So the guard chain is `#ifdef HAVE_<name>_c` → `#elif defined
+   HAVE_<name>` → `#else`, and the stub's meaning tightens from "the
+   implementation lacks this" to "the implementation lacks this *and* cannot be
+   asked for it another way". This is a refinement of the decision and not a
+   reversal: nothing is omitted from the ABI, everything is still discovered at
+   run time, and a value the small twin cannot carry is still refused — with
+   `MPI_ERR_VALUE_TOO_LARGE`, which §5.10 explains is deliberately a different
+   class from the stub's.
 
    **A stub must leave every out parameter defined, not just the handles.** This
    was half-done for a long time: the stub nulled out-handles — `null_out_handles`,
@@ -1485,6 +1610,72 @@ the decision rather than working around it.
    left alone: `MPI_T_category_get_info`'s `name_len` is the caller's buffer size
    on the way in, and zeroing it would destroy an input rather than define an
    output.
+
+   **The same promise binds every early return in a generated body**, and that
+   half was missing too — the amendment above reached `emit_stub` and stopped
+   there. `dev/check_out_params.py` measured **71 such returns across 26 entry
+   points**, of the 415 generated arms (out of 705) that own an out handle or
+   out scalar at all. Three shapes were open:
+
+   - the array-length checks — `if (count < 0) return MPIABI_ERR_COUNT;` and
+     the `SIZE_MAX` overflow guard — emitted neither half of the pair;
+   - `emit_extent_queries` called `null_out_handles` without `stub_out_zeros`,
+     so a failed extent probe and a rejected array extent defined the out
+     *handles* and left the out *scalars*;
+   - the staging-allocation failure `goto done` emitted neither.
+
+   `MPI_Graph_map` is the plainest case, having the one bare `int *newrank`
+   among the graph routines — both `if (nedges < 0) return MPIABI_ERR_ARG;` and
+   `if (!edges) goto done;` returned without writing `*abi_newrank`. It was far
+   from the only one: `MPI_Testany`'s `*abi_indx` and `*abi_flag`,
+   `MPI_Waitsome`'s `*abi_outcount` and `MPI_Type_create_darray`'s
+   `*abi_newtype` are all in the set.
+
+   **The narrowing fallback reached the same conclusion independently, at three
+   of its own four new sites** — its `narrow_in` and `narrow_inout` checks and
+   its staged narrowing loop each spell the pair out, with a comment giving the
+   same reason. That is the argument for one owner rather than a habit: the
+   rule was rediscovered rather than reused, in code written after the
+   amendment that states it. `out_defined` is now that owner — it *is* the
+   `null_out_handles` + `stub_out_zeros` pair — and `guarded_lines` is the
+   single emitter for a guard, which is what lets a length check and a
+   narrowing check share a shape they were building by hand in three places.
+   Refactoring those three changed no generated byte, which is the check that
+   the shared emitter reproduces what it replaced.
+
+   **The `goto done` family is the one that cannot define its outs at the
+   return**, because `done:` is also where the success path leaves and
+   `abi_ierror` does not discriminate: `mpiwrapper_errorcode_toabi` and the
+   `mpiwrapper_take_handle_error` check can each produce `MPIABI_ERR_INTERN` on
+   a path that did write the outs. So the pair is emitted once at body level,
+   before the first jump to the label, and the success path overwrites it.
+
+   `assemble_outliving`'s four exits — two malloc failures, its narrowing loop
+   and its post-call error — are **latent, not live**: the generator already
+   refuses an outliving routine that produces any handle but the request, and
+   all eight produce no out scalar either, so `null_out_handles` and
+   `out_defined` emit the same text there today. They were unified for
+   uniformity, and one of them was the fallback's one miss — a miss that costs
+   nothing until some future outliving routine has an out scalar, which is
+   exactly the kind of debt a shared helper retires.
+
+   `out-params-defined` is the test. Its first two revisions were **worse than
+   no test**, and in a way worth recording: the audit keyed on
+   `#define BODY_(\w+)\(TARGET\)` and on "the second definition of a name is
+   the stub". The fallback made the macro `BODY_X(TARGET, FALLBACK)` and gave
+   148 entry points a *third* arm, so the regex stopped matching those macros
+   and the arm rule discarded the new body — and the audit reported clean over
+   22 open returns it had never read. It now splits arms on the preprocessor
+   directive that introduces each one, which is what the generator itself keys
+   the stub on, and reports which arm a finding is in.
+
+   Out *arrays* remain outside the promise, for the reason
+   `STUB_ZEROABLE_POINTEES` already excludes them: their extent is the caller's
+   contract, not ours. `MPI_Group_translate_ranks`'s `ranks2[]` and
+   `MPI_Waitall`'s `array_of_statuses` are still undefined after a rejected
+   length. That is a §13.2 limitation, not a decision 6 defect — the caller who
+   ignores the return code learns nothing about how much of an array was
+   written either way.
 7. **PMPI gets its own vtable slots** — two per entry point, 1366 in all,
    calling the implementation's shifted names directly. No probe and no
    fallback, since both names always exist and reach the same code when nothing
@@ -1671,7 +1862,7 @@ Version choice is about coverage, not admissibility:
 | MPICH >= 4.0 | provides the `_c` surface, so the large-count half of the ABI is exercised at all. Was "the only implementation that does", and is not any more — see the row below |
 | Open MPI >= 5.0 | sessions, and the current component architecture; 4.1 is *wrappable* and is a legitimate extra row rather than an excluded one |
 | MPICH 3.1.4 | the MPI-3.0 floor itself, verified rather than declared |
-| MVAPICH 4.1, Intel MPI 2021.15 | **the `_c` surface is not MPICH's alone, and `MPI_VERSION` does not predict it.** Measured, not read off a page: MVAPICH 4.1 declares MPI 4.1 and carries 387 `_c` prototypes in `src/include/mpi_proto.h`; Intel MPI 2021.15 declares MPI **3.1** and still links `MPI_Type_size_c`. Open MPI 5.0.10 remains the implementation with no `_c` entry point at all, which is what makes decision 6's stubs load-bearing (`dev/third-implementations/`) |
+| MVAPICH 4.1, Intel MPI 2021.15 | **the `_c` surface is not MPICH's alone, and `MPI_VERSION` does not predict it.** Measured, not read off a page: MVAPICH 4.1 declares MPI 4.1 and carries 387 `_c` prototypes in `src/include/mpi_proto.h`; Intel MPI 2021.15 declares MPI **3.1** and still declares 125 of them, `MPI_Type_size_c` among them. **That partial surface is the row's second reason to exist:** with 125 of the ABI's `_c` forms present and the rest absent, it is the only row where §5.10's narrowing fallback is compiled for some entry points and not others — MPICH >= 4.0 and MVAPICH 4.1 have the whole surface and Open MPI 5.0.10 none of it, so both take one arm throughout. Open MPI 5.0.10 stays the row that makes the fallback, and §13.2's `INT_MAX` cap with it, load-bearing rather than exotic (`dev/third-implementations/`) |
 
 ---
 
@@ -1760,6 +1951,15 @@ Version choice is about coverage, not admissibility:
   round-tripped; a status taken through Fortran and back and then asked
   `MPI_Get_count`; an errhandler trampoline asked whether it received *the
   handle the handler was set on*.
+- **The large-count half needs an oracle that does not know which arm it is
+  testing**, and `abi_large_count_test` is it: the `_c` form and its small twin
+  must agree, which is checkable over MPICH (where the implementation answers)
+  and over Open MPI (where the fallback does) with the same assertions. Without
+  that property the fallback would be exercised only where nothing can verify
+  it. §5.10 has the rule; its sharpest cases are the ones a wrong body gets
+  wrong rather than the ones it gets right -- a vector collective at a non-root
+  rank passing a genuine `NULL`, a nonblocking one whose caller overwrites its
+  own count arrays the instant it is posted, and a refused call's out handle.
 - **MPICH's C test suite** is the first oracle nothing in this repository wrote,
   and it earned that position: three conversion bugs no in-house check could
   have seen (`HISTORY.md` §3, S7). Its gate reads the expected-failure list in
@@ -2034,55 +2234,53 @@ One is deliberately *not* closed by an edit, because an edit cannot close it:
 
 ### 13.2 Limitations that are real
 
-Each is a behaviour a user can hit, and all five should be in the release notes.
-Four are deliberate — the design chose them, and §6.2 says why for the first two.
-The fifth, the `libmpi_abi.so` name collision, is not a choice anyone made; it is
-a consequence of picking the obvious library name, and it was found by adding the
-Intel MPI row rather than by thinking about it.
-
-- **A wrapped MPI that ships its own `libmpi_abi.so` can capture ours through
-  `LD_LIBRARY_PATH`.** `libmpi_abi.so` is what this project builds and it is also
-  what an MPI implementing the standard ABI natively installs, so the two collide
-  by filename in the one environment guaranteed to contain both: the wrapped
-  implementation's own. **Measured over Intel MPI 2021.18**, which ships
-  `libmpi_abi.so.1` with 670 `MPI_*` symbols and puts its `lib` directory on
-  `LD_LIBRARY_PATH` from `vars.sh`. **2021.17 is the first release that ships
-  one**, bisected in `dev/third-implementations/`; CI's `linux-oneapi` row pins
-  2021.15 and fails loudly if a bump ever brings the library back, so the
-  workaround below is a guard rather than something a green run depends on. Our binaries carry `NEEDED libmpi_abi.so`
-  with a `DT_RUNPATH`, and **`DT_RUNPATH` is searched after `LD_LIBRARY_PATH`**,
-  so the loader binds them to the implementation's library: five of thirteen
-  tests fail — precisely the five that load a wrapper — and all thirteen pass
-  with the variable cleared (`dev/third-implementations/`).
-
-  What makes this a limitation rather than a CI detail is the failure it *can*
-  produce. Here it was five red tests, because our version script gives
-  `MPIABI_1` a verdef the implementation's library has no match for and `ld.so`
-  says so. A consumer whose program happens to use only entry points the real
-  ABI implements would instead run correctly against the wrong library and never
-  know this project was bypassed — which is `HISTORY.md` §2.14's failure mode by
-  a new route.
-
-  Three things bound it, and none of them is a fix. `check-install.sh` clears
-  `LD_LIBRARY_PATH` for every consumption route, which is why its six legs
-  passed on the run where `ctest` did not — the disagreement is what exposed
-  this. `ci.yaml`'s `linux-oneapi` job does not export the variable at all, and
-  needs nothing from it, since `mpicc -show` bakes an RPATH to the
-  implementation's `lib`. And the collision needs the implementation's `lib` on
-  the loader path, which an ordinary consumer of an installed prefix has no
-  reason to put there. **The real fixes are undecided and both cost something:**
-  a `SOVERSION`, so our SONAME is `libmpi_abi.so.0` against MPICH's and Intel's
-  `.so.1` — which changes this project's installed ABI surface; or `-Wl,-z,nodeflib`
-  and friends, which do not help, since the problem is search *order* rather than
-  default directories. §13.3 is where this belongs once someone chooses. Note
-  that this is **not** §10's fifth oracle: deliberately wrapping an
-  ABI-implementing MPI is a row that does not exist yet and needs
-  `MPIWRAPPER_WRAP_ABI_IMPL`. MPICH 5.0 and MVAPICH 4.1 both carry
-  `--enable-mpi-abi` too, so the hazard is general and only Intel MPI ships it
-  enabled by default. The staged-leak one used to be a conformance bug rather than a
+Each is a behaviour a user can hit, and all seven should be in the release
+notes. Six are deliberate — the design chose them, and §6.2 says why for the
+first two. The seventh, the `libmpi_abi.so` name collision at the end of this
+section, is not a choice anyone made: it is a consequence of picking the obvious
+library name, and it was found by adding a CI row rather than by thinking about
+it. The staged-leak one used to be a conformance bug rather than a
 choice: a legal call answered with `MPI_ERR_INTERN`. That is fixed, and what is
 left in its place is a bounded leak, which is a limitation and not a bug; the
 wrong reading that hid it is kept in `HISTORY.md` §2.6a.
+
+The `INT_MAX` cap and the envelope-constructor entry apply **only over an
+implementation that lacks the `_c` entry points** — every released Open MPI, and
+MPICH before 4.0, but not MVAPICH 4.1 or Intel MPI 2021.15, which have them
+(§9's version table). Named rather than counted because this list has grown a
+seventh entry at the end since the sentence was written. Over MPICH ≥ 4.0 or
+Open MPI `main` neither exists, because the narrowing fallback they come from is
+not compiled at all (§5.10).
+
+- **A large count is capped at `INT_MAX` where the implementation has no `_c`
+  form.** The fallback narrows the count onto the small twin and returns
+  `MPI_ERR_VALUE_TOO_LARGE` for a value that will not fit, so a program that
+  genuinely sends more than 2^31−1 elements in one call gets an error where a
+  native MPI-4 implementation would succeed. Raising the ceiling means
+  describing the payload with a temporary derived datatype and passing a count
+  of 1 — which works for point-to-point, RMA `Put`/`Get`, file I/O and the
+  uniform-count collectives, but **not** for anything applying a predefined op
+  elementwise (`MPI_Reduce`, `MPI_Allreduce`, `MPI_Scan`, `MPI_Exscan`,
+  `MPI_Reduce_scatter*`, `MPI_Accumulate`), because predefined ops are not
+  defined on derived types. Chunking those into several calls serves the
+  blocking forms and cannot serve the nonblocking or persistent ones, which owe
+  a single request. `MPI_Pack_c`/`MPI_Unpack_c` are blocked separately: the
+  small twin's `position` is an `int *`, so a buffer above 2 GiB cannot be
+  walked without reimplementing packing. So the ceiling is not one decision but
+  a family of them, and it is deliberately left where it is until a user appears
+  who is above it.
+- **A datatype's envelope reports the constructor the wrapper used, not the one
+  the caller called.** Measured in `dev/large-count-envelope/`: the envelope is
+  a property of the constructor, so `MPI_Type_contiguous_c(5, MPI_INT)` reports
+  one *large count* on MPICH and the small `MPI_Type_get_envelope` refuses the
+  type outright with `MPI_ERR_TYPE`. Under the fallback that same call builds a
+  small-count type, so `MPI_Type_get_envelope_c` reports one *integer* and the
+  small `MPI_Type_get_envelope` succeeds. The answers are self-consistent — the
+  envelope-then-contents-then-rebuild round trip every real consumer performs
+  gives the same datatype either way — and the difference is visible only to a
+  program asserting about how the implementation classifies its own types.
+  §5.10 has why the alternative, a side table keyed on a handle the
+  implementation owns and recycles, is worse than the limitation.
 
 - **Fixed-capacity tables are exhaustible, and ordinary programs reach them.**
   1024 op trampolines per variant, 256 errhandler slots per class, 1024 keyval
@@ -2282,6 +2480,48 @@ wrong reading that hid it is kept in `HISTORY.md` §2.6a.
 - **A program that creates unboundedly many ops or keyvals over its lifetime is
   outside what this design serves.** Stated plainly because the table in §6.2
   reads like a corner case and is not.
+
+- **A wrapped MPI that ships its own `libmpi_abi.so` can capture ours through
+  `LD_LIBRARY_PATH`.** `libmpi_abi.so` is what this project builds, and it is
+  also what an MPI implementing the standard ABI natively installs, so the two
+  collide by filename in the one environment guaranteed to contain both: the
+  wrapped implementation's own. **Measured over Intel MPI 2021.18**, which ships
+  `libmpi_abi.so.1` with 670 `MPI_*` symbols and puts its `lib` directory on
+  `LD_LIBRARY_PATH` from `vars.sh`. Our binaries carry `NEEDED libmpi_abi.so`
+  with a `DT_RUNPATH`, and **`DT_RUNPATH` is searched after `LD_LIBRARY_PATH`**,
+  so the loader binds them to the implementation's library: five of thirteen
+  tests fail — precisely the five that load a wrapper — and all thirteen pass
+  with the variable cleared (`dev/third-implementations/`).
+
+  What makes this a limitation rather than a CI detail is the failure it *can*
+  produce. Here it was five red tests, because our version script gives
+  `MPIABI_1` a verdef the implementation's library has no match for and `ld.so`
+  says so. A consumer whose program happens to use only entry points the real
+  ABI implements would instead run correctly against the wrong library and never
+  know this project was bypassed — which is `HISTORY.md` §2.14's failure mode by
+  a new route.
+
+  Three things bound it, and none is a fix. `check-install.sh` clears
+  `LD_LIBRARY_PATH` for every consumption route, which is why its six legs
+  passed on the run where `ctest` did not — that disagreement is what exposed
+  this. `ci.yaml`'s `linux-oneapi` job does not export the variable and needs
+  nothing from it, since `mpicc -show` bakes an RPATH to the implementation's
+  `lib`; it also pins Intel MPI 2021.15, below the 2021.17 that first shipped
+  such a library, and fails loudly if a bump brings one back — so no green run
+  depends on the workaround. And the collision needs the implementation's `lib`
+  on the loader path, which an ordinary consumer of an installed prefix has no
+  reason to put there.
+
+  **The real fixes are undecided and both cost something:** a `SOVERSION`, so
+  our SONAME is `libmpi_abi.so.0` against MPICH's and Intel's `.so.1`, which
+  changes this project's installed ABI surface; or `-Wl,-z,nodeflib` and
+  friends, which do not help, because the problem is search *order* rather than
+  default directories. §13.3 is where this belongs once someone chooses. Note
+  that it is **not** §10's fifth oracle: deliberately wrapping an
+  ABI-implementing MPI is a row that does not exist yet and needs
+  `MPIWRAPPER_WRAP_ABI_IMPL`. MPICH 5.0 and MVAPICH 4.1 both carry
+  `--enable-mpi-abi` as well, so the hazard is general; Intel MPI 2021.17+ is
+  only the one that ships it built.
 
 ### 13.3 Open design questions
 
