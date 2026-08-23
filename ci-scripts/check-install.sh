@@ -36,7 +36,7 @@
 # binary produced -- no libmpiwrapper (reached by dlopen, never linked) and
 # no direct dependency on the wrapped implementation.
 #
-# Legs 4 and 5 are skipped, with a reason printed, when this host has no
+# Leg 5 is skipped, with a reason printed, when this host has no
 # pkg-config to ask -- pkg-config is not a dependency of mpi_abi_wrapper, and
 # a run that cannot ask should say so rather than fail on the tool's absence.
 #

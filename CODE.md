@@ -86,7 +86,7 @@ check.
                      environments x four shards, the MPICH ones gating
 bin/               mpicc.in, mpicxx.in -- the compiler wrappers, configured at install
 ci-scripts/        MPI install and build-shape checks
-  check-install.sh   the five-leg installed-prefix consumption test
+  check-install.sh   the six-leg installed-prefix consumption test
   install-mpich.sh, install-openmpi.sh
   linux-test.sh, run-linux-docker.sh
   linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
@@ -315,16 +315,22 @@ Three routes, all generated from one source of truth for flags:
   bundled `FindMPI` already finds this project through compiler-wrapper
   interrogation, which `bin/mpicc.in` answers the way a real one would; the
   shipped `cmake/FindMPI.cmake` covers the case interrogation cannot reach.
+  Only the shim is exercised as a leg below — the interrogation path is
+  CMake's own behaviour against `bin/mpicc` and needs nothing from the
+  installed package files, so nothing here tests it.
 - **pkg-config** — `mpi_abi.pc`.
 
 `ci-scripts/check-install.sh` takes any `mpicc` as its one argument and runs
-five legs: `bin/mpicc`, `find_package(mpi_abi)`, `find_package(MPI)` via
-interrogation, `find_package(MPI)` via the shim, and `pkg-config` — each
-*building and running* a program from the installed prefix with
-`LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared — plus the prefix-exclusivity
-assertion. All five pass on macOS against a distro Open MPI and on Linux against
-MPICH 5.0.1 and Open MPI 5.0.10 built from source by
-`ci-scripts/install-mpich.sh` / `install-openmpi.sh`.
+**six** legs (`grep -c '^step "' ci-scripts/check-install.sh`): the configure,
+build and install into a prefix of its own, the prefix-exclusivity assertion,
+and then four route legs over the three consumption routes of `NOTES.md` #9 —
+`bin/mpicc`, `find_package(mpi_abi)`, `find_package(MPI)` via the shim, and
+`pkg-config` — each *building and running* a program from the installed prefix
+with `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared. `find_package` is two legs
+because this project ships two answers to it; the pkg-config leg reports itself
+skipped on a host with no pkg-config. All six pass on macOS against a distro
+Open MPI and on Linux against MPICH 5.0.1 and Open MPI 5.0.10 built from source
+by `ci-scripts/install-mpich.sh` / `install-openmpi.sh`.
 
 Those installers are far shorter than mpif's equivalents on purpose: mpif needs
 an MPI that already implements the standard ABI, hence its pinned MPICH `main`
