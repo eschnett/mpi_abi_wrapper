@@ -325,11 +325,23 @@ jobs:
       # edit to linux-test.sh or check-install.sh, neither of which can change a
       # single byte of an installed MPI, rebuilt four of them.
       #
-      # A glob rather than the two names: a third installer added later joins
-      # the key by existing, where a list of names would silently serve an MPI
-      # built without it.
+      # **It hashes only the installer that builds *this* prefix, and the glob it
+      # replaced was the same mistake one size smaller.** `install-*.sh` was chosen
+      # so "a third installer added later joins the key by existing" -- and when a
+      # third one did arrive, install-mvapich.sh, it joined every *other*
+      # implementation's key too and invalidated four prefixes that no byte of it
+      # can affect. Every future edit to it would do the same. The reason the glob
+      # was preferred is real but it is served by `format()` instead: the key names
+      # whichever installer the matrix row uses, so a new implementation still gets
+      # a correct key by existing, without touching anybody else's.
       #
-      # The suite is excluded by construction now rather than by a negation.
+      # The rule underneath, worth stating once for all three copies of this key:
+      # **hash exactly the inputs that can change the bytes in this prefix.**
+      # Broader is not safer, it is just slower -- linux-test.sh and
+      # check-install.sh were excluded for this reason and MVAPICH's installer
+      # belongs in the same category with respect to MPICH's prefix.
+      #
+      # The suite directory is excluded by construction rather than by a negation.
       # Keep it that way: `ci-scripts/*` would NOT have worked, because
       # @actions/glob expands a matched directory to all of its descendants. The
       # cache step prints the key it used, so a commit that changes only a
@@ -340,16 +352,30 @@ jobs:
       # here is not, so without it a version bump would restore the previous
       # MPI under an unchanged hash.
       #
+      # **The field order is load-bearing and is not the order it reads in.** os
+      # and arch come before the version so that `mpi1-<mpi>-<os>-<arch>-` is a
+      # usable restore-keys prefix -- which the `compile` job below needs and
+      # these rows must not have, for opposite reasons given there. A prefix
+      # ending before the arch would let an aarch64 archive restore onto an
+      # x86_64 runner, so this order is the one that makes a fallback safe to
+      # write at all.
+      #
       # `mpi1-` is a manual epoch: actions/cache restores an archive to the
       # absolute paths recorded at save time, so renaming the prefix means
       # bumping this or a stale cache restores to the old path and reads as a
-      # broken installation rather than a stale cache.
+      # broken installation rather than a stale cache. Narrowing the hash and
+      # reordering the fields both change every key once, which costs one cold
+      # rebuild per prefix and then nothing.
+      #
+      # **No restore-keys here, deliberately.** These rows test a named version;
+      # a fallback would quietly hand them a different one and report the result
+      # as though it were the pinned MPI's.
       - name: Restore the MPI installation
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-${{ matrix.mpi }}
-          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+          key: mpi1-${{ matrix.mpi }}-${{ matrix.os }}-${{ runner.arch }}-${{ matrix.version }}-${{ hashFiles(format('ci-scripts/install-{0}.sh', matrix.mpi)) }}
 
       - name: Build and install ${{ matrix.mpi }} ${{ matrix.version }}
         if: steps.cache-mpi.outputs.cache-hit != 'true'
@@ -801,17 +827,41 @@ jobs:
       # did not is the informative one.
       #
       # Restore-only, sharing the key the linux-source rows save under: this job
-      # never writes that cache, so the two cannot race over it. A miss simply
-      # builds, which costs this row alone.
+      # never writes that cache, so the two cannot race over it.
+      #
+      # **The version in this key is a duplicate of a matrix value it cannot read,
+      # and `restore-keys` is what makes that duplicate harmless.** A matrix's
+      # `include:` cannot reference `env`, so there is no single place both this
+      # literal and the linux-source rows' `version:` can come from. Left exact-only,
+      # the next MPICH bump would leave this key matching nothing -- and because
+      # this job never saves, it would rebuild MPICH from source on every run,
+      # forever, with nothing red to say so. The fallback turns that failure mode
+      # into "restores a slightly older MPICH", which is *correct here and nowhere
+      # else in this file*: this row never runs an MPI program. It compiles, and all
+      # it needs from MPICH is a stock mpicc whose flags a third-party compiler will
+      # accept. The linux-source and suite rows test a named version and therefore
+      # have no restore-keys at all.
+      #
+      # The prefix stops after the arch on purpose. `mpi1-mpich-` would also match
+      # an aarch64 archive, which would restore an unusable prefix onto this x86_64
+      # runner and read as a broken MPICH rather than as a cache fallback; the field
+      # order in the linux-source key exists to make this line possible.
       - name: Restore the MPI installation
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-mpich
-          key: mpi1-mpich-5.0.1-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+          key: mpi1-mpich-ubuntu-24.04-${{ runner.arch }}-5.0.1-${{ hashFiles('ci-scripts/install-mpich.sh') }}
+          restore-keys: mpi1-mpich-ubuntu-24.04-${{ runner.arch }}-
 
+      # **`cache-matched-key`, not `cache-hit`.** `cache-hit` is 'true' only for an
+      # exact key match, so with the restore-keys above it would still be 'false'
+      # after a successful fallback restore and this step would rebuild the MPICH
+      # that is already sitting in the prefix -- which is the whole cost the
+      # fallback was added to avoid. `cache-matched-key` is empty only when nothing
+      # was restored at all.
       - name: Build and install MPICH 5.0.1
-        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        if: steps.cache-mpi.outputs.cache-matched-key == ''
         run: ci-scripts/install-mpich.sh "${PREFIX}" 5.0.1
 
       # Intel's oneAPI compilers come from Intel's own apt repository, and the
@@ -1393,12 +1443,22 @@ jobs:
       # The same key the linux-source rows save under, so a warm cache serves
       # both: restore-only here, exactly as the compile job does, so the two
       # cannot race over it. A miss simply builds, at the cost of this row alone.
+      #
+      # **"The same key" is a constraint, not an observation.** It has to be
+      # character-for-character what linux-source builds, including the field
+      # order and the narrowed `hashFiles`, or these rows quietly stop sharing
+      # that cache and every one of them builds its own MPI. Both were changed
+      # together in the commit that narrowed them; the linux-source copy carries
+      # the reasoning for both.
+      #
+      # And no restore-keys, for the reason given there: these rows are a claim
+      # about a named version of a named implementation.
       - name: Restore the MPI installation
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-${{ matrix.leg.mpi }}
-          key: mpi1-${{ matrix.leg.mpi }}-${{ matrix.leg.version }}-${{ matrix.leg.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+          key: mpi1-${{ matrix.leg.mpi }}-${{ matrix.leg.os }}-${{ runner.arch }}-${{ matrix.leg.version }}-${{ hashFiles(format('ci-scripts/install-{0}.sh', matrix.leg.mpi)) }}
 
       # mpif's idea, and it earns its place on the run where the prefix cache
       # misses but the compiler cache does not -- a version bump invalidates the
