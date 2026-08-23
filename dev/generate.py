@@ -101,7 +101,7 @@ FROZEN = {
     # that surface is served rather than refused. Frozen because an entry point
     # joining or leaving the set changes what a build over an MPI-3
     # implementation can do.
-    "large-count fallbacks": 108,
+    "large-count fallbacks": 115,
 }
 
 # ---------------------------------------------------------------------------
@@ -1615,13 +1615,19 @@ class Staged:
     is allocated, and both must suppress the copy back -- which for the null
     case is not an optimization but the whole point, since the destination is
     the null pointer.
+
+    `narrow_fn` names the mpiwrapper_narrow_* that fills each element where the
+    fallback body has to narrow the array rather than map it (NOTES.md #5.10).
+    It is the one conversion here that can *fail*, which is why it is a
+    separate field rather than another `family`: a family produces an
+    expression and this produces a statement with an early exit.
     """
 
     __slots__ = ("p", "name", "elem", "mode", "extent", "family", "ignored",
-                 "skip", "skip_arg")
+                 "skip", "skip_arg", "narrow_fn")
 
     def __init__(self, p, name, elem, mode, extent, family, ignored=False,
-                 skip=None, skip_arg=None):
+                 skip=None, skip_arg=None, narrow_fn=None):
         self.p = p
         self.name = name
         self.elem = elem
@@ -1631,6 +1637,22 @@ class Staged:
         self.ignored = ignored   # MPI_IN_PLACE makes this argument ignored
         self.skip = skip
         self.skip_arg = skip_arg
+        self.narrow_fn = narrow_fn
+
+    def narrow_loop(self, ind, on_fail):
+        """The checked conversion loop, for an array the fallback narrows.
+
+        `on_fail` is what to do with the element that does not fit, which
+        differs between the two assemblers: one has a `done:` label to jump to
+        and the other has a block to free.
+        """
+        lines = [ind + f"for ({self.extent.ctype} i = 0; "
+                       f"i < {self.extent.alloc}; ++i)",
+                 ind + f"  if (!{self.narrow_fn}(abi_{self.p.name}[i], "
+                       f"&{self.name}[i])) {{"]
+        lines += [ind + "    " + ln for ln in on_fail]
+        lines.append(ind + "  }")
+        return lines
 
     def fill(self, lead):
         """The conversion loop's assignment, `lead` being everything up to and
@@ -1974,6 +1996,15 @@ def emit_body(ep, target="TARGET"):
             post.append((f"if (!ignore) "
                          f"mpiwrapper_status_toabi_keep_error(&status, {abi});",))
             status_local = True
+        elif cls == "array_narrow_in":
+            # NOTES.md #5.10. The same staged temporary #5.7 requires of every
+            # converted array -- the elements are a different size, so there is
+            # nothing to cast -- filled by a loop that can fail partway.
+            elem = p.elem_type()
+            extent = use(array_extent(ep, p), elem)
+            staged.append(Staged(p, name, elem, "in", extent, None,
+                                 narrow_fn=NARROW_FN[elem]))
+            args.append(name)
         elif cls in ("array_convert_in", "array_stage_inout",
                      "array_stage_out", "array_status_out"):
             elem = "MPI_Status" if cls == "array_status_out" else p.elem_type()
@@ -2185,6 +2216,23 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         loops = []
         for s in staged:
             if s.mode not in ("in", "inout"):
+                continue
+            if s.narrow_fn:
+                # The one conversion loop that can fail. It leaves through the
+                # same `done:` every other failure here uses, so the stack
+                # buffers are unstaged exactly once and abi_ierror carries the
+                # reason -- but the out parameters have to be defined *here*
+                # rather than at the label, because the success path writes
+                # them and then falls through it. Without this a refused
+                # MPI_Type_create_struct_c returns the handle the caller
+                # happened to leave in the variable, which is decision 6's
+                # defect on a path decision 6 does not reach; the scratch
+                # check for this stage is what found it.
+                loops += s.narrow_loop(
+                    ind, [ln.strip() for ln in null_out_handles(ep, "")]
+                    + [ln.strip() for ln in stub_out_zeros(ep, "")]
+                    + ["abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;",
+                       "goto done;"])
                 continue
             loops.append(ind + f"for ({s.extent.ctype} i = 0; "
                                f"i < {s.extent.alloc}; ++i)")
@@ -3825,11 +3873,37 @@ def fallback_param(p, ap):
     # Only a passthrough can differ in width and still mean the same thing. A
     # class that already converts (a handle, a rank, a status) means the two
     # forms disagree about something other than width, which is not a case this
-    # mechanism knows how to serve.
+    # mechanism knows how to serve. The array spelling of the class is
+    # array_passthrough, and it is a *cast* today for exactly the reason it
+    # cannot be one here: equal-width elements (HISTORY.md #1.9).
+    if p.is_array or ap.is_array:
+        # An array cannot be cast the way an equal-width one is: the elements
+        # are a different size, so it has to be staged and converted one at a
+        # time (NOTES.md #5.7's rule, #5.10's reason). Only the in direction
+        # arises -- no large-count routine reports counts through an array.
+        if p.cls != "array_passthrough" or ap.cls != "array_passthrough":
+            return None
+        if not (p.is_array and ap.is_array) or p.direction != "in":
+            return None
+        if p.elem_type() not in NARROWABLE or ap.elem_type() not in NARROWABLE:
+            return None
+        if ap.elem_type() not in NARROW_FN:
+            return None
+        if p.length is None or p.length != ap.length:
+            return None
+        if not p.length.isidentifier():
+            # apis.json gives this array's length as `*`, meaning "ask the
+            # communicator": the v- and w-collectives, whose extents live in
+            # ARRAY_EXTENT and whose root-only forms must not read the array at
+            # a rank where it is not significant. A different problem, and the
+            # stub stays until it is solved. What is left here is the array
+            # whose length is another parameter -- the datatype constructors.
+            return None
+        out.cls = "array_narrow_in"
+        return out
+
     if p.cls != "passthrough" or ap.cls != "passthrough":
         return None
-    if p.is_array or ap.is_array:
-        return None       # stage 3's business: an array has to be staged
 
     if not p.is_pointer and not ap.is_pointer:
         if p.base not in NARROWABLE or ap.base not in NARROWABLE:

@@ -21523,7 +21523,7 @@ static int w_PMPI_Type_create_darray(int abi_size, int abi_rank, int abi_ndims,
 /* ----------------------------------------------- MPI_Type_create_darray_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_darray_c
-#define BODY_MPI_Type_create_darray_c(TARGET)                                  \
+#define BODY_MPI_Type_create_darray_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const int size  = abi_size;                                                \
     const int rank  = mpiwrapper_rank_fromabi(abi_rank);                       \
@@ -21571,8 +21571,68 @@ static int w_PMPI_Type_create_darray(int abi_size, int abi_rank, int abi_ndims,
     mpiwrapper_unstage(dargs, dargs_stack);                                    \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_darray)
+#define BODY_MPI_Type_create_darray_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    const int size  = abi_size;                                                \
+    const int rank  = mpiwrapper_rank_fromabi(abi_rank);                       \
+    const int ndims = abi_ndims;                                               \
+    if (ndims < 0) return MPIABI_ERR_COUNT;                                    \
+                                                                               \
+    const int *const   psizes  = abi_array_of_psizes;                          \
+    const int          order   = mpiwrapper_order_fromabi(abi_order);          \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  gsizes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *gsizes     = NULL;                                                    \
+    int  distribs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                 \
+    int *distribs   = NULL;                                                    \
+    int  dargs_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
+    int *dargs      = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    gsizes = mpiwrapper_stage(gsizes_stack, sizeof gsizes_stack, (size_t)ndims,\
+                              sizeof *gsizes);                                 \
+    if (!gsizes) goto done;                                                    \
+    distribs = mpiwrapper_stage(distribs_stack, sizeof distribs_stack,         \
+                                (size_t)ndims, sizeof *distribs);              \
+    if (!distribs) goto done;                                                  \
+    dargs = mpiwrapper_stage(dargs_stack, sizeof dargs_stack, (size_t)ndims,   \
+                             sizeof *dargs);                                   \
+    if (!dargs) goto done;                                                     \
+                                                                               \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_gsizes[i], &gsizes[i])) {        \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < ndims; ++i)                                            \
+      distribs[i] = mpiwrapper_distribute_fromabi(abi_array_of_distribs[i]);   \
+    for (int i = 0; i < ndims; ++i)                                            \
+      dargs[i] = mpiwrapper_darg_fromabi(abi_array_of_dargs[i]);               \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(size, rank, ndims, gsizes, distribs, dargs, psizes, order,  \
+                   oldtype, &newtype);                                         \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(gsizes, gsizes_stack);                                  \
+    mpiwrapper_unstage(distribs, distribs_stack);                              \
+    mpiwrapper_unstage(dargs, dargs_stack);                                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_darray_c(TARGET)                                  \
+#define BODY_MPI_Type_create_darray_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_size;                                                            \
     (void)abi_rank;                                                            \
@@ -21594,13 +21654,15 @@ static int w_MPI_Type_create_darray_c(int abi_size, int abi_rank,
     const int abi_array_of_distribs[], const int abi_array_of_dargs[],
     const int abi_array_of_psizes[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_darray_c(MPI_Type_create_darray_c)
+    BODY_MPI_Type_create_darray_c(MPI_Type_create_darray_c,
+                                  MPI_Type_create_darray)
 static int w_PMPI_Type_create_darray_c(int abi_size, int abi_rank,
     int abi_ndims, const MPIABI_Count abi_array_of_gsizes[],
     const int abi_array_of_distribs[], const int abi_array_of_dargs[],
     const int abi_array_of_psizes[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_darray_c(PMPI_Type_create_darray_c)
+    BODY_MPI_Type_create_darray_c(PMPI_Type_create_darray_c,
+                                  PMPI_Type_create_darray)
 
 /* -------------------------------------------- MPI_Type_create_f90_complex */
 
@@ -21754,7 +21816,7 @@ static int w_PMPI_Type_create_hindexed(int abi_count,
 /* --------------------------------------------- MPI_Type_create_hindexed_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_hindexed_c
-#define BODY_MPI_Type_create_hindexed_c(TARGET)                                \
+#define BODY_MPI_Type_create_hindexed_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count *const blocklengths  =                                     \
@@ -21774,8 +21836,65 @@ static int w_PMPI_Type_create_hindexed(int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_hindexed)
+#define BODY_MPI_Type_create_hindexed_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    int count = 0;                                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int       blocklengths_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];        \
+    int      *blocklengths  = NULL;                                            \
+    MPI_Aint  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Aint)];  \
+    MPI_Aint *displacements = NULL;                                            \
+    int       abi_ierror    = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    blocklengths = mpiwrapper_stage(blocklengths_stack,                        \
+                                    sizeof blocklengths_stack, (size_t)count,  \
+                                    sizeof *blocklengths);                     \
+    if (!blocklengths) goto done;                                              \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_blocklengths[i], &blocklengths[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_aint(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklengths, displacements, oldtype, &newtype);     \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(blocklengths, blocklengths_stack);                      \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_hindexed_c(TARGET)                                \
+#define BODY_MPI_Type_create_hindexed_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_array_of_blocklengths;                                           \
@@ -21791,12 +21910,14 @@ static int w_MPI_Type_create_hindexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_c(MPI_Type_create_hindexed_c)
+    BODY_MPI_Type_create_hindexed_c(MPI_Type_create_hindexed_c,
+                                    MPI_Type_create_hindexed)
 static int w_PMPI_Type_create_hindexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_c(PMPI_Type_create_hindexed_c)
+    BODY_MPI_Type_create_hindexed_c(PMPI_Type_create_hindexed_c,
+                                    PMPI_Type_create_hindexed)
 
 /* ----------------------------------------- MPI_Type_create_hindexed_block */
 
@@ -21845,7 +21966,7 @@ static int w_PMPI_Type_create_hindexed_block(int abi_count,
 /* --------------------------------------- MPI_Type_create_hindexed_block_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_hindexed_block_c
-#define BODY_MPI_Type_create_hindexed_block_c(TARGET)                          \
+#define BODY_MPI_Type_create_hindexed_block_c(TARGET, FALLBACK)                \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count        blocklength   = abi_blocklength;                    \
@@ -21864,8 +21985,57 @@ static int w_PMPI_Type_create_hindexed_block(int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_hindexed_block)
+#define BODY_MPI_Type_create_hindexed_block_c(TARGET, FALLBACK)                \
+  {                                                                            \
+    int count       = 0;                                                       \
+    int blocklength = 0;                                                       \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_blocklength, &blocklength)) {               \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    MPI_Aint  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Aint)];  \
+    MPI_Aint *displacements = NULL;                                            \
+    int       abi_ierror    = MPIABI_ERR_INTERN;                               \
+                                                                               \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_aint(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklength, displacements, oldtype, &newtype);      \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_hindexed_block_c(TARGET)                          \
+#define BODY_MPI_Type_create_hindexed_block_c(TARGET, FALLBACK)                \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_blocklength;                                                     \
@@ -21881,12 +22051,14 @@ static int w_MPI_Type_create_hindexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_block_c(MPI_Type_create_hindexed_block_c)
+    BODY_MPI_Type_create_hindexed_block_c(MPI_Type_create_hindexed_block_c,
+                                          MPI_Type_create_hindexed_block)
 static int w_PMPI_Type_create_hindexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_hindexed_block_c(PMPI_Type_create_hindexed_block_c)
+    BODY_MPI_Type_create_hindexed_block_c(PMPI_Type_create_hindexed_block_c,
+                                          PMPI_Type_create_hindexed_block)
 
 /* ------------------------------------------------ MPI_Type_create_hvector */
 
@@ -22057,7 +22229,7 @@ static int w_PMPI_Type_create_indexed_block(int abi_count, int abi_blocklength,
 /* ---------------------------------------- MPI_Type_create_indexed_block_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_indexed_block_c
-#define BODY_MPI_Type_create_indexed_block_c(TARGET)                           \
+#define BODY_MPI_Type_create_indexed_block_c(TARGET, FALLBACK)                 \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count        blocklength   = abi_blocklength;                    \
@@ -22076,8 +22248,57 @@ static int w_PMPI_Type_create_indexed_block(int abi_count, int abi_blocklength,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_indexed_block)
+#define BODY_MPI_Type_create_indexed_block_c(TARGET, FALLBACK)                 \
+  {                                                                            \
+    int count       = 0;                                                       \
+    int blocklength = 0;                                                       \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (!mpiwrapper_narrow_int(abi_blocklength, &blocklength)) {               \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];            \
+    int *displacements = NULL;                                                 \
+    int  abi_ierror    = MPIABI_ERR_INTERN;                                    \
+                                                                               \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklength, displacements, oldtype, &newtype);      \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_indexed_block_c(TARGET)                           \
+#define BODY_MPI_Type_create_indexed_block_c(TARGET, FALLBACK)                 \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_blocklength;                                                     \
@@ -22093,12 +22314,14 @@ static int w_MPI_Type_create_indexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_indexed_block_c(MPI_Type_create_indexed_block_c)
+    BODY_MPI_Type_create_indexed_block_c(MPI_Type_create_indexed_block_c,
+                                         MPI_Type_create_indexed_block)
 static int w_PMPI_Type_create_indexed_block_c(MPIABI_Count abi_count,
     MPIABI_Count abi_blocklength,
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_indexed_block_c(PMPI_Type_create_indexed_block_c)
+    BODY_MPI_Type_create_indexed_block_c(PMPI_Type_create_indexed_block_c,
+                                         PMPI_Type_create_indexed_block)
 
 /* ------------------------------------------------ MPI_Type_create_resized */
 
@@ -22274,7 +22497,7 @@ static int w_PMPI_Type_create_struct(int abi_count,
 /* ----------------------------------------------- MPI_Type_create_struct_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_struct_c
-#define BODY_MPI_Type_create_struct_c(TARGET)                                  \
+#define BODY_MPI_Type_create_struct_c(TARGET, FALLBACK)                        \
   {                                                                            \
     const MPI_Count count = abi_count;                                         \
     if (count < 0) return MPIABI_ERR_COUNT;                                    \
@@ -22313,8 +22536,71 @@ static int w_PMPI_Type_create_struct(int abi_count,
     mpiwrapper_unstage(types, types_stack);                                    \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_struct)
+#define BODY_MPI_Type_create_struct_c(TARGET, FALLBACK)                        \
+  {                                                                            \
+    int count = 0;                                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+                                                                               \
+    int           blocklengths_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];    \
+    int          *blocklengths  = NULL;                                        \
+    MPI_Aint      displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Aint)]; \
+    MPI_Aint     *displacements = NULL;                                        \
+    MPI_Datatype  types_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)];  \
+    MPI_Datatype *types         = NULL;                                        \
+    int           abi_ierror    = MPIABI_ERR_INTERN;                           \
+                                                                               \
+    blocklengths = mpiwrapper_stage(blocklengths_stack,                        \
+                                    sizeof blocklengths_stack, (size_t)count,  \
+                                    sizeof *blocklengths);                     \
+    if (!blocklengths) goto done;                                              \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+    types = mpiwrapper_stage(types_stack, sizeof types_stack, (size_t)count,   \
+                             sizeof *types);                                   \
+    if (!types) goto done;                                                     \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_blocklengths[i], &blocklengths[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_aint(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      types[i] = mpiwrapper_datatype_fromabi(abi_array_of_types[i]);           \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklengths, displacements, types, &newtype);       \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(blocklengths, blocklengths_stack);                      \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    mpiwrapper_unstage(types, types_stack);                                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_struct_c(TARGET)                                  \
+#define BODY_MPI_Type_create_struct_c(TARGET, FALLBACK)                        \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_array_of_blocklengths;                                           \
@@ -22330,12 +22616,14 @@ static int w_MPI_Type_create_struct_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     const MPIABI_Datatype abi_array_of_types[], MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_struct_c(MPI_Type_create_struct_c)
+    BODY_MPI_Type_create_struct_c(MPI_Type_create_struct_c,
+                                  MPI_Type_create_struct)
 static int w_PMPI_Type_create_struct_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     const MPIABI_Datatype abi_array_of_types[], MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_struct_c(PMPI_Type_create_struct_c)
+    BODY_MPI_Type_create_struct_c(PMPI_Type_create_struct_c,
+                                  PMPI_Type_create_struct)
 
 /* ----------------------------------------------- MPI_Type_create_subarray */
 
@@ -22394,7 +22682,7 @@ static int w_PMPI_Type_create_subarray(int abi_ndims,
 /* --------------------------------------------- MPI_Type_create_subarray_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_create_subarray_c
-#define BODY_MPI_Type_create_subarray_c(TARGET)                                \
+#define BODY_MPI_Type_create_subarray_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const int              ndims    = abi_ndims;                               \
     const MPI_Count *const sizes    = (const MPI_Count *)abi_array_of_sizes;   \
@@ -22413,8 +22701,72 @@ static int w_PMPI_Type_create_subarray(int abi_ndims,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_create_subarray)
+#define BODY_MPI_Type_create_subarray_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const int ndims = abi_ndims;                                               \
+    if (ndims < 0) return MPIABI_ERR_COUNT;                                    \
+                                                                               \
+    const int          order   = mpiwrapper_order_fromabi(abi_order);          \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  sizes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                    \
+    int *sizes      = NULL;                                                    \
+    int  subsizes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                 \
+    int *subsizes   = NULL;                                                    \
+    int  starts_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];                   \
+    int *starts     = NULL;                                                    \
+    int  abi_ierror = MPIABI_ERR_INTERN;                                       \
+                                                                               \
+    sizes = mpiwrapper_stage(sizes_stack, sizeof sizes_stack, (size_t)ndims,   \
+                             sizeof *sizes);                                   \
+    if (!sizes) goto done;                                                     \
+    subsizes = mpiwrapper_stage(subsizes_stack, sizeof subsizes_stack,         \
+                                (size_t)ndims, sizeof *subsizes);              \
+    if (!subsizes) goto done;                                                  \
+    starts = mpiwrapper_stage(starts_stack, sizeof starts_stack, (size_t)ndims,\
+                              sizeof *starts);                                 \
+    if (!starts) goto done;                                                    \
+                                                                               \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_sizes[i], &sizes[i])) {          \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_subsizes[i], &subsizes[i])) {    \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < ndims; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_starts[i], &starts[i])) {        \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(ndims, sizes, subsizes, starts, order, oldtype, &newtype);  \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(sizes, sizes_stack);                                    \
+    mpiwrapper_unstage(subsizes, subsizes_stack);                              \
+    mpiwrapper_unstage(starts, starts_stack);                                  \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_create_subarray_c(TARGET)                                \
+#define BODY_MPI_Type_create_subarray_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_ndims;                                                           \
     (void)abi_array_of_sizes;                                                  \
@@ -22433,13 +22785,15 @@ static int w_MPI_Type_create_subarray_c(int abi_ndims,
     const MPIABI_Count abi_array_of_subsizes[],
     const MPIABI_Count abi_array_of_starts[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_subarray_c(MPI_Type_create_subarray_c)
+    BODY_MPI_Type_create_subarray_c(MPI_Type_create_subarray_c,
+                                    MPI_Type_create_subarray)
 static int w_PMPI_Type_create_subarray_c(int abi_ndims,
     const MPIABI_Count abi_array_of_sizes[],
     const MPIABI_Count abi_array_of_subsizes[],
     const MPIABI_Count abi_array_of_starts[], int abi_order,
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_create_subarray_c(PMPI_Type_create_subarray_c)
+    BODY_MPI_Type_create_subarray_c(PMPI_Type_create_subarray_c,
+                                    PMPI_Type_create_subarray)
 
 /* --------------------------------------------------- MPI_Type_delete_attr */
 
@@ -23164,7 +23518,7 @@ static int w_PMPI_Type_indexed(int abi_count,
 /* ----------------------------------------------------- MPI_Type_indexed_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_indexed_c
-#define BODY_MPI_Type_indexed_c(TARGET)                                        \
+#define BODY_MPI_Type_indexed_c(TARGET, FALLBACK)                              \
   {                                                                            \
     const MPI_Count        count         = abi_count;                          \
     const MPI_Count *const blocklengths  =                                     \
@@ -23184,8 +23538,65 @@ static int w_PMPI_Type_indexed(int abi_count,
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_indexed)
+#define BODY_MPI_Type_indexed_c(TARGET, FALLBACK)                              \
+  {                                                                            \
+    int count = 0;                                                             \
+    if (!mpiwrapper_narrow_int(abi_count, &count)) {                           \
+      *abi_newtype = MPIABI_DATATYPE_NULL;                                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    }                                                                          \
+    if (count < 0) return MPIABI_ERR_COUNT;                                    \
+                                                                               \
+    const MPI_Datatype oldtype = mpiwrapper_datatype_fromabi(abi_oldtype);     \
+                                                                               \
+    int  blocklengths_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];             \
+    int *blocklengths  = NULL;                                                 \
+    int  displacements_stack[MPIWRAPPER_STAGE_BYTES / sizeof(int)];            \
+    int *displacements = NULL;                                                 \
+    int  abi_ierror    = MPIABI_ERR_INTERN;                                    \
+                                                                               \
+    blocklengths = mpiwrapper_stage(blocklengths_stack,                        \
+                                    sizeof blocklengths_stack, (size_t)count,  \
+                                    sizeof *blocklengths);                     \
+    if (!blocklengths) goto done;                                              \
+    displacements = mpiwrapper_stage(displacements_stack,                      \
+                                     sizeof displacements_stack, (size_t)count,\
+                                     sizeof *displacements);                   \
+    if (!displacements) goto done;                                             \
+                                                                               \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_blocklengths[i], &blocklengths[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+    for (int i = 0; i < count; ++i)                                            \
+      if (!mpiwrapper_narrow_int(abi_array_of_displacements[i], &displacements[i])) { \
+        *abi_newtype = MPIABI_DATATYPE_NULL;                                   \
+        abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;                               \
+        goto done;                                                             \
+      }                                                                        \
+                                                                               \
+    {                                                                          \
+      MPI_Datatype newtype;                                                    \
+      const int    ierror =                                                    \
+          FALLBACK(count, blocklengths, displacements, oldtype, &newtype);     \
+                                                                               \
+      *abi_newtype = (ierror == MPI_SUCCESS)                                   \
+                         ? mpiwrapper_datatype_toabi(newtype)                  \
+                         : MPIABI_DATATYPE_NULL;                               \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(blocklengths, blocklengths_stack);                      \
+    mpiwrapper_unstage(displacements, displacements_stack);                    \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_indexed_c(TARGET)                                        \
+#define BODY_MPI_Type_indexed_c(TARGET, FALLBACK)                              \
   {                                                                            \
     (void)abi_count;                                                           \
     (void)abi_array_of_blocklengths;                                           \
@@ -23201,12 +23612,12 @@ static int w_MPI_Type_indexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_indexed_c(MPI_Type_indexed_c)
+    BODY_MPI_Type_indexed_c(MPI_Type_indexed_c, MPI_Type_indexed)
 static int w_PMPI_Type_indexed_c(MPIABI_Count abi_count,
     const MPIABI_Count abi_array_of_blocklengths[],
     const MPIABI_Count abi_array_of_displacements[],
     MPIABI_Datatype abi_oldtype, MPIABI_Datatype *abi_newtype)
-    BODY_MPI_Type_indexed_c(PMPI_Type_indexed_c)
+    BODY_MPI_Type_indexed_c(PMPI_Type_indexed_c, PMPI_Type_indexed)
 
 /* ---------------------------------------------------- MPI_Type_match_size */
 
