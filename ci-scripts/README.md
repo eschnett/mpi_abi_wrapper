@@ -104,7 +104,7 @@ run.
 
 ## What GitHub Actions runs
 
-`.github/workflows/ci.yaml` holds ten jobs over thirty-eight legs, and each one
+`.github/workflows/ci.yaml` holds ten jobs over thirty-six legs, and each one
 calls a script from this directory wherever a script exists rather than
 repeating its recipe in YAML. That is the point of the split: the reasons live
 here, next to the code they are about, and stay runnable by hand.
@@ -113,27 +113,69 @@ here, next to the code they are about, and stay runnable by hand.
 |---|---|---|
 | `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks, plus `exported-symbols`, which is oracle 1 |
 | `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root. Both arches |
-| `linux-source` | `install-{mpich,openmpi,mvapich}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches. The two MVAPICH legs are report-only and expected at **12/13** — `abi_arrays_test` times out on an upstream `MPI_Dist_graph_create` hang, capped at 45 s |
+| `linux-source` | `install-{mpich,openmpi,mvapich}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches. The two MVAPICH legs gate against `xfail-ctest-mvapich.txt`, which names the one test that fails — `abi_arrays_test`, on an upstream `MPI_Dist_graph_create` hang, capped at 45 s |
 | `linux-oneapi` | apt, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | Intel MPI from the oneAPI repository — a binary distribution, so there is no installer to call. **Pinned to 2021.15**, the newest release that has no standard ABI of its own and still compiles: 2021.17 ships `libmpi_abi.so`, which makes wrapping pointless, and 2021.16 declares a callback with `int count` the wrapper cannot build against. x86_64 only, because Intel ships no aarch64 build. **Gating** |
 | `linux-i386` | `docker/mpich-i386.dockerfile`, whose last `RUN` is `linux-test.sh` | Debian i386's. The only 32-bit row, and the only one where an ABI handle is not 64 bits |
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
-| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Sixteen legs**: two implementations × x86_64/aarch64 × four shards of the suite |
+| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Fourteen legs**: two implementations × x86_64/aarch64 × four shards, less the `rma` shard on the two Open MPI legs, which `exclude` drops because it takes a runner down |
 | `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.1, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
 
-**The MPICH legs gate; the Open MPI legs are still report-only.** So do the two MVAPICH
-`linux-source` legs, for a different and narrower reason — one upstream hang, not an
-uncalibrated list. `linux-oneapi` gates.
+**Every job in this workflow gates. There is no `continue-on-error` left in
+`ci.yaml`, and that is the property to preserve.** Report-only was always meant
+as a probation — the `compile` job's rule is that a row nobody has ever seen
+green cannot tell a regression from the thing it was added to find — and the last
+three rows came off it for three different reasons worth keeping straight:
 
-**The MPICH legs gate; the Open MPI legs are still report-only.** That is per
-leg, not per job: `continue-on-error: ${{ matrix.leg.report_only }}`. The rule the
-`compile` job established is that a row nobody has ever seen green cannot tell a
-regression from the thing it was added to find, and the MPICH rows have now been
-green twice — 842 tests, 789 passed, 41 failed, the 41 identical on both
-architectures and matched in both directions by `suite/xfail-ci-mpich.txt`. The
-Open MPI lists are still empty because no Open MPI leg has run to completion in
-this CI environment; `suite/README.md` has the durations and what killed them.
+* **The MPICH suite legs** came off first, on evidence: 842 tests, 789 passed, 41
+  failed, the 41 identical on both architectures and matched in both directions
+  by `suite/xfail-ci-mpich.txt`.
+* **The Open MPI suite legs** stayed on probation past their evidence. Their
+  lists have carried 110 shared lines plus per-architecture deltas since run
+  32182485327, and what actually kept them red was two *incomplete families* —
+  one unlisted member of the `mt_*` bsend family and one of the `subcomm_abort`
+  pair, each of which took a leg red on its own. Completing the families in
+  `suite/flaky-ci-*.txt` is what let both halves gate.
+* **The MVAPICH `linux-source` legs** could not be described by either switch
+  position: one upstream hang meant `continue-on-error: true` reported nothing
+  about the other fourteen tests, and `false` would have turned every unrelated
+  PR red. They needed a third option, which is the next section.
+
+The cost of having no report-only rows is that an infrastructure death now blocks
+instead of vanishing — a runner lost mid-shard leaves no TAP line for any list to
+excuse, so it costs a re-run. That is the trade being made deliberately: while the
+Open MPI legs were report-only, exactly such a death (run 32655819244, exit 143)
+was reported as a green workflow and went unexamined.
+
+## Gating a row that has a known failure: `check-ctest.py`
+
+`ci-scripts/check-ctest.py` is to this project's own `ctest` suite what
+`suite/check-tap.py` is to MPICH's: it compares the run against a committed list
+of expected failures, **in both directions**, and every line needs a reason. Point
+`linux-test.sh` at one with `CTEST_XFAIL`:
+
+```sh
+CTEST_XFAIL=xfail-ctest-mvapich.txt ci-scripts/linux-test.sh /path/to/mpicc
+```
+
+Without it, `ctest`'s own exit status is the verdict, which is what every row that
+expects a clean run wants. With it, the verdict becomes "the failures are exactly
+these" — so a regression in any other test fails the row, and the day the
+implementation fixes the listed one, the row fails asking for the line to be
+deleted. That self-retiring direction is the whole reason this exists rather than
+a `ctest -E`, which would delete the coverage and never say anything again.
+
+**Cost and meaning are separate knobs, and the MVAPICH legs need both.**
+`CTEST_TIMEOUT` bounds what a hang costs (45 s there, against `ctest`'s 1500 s
+default); `CTEST_XFAIL` says whether the failure is expected. Capping without
+listing leaves the row red; listing without capping leaves it slow. This is the
+same split `suite/timelimit-ci-openmpi.txt` makes for the suite, and the rule is
+the same one: **cap a hang, do not exclude it.**
+
+One deliberate omission: no expected *count* is written down anywhere that gates.
+The workflow comment this mechanism replaced said "expect 12/13", which was 14/15
+two commits later because the test suite grew. The list names the test.
 
 Each leg gates against a shared per-implementation list plus a per-architecture
 delta (`suite/xfail-ci-<mpi>.txt` and `suite/xfail-ci-<mpi>-<arch>.txt`). The
