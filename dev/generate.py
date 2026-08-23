@@ -4095,6 +4095,7 @@ def fallback_param(ep_name, p, ap):
     out = Param(ap.base, p.name, p.suffix)
     out.kind, out.direction = p.kind, p.direction
     out.length, out.constant = p.length, p.constant
+    out.root_only = p.root_only
 
     if p.base == ap.base:
         # Identical already: whatever the primary body does, the fallback does.
@@ -4103,20 +4104,21 @@ def fallback_param(ep_name, p, ap):
         out.cls = p.cls
         return out
 
-    # Only a passthrough can differ in width and still mean the same thing. A
-    # class that already converts (a handle, a rank, a status) means the two
-    # forms disagree about something other than width, which is not a case this
-    # mechanism knows how to serve. The array spelling of the class is
-    # array_passthrough, and it is a *cast* today for exactly the reason it
+    # From here the two forms differ in width, and only a *passthrough* can do
+    # that and still mean the same thing. A class that already converts -- a
+    # handle, a rank, a status -- means they disagree about something other
+    # than width, which is not a case this mechanism knows how to serve. Both
+    # branches below check that; the array spelling of the class is
+    # array_passthrough, which is a *cast* today for exactly the reason it
     # cannot be one here: equal-width elements (HISTORY.md #1.9).
     if p.is_array or ap.is_array:
         # An array cannot be cast the way an equal-width one is: the elements
         # are a different size, so it has to be staged and converted one at a
         # time (NOTES.md #5.7's rule, #5.10's reason). Only the in direction
         # arises -- no large-count routine reports counts through an array.
-        if p.cls != "array_passthrough" or ap.cls != "array_passthrough":
-            return None
         if not (p.is_array and ap.is_array) or p.direction != "in":
+            return None
+        if p.cls != "array_passthrough" or ap.cls != "array_passthrough":
             return None
         if p.elem_type() not in NARROWABLE or ap.elem_type() not in NARROWABLE:
             return None
