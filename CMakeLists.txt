@@ -342,12 +342,14 @@ if(MPI_ABI_BUILD_WRAPPER)
   endif()
 
   # The implementation is *expected* to provide the MPI-4.0 API, which is what
-  # makes the common case a 1:1 mapping with no large-count fallback -- but it
-  # is an expectation and not a floor (NOTES.md #1). Open MPI 5.0.10 reports
-  # MPI-3.1 and has no _c entry points at all, and it is a perfectly good
-  # implementation to wrap: the _c slots become the runtime-reporting stubs
-  # decision 6 describes. So this warns rather than refuses, and refuses only
-  # below MPI-3.0, where the ABI's own surface stops being expressible.
+  # makes the common case a 1:1 mapping -- but it is an expectation and not a
+  # floor (NOTES.md #1). Open MPI 5.0.10 reports MPI-3.1 and has no _c entry
+  # points at all, and it is a perfectly good implementation to wrap: every
+  # one of them is served by narrowing onto its small twin (NOTES.md #5.10).
+  # So failing this check costs a ceiling at INT_MAX rather than a missing
+  # surface, which is why it is a status line and not a warning; only below
+  # MPI-3.0 does this refuse, where the ABI's own surface stops being
+  # expressible.
   check_c_source_compiles("
 #include <mpi.h>
 #if !defined(MPI_VERSION) || MPI_VERSION < 3
@@ -365,10 +367,12 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_3)
 #endif
 int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   if(NOT MPIABI_IMPL_AT_LEAST_MPI_4)
-    message(WARNING
+    message(STATUS
       "The MPI at ${MPI_C_INCLUDE_DIRS} predates MPI-4.0, so it has no _c "
-      "entry points. Those ABI slots will return "
-      "MPI_ERR_UNSUPPORTED_OPERATION; everything else works normally.")
+      "entry points. The wrapper serves them by narrowing each call onto its "
+      "small twin, and refuses only a value that will not fit -- with "
+      "MPI_ERR_VALUE_TOO_LARGE, not MPI_ERR_UNSUPPORTED_OPERATION. See "
+      "NOTES.md #5.10 for the rule and #13.2 for what it costs.")
   endif()
 
   # mpiabi.h reaches the wrapper through a directory of its own, containing

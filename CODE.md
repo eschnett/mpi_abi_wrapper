@@ -63,6 +63,9 @@ developer option, which is what the cross test uses.
 | answered by `libmpi_abi` itself | **5** | `gen/report.txt` |
 | deferred | **0**, frozen | `gen/report.txt` |
 | staged past return | **8** | `gen/report.txt` |
+| large-count entry points | **159** | `grep -c '^int MPI_[A-Za-z0-9_]*_c(' gen/include/mpi.h` — 148 generated, 11 in the ledger |
+| — with a fallback body | **148** generated, all 11 hand-written | `gen/report.txt`; `NOTES.md` #5.10 |
+| — whose fallback stages past return | **18** | `gen/report.txt` |
 | handle classes | 11 | `gen/mpiwrapper/constants.c` |
 | predefined handles | 103 | `PREDEF(...)` rows in `constants.c` |
 | error classes | 80 | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
@@ -71,6 +74,14 @@ developer option, which is what the cross test uses.
 563 + 120 + 5 = 688. 683 × 2 = 1366 slots, while all 688 × 2 = 1376 names are
 still exported, because the five of §5 are implemented on the ABI side rather
 than forwarded.
+
+The two large-count rows are the ones that move with the implementation rather
+than with the ABI. All 159 `_c` entry points exist in every build; over MPICH
+≥ 4.0 the implementation answers them and over anything older the wrapper does,
+by narrowing each call onto its small twin (`NOTES.md` #5.10). The "staged past
+return" row above counts the *primary* bodies only; the fallback's 18 are
+frozen separately because a vector collective's count arrays are a pointer cast
+in one arm and a staged block in the other.
 
 **Every one of these is a frozen tally in `dev/generate.py`**, so a new
 `apis.json` or a new ABI header that reclassifies anything fails generation
@@ -341,7 +352,7 @@ outside the `MPI_*`/`PMPI_*` patterns.
 
 ## 10. Tests
 
-`ctest` runs everything below. Six need no MPI at all and are the cheapest gate
+`ctest` runs fourteen tests. Six need no MPI at all and are the cheapest gate
 in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 `-DMPI_ABI_BUILD_WRAPPER=OFF`.
 
@@ -360,6 +371,7 @@ in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 | `abi_tools_test` | two ranks preferred | S3b's classes, the five ABI-side entry points and their sentinels, and **`MPI_T`'s null OUT pointers** — every query called twice, once for everything and once for one field |
 | `abi_converters_test` | two ranks preferred | S4a's 70. Two checks are not round trips: `_toint` against the header's own constant, and a status through Fortran and back asked `MPI_Get_count` |
 | `abi_state_test` | two ranks preferred | S4b's state, each check written against what a plausible-but-wrong body gets wrong |
+| `abi_large_count_test` | **two ranks required** for the vector rounds | the ABI's 159 `_c` entry points, over an implementation that has them and over one where they are the narrowing fallback — the same assertions either way, since the `_c` form and its small twin must agree. Its sharpest cases are a vector collective at a non-root rank passing a genuine `NULL`, a nonblocking one whose caller overwrites its own count arrays the instant it is posted, and a refused call's out handle |
 
 `mpiwrapper_selftest` compiles the conversion runtime into itself rather than
 loading the shared library, so it can walk the maps in both directions. That
@@ -454,14 +466,16 @@ has been *seen*, not what should happen.
 
 **The macOS rows now come from two machines, and the difference between them is
 the point.** On the one development laptop, MPICH 4.3.1, Open MPI 5.0.6 and Open
-MPI 5.0.10 each need `scripts/host-env.sh` in front of `ctest` or fail 6 of 13.
+MPI 5.0.10 each need `scripts/host-env.sh` in front of `ctest` or fail 6 of them.
 On GitHub's `macos-15` runners the same implementations need none of it. That is
 §12's attribution — the machine, not the MPI — measured on a second machine
 rather than argued from one.
 
-**Rows quoting 13/13 ran the whole of `ctest`** under
-`.github/workflows/ci.yaml`; the 6/6 rows quote only the tests that need an MPI,
-which are six of those thirteen. Both are green runs, counted differently.
+**Rows quoting 13/13 ran the whole of `ctest` as it stood then** under
+`.github/workflows/ci.yaml`; the 6/6 rows quote only the tests that need an MPI.
+Both are green runs, counted differently. The suite is **fourteen** tests since
+`abi_large_count_test` joined it, so a row recorded after that reads 14/14 --
+the older figures are left as they were measured rather than rewritten.
 
 **"two ranks" in this table is now checked rather than asserted.** It used to be
 neither: the tests accept one rank as well as two, so a launcher that answered

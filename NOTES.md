@@ -1884,6 +1884,15 @@ Version choice is about coverage, not admissibility:
   round-tripped; a status taken through Fortran and back and then asked
   `MPI_Get_count`; an errhandler trampoline asked whether it received *the
   handle the handler was set on*.
+- **The large-count half needs an oracle that does not know which arm it is
+  testing**, and `abi_large_count_test` is it: the `_c` form and its small twin
+  must agree, which is checkable over MPICH (where the implementation answers)
+  and over Open MPI (where the fallback does) with the same assertions. Without
+  that property the fallback would be exercised only where nothing can verify
+  it. §5.10 has the rule; its sharpest cases are the ones a wrong body gets
+  wrong rather than the ones it gets right -- a vector collective at a non-root
+  rank passing a genuine `NULL`, a nonblocking one whose caller overwrites its
+  own count arrays the instant it is posted, and a refused call's out handle.
 - **MPICH's C test suite** is the first oracle nothing in this repository wrote,
   and it earned that position: three conversion bugs no in-house check could
   have seen (`HISTORY.md` §3, S7). Its gate reads the expected-failure list in
