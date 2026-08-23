@@ -213,17 +213,21 @@ install(TARGETS mpi_abi
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-# The three headers together, unconditionally: mpi.h is what an application
-# includes, but mpiabi.h and mpiwrapper_vtable.h have to travel with it even
-# in the MPI_ABI_BUILD_WRAPPER=OFF developer build, because
-# mpiwrapper_vtable.h is check 2's self-wrap marker (CMakeLists.txt further
-# down) -- a *later* wrapper build configured against this prefix has to see
-# it to refuse to wrap itself, whether or not this build produced a wrapper of
-# its own.
+# Two files, and deliberately only two. mpi.h is what an application includes;
+# cmake/mpiwrapper_marker.h is check 2's self-wrap marker (CMakeLists.txt
+# further down) -- a *later* configure against this prefix has to see it to
+# refuse to wrap itself, so it goes in unconditionally, whether or not this
+# build produced a wrapper of its own.
+#
+# mpiabi.h and mpiwrapper_vtable.h are *not* installed. They are the two halves'
+# private contract -- the MPIABI_ view of the ABI and the vtable they share --
+# and every build that needs them, including the per-MPI wrapper builds the
+# README describes, is a build of this project from source with gen/include on
+# its path. Installing them put a header in the public include directory that
+# no consumption route names and that could only shadow something.
 install(FILES
   ${MPIABI_GEN_INCLUDE_DIR}/mpi.h
-  ${MPIABI_GEN_INCLUDE_DIR}/mpiabi.h
-  ${MPIABI_GEN_INCLUDE_DIR}/mpiwrapper_vtable.h
+  cmake/mpiwrapper_marker.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # ------------------------------------------------------------ mpicc / mpicxx
@@ -301,13 +305,13 @@ if(MPI_ABI_BUILD_WRAPPER)
   set(CMAKE_REQUIRED_INCLUDES ${MPI_C_INCLUDE_DIRS})
   set(CMAKE_REQUIRED_FLAGS ${MPI_C_COMPILE_OPTIONS})
 
-  # No self-wrapping. The marker is mpiwrapper_vtable.h, a file only we install:
-  # neither MPI_ABI_VERSION nor the library name discriminates, because MPI-5.0
-  # 20.2.1 requires a genuine ABI implementation to install a libmpi_abi too.
-  # The accident is easy to hit -- find_package(MPI) is looking for exactly the
-  # mpi.h and libmpi_abi we install -- and its symptom is a startup loop rather
-  # than a diagnostic.
-  find_file(MPIABI_SELF_WRAP_MARKER mpiwrapper_vtable.h
+  # No self-wrapping. The marker is mpiwrapper_marker.h, a file only we install
+  # and which exists for no other purpose: neither MPI_ABI_VERSION nor the
+  # library name discriminates, because MPI-5.0 20.2.1 requires a genuine ABI
+  # implementation to install a libmpi_abi too. The accident is easy to hit --
+  # find_package(MPI) is looking for exactly the mpi.h and libmpi_abi we
+  # install -- and its symptom is a startup loop rather than a diagnostic.
+  find_file(MPIABI_SELF_WRAP_MARKER mpiwrapper_marker.h
     PATHS ${MPI_C_INCLUDE_DIRS} NO_DEFAULT_PATH)
   if(MPIABI_SELF_WRAP_MARKER)
     message(FATAL_ERROR

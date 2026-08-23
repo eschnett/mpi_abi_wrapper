@@ -125,13 +125,23 @@ if [ -f "$mpi_incdir/mpi.h" ] && [ -f "$prefix/include/mpi.h" ]; then
     fail "install prefix is the wrapped MPI's own prefix -- mpi.h collides"
   fi
 fi
-if [ -f "$prefix/include/mpiwrapper_vtable.h" ]; then
-  echo "  mpiwrapper_vtable.h installed -- the self-wrap marker future" \
+if [ -f "$prefix/include/mpiwrapper_marker.h" ]; then
+  echo "  mpiwrapper_marker.h installed -- the self-wrap marker future" \
        "configures against this prefix will see"
 else
-  fail "mpiwrapper_vtable.h was not installed; the self-wrap check has" \
+  fail "mpiwrapper_marker.h was not installed; the self-wrap check has" \
        "nothing to find"
 fi
+
+# The other side of the same rule: the include directory holds mpi.h and the
+# marker, and nothing else. mpiabi.h and mpiwrapper_vtable.h are the two
+# halves' private contract and no consumption route names them, so an
+# installed copy could only shadow something (NOTES.md #9).
+for hdr in mpiabi.h mpiwrapper_vtable.h; do
+  if [ -e "$prefix/include/$hdr" ]; then
+    fail "$hdr was installed; it is internal to building this project"
+  fi
+done
 
 # ------------------------------------------------------- leg 2: bin/mpicc
 

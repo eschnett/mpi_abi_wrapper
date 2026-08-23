@@ -94,7 +94,8 @@ ci-scripts/        MPI install and build-shape checks
   suite/             MPICH C suite runner, the local and CI lists -- xfail,
                        flaky, exclude and timelimit -- the mpiexec filter, the
                        TAP gate, and i386-suite.sh (§10)
-cmake/             FindMPI.cmake (the shim), mpi_abiConfig.cmake.in, mpi_abi.pc.in,
+cmake/             FindMPI.cmake (the shim), mpiwrapper_marker.h (the installed
+                     self-wrap marker, §8), mpi_abiConfig.cmake.in, mpi_abi.pc.in,
                      mpi_abi.version (ELF), mpi_abi.exported_symbols (Mach-O)
 dev/               the Python generator and the dev-time cross-checks
   generate.py        the generator
@@ -276,7 +277,7 @@ singletons instead of an N-rank job.
 
 **Four configure-time checks, all compile-only** so cross-compiling works:
 `MPI_VERSION >= 3` hard and `>= 4` as a warning; no self-wrapping (a hard error
-if the found MPI prefix contains our `mpiwrapper_vtable.h`); the
+if the found MPI prefix contains our `cmake/mpiwrapper_marker.h`); the
 `_Static_assert` battery; and every generated constant `case` naming a real
 implementation macro, which is free because it is a compile error.
 
@@ -286,6 +287,12 @@ a test asserting an empty diff. Python is a dev dependency, never a build one.
 **The install prefix is exclusive** — no second wrapper, no other MPI, and never
 the wrapped MPI's own prefix. `NOTES.md` #9 has the reason; the check is
 `ci-scripts/check-install.sh`'s fifth leg.
+
+**Two headers are installed, and only two**: `gen/include/mpi.h` and
+`cmake/mpiwrapper_marker.h`. `mpiabi.h` and `mpiwrapper_vtable.h` are the two
+halves' private contract, needed by every build of this project from source and
+by no consumer of an installed prefix; `check-install.sh` leg 1 asserts their
+absence as well as the marker's presence.
 
 ## 9. Consuming an installed prefix
 

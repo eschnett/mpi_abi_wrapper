@@ -1608,14 +1608,24 @@ configure, on someone else's machine.
    floor rather than the standard one, and worth knowing before promising a
    distro matrix. `HISTORY.md` §3's S6 entry has what each cost.
 2. **No self-wrapping.** Hard error if the found MPI prefix is *our own*
-   installation, detected by the presence of `mpiwrapper_vtable.h` — a file only
-   we install. Neither `MPI_ABI_VERSION` nor the library name discriminates,
-   since a genuine ABI-implementing MPICH installs `libmpi_abi` too. The
-   accident is easy to hit, because `find_package(MPI)` is looking for exactly
-   the `mpi.h` and `libmpi_abi` we install, and its symptom is a startup loop
-   rather than a diagnostic. `mpi.h` itself stays pure — the stub header plus
+   installation, detected by the presence of `mpiwrapper_marker.h` — a
+   hand-written file in `cmake/` that we install and that exists for no other
+   purpose. Neither `MPI_ABI_VERSION` nor the library name discriminates, since
+   a genuine ABI-implementing MPICH installs `libmpi_abi` too. The accident is
+   easy to hit, because `find_package(MPI)` is looking for exactly the `mpi.h`
+   and `libmpi_abi` we install, and its symptom is a startup loop rather than a
+   diagnostic. `mpi.h` itself stays pure — the stub header plus
    `doc/mpi.h.patch`, with no marker macro. Wrapping a *genuine* ABI MPI is
    permitted behind an explicit flag, with a warning; see oracle 5.
+
+   **The marker is a file of its own rather than a generated header** because
+   the installed include directory holds `mpi.h` and the marker and nothing
+   else. `mpiwrapper_vtable.h` was the marker until it was noticed that
+   installing it drags `mpiabi.h` in with it — the vtable header includes it —
+   and neither belongs in a prefix that no consumption route reads them from.
+   The two are the halves' private contract; every build that needs them,
+   including the per-MPI wrapper builds the README describes, is a build of
+   this project from source with `gen/include` on its path.
 3. The `_Static_assert` battery of §5.9.
 4. Every generated constant `case` naming a real implementation macro — free,
    since it is a compile error.
