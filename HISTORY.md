@@ -982,8 +982,10 @@ carry no per-argument prose to disagree over. `NOTES.md` §10 lists them.
 
 ### S6 — Build, packaging, CI matrix
 
-Three consumption routes, five legs in `ci-scripts/check-install.sh`, and MPI
-installers for CI. All five legs pass on macOS against a distro Open MPI and on
+Three consumption routes, six legs in `ci-scripts/check-install.sh` (`grep -c
+'^step "' ci-scripts/check-install.sh` — `find_package` is two of them, the
+project's own package and the FindMPI shim), and MPI installers for CI. All six
+legs pass on macOS against a distro Open MPI and on
 Linux against MPICH 4.3.1 and Open MPI 5.0.6 built from source by this stage's
 own scripts — the whole chain run end to end rather than inferred from the
 scripts reading right.
