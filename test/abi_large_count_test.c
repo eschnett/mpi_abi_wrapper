@@ -242,8 +242,8 @@ static void test_root_only_arrays(void)
 
   MPI_Count *counts = NULL;
   MPI_Aint  *displs = NULL;
-  MPI_Count  cbuf[2];
-  MPI_Aint   dbuf[2];
+  MPI_Count  cbuf[2] = {0, 0};
+  MPI_Aint   dbuf[2] = {0, 0};
   if (rank == 0) {
     for (int i = 0; i < size; ++i) {
       cbuf[i] = 2;
@@ -259,8 +259,8 @@ static void test_root_only_arrays(void)
       CHECK(recv[2 * i] == i * 10 && recv[2 * i + 1] == i * 10 + 1,
             "gatherv_c rank %d gave %d,%d", i, recv[2 * i], recv[2 * i + 1]);
 
-  int src[16];
-  int got[2] = {-1, -1};
+  int src[16] = {0};
+  int got[2]  = {-1, -1};
   if (rank == 0)
     for (int i = 0; i < 16; ++i) src[i] = 100 + i;
   CHECK_MPI(MPI_Scatterv_c(src, counts, displs, MPI_INT, got, 2, MPI_INT, 0,
@@ -271,9 +271,9 @@ static void test_root_only_arrays(void)
 
 static void test_vector_collectives(void)
 {
-  int       send[2], recv[2];
-  MPI_Count sc[2], rc[2];
-  MPI_Aint  sd[2], rd[2];
+  int       send[2] = {0, 0}, recv[2] = {0, 0};
+  MPI_Count sc[2] = {0, 0}, rc[2] = {0, 0};
+  MPI_Aint  sd[2] = {0, 0}, rd[2] = {0, 0};
   for (int i = 0; i < size; ++i) {
     send[i] = rank * 100 + i;
     recv[i] = -1;
@@ -285,7 +285,7 @@ static void test_vector_collectives(void)
   for (int i = 0; i < size; ++i)
     CHECK(recv[i] == i * 100 + rank, "alltoallv_c recv[%d] = %d", i, recv[i]);
 
-  int red[2], scattered = -1;
+  int red[2] = {0, 0}, scattered = -1;
   for (int i = 0; i < size; ++i) {
     red[i] = rank + i;
     rc[i]  = 1;
@@ -305,9 +305,9 @@ static void test_vector_collectives(void)
  */
 static void test_nonblocking_outlives_the_call(void)
 {
-  int       send[2], recv[2];
-  MPI_Count sc[2], rc[2];
-  MPI_Aint  sd[2], rd[2];
+  int       send[2] = {0, 0}, recv[2] = {0, 0};
+  MPI_Count sc[2] = {0, 0}, rc[2] = {0, 0};
+  MPI_Aint  sd[2] = {0, 0}, rd[2] = {0, 0};
   for (int i = 0; i < size; ++i) {
     send[i] = rank * 100 + i;
     recv[i] = -1;
@@ -328,7 +328,8 @@ static void test_nonblocking_outlives_the_call(void)
           "overwritten", i, recv[i]);
 
   /* The w-form, whose block carries datatypes beside the narrowed counts. */
-  MPI_Datatype st[2], rt[2];
+  MPI_Datatype st[2] = {MPI_DATATYPE_NULL, MPI_DATATYPE_NULL};
+  MPI_Datatype rt[2] = {MPI_DATATYPE_NULL, MPI_DATATYPE_NULL};
   for (int i = 0; i < size; ++i) {
     send[i] = rank * 100 + i;
     recv[i] = -1;
@@ -351,9 +352,14 @@ static void test_nonblocking_outlives_the_call(void)
  */
 static void test_persistent_started_three_times(void)
 {
-  int       send[2], recv[2];
-  MPI_Count sc[2], rc[2];
-  MPI_Aint  sd[2], rd[2];
+  /* Zeroed at the declaration rather than in the round loop below. The
+   * initialiser takes the buffers' addresses and does not read them, so the
+   * loop would be in time -- but gcc's -Wmaybe-uninitialized cannot see that,
+   * and it is right that the array is uninitialised where it is passed.
+   */
+  int       send[2] = {0, 0}, recv[2] = {0, 0};
+  MPI_Count sc[2] = {0, 0}, rc[2] = {0, 0};
+  MPI_Aint  sd[2] = {0, 0}, rd[2] = {0, 0};
   for (int i = 0; i < size; ++i) {
     sc[i] = rc[i] = 1;
     sd[i] = rd[i] = i;
