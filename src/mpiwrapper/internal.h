@@ -64,6 +64,7 @@ MPIWRAPPER_WRAP_ABI_IMPL if you really are wrapping an ABI-implementing MPI."
 #  error "mpiwrapper_impl_config.h did not come from dev/probe_impl.py"
 #endif
 
+#include <limits.h> /* CHAR_BIT, for the large-count narrowing checks */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -89,6 +90,85 @@ _Static_assert((MPI_Aint)-1 < 0 && (MPI_Count)-1 < 0 && (MPI_Offset)-1 < 0,
  */
 _Static_assert(sizeof(MPI_Comm) <= sizeof(MPIABI_Comm),
                "implementation handles do not fit in an ABI handle");
+
+/* -------------------------------------------------- large-count narrowing */
+
+/* NOTES.md #5.10. Where the implementation has no `_c` entry point, the
+ * wrapper calls its small twin, and every in-direction value has to be checked
+ * against the type that twin takes. These three are the only place that check
+ * is written, so what "will not fit" means is one definition rather than a
+ * hundred emitted comparisons.
+ *
+ * They are *not* the assertion above being relitigated. That one says the ABI's
+ * MPI_Count and the implementation's are the same width, which is still true
+ * and still what makes the ordinary path a pointer cast. This is the different
+ * question of whether a value fits the *small* twin's `int` -- and it has no
+ * build-time answer, because whether the small twin is called at all depends on
+ * what the implementation has.
+ */
+static inline int mpiwrapper_fits(MPIABI_Count v, size_t bytes)
+{
+  /* Unsigned throughout, and phrased as a magnitude rather than as a pair of
+   * limits.h names: MPI_Aint is a typedef whose spelling differs between
+   * implementations and has no MPI_AINT_MAX beside it, and the case where the
+   * destination is as wide as MPIABI_Count -- every 64-bit host, for
+   * mpiwrapper_narrow_aint -- must not overflow while being folded away.
+   */
+  const uint64_t magnitude = (uint64_t)1 << (bytes * CHAR_BIT - 1);
+  return v >= 0 ? (uint64_t)v < magnitude
+                : (uint64_t)(-(v + 1)) < magnitude;
+}
+
+static inline int mpiwrapper_narrow_int(MPIABI_Count v, int *out)
+{
+  if (!mpiwrapper_fits(v, sizeof(int))) return 0;
+  *out = (int)v;
+  return 1;
+}
+
+static inline int mpiwrapper_narrow_aint(MPIABI_Count v, MPI_Aint *out)
+{
+  /* Folds to an unconditional store wherever MPI_Aint is 64 bits, which is
+   * everywhere this project builds except the i386 row -- and that row is the
+   * reason this is a check and not a cast.
+   */
+  if (!mpiwrapper_fits(v, sizeof(MPI_Aint))) return 0;
+  *out = (MPI_Aint)v;
+  return 1;
+}
+
+/* ------------------------------------------- one block, several array types */
+
+/* NOTES.md #5.7 gives a routine that stages past its return exactly one block
+ * per request, because that is what the request table holds. Until the
+ * large-count fallback existed, every such routine staged arrays of a single
+ * element type -- the alltoallw family's datatypes -- and the block was just an
+ * array of them. Under the fallback those same four routines also stage their
+ * narrowed `int` counts and displacements, so one block has to carry two
+ * element types.
+ *
+ * The layout rounds every array up to the strictest alignment any of them could
+ * need, rather than ordering the arrays by size. Ordering would be smaller and
+ * would be wrong: MPI_Datatype is a pointer in Open MPI and an int in MPICH, so
+ * "the widest type first" is not a fact the generator can know, and a build
+ * where MPI_Datatype is 4 bytes and MPI_Aint is 8 would land the second array
+ * on a 4-byte boundary. Padding costs at most alignof(max_align_t) - 1 bytes
+ * per array and cannot be wrong.
+ */
+#define MPIWRAPPER_STAGED_ALIGN (_Alignof(max_align_t))
+
+static inline size_t mpiwrapper_staged_next(size_t off, size_t n, size_t size)
+{
+  /* SIZE_MAX is the poison value rather than a separate error channel: a
+   * layout that overflows becomes an allocation that cannot succeed, and the
+   * caller already has to handle a failed allocation.
+   */
+  if (off == SIZE_MAX || (size && n > (SIZE_MAX - off) / size)) return SIZE_MAX;
+  off += n * size;
+  if (off > SIZE_MAX - (MPIWRAPPER_STAGED_ALIGN - 1)) return SIZE_MAX;
+  return (off + MPIWRAPPER_STAGED_ALIGN - 1)
+         & ~(size_t)(MPIWRAPPER_STAGED_ALIGN - 1);
+}
 
 /* ------------------------------------------------------------- handle bits */
 
@@ -756,6 +836,7 @@ int mpiwrapper_neighbor_extents(MPI_Comm comm, int *indegree, int *outdegree);
 int mpiwrapper_dist_graph_extents(MPI_Comm comm, int *indegree, int *outdegree);
 int mpiwrapper_graph_nedges(MPI_Comm comm, int *nedges);
 int mpiwrapper_graph_nneighbors(MPI_Comm comm, int rank, int *nneighbors);
+int mpiwrapper_root_extent(MPI_Comm comm, int root, int *n);
 int mpiwrapper_type_ndatatypes(MPI_Datatype datatype, int *ndatatypes);
 int mpiwrapper_type_ndatatypes_c(MPI_Datatype datatype, MPI_Count *ndatatypes);
 
@@ -797,6 +878,17 @@ void                          mpiwrapper_comm_errh_slot_release(int slot);
 int                  mpiwrapper_op_c_slot_alloc(MPIABI_User_function_c *fn);
 MPI_User_function_c *mpiwrapper_op_c_tramp(int slot);
 void                 mpiwrapper_op_c_slot_release(int slot);
+#endif
+
+/* The same three for the fallback pool, whose trampoline has the *small*
+ * shape because that is what an implementation without MPI_Op_create_c stores
+ * (NOTES.md #5.10).
+ */
+#if !defined(MPIWRAPPER_HAVE_MPI_Op_create_c) &&                               \
+    defined(MPIWRAPPER_HAVE_MPI_Op_create)
+int                mpiwrapper_op_ca_slot_alloc(MPIABI_User_function_c *fn);
+MPI_User_function *mpiwrapper_op_ca_tramp(int slot);
+void               mpiwrapper_op_ca_slot_release(int slot);
 #endif
 
 #ifdef MPIWRAPPER_HAVE_MPI_File_create_errhandler
@@ -890,6 +982,20 @@ int mpiwrapper_datarep_c_fns(MPIABI_Datarep_conversion_function_c *abi_read_fn,
                              MPI_Datarep_conversion_function_c **write_fn,
                              MPI_Datarep_extent_function      **extent_fn,
                              void                             **state);
+#endif
+/* The fallback installer: an ABI large-count conversion pair, handed to the
+ * implementation as small-count trampolines (NOTES.md #5.10).
+ */
+#if !defined(MPIWRAPPER_HAVE_MPI_Register_datarep_c) &&                        \
+    defined(MPIWRAPPER_HAVE_MPI_Register_datarep)
+int mpiwrapper_datarep_ca_fns(MPIABI_Datarep_conversion_function_c *abi_read_fn,
+                              MPIABI_Datarep_conversion_function_c *abi_write_fn,
+                              MPIABI_Datarep_extent_function *abi_extent_fn,
+                              void                           *abi_extra_state,
+                              MPI_Datarep_conversion_function **read_fn,
+                              MPI_Datarep_conversion_function **write_fn,
+                              MPI_Datarep_extent_function     **extent_fn,
+                              void                            **state);
 #endif
 #if defined(MPIWRAPPER_HAVE_MPI_Register_datarep) ||                           \
     defined(MPIWRAPPER_HAVE_MPI_Register_datarep_c)

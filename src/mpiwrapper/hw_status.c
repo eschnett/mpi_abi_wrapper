@@ -102,21 +102,31 @@ int mpiwrapper_w_PMPI_Get_count(const MPIABI_Status *abi_status,
 
 /* ------------------------------------------------------ MPI_Get_count_c ---- */
 
+/* NOTES.md #5.10. MPI_Get_count is the one of these three with no `_x` twin,
+ * so the fallback is the small form and the answer widens rather than
+ * narrowing -- exact, and needing no MPI_ERR_VALUE_TOO_LARGE arm. What it
+ * cannot do is report a count above INT_MAX: the small form answers
+ * MPI_UNDEFINED there, which is a legal answer and which the shared macro
+ * already maps.
+ */
 #ifdef MPIWRAPPER_HAVE_MPI_Get_count_c
-#  define BODY_MPI_Get_count_c(TARGET)                                         \
+#  define BODY_MPI_Get_count_c(TARGET, FALLBACK)                               \
      BODY_STATUS_QUERY(TARGET, MPIABI_Count, MPI_Count)
+#elif defined(MPIWRAPPER_HAVE_MPI_Get_count)
+#  define BODY_MPI_Get_count_c(TARGET, FALLBACK)                               \
+     BODY_STATUS_QUERY(FALLBACK, MPIABI_Count, int)
 #else
-#  define BODY_MPI_Get_count_c(TARGET) STUB_STATUS_QUERY
+#  define BODY_MPI_Get_count_c(TARGET, FALLBACK) STUB_STATUS_QUERY
 #endif
 
 int mpiwrapper_w_MPI_Get_count_c(const MPIABI_Status *abi_status,
                                  MPIABI_Datatype abi_datatype,
                                  MPIABI_Count *abi_count)
-    BODY_MPI_Get_count_c(MPI_Get_count_c)
+    BODY_MPI_Get_count_c(MPI_Get_count_c, MPI_Get_count)
 int mpiwrapper_w_PMPI_Get_count_c(const MPIABI_Status *abi_status,
                                   MPIABI_Datatype abi_datatype,
                                   MPIABI_Count *abi_count)
-    BODY_MPI_Get_count_c(PMPI_Get_count_c)
+    BODY_MPI_Get_count_c(PMPI_Get_count_c, PMPI_Get_count)
 
 /* ----------------------------------------------------- MPI_Get_elements ---- */
 
@@ -135,21 +145,31 @@ int mpiwrapper_w_PMPI_Get_elements(const MPIABI_Status *abi_status,
 
 /* --------------------------------------------------- MPI_Get_elements_c ---- */
 
+/* The fallback here is MPI_Get_elements_x and not MPI_Get_elements: the `_x`
+ * form has answered in MPI_Count since MPI-3.0, so it is exact and leaves no
+ * ceiling, where the small form would answer MPI_UNDEFINED above INT_MAX
+ * (NOTES.md #5.10). Deprecated in MPI-4.1 means do not write new code against
+ * it, not absent -- and this arm is only ever compiled against an
+ * implementation older than that.
+ */
 #ifdef MPIWRAPPER_HAVE_MPI_Get_elements_c
-#  define BODY_MPI_Get_elements_c(TARGET)                                      \
+#  define BODY_MPI_Get_elements_c(TARGET, FALLBACK)                            \
      BODY_STATUS_QUERY(TARGET, MPIABI_Count, MPI_Count)
+#elif defined(MPIWRAPPER_HAVE_MPI_Get_elements_x)
+#  define BODY_MPI_Get_elements_c(TARGET, FALLBACK)                            \
+     BODY_STATUS_QUERY(FALLBACK, MPIABI_Count, MPI_Count)
 #else
-#  define BODY_MPI_Get_elements_c(TARGET) STUB_STATUS_QUERY
+#  define BODY_MPI_Get_elements_c(TARGET, FALLBACK) STUB_STATUS_QUERY
 #endif
 
 int mpiwrapper_w_MPI_Get_elements_c(const MPIABI_Status *abi_status,
                                     MPIABI_Datatype abi_datatype,
                                     MPIABI_Count *abi_count)
-    BODY_MPI_Get_elements_c(MPI_Get_elements_c)
+    BODY_MPI_Get_elements_c(MPI_Get_elements_c, MPI_Get_elements_x)
 int mpiwrapper_w_PMPI_Get_elements_c(const MPIABI_Status *abi_status,
                                      MPIABI_Datatype abi_datatype,
                                      MPIABI_Count *abi_count)
-    BODY_MPI_Get_elements_c(PMPI_Get_elements_c)
+    BODY_MPI_Get_elements_c(PMPI_Get_elements_c, PMPI_Get_elements_x)
 
 /* --------------------------------------------------- MPI_Get_elements_x ---- */
 
@@ -262,21 +282,30 @@ int mpiwrapper_w_PMPI_Status_set_elements(MPIABI_Status *abi_status,
 
 /* ---------------------------------------------- MPI_Status_set_elements_c ---- */
 
+/* MPI_Status_set_elements_x takes an MPI_Count in, so this fallback is exact
+ * in the in direction too and needs no narrowing check (NOTES.md #5.10).
+ */
 #ifdef MPIWRAPPER_HAVE_MPI_Status_set_elements_c
-#  define BODY_MPI_Status_set_elements_c(TARGET)                               \
+#  define BODY_MPI_Status_set_elements_c(TARGET, FALLBACK)                     \
      BODY_STATUS_SET_ELEMENTS(TARGET, MPI_Count)
+#elif defined(MPIWRAPPER_HAVE_MPI_Status_set_elements_x)
+#  define BODY_MPI_Status_set_elements_c(TARGET, FALLBACK)                     \
+     BODY_STATUS_SET_ELEMENTS(FALLBACK, MPI_Count)
 #else
-#  define BODY_MPI_Status_set_elements_c(TARGET) STUB_STATUS_SET_ELEMENTS
+#  define BODY_MPI_Status_set_elements_c(TARGET, FALLBACK)                     \
+     STUB_STATUS_SET_ELEMENTS
 #endif
 
 int mpiwrapper_w_MPI_Status_set_elements_c(MPIABI_Status *abi_status,
                                            MPIABI_Datatype abi_datatype,
                                            MPIABI_Count abi_count)
-    BODY_MPI_Status_set_elements_c(MPI_Status_set_elements_c)
+    BODY_MPI_Status_set_elements_c(MPI_Status_set_elements_c,
+                                   MPI_Status_set_elements_x)
 int mpiwrapper_w_PMPI_Status_set_elements_c(MPIABI_Status *abi_status,
                                             MPIABI_Datatype abi_datatype,
                                             MPIABI_Count abi_count)
-    BODY_MPI_Status_set_elements_c(PMPI_Status_set_elements_c)
+    BODY_MPI_Status_set_elements_c(PMPI_Status_set_elements_c,
+                                   PMPI_Status_set_elements_x)
 
 /* ---------------------------------------------- MPI_Status_set_elements_x ---- */
 

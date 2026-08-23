@@ -103,7 +103,7 @@ int mpiwrapper_w_PMPI_Buffer_attach(void *abi_buffer, int abi_size)
     BODY_MPI_Buffer_attach(PMPI_Buffer_attach)
 
 #ifdef MPIWRAPPER_HAVE_MPI_Buffer_attach_c
-#  define BODY_MPI_Buffer_attach_c(TARGET)                                     \
+#  define BODY_MPI_Buffer_attach_c(TARGET, FALLBACK)                           \
     {                                                                          \
       void     *buffer = abi_buffer;                                           \
       MPI_Count size   = abi_size;                                             \
@@ -116,8 +116,28 @@ int mpiwrapper_w_PMPI_Buffer_attach(void *abi_buffer, int abi_size)
         MPIWRAPPER_AUTOBUF_UNDO(MPIWRAPPER_AUTOBUF_PROCESS);                   \
       return mpiwrapper_errorcode_toabi(ierror);                               \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Buffer_attach)
+#  define BODY_MPI_Buffer_attach_c(TARGET, FALLBACK)                           \
+    {                                                                          \
+      void          *buffer = abi_buffer;                                      \
+      int            size   = 0;                                               \
+      /* MPI_BUFFER_AUTOMATIC ignores the caller's size, so the narrowing      \
+       * check belongs on the other arm of this branch and not before it:      \
+       * refusing a size the standard says is irrelevant would reject a legal  \
+       * call (NOTES.md #5.10).                                                \
+       */                                                                      \
+      if (abi_buffer == MPIABI_BUFFER_AUTOMATIC)                               \
+        MPIWRAPPER_AUTOBUF_IN(MPIWRAPPER_AUTOBUF_PROCESS, buffer, size, int);  \
+      else if (!mpiwrapper_narrow_int(abi_size, &size))                        \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+                                                                               \
+      const int ierror = FALLBACK(buffer, size);                               \
+      if (ierror != MPI_SUCCESS && abi_buffer == MPIABI_BUFFER_AUTOMATIC)      \
+        MPIWRAPPER_AUTOBUF_UNDO(MPIWRAPPER_AUTOBUF_PROCESS);                   \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }
 #else
-#  define BODY_MPI_Buffer_attach_c(TARGET)                                     \
+#  define BODY_MPI_Buffer_attach_c(TARGET, FALLBACK)                           \
     {                                                                          \
       (void)abi_buffer;                                                        \
       (void)abi_size;                                                          \
@@ -126,9 +146,9 @@ int mpiwrapper_w_PMPI_Buffer_attach(void *abi_buffer, int abi_size)
 #endif
 
 int mpiwrapper_w_MPI_Buffer_attach_c(void *abi_buffer, MPIABI_Count abi_size)
-    BODY_MPI_Buffer_attach_c(MPI_Buffer_attach_c)
+    BODY_MPI_Buffer_attach_c(MPI_Buffer_attach_c, MPI_Buffer_attach)
 int mpiwrapper_w_PMPI_Buffer_attach_c(void *abi_buffer, MPIABI_Count abi_size)
-    BODY_MPI_Buffer_attach_c(PMPI_Buffer_attach_c)
+    BODY_MPI_Buffer_attach_c(PMPI_Buffer_attach_c, PMPI_Buffer_attach)
 
 /* `buffer_addr` is declared `void *` and is really a `void **` -- the standard's
  * own C binding, and the one place in this file where the caller's pointer is
@@ -164,7 +184,7 @@ int mpiwrapper_w_PMPI_Buffer_detach(void *abi_buffer_addr, int *abi_size)
     BODY_MPI_Buffer_detach(PMPI_Buffer_detach)
 
 #ifdef MPIWRAPPER_HAVE_MPI_Buffer_detach_c
-#  define BODY_MPI_Buffer_detach_c(TARGET)                                     \
+#  define BODY_MPI_Buffer_detach_c(TARGET, FALLBACK)                           \
     {                                                                          \
       void     *buffer_addr = NULL;                                            \
       MPI_Count size        = 0;                                               \
@@ -177,8 +197,23 @@ int mpiwrapper_w_PMPI_Buffer_detach(void *abi_buffer_addr, int *abi_size)
       *abi_size = (MPIABI_Count)size;                                          \
       return MPIABI_SUCCESS;                                                   \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Buffer_detach)
+#  define BODY_MPI_Buffer_detach_c(TARGET, FALLBACK)                           \
+    {                                                                          \
+      void *buffer_addr = NULL;                                                \
+      int   size        = 0;                                                   \
+                                                                               \
+      const int ierror = FALLBACK(&buffer_addr, &size);                        \
+      if (ierror != MPI_SUCCESS) return mpiwrapper_errorcode_toabi(ierror);    \
+                                                                               \
+      /* The small form reports an int, so this widens and cannot lose. */     \
+      *(void **)abi_buffer_addr =                                              \
+          MPIWRAPPER_AUTOBUF_OUT(MPIWRAPPER_AUTOBUF_PROCESS, buffer_addr);     \
+      *abi_size = (MPIABI_Count)size;                                          \
+      return MPIABI_SUCCESS;                                                   \
+    }
 #else
-#  define BODY_MPI_Buffer_detach_c(TARGET)                                     \
+#  define BODY_MPI_Buffer_detach_c(TARGET, FALLBACK)                           \
     {                                                                          \
       (void)abi_buffer_addr;                                                   \
       (void)abi_size;                                                          \
@@ -188,10 +223,10 @@ int mpiwrapper_w_PMPI_Buffer_detach(void *abi_buffer_addr, int *abi_size)
 
 int mpiwrapper_w_MPI_Buffer_detach_c(void *abi_buffer_addr,
                                      MPIABI_Count *abi_size)
-    BODY_MPI_Buffer_detach_c(MPI_Buffer_detach_c)
+    BODY_MPI_Buffer_detach_c(MPI_Buffer_detach_c, MPI_Buffer_detach)
 int mpiwrapper_w_PMPI_Buffer_detach_c(void *abi_buffer_addr,
                                       MPIABI_Count *abi_size)
-    BODY_MPI_Buffer_detach_c(PMPI_Buffer_detach_c)
+    BODY_MPI_Buffer_detach_c(PMPI_Buffer_detach_c, PMPI_Buffer_detach)
 
 /* -------------------------------------------- the communicator's buffer ---- */
 
@@ -228,7 +263,7 @@ int mpiwrapper_w_PMPI_Comm_attach_buffer(MPIABI_Comm abi_comm, void *abi_buffer,
     BODY_MPI_Comm_attach_buffer(PMPI_Comm_attach_buffer)
 
 #ifdef MPIWRAPPER_HAVE_MPI_Comm_attach_buffer_c
-#  define BODY_MPI_Comm_attach_buffer_c(TARGET)                                \
+#  define BODY_MPI_Comm_attach_buffer_c(TARGET, FALLBACK)                      \
     {                                                                          \
       const MPI_Comm comm   = mpiwrapper_comm_fromabi(abi_comm);               \
       void          *buffer = abi_buffer;                                      \
@@ -242,8 +277,30 @@ int mpiwrapper_w_PMPI_Comm_attach_buffer(MPIABI_Comm abi_comm, void *abi_buffer,
         MPIWRAPPER_AUTOBUF_UNDO(MPIWRAPPER_AUTOBUF_COMM(comm));                \
       return mpiwrapper_errorcode_toabi(ierror);                               \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Comm_attach_buffer)
+#  define BODY_MPI_Comm_attach_buffer_c(TARGET, FALLBACK)                      \
+    {                                                                          \
+      const MPI_Comm comm   = mpiwrapper_comm_fromabi(abi_comm);               \
+      void          *buffer = abi_buffer;                                      \
+      int            size   = 0;                                               \
+      /* MPI_BUFFER_AUTOMATIC ignores the caller's size, so the narrowing      \
+       * check belongs on the other arm of this branch and not before it:      \
+       * refusing a size the standard says is irrelevant would reject a legal  \
+       * call (NOTES.md #5.10).                                                \
+       */                                                                      \
+      if (abi_buffer == MPIABI_BUFFER_AUTOMATIC)                               \
+        MPIWRAPPER_AUTOBUF_IN(MPIWRAPPER_AUTOBUF_COMM(comm), buffer, size,     \
+                              int);                                            \
+      else if (!mpiwrapper_narrow_int(abi_size, &size))                        \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+                                                                               \
+      const int ierror = FALLBACK(comm, buffer, size);                         \
+      if (ierror != MPI_SUCCESS && abi_buffer == MPIABI_BUFFER_AUTOMATIC)      \
+        MPIWRAPPER_AUTOBUF_UNDO(MPIWRAPPER_AUTOBUF_COMM(comm));                \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }
 #else
-#  define BODY_MPI_Comm_attach_buffer_c(TARGET)                                \
+#  define BODY_MPI_Comm_attach_buffer_c(TARGET, FALLBACK)                      \
     {                                                                          \
       (void)abi_comm;                                                          \
       (void)abi_buffer;                                                        \
@@ -255,11 +312,13 @@ int mpiwrapper_w_PMPI_Comm_attach_buffer(MPIABI_Comm abi_comm, void *abi_buffer,
 int mpiwrapper_w_MPI_Comm_attach_buffer_c(MPIABI_Comm abi_comm,
                                           void *abi_buffer,
                                           MPIABI_Count abi_size)
-    BODY_MPI_Comm_attach_buffer_c(MPI_Comm_attach_buffer_c)
+    BODY_MPI_Comm_attach_buffer_c(MPI_Comm_attach_buffer_c,
+                                  MPI_Comm_attach_buffer)
 int mpiwrapper_w_PMPI_Comm_attach_buffer_c(MPIABI_Comm abi_comm,
                                            void *abi_buffer,
                                            MPIABI_Count abi_size)
-    BODY_MPI_Comm_attach_buffer_c(PMPI_Comm_attach_buffer_c)
+    BODY_MPI_Comm_attach_buffer_c(PMPI_Comm_attach_buffer_c,
+                                  PMPI_Comm_attach_buffer)
 
 #ifdef MPIWRAPPER_HAVE_MPI_Comm_detach_buffer
 #  define BODY_MPI_Comm_detach_buffer(TARGET)                                  \
@@ -294,7 +353,7 @@ int mpiwrapper_w_PMPI_Comm_detach_buffer(MPIABI_Comm abi_comm,
     BODY_MPI_Comm_detach_buffer(PMPI_Comm_detach_buffer)
 
 #ifdef MPIWRAPPER_HAVE_MPI_Comm_detach_buffer_c
-#  define BODY_MPI_Comm_detach_buffer_c(TARGET)                                \
+#  define BODY_MPI_Comm_detach_buffer_c(TARGET, FALLBACK)                      \
     {                                                                          \
       const MPI_Comm comm        = mpiwrapper_comm_fromabi(abi_comm);          \
       void          *buffer_addr = NULL;                                       \
@@ -308,8 +367,24 @@ int mpiwrapper_w_PMPI_Comm_detach_buffer(MPIABI_Comm abi_comm,
       *abi_size = (MPIABI_Count)size;                                          \
       return MPIABI_SUCCESS;                                                   \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Comm_detach_buffer)
+#  define BODY_MPI_Comm_detach_buffer_c(TARGET, FALLBACK)                      \
+    {                                                                          \
+      const MPI_Comm comm = mpiwrapper_comm_fromabi(abi_comm);                 \
+      void *buffer_addr = NULL;                                                \
+      int   size        = 0;                                                   \
+                                                                               \
+      const int ierror = FALLBACK(comm, &buffer_addr, &size);                  \
+      if (ierror != MPI_SUCCESS) return mpiwrapper_errorcode_toabi(ierror);    \
+                                                                               \
+      /* The small form reports an int, so this widens and cannot lose. */     \
+      *(void **)abi_buffer_addr =                                              \
+          MPIWRAPPER_AUTOBUF_OUT(MPIWRAPPER_AUTOBUF_COMM(comm), buffer_addr);  \
+      *abi_size = (MPIABI_Count)size;                                          \
+      return MPIABI_SUCCESS;                                                   \
+    }
 #else
-#  define BODY_MPI_Comm_detach_buffer_c(TARGET)                                \
+#  define BODY_MPI_Comm_detach_buffer_c(TARGET, FALLBACK)                      \
     {                                                                          \
       (void)abi_comm;                                                          \
       (void)abi_buffer_addr;                                                   \
@@ -321,11 +396,13 @@ int mpiwrapper_w_PMPI_Comm_detach_buffer(MPIABI_Comm abi_comm,
 int mpiwrapper_w_MPI_Comm_detach_buffer_c(MPIABI_Comm abi_comm,
                                           void         *abi_buffer_addr,
                                           MPIABI_Count *abi_size)
-    BODY_MPI_Comm_detach_buffer_c(MPI_Comm_detach_buffer_c)
+    BODY_MPI_Comm_detach_buffer_c(MPI_Comm_detach_buffer_c,
+                                  MPI_Comm_detach_buffer)
 int mpiwrapper_w_PMPI_Comm_detach_buffer_c(MPIABI_Comm abi_comm,
                                            void         *abi_buffer_addr,
                                            MPIABI_Count *abi_size)
-    BODY_MPI_Comm_detach_buffer_c(PMPI_Comm_detach_buffer_c)
+    BODY_MPI_Comm_detach_buffer_c(PMPI_Comm_detach_buffer_c,
+                                  PMPI_Comm_detach_buffer)
 
 /* ------------------------------------------------ the session's buffer ----- */
 
@@ -364,7 +441,7 @@ int mpiwrapper_w_PMPI_Session_attach_buffer(MPIABI_Session abi_session,
 
 #if defined(MPIWRAPPER_HAVE_MPI_Session_attach_buffer_c) &&                    \
     defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL)
-#  define BODY_MPI_Session_attach_buffer_c(TARGET)                             \
+#  define BODY_MPI_Session_attach_buffer_c(TARGET, FALLBACK)                   \
     {                                                                          \
       const MPI_Session session = mpiwrapper_session_fromabi(abi_session);     \
       void             *buffer  = abi_buffer;                                  \
@@ -378,8 +455,32 @@ int mpiwrapper_w_PMPI_Session_attach_buffer(MPIABI_Session abi_session,
         MPIWRAPPER_AUTOBUF_UNDO(MPIWRAPPER_AUTOBUF_SESSION(session));          \
       return mpiwrapper_errorcode_toabi(ierror);                               \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Session_attach_buffer) &&                    \
+    defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL)
+#  define BODY_MPI_Session_attach_buffer_c(TARGET, FALLBACK)                   \
+    {                                                                          \
+      const MPI_Session session =                                              \
+          mpiwrapper_session_fromabi(abi_session);                             \
+      void          *buffer = abi_buffer;                                      \
+      int            size   = 0;                                               \
+      /* MPI_BUFFER_AUTOMATIC ignores the caller's size, so the narrowing      \
+       * check belongs on the other arm of this branch and not before it:      \
+       * refusing a size the standard says is irrelevant would reject a legal  \
+       * call (NOTES.md #5.10).                                                \
+       */                                                                      \
+      if (abi_buffer == MPIABI_BUFFER_AUTOMATIC)                               \
+        MPIWRAPPER_AUTOBUF_IN(MPIWRAPPER_AUTOBUF_SESSION(session), buffer,     \
+                              size, int);                                      \
+      else if (!mpiwrapper_narrow_int(abi_size, &size))                        \
+        return MPIABI_ERR_VALUE_TOO_LARGE;                                     \
+                                                                               \
+      const int ierror = FALLBACK(session, buffer, size);                      \
+      if (ierror != MPI_SUCCESS && abi_buffer == MPIABI_BUFFER_AUTOMATIC)      \
+        MPIWRAPPER_AUTOBUF_UNDO(MPIWRAPPER_AUTOBUF_SESSION(session));          \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }
 #else
-#  define BODY_MPI_Session_attach_buffer_c(TARGET)                             \
+#  define BODY_MPI_Session_attach_buffer_c(TARGET, FALLBACK)                   \
     {                                                                          \
       (void)abi_session;                                                       \
       (void)abi_buffer;                                                        \
@@ -391,11 +492,13 @@ int mpiwrapper_w_PMPI_Session_attach_buffer(MPIABI_Session abi_session,
 int mpiwrapper_w_MPI_Session_attach_buffer_c(MPIABI_Session abi_session,
                                              void        *abi_buffer,
                                              MPIABI_Count abi_size)
-    BODY_MPI_Session_attach_buffer_c(MPI_Session_attach_buffer_c)
+    BODY_MPI_Session_attach_buffer_c(MPI_Session_attach_buffer_c,
+                                     MPI_Session_attach_buffer)
 int mpiwrapper_w_PMPI_Session_attach_buffer_c(MPIABI_Session abi_session,
                                               void        *abi_buffer,
                                               MPIABI_Count abi_size)
-    BODY_MPI_Session_attach_buffer_c(PMPI_Session_attach_buffer_c)
+    BODY_MPI_Session_attach_buffer_c(PMPI_Session_attach_buffer_c,
+                                     PMPI_Session_attach_buffer)
 
 #if defined(MPIWRAPPER_HAVE_MPI_Session_detach_buffer) &&                      \
     defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL)
@@ -434,7 +537,7 @@ int mpiwrapper_w_PMPI_Session_detach_buffer(MPIABI_Session abi_session,
 
 #if defined(MPIWRAPPER_HAVE_MPI_Session_detach_buffer_c) &&                    \
     defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL)
-#  define BODY_MPI_Session_detach_buffer_c(TARGET)                             \
+#  define BODY_MPI_Session_detach_buffer_c(TARGET, FALLBACK)                   \
     {                                                                          \
       const MPI_Session session     = mpiwrapper_session_fromabi(abi_session); \
       void             *buffer_addr = NULL;                                    \
@@ -448,8 +551,27 @@ int mpiwrapper_w_PMPI_Session_detach_buffer(MPIABI_Session abi_session,
       *abi_size = (MPIABI_Count)size;                                          \
       return MPIABI_SUCCESS;                                                   \
     }
+#elif defined(MPIWRAPPER_HAVE_MPI_Session_detach_buffer) &&                    \
+    defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL)
+#  define BODY_MPI_Session_detach_buffer_c(TARGET, FALLBACK)                   \
+    {                                                                          \
+      const MPI_Session session =                                              \
+          mpiwrapper_session_fromabi(abi_session);                             \
+      void *buffer_addr = NULL;                                                \
+      int   size        = 0;                                                   \
+                                                                               \
+      const int ierror = FALLBACK(session, &buffer_addr, &size);               \
+      if (ierror != MPI_SUCCESS) return mpiwrapper_errorcode_toabi(ierror);    \
+                                                                               \
+      /* The small form reports an int, so this widens and cannot lose. */     \
+      *(void **)abi_buffer_addr =                                              \
+          MPIWRAPPER_AUTOBUF_OUT(MPIWRAPPER_AUTOBUF_SESSION(session),          \
+                                 buffer_addr);                                 \
+      *abi_size = (MPIABI_Count)size;                                          \
+      return MPIABI_SUCCESS;                                                   \
+    }
 #else
-#  define BODY_MPI_Session_detach_buffer_c(TARGET)                             \
+#  define BODY_MPI_Session_detach_buffer_c(TARGET, FALLBACK)                   \
     {                                                                          \
       (void)abi_session;                                                       \
       (void)abi_buffer_addr;                                                   \
@@ -461,8 +583,10 @@ int mpiwrapper_w_PMPI_Session_detach_buffer(MPIABI_Session abi_session,
 int mpiwrapper_w_MPI_Session_detach_buffer_c(MPIABI_Session abi_session,
                                              void         *abi_buffer_addr,
                                              MPIABI_Count *abi_size)
-    BODY_MPI_Session_detach_buffer_c(MPI_Session_detach_buffer_c)
+    BODY_MPI_Session_detach_buffer_c(MPI_Session_detach_buffer_c,
+                                     MPI_Session_detach_buffer)
 int mpiwrapper_w_PMPI_Session_detach_buffer_c(MPIABI_Session abi_session,
                                               void         *abi_buffer_addr,
                                               MPIABI_Count *abi_size)
-    BODY_MPI_Session_detach_buffer_c(PMPI_Session_detach_buffer_c)
+    BODY_MPI_Session_detach_buffer_c(PMPI_Session_detach_buffer_c,
+                                     PMPI_Session_detach_buffer)

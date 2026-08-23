@@ -12,5 +12,4 @@
 
 - speed up github CI
 
-- provide the missing `*_c` entry slots if missing
 
