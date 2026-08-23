@@ -17817,7 +17817,7 @@ static int w_PMPI_Pack(const void *abi_inbuf, int abi_incount,
 /* ------------------------------------------------------------- MPI_Pack_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Pack_c
-#define BODY_MPI_Pack_c(TARGET)                                                \
+#define BODY_MPI_Pack_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
     const MPI_Count    incount  = abi_incount;                                 \
@@ -17831,8 +17831,31 @@ static int w_PMPI_Pack(const void *abi_inbuf, int abi_incount,
         TARGET(inbuf, incount, datatype, outbuf, outsize, position, comm);     \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Pack)
+#define BODY_MPI_Pack_c(TARGET, FALLBACK)                                      \
+  {                                                                            \
+    const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
+    int                incount  = 0;                                           \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    void *const        outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);      \
+    int                outsize  = 0;                                           \
+    int                position = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_incount, &incount))                         \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_outsize, &outsize))                         \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(*abi_position, &position))                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Comm comm = mpiwrapper_comm_fromabi(abi_comm);                   \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(inbuf, incount, datatype, outbuf, outsize, &position, comm);  \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Pack_c(TARGET)                                                \
+#define BODY_MPI_Pack_c(TARGET, FALLBACK)                                      \
   {                                                                            \
     (void)abi_inbuf;                                                           \
     (void)abi_incount;                                                         \
@@ -17848,11 +17871,13 @@ static int w_PMPI_Pack(const void *abi_inbuf, int abi_incount,
 static int w_MPI_Pack_c(const void *abi_inbuf, MPIABI_Count abi_incount,
                         MPIABI_Datatype abi_datatype, void *abi_outbuf,
                         MPIABI_Count abi_outsize, MPIABI_Count *abi_position,
-                        MPIABI_Comm abi_comm) BODY_MPI_Pack_c(MPI_Pack_c)
+                        MPIABI_Comm abi_comm)
+    BODY_MPI_Pack_c(MPI_Pack_c, MPI_Pack)
 static int w_PMPI_Pack_c(const void *abi_inbuf, MPIABI_Count abi_incount,
                          MPIABI_Datatype abi_datatype, void *abi_outbuf,
                          MPIABI_Count abi_outsize, MPIABI_Count *abi_position,
-                         MPIABI_Comm abi_comm) BODY_MPI_Pack_c(PMPI_Pack_c)
+                         MPIABI_Comm abi_comm)
+    BODY_MPI_Pack_c(PMPI_Pack_c, PMPI_Pack)
 
 /* ------------------------------------------------------ MPI_Pack_external */
 
@@ -17899,7 +17924,7 @@ static int w_PMPI_Pack_external(const char *abi_datarep, const void *abi_inbuf,
 /* ---------------------------------------------------- MPI_Pack_external_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Pack_external_c
-#define BODY_MPI_Pack_external_c(TARGET)                                       \
+#define BODY_MPI_Pack_external_c(TARGET, FALLBACK)                             \
   {                                                                            \
     const char *const  datarep  = abi_datarep;                                 \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
@@ -17913,8 +17938,31 @@ static int w_PMPI_Pack_external(const char *abi_datarep, const void *abi_inbuf,
         TARGET(datarep, inbuf, incount, datatype, outbuf, outsize, position);  \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Pack_external)
+#define BODY_MPI_Pack_external_c(TARGET, FALLBACK)                             \
+  {                                                                            \
+    const char *const  datarep  = abi_datarep;                                 \
+    const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
+    int                incount  = 0;                                           \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    void *const        outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);      \
+    MPI_Aint           outsize  = 0;                                           \
+    MPI_Aint           position = 0;                                           \
+    if (!mpiwrapper_narrow_int(abi_incount, &incount))                         \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_aint(abi_outsize, &outsize))                        \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_aint(*abi_position, &position))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(datarep, inbuf, incount, datatype, outbuf, outsize,           \
+                 &position);                                                   \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Pack_external_c(TARGET)                                       \
+#define BODY_MPI_Pack_external_c(TARGET, FALLBACK)                             \
   {                                                                            \
     (void)abi_datarep;                                                         \
     (void)abi_inbuf;                                                           \
@@ -17933,14 +17981,14 @@ static int w_MPI_Pack_external_c(const char *abi_datarep,
                                  MPIABI_Datatype abi_datatype,
                                  void *abi_outbuf, MPIABI_Count abi_outsize,
                                  MPIABI_Count *abi_position)
-    BODY_MPI_Pack_external_c(MPI_Pack_external_c)
+    BODY_MPI_Pack_external_c(MPI_Pack_external_c, MPI_Pack_external)
 static int w_PMPI_Pack_external_c(const char *abi_datarep,
                                   const void *abi_inbuf,
                                   MPIABI_Count abi_incount,
                                   MPIABI_Datatype abi_datatype,
                                   void *abi_outbuf, MPIABI_Count abi_outsize,
                                   MPIABI_Count *abi_position)
-    BODY_MPI_Pack_external_c(PMPI_Pack_external_c)
+    BODY_MPI_Pack_external_c(PMPI_Pack_external_c, PMPI_Pack_external)
 
 /* ------------------------------------------------- MPI_Pack_external_size */
 
@@ -24919,7 +24967,7 @@ static int w_PMPI_Type_get_contents(MPIABI_Datatype abi_datatype,
 /* ------------------------------------------------ MPI_Type_get_contents_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_contents_c
-#define BODY_MPI_Type_get_contents_c(TARGET)                                   \
+#define BODY_MPI_Type_get_contents_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_Datatype datatype         =                                      \
         mpiwrapper_datatype_fromabi(abi_datatype);                             \
@@ -24965,8 +25013,62 @@ static int w_PMPI_Type_get_contents(MPIABI_Datatype abi_datatype,
     mpiwrapper_unstage(datatypes, datatypes_stack);                            \
     return abi_ierror;                                                         \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_contents)
+#define BODY_MPI_Type_get_contents_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_Datatype datatype      =                                         \
+        mpiwrapper_datatype_fromabi(abi_datatype);                             \
+    int                max_integers  = 0;                                      \
+    int                max_addresses = 0;                                      \
+    int                max_datatypes = 0;                                      \
+    if (!mpiwrapper_narrow_int(abi_max_integers, &max_integers))               \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_max_addresses, &max_addresses))             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_max_datatypes, &max_datatypes))             \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    int *const      integers  = abi_array_of_integers;                         \
+    MPI_Aint *const addresses = (MPI_Aint *)abi_array_of_addresses;            \
+                                                                               \
+    int ndatatypes = 0;                                                        \
+    {                                                                          \
+      const int ierror = mpiwrapper_type_ndatatypes(datatype, &ndatatypes);    \
+      if (ierror != MPI_SUCCESS)                                               \
+        return mpiwrapper_errorcode_toabi(ierror);                             \
+    }                                                                          \
+    if (ndatatypes > max_datatypes) ndatatypes = max_datatypes;                \
+    if (ndatatypes < 0) ndatatypes = 0;                                        \
+                                                                               \
+    MPI_Datatype  datatypes_stack[MPIWRAPPER_STAGE_BYTES / sizeof(MPI_Datatype)]; \
+    MPI_Datatype *datatypes  = NULL;                                           \
+    int           abi_ierror = MPIABI_ERR_INTERN;                              \
+                                                                               \
+    datatypes = mpiwrapper_stage(datatypes_stack, sizeof datatypes_stack,      \
+                                 (size_t)ndatatypes, sizeof *datatypes);       \
+    if (!datatypes) goto done;                                                 \
+                                                                               \
+    {                                                                          \
+      const int ierror =                                                       \
+          FALLBACK(datatype, max_integers, max_addresses, ndatatypes, integers,\
+                   addresses, datatypes);                                      \
+                                                                               \
+      (void)abi_max_large_counts;                                              \
+      (void)abi_array_of_large_counts;                                         \
+                                                                               \
+      if (ierror == MPI_SUCCESS)                                               \
+        for (int i = 0; i < ndatatypes; ++i)                                   \
+          abi_array_of_datatypes[i] = mpiwrapper_datatype_toabi(datatypes[i]); \
+      abi_ierror = mpiwrapper_errorcode_toabi(ierror);                         \
+      if (mpiwrapper_take_handle_error()) abi_ierror = MPIABI_ERR_INTERN;      \
+    }                                                                          \
+                                                                               \
+  done:                                                                        \
+    mpiwrapper_unstage(datatypes, datatypes_stack);                            \
+    return abi_ierror;                                                         \
+  }
 #else
-#define BODY_MPI_Type_get_contents_c(TARGET)                                   \
+#define BODY_MPI_Type_get_contents_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_max_integers;                                                    \
@@ -24990,14 +25092,16 @@ static int w_MPI_Type_get_contents_c(MPIABI_Datatype abi_datatype,
                                      MPIABI_Aint abi_array_of_addresses[],
                                      MPIABI_Count abi_array_of_large_counts[],
                                      MPIABI_Datatype abi_array_of_datatypes[])
-    BODY_MPI_Type_get_contents_c(MPI_Type_get_contents_c)
+    BODY_MPI_Type_get_contents_c(MPI_Type_get_contents_c,
+                                 MPI_Type_get_contents)
 static int w_PMPI_Type_get_contents_c(MPIABI_Datatype abi_datatype,
     MPIABI_Count abi_max_integers, MPIABI_Count abi_max_addresses,
     MPIABI_Count abi_max_large_counts, MPIABI_Count abi_max_datatypes,
     int abi_array_of_integers[], MPIABI_Aint abi_array_of_addresses[],
     MPIABI_Count abi_array_of_large_counts[],
     MPIABI_Datatype abi_array_of_datatypes[])
-    BODY_MPI_Type_get_contents_c(PMPI_Type_get_contents_c)
+    BODY_MPI_Type_get_contents_c(PMPI_Type_get_contents_c,
+                                 PMPI_Type_get_contents)
 
 /* -------------------------------------------------- MPI_Type_get_envelope */
 
@@ -25048,7 +25152,7 @@ static int w_PMPI_Type_get_envelope(MPIABI_Datatype abi_datatype,
 /* ------------------------------------------------ MPI_Type_get_envelope_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_envelope_c
-#define BODY_MPI_Type_get_envelope_c(TARGET)                                   \
+#define BODY_MPI_Type_get_envelope_c(TARGET, FALLBACK)                         \
   {                                                                            \
     const MPI_Datatype datatype         =                                      \
         mpiwrapper_datatype_fromabi(abi_datatype);                             \
@@ -25065,8 +25169,28 @@ static int w_PMPI_Type_get_envelope(MPIABI_Datatype abi_datatype,
     *abi_combiner = mpiwrapper_combiner_toabi(combiner);                       \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_envelope)
+#define BODY_MPI_Type_get_envelope_c(TARGET, FALLBACK)                         \
+  {                                                                            \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    int       num_integers;                                                    \
+    int       num_addresses;                                                   \
+    int       num_datatypes;                                                   \
+    int       combiner;                                                        \
+    const int ierror =                                                         \
+        FALLBACK(datatype, &num_integers, &num_addresses, &num_datatypes,      \
+                 &combiner);                                                   \
+                                                                               \
+    *abi_num_integers = num_integers;                                          \
+    *abi_num_addresses = num_addresses;                                        \
+    *abi_num_large_counts = 0;                                                 \
+    *abi_num_datatypes = num_datatypes;                                        \
+    *abi_combiner = mpiwrapper_combiner_toabi(combiner);                       \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_get_envelope_c(TARGET)                                   \
+#define BODY_MPI_Type_get_envelope_c(TARGET, FALLBACK)                         \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_num_integers;                                                    \
@@ -25089,14 +25213,16 @@ static int w_MPI_Type_get_envelope_c(MPIABI_Datatype abi_datatype,
                                      MPIABI_Count *abi_num_large_counts,
                                      MPIABI_Count *abi_num_datatypes,
                                      int *abi_combiner)
-    BODY_MPI_Type_get_envelope_c(MPI_Type_get_envelope_c)
+    BODY_MPI_Type_get_envelope_c(MPI_Type_get_envelope_c,
+                                 MPI_Type_get_envelope)
 static int w_PMPI_Type_get_envelope_c(MPIABI_Datatype abi_datatype,
                                       MPIABI_Count *abi_num_integers,
                                       MPIABI_Count *abi_num_addresses,
                                       MPIABI_Count *abi_num_large_counts,
                                       MPIABI_Count *abi_num_datatypes,
                                       int *abi_combiner)
-    BODY_MPI_Type_get_envelope_c(PMPI_Type_get_envelope_c)
+    BODY_MPI_Type_get_envelope_c(PMPI_Type_get_envelope_c,
+                                 PMPI_Type_get_envelope)
 
 /* ---------------------------------------------------- MPI_Type_get_extent */
 
@@ -25870,7 +25996,7 @@ static int w_PMPI_Unpack(const void *abi_inbuf, int abi_insize,
 /* ----------------------------------------------------------- MPI_Unpack_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Unpack_c
-#define BODY_MPI_Unpack_c(TARGET)                                              \
+#define BODY_MPI_Unpack_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
     const MPI_Count    insize   = abi_insize;                                  \
@@ -25884,8 +26010,31 @@ static int w_PMPI_Unpack(const void *abi_inbuf, int abi_insize,
         TARGET(inbuf, insize, position, outbuf, outcount, datatype, comm);     \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Unpack)
+#define BODY_MPI_Unpack_c(TARGET, FALLBACK)                                    \
+  {                                                                            \
+    const void *const inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);        \
+    int               insize   = 0;                                            \
+    int               position = 0;                                            \
+    void *const       outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);       \
+    int               outcount = 0;                                            \
+    if (!mpiwrapper_narrow_int(abi_insize, &insize))                           \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(*abi_position, &position))                      \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_outcount, &outcount))                       \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    const MPI_Comm     comm     = mpiwrapper_comm_fromabi(abi_comm);           \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(inbuf, insize, &position, outbuf, outcount, datatype, comm);  \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Unpack_c(TARGET)                                              \
+#define BODY_MPI_Unpack_c(TARGET, FALLBACK)                                    \
   {                                                                            \
     (void)abi_inbuf;                                                           \
     (void)abi_insize;                                                          \
@@ -25902,12 +26051,12 @@ static int w_MPI_Unpack_c(const void *abi_inbuf, MPIABI_Count abi_insize,
                           MPIABI_Count *abi_position, void *abi_outbuf,
                           MPIABI_Count abi_outcount,
                           MPIABI_Datatype abi_datatype, MPIABI_Comm abi_comm)
-    BODY_MPI_Unpack_c(MPI_Unpack_c)
+    BODY_MPI_Unpack_c(MPI_Unpack_c, MPI_Unpack)
 static int w_PMPI_Unpack_c(const void *abi_inbuf, MPIABI_Count abi_insize,
                            MPIABI_Count *abi_position, void *abi_outbuf,
                            MPIABI_Count abi_outcount,
                            MPIABI_Datatype abi_datatype, MPIABI_Comm abi_comm)
-    BODY_MPI_Unpack_c(PMPI_Unpack_c)
+    BODY_MPI_Unpack_c(PMPI_Unpack_c, PMPI_Unpack)
 
 /* ---------------------------------------------------- MPI_Unpack_external */
 
@@ -25957,7 +26106,7 @@ static int w_PMPI_Unpack_external(const char abi_datarep[],
 /* -------------------------------------------------- MPI_Unpack_external_c */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Unpack_external_c
-#define BODY_MPI_Unpack_external_c(TARGET)                                     \
+#define BODY_MPI_Unpack_external_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const char *const  datarep  = abi_datarep;                                 \
     const void *const  inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);       \
@@ -25971,8 +26120,32 @@ static int w_PMPI_Unpack_external(const char abi_datarep[],
         TARGET(datarep, inbuf, insize, position, outbuf, outcount, datatype);  \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Unpack_external)
+#define BODY_MPI_Unpack_external_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const char *const datarep  = abi_datarep;                                  \
+    const void *const inbuf    = mpiwrapper_sendbuf_fromabi(abi_inbuf);        \
+    MPI_Aint          insize   = 0;                                            \
+    MPI_Aint          position = 0;                                            \
+    void *const       outbuf   = mpiwrapper_recvbuf_fromabi(abi_outbuf);       \
+    int               outcount = 0;                                            \
+    if (!mpiwrapper_narrow_aint(abi_insize, &insize))                          \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_aint(*abi_position, &position))                     \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+    if (!mpiwrapper_narrow_int(abi_outcount, &outcount))                       \
+      return MPIABI_ERR_VALUE_TOO_LARGE;                                       \
+                                                                               \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+                                                                               \
+    const int ierror =                                                         \
+        FALLBACK(datarep, inbuf, insize, &position, outbuf, outcount,          \
+                 datatype);                                                    \
+    *abi_position = position;                                                  \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Unpack_external_c(TARGET)                                     \
+#define BODY_MPI_Unpack_external_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_datarep;                                                         \
     (void)abi_inbuf;                                                           \
@@ -25991,7 +26164,7 @@ static int w_MPI_Unpack_external_c(const char abi_datarep[],
                                    MPIABI_Count *abi_position,
                                    void *abi_outbuf, MPIABI_Count abi_outcount,
                                    MPIABI_Datatype abi_datatype)
-    BODY_MPI_Unpack_external_c(MPI_Unpack_external_c)
+    BODY_MPI_Unpack_external_c(MPI_Unpack_external_c, MPI_Unpack_external)
 static int w_PMPI_Unpack_external_c(const char abi_datarep[],
                                     const void *abi_inbuf,
                                     MPIABI_Count abi_insize,
@@ -25999,7 +26172,7 @@ static int w_PMPI_Unpack_external_c(const char abi_datarep[],
                                     void *abi_outbuf,
                                     MPIABI_Count abi_outcount,
                                     MPIABI_Datatype abi_datatype)
-    BODY_MPI_Unpack_external_c(PMPI_Unpack_external_c)
+    BODY_MPI_Unpack_external_c(PMPI_Unpack_external_c, PMPI_Unpack_external)
 
 /* ----------------------------------------------------- MPI_Unpublish_name */
 

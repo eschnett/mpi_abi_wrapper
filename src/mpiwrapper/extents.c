@@ -153,14 +153,24 @@ int mpiwrapper_type_ndatatypes_c(MPI_Datatype datatype, MPI_Count *ndatatypes)
   return PMPI_Type_get_envelope_c(datatype, &nintegers, &naddresses,
                                   &nlarge_counts, ndatatypes, &combiner);
 #else
-  /* Unreachable in any implementation that has MPI_Type_get_contents_c at all
-   * -- both arrived in MPI-4.0 -- but the guard is what keeps this file
-   * compiling against one that has neither, where the generated body it serves
-   * is a stub anyway.
+  /* No large-count envelope, so ask the small one -- which is the whole answer
+   * here, not an approximation of it. A datatype's envelope is a property of
+   * the constructor that built it (dev/large-count-envelope/), and over an
+   * implementation with no `_c` constructors every datatype that can exist was
+   * built by a small-count one. So there is nothing the small envelope fails
+   * to see, and MPI_Type_get_contents_c's fallback body reports
+   * num_large_counts = 0 for the same reason (NOTES.md #5.10, #13.2).
+   *
+   * This arm used to answer MPI_ERR_ARG on the grounds that it was
+   * unreachable, both forms having arrived in MPI-4.0 together. The fallback
+   * reaches it.
    */
-  (void)datatype;
-  *ndatatypes = 0;
-  return MPI_ERR_ARG;
+  int       nintegers = 0, naddresses = 0, nd = 0, combiner = 0;
+  const int ierror =
+      PMPI_Type_get_envelope(datatype, &nintegers, &naddresses, &nd,
+                             &combiner);
+  *ndatatypes = nd;
+  return ierror;
 #endif
 }
 
