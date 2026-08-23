@@ -45,9 +45,13 @@ Run 32605598678, the same workflow with `timelimit-ci-openmpi.txt` in:
 | openmpi rest test loop | 13.0 min | **3.2 min** |
 | failures reported, p2p / rest | 61 / 84 | **61 / 84** |
 
-Identical verdicts, 39% of the wall clock. The ceiling is now the MPICH `p2p` shard
-at 17.6 minutes, which is real work — no test in it is near its limit, so no further
-capping can shorten this workflow.
+Identical verdicts, 39% of the wall clock. No further capping can shorten this
+workflow: what remained was the MPICH `p2p` shard at 17.6 minutes of real work, with
+no test near its limit. `part` was then split out of it into a shard of its own —
+`ci-scripts/suite/README.md` has that table and why the split runs where it does —
+which leaves the MPICH `coll` shard at 14.2–15.2 minutes as the ceiling. That one is
+real work too, so the tool has nothing more to say about this workflow until a
+directory is split or a test gets faster.
 
 **Run it on every new run's shards, because the set of hangs is not closed.** The
 first capped run promoted `threads/comm/idup_nb` from "hangs on aarch64 only" to

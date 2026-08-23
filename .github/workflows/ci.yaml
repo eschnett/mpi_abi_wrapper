@@ -815,10 +815,32 @@ jobs:
       # artifact with dev/suite-timings/tap-timings.py; the TAP file carries a
       # `# time=` per test.
       #
-      # **The ceiling after the caps is the MPICH p2p shard's 20.0 minutes**, and
-      # that is real work with no test near its limit -- pt2pt 8.5, threads 5.4,
-      # part 5.1. Splitting it is the next lever if this needs to be faster, and it
-      # costs four more jobs paying the ~1 minute of fixed cost each.
+      # **`part` is split out of `p2p` for the same reason `rma` is alone**, and the
+      # split was chosen from measurement rather than from tidiness. Run 32605598678,
+      # minutes of test loop inside the p2p shard:
+      #
+      #                     pt2pt  threads   part   total
+      #   mpich x86_64        7.0      5.3    4.1    16.3
+      #   mpich aarch64       4.1      5.6    2.1    11.8
+      #   mpich i386          3.6      5.1    1.8    10.5
+      #   openmpi x86_64      4.2      4.2    6.0    14.4
+      #   openmpi aarch64     3.7      4.4    8.8    16.9
+      #
+      # `part` is Open MPI's expensive directory here exactly as `rma` was -- 6.0 and
+      # 8.8 minutes of it, nearly all capped hangs and failures, because Open MPI
+      # 5.0.10 declares MPI_VERSION 3.1 and partitioned communication is MPI-4.0 --
+      # while `pt2pt` and `threads` are where the MPICH legs' real work is. So
+      # isolating `part` separates the two implementations' costs instead of making
+      # every leg carry both. The three candidate two-way splits worked out at 13.2,
+      # 12.2 and 12.5 minutes for their worst shard; this is the 12.2.
+      #
+      # **A three-way split would reach 8.8 and buy nothing**, because the ceiling it
+      # would have to beat is the MPICH `coll` shard at 14.2-15.2 minutes, which no
+      # split of `p2p` touches. Two shards clear that; a third would cost five more
+      # jobs at about a minute of fixed cost each for a workflow that does not get
+      # shorter. `coll` is the next lever, and it is a different one: unlike the
+      # hangs, its time is real work -- `bcast` and `bcast_comm_world_only` at
+      # np=10 are 141 s and 144 s of it and they pass.
       #
       # **And it was still killed, which is why `exclude` below drops it from the
       # two Open MPI legs.** Not as a triage of an unexplained failure: the cause
@@ -922,7 +944,9 @@ jobs:
           - name: rma
             args: "--dirs=rma"
           - name: p2p
-            args: "--dirs=threads,pt2pt,part"
+            args: "--dirs=threads,pt2pt"
+          - name: part
+            args: "--dirs=part"
           - name: rest
             args: "--skip-dirs=coll,rma,threads,pt2pt,part"
         # **Drop rma from the Open MPI legs.**
@@ -1242,7 +1266,9 @@ jobs:
           - name: rma
             args: "--dirs=rma"
           - name: p2p
-            args: "--dirs=threads,pt2pt,part"
+            args: "--dirs=threads,pt2pt"
+          - name: part
+            args: "--dirs=part"
           - name: rest
             args: "--skip-dirs=coll,rma,threads,pt2pt,part"
     steps:
