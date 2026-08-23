@@ -232,34 +232,38 @@ jobs:
             version: '4.1'
             os: ubuntu-24.04
             arch: x86_64
-            report_only: true
+            # See the `Build and test` step: this is what lets these two legs
+            # gate with a known upstream hang in them.
+            ctest_xfail: xfail-ctest-mvapich.txt
           - mpi: mvapich
             version: '4.1'
             os: ubuntu-24.04-arm
             arch: aarch64
-            report_only: true
-    # Report-only for the MVAPICH legs and gating for the other four. `== true`
-    # rather than a bare `matrix.report_only` because the key is absent on the
-    # four older rows, where the expression would evaluate to the empty string.
+            ctest_xfail: xfail-ctest-mvapich.txt
+    # **Every leg here gates, MVAPICH's included, and no `continue-on-error`
+    # remains in this job.**
     #
-    # **These two are report-only for a measured reason, not as a precaution,
-    # and the reason is upstream.** Run 32611538158 was the first CI run of
-    # them and both architectures produced exactly the same thing:
+    # The MVAPICH legs were report-only for a measured reason -- run 32611538158
+    # and every run since produced one failure on both architectures,
+    # `abi_arrays_test (Timeout)`, which is MVAPICH's MPI_Dist_graph_create not
+    # returning and is pinned on the implementation in dev/third-implementations/.
+    # The reasoning recorded here for keeping them report-only was that "a gating
+    # row with a known upstream hang turns every unrelated PR red", which was true
+    # of the only two options this job then had: fail on any ctest failure, or
+    # switch the row off.
     #
-    #   MPI 4.1, two ranks with no wrapper, then
-    #   92% tests passed, 1 tests failed out of 13
-    #       8 - abi_arrays_test (Timeout)   45.05 sec
+    # **It had a third option and now uses it.** ci-scripts/xfail-ctest-mvapich.txt
+    # names that one test with its reason, and ci-scripts/check-ctest.py checks the
+    # row against it in both directions. So the row's verdict is now "exactly this
+    # test fails" rather than "something failed" or "nothing is checked": a
+    # regression in the other fourteen turns it red, and MVAPICH fixing the hang
+    # also turns it red, asking for the line to be deleted. That is strictly more
+    # than `continue-on-error` reported, and it is what TODO.md's "do not ignore
+    # failures" asks for.
     #
-    # That one test is MVAPICH's MPI_Dist_graph_create not returning -- see the
-    # `Build and test` step below for how that was pinned on the implementation
-    # rather than on this project. So the state to expect from these legs is
-    # 12/13 and nothing else; anything more is a regression, and the day it
-    # becomes 13/13 is the day to delete this and the two `report_only:` keys.
-    # **Do not flip them while that test still times out**: a report-only row
-    # that has started passing has stopped being a test, but a *gating* row
-    # with a known upstream hang turns every unrelated PR red, which is the
-    # FreeBSD lesson in its original direction.
-    continue-on-error: ${{ matrix.report_only == true }}
+    # An expected *count* is deliberately not written down here. The comment this
+    # replaced said "the state to expect is 12/13", which was already 14/15 two
+    # commits later -- the suite grew, not the failures. The list names the test.
     steps:
       - uses: actions/checkout@v6
 
@@ -422,6 +426,20 @@ jobs:
           # is not an -E: a capped test still runs and still reports, so the
           # day MVAPICH fixes this the row goes green on its own.
           CTEST_TIMEOUT: ${{ matrix.mpi == 'mvapich' && '45' || '' }}
+          # **The cap above bounds what the hang costs; this says what it means.**
+          # The two are orthogonal and the MVAPICH legs are the first row to need
+          # both: without a list, linux-test.sh takes ctest's exit status as the
+          # verdict, so one known upstream failure would fail the row and the only
+          # way to keep it quiet would be `continue-on-error` -- which stops the
+          # other fourteen tests from being checked at all. With the list, the
+          # verdict is "the failures are exactly these, each with a reason",
+          # enforced in both directions by ci-scripts/check-ctest.py.
+          #
+          # Empty on every other leg, which is the right default: those rows
+          # expect a clean run and should fail if they do not get one. Setting
+          # this where it is not needed would be the beginning of a list nobody
+          # prunes.
+          CTEST_XFAIL: ${{ matrix.ctest_xfail }}
         run: ci-scripts/linux-test.sh "${PREFIX}/bin/mpicc"
 
       # NOTES.md #9 decision 19. Installs this project into a prefix of its own

@@ -32,6 +32,18 @@
 #              it**: a capped test still runs, still reports and still tells
 #              you the day the implementation fixes it, where an excluded one
 #              tells you nothing ever again.
+#   CTEST_XFAIL    a committed expected-failure list to gate ctest against,
+#              instead of requiring a clean run. A bare name is looked for
+#              beside this script. With it, the verdict becomes "the failures
+#              are exactly these, and each has a reason" -- checked in both
+#              directions, so a listed test that starts passing fails the row
+#              and asks for its line back. ci-scripts/check-ctest.py has the
+#              rules and the argument for why this exists: it is what lets a row
+#              with one known upstream failure keep gating the other fourteen
+#              tests, where `continue-on-error` gates none of them and
+#              `ctest -E` deletes the coverage. Cap the cost with
+#              CTEST_TIMEOUT above and describe the meaning here; the two are
+#              orthogonal and the MVAPICH legs use both.
 #
 # Gating steps exit non-zero on failure. Two steps are informational and say so,
 # because they measure the environment rather than this project:
@@ -141,8 +153,40 @@ export OMPI_MCA_rmaps_base_oversubscribe=1
 export OMPI_MCA_btl_vader_single_copy_mechanism=none
 
 step "ctest, default isolation (RTLD_LOCAL | RTLD_DEEPBIND)"
+# Removed before the run, not after: ctest writes this file only when something
+# fails, so a stale one from an earlier invocation in the same build directory
+# would be read below as this run's failures. `rm -rf $BUILD` above makes that
+# impossible today; this keeps it impossible for a caller that sets BUILD to
+# something it reuses.
+rm -f "$BUILD/Testing/Temporary/LastTestsFailed.log"
 ctest --test-dir "$BUILD" --output-on-failure \
-      ${CTEST_TIMEOUT:+--timeout "$CTEST_TIMEOUT"} || fail "ctest"
+      ${CTEST_TIMEOUT:+--timeout "$CTEST_TIMEOUT"} || ctest_status=1
+ctest_status=${ctest_status:-0}
+
+# **The gate, and which of two it is depends on whether a list was named.**
+#
+# Without CTEST_XFAIL, ctest's own exit status is the verdict, which is what
+# every row that expects a clean run wants.
+#
+# With it, the verdict is "the failures are exactly the ones on the list", in both
+# directions -- see ci-scripts/check-ctest.py for why that is a stronger claim
+# than either `continue-on-error` or `ctest -E`, and for the rules that keep a
+# line from rotting. This has to run **before** the dlmopen probe below, because
+# that is another ctest invocation into the same build directory and it would
+# overwrite LastTestsFailed.log with its own single-test result.
+if [ -n "${CTEST_XFAIL:-}" ]; then
+  case $CTEST_XFAIL in
+    /*|./*|../*) xfail_list=$CTEST_XFAIL ;;
+    *) xfail_list=$(dirname "${BASH_SOURCE[0]}")/$CTEST_XFAIL ;;
+  esac
+  [ -f "$xfail_list" ] || { echo "no ctest expected-failure list at $xfail_list" >&2
+                            exit 2; }
+  step "gate: ctest's failures against ${xfail_list##*/}"
+  python3 "$(dirname "${BASH_SOURCE[0]}")/check-ctest.py" \
+          "$BUILD" "$xfail_list" || fail "ctest does not match $xfail_list"
+elif [ "$ctest_status" != 0 ]; then
+  fail "ctest"
+fi
 
 step "dlmopen mode (informational, expected to fail; NOTES.md #2)"
 MPI_ABI_WRAPPER_DLOPEN_MODE=dlmopen \
