@@ -28,9 +28,9 @@ even when a hang fails the one before it.
 
 ## Why the two rows differ in shape
 
-| | MVAPICH 4.1 | Intel MPI 2021.18.1 |
+| | MVAPICH 4.1 | Intel MPI 2021.15 |
 |---|---|---|
-| how CI gets it | `ci-scripts/install-mvapich.sh`, pinned tarball, cached | `apt install intel-oneapi-mpi-devel` |
+| how CI gets it | `ci-scripts/install-mvapich.sh`, pinned tarball, cached | `apt install intel-oneapi-mpi-devel=2021.15.0-493` |
 | our 13 tests | **12 pass**, `abi_arrays_test` hangs upstream | **13 pass**, with `LD_LIBRARY_PATH` cleared |
 | `check-install.sh` | 6 legs pass | 6 legs pass |
 | job | two `linux-source` legs | the `linux-oneapi` job |
@@ -61,7 +61,7 @@ actually provides the `_c` surface". Two of these four now do:
 | | declares | `_c` surface |
 |---|---|---|
 | MVAPICH 4.1 | `MPI_VERSION 4` / `MPI_SUBVERSION 1` | 387 `_c` prototypes in `src/include/mpi_proto.h`; `MPI_Type_size_c` links and returns 4 |
-| Intel MPI 2021.18.1 | `MPI_VERSION 4` / `MPI_SUBVERSION 1` | `MPI_Type_size_c` links and returns 4 |
+| Intel MPI 2021.15 | `MPI_VERSION 3` / `MPI_SUBVERSION 1` | `MPI_Type_size_c` links and returns 4 **anyway** — the declared level understates the surface |
 | Open MPI 5.0.10 | `MPI_VERSION 3` / `MPI_SUBVERSION 1` | none at all — still what makes decision 6's stubs load-bearing |
 
 **Both probes check this by linking and running, never by grepping a header**,
@@ -82,7 +82,7 @@ header already records the other direction: MPICH 3.1.4 built
 | Ubuntu MPICH, Open MPI | both strong, at one address |
 | macOS MPICH | `PMPI_*` in a separate library |
 | MVAPICH 4.1 `libmpi.so.0` | **672 weak `MPI_*` over 672 strong `PMPI_*`** |
-| Intel MPI 2021.18.1 `libmpi.so.12` | **680 weak `MPI_*` over 680 strong `PMPI_*`** |
+| Intel MPI 2021.15 `libmpi.so.12` | **613 weak `MPI_*` over 613 strong `PMPI_*`** |
 
 `MPI_Send` and `PMPI_Send` share an address in every one, which is the whole of
 what §2 requires. The two agreeing rows are the MPICH-derived newcomers while
@@ -217,6 +217,45 @@ both carry the flag — so it is recorded in `NOTES.md` §13.2 as a limitation o
 the design rather than here as a fact about one vendor. It is also *not*
 NOTES.md §10's fifth oracle: deliberately wrapping an ABI-implementing MPI is a
 different row that does not exist yet and needs `MPIWRAPPER_WRAP_ABI_IMPL`.
+
+### Which Intel MPI merits wrapping
+
+The question that decides whether the row exists, and the answer moved the pin
+from "newest" to a two-year-old release. Wrapping an MPI that already implements
+the standard ABI is not what this project is for, so the row is only worth
+having below the line where Intel started shipping one. Bisected by downloading
+each `intel-oneapi-mpi-devel-<v>` package and listing its contents — no
+installs:
+
+| release | ships `libmpi_abi` | `MPI_T_event_dropped_cb_function` | wrapper builds |
+|---|---|---|---|
+| 2021.9.0 | no | not declared | — |
+| 2021.11 | no | not declared | — |
+| 2021.13 | no | not declared | — |
+| **2021.15** | **no** | **not declared** | **yes, 13/13** |
+| 2021.16 | no | `int count` | **no** |
+| 2021.17 | **yes** | `MPI_Count count` | — (redundant) |
+| 2021.18 | **yes** | `MPI_Count count` | yes, 13/13 |
+
+Both changes landed in the same release, 2021.17: the ABI library appeared and
+the callback's first parameter was corrected to `MPI_Count`. Intel documents
+the ABI as an MPI-5.0 standard technical preview, C only, reached through
+`mpicc -mpi-abi`, so on 2021.17+ the default `mpicc` is still an ordinary wrap
+target — just a pointless one to wrap.
+
+**So the pin is 2021.15, and 2021.16 is a hole rather than a floor.** That one
+release declares the dropped-events callback with `int count` where MPI-4.1 and
+everything else say `MPI_Count count`, so `src/mpiwrapper/toolevents.c` fails
+with `conflicting types for 'mpiwrapper_t_event_dropped_tramp'`. 2021.15 does
+not declare the callback at all, so the availability probe leaves the trampoline
+out. That is NOTES.md §13.4's entry, and the general lesson is sharper than the
+one release: **`MPIWRAPPER_HAVE_*` asks whether an entry point is declared, and
+this is the first case where the answer had to be "declared with what
+signature".**
+
+Worth noting how it was found. A row pinned to the newest release would never
+have compiled against 2021.16 either — it would simply have skipped over it —
+and the reason to pin *old* is also what exposed the gap.
 
 ## The failure that was the harness's
 

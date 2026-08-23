@@ -475,12 +475,15 @@ jobs:
   # **One leg where every from-source row has two.** Intel MPI ships no
   # aarch64 build; that is the implementation's limit, not an omission here.
   #
-  # What the probe in dev/third-implementations/ measured against
-  # intel-oneapi-mpi-devel 2021.18.1-9, all four of which this job depends on:
+  # What the probe in dev/third-implementations/ measured against the pinned
+  # intel-oneapi-mpi-devel 2021.15.0-493, all four of which this job depends on:
   #
-  #   * mpi.h declares MPI_VERSION 4 / MPI_SUBVERSION 1 and MPI_Type_size_c
-  #     links and runs, so this is the **third** implementation in CI carrying
-  #     the ABI's `_c` large-count surface, after MPICH and MVAPICH.
+  #   * mpi.h declares MPI_VERSION 3 / MPI_SUBVERSION 1, and yet
+  #     MPI_Type_size_c links and returns 4. The declared level understates the
+  #     surface, so this is the **third** implementation in CI carrying the
+  #     ABI's `_c` entry points, after MPICH and MVAPICH -- and a reminder that
+  #     MPI_VERSION is a proxy, which is the same trap install-mpich.sh's
+  #     header records from the other side.
   #   * The library is libmpi.so.12, which check-install.sh's
   #     check_only_mpi_abi_dependency already matches on `libmpi\.` -- no new
   #     alternative needed, and worth checking because a miss there turns the
@@ -489,7 +492,7 @@ jobs:
   #     link, which is what lets check-install.sh's `env -u LD_LIBRARY_PATH`
   #     legs resolve the wrapped implementation at all.
   #   * Symbol binding is a **third pattern**, and the first new one since
-  #     ci-scripts/README.md wrote that section: 680 weak MPI_* over 680 strong
+  #     ci-scripts/README.md wrote that section: 613 weak MPI_* over 613 strong
   #     PMPI_*, where Ubuntu's MPICH and Open MPI define both strongly at one
   #     address and macOS MPICH keeps PMPI_* in a separate library. NOTES.md #2
   #     only needs "both names exist and reach the same code", and this is the
@@ -518,11 +521,39 @@ jobs:
               build-essential cmake python3 patch binutils \
               poppler-utils curl ca-certificates pkg-config
 
-      # Byte for byte the `compile` job's icx step, minus the compiler package.
-      # Unpinned deliberately, for the reason that step gives about the NVIDIA
-      # SDK: the version is in the package's *candidate*, not its name, so
-      # writing one down would rot -- the newest the repository offers is what
-      # gets installed and the step prints which that was.
+      # The repository setup is byte for byte the `compile` job's icx step,
+      # minus the compiler package.
+      #
+      # **Pinned, and to an old release on purpose.** The first draft installed
+      # whatever the repository offered newest, borrowing the NVIDIA SDK step's
+      # reasoning that a version in a package name would rot. That reasoning
+      # does not transfer: there the *compiler* is under test and the MPI is
+      # incidental, here the MPI is the subject, and which Intel MPI you get
+      # decides whether the row means anything at all.
+      #
+      # `dev/third-implementations/` bisected the apt repository. **2021.17 is
+      # the first release that ships its own `libmpi_abi.so`** -- Intel's MPI
+      # 5.0 standard-ABI technical preview, C only, opt-in through `mpicc
+      # -mpi-abi`. Wrapping an MPI that already implements the ABI is not what
+      # this project is for: a consumer on 2021.17+ can link the vendor's ABI
+      # library directly. So the row pins the newest release *below* that line
+      # for which the wrapper builds.
+      #
+      # That is 2021.15 and not 2021.16, and the gap is measured rather than
+      # cautious: **2021.16 declares `MPI_T_event_dropped_cb_function` with
+      # `int count` where MPI-4.1 and every other implementation say
+      # `MPI_Count count`**, so src/mpiwrapper/toolevents.c does not compile
+      # against it (NOTES.md #13.4). 2021.15 does not declare that callback at
+      # all, so the availability probe leaves the trampoline out and the build
+      # is clean. 2021.17 fixed the type in the same release that added the ABI
+      # library, which is why no version above the line is needed to dodge it.
+      #
+      # What 2021.15 provides, measured: MPI_VERSION 3 / MPI_SUBVERSION 1 --
+      # yet MPI_Type_size_c links and returns 4, so the declared level
+      # understates the surface and this is *not* another row where decision
+      # 6's large-count stubs carry everything. 613 weak MPI_* over 613 strong
+      # PMPI_*, sharing an address. libmpi.so.12, which check-install.sh's
+      # dependency check already matches on `libmpi\.`.
       - name: Install Intel MPI
         run: |
           curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
@@ -530,8 +561,18 @@ jobs:
           echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
               | sudo tee /etc/apt/sources.list.d/oneAPI.list
           sudo apt-get update -qq
-          apt-cache policy intel-oneapi-mpi-devel | head -3
-          sudo apt-get install -y intel-oneapi-mpi-devel
+          sudo apt-get install -y "intel-oneapi-mpi-devel=${INTEL_MPI_VERSION}"
+          # Print what landed, and refuse if it brought an ABI library with it
+          # -- the one thing that would silently make this row pointless.
+          ls -d /opt/intel/oneapi/mpi/*/
+          if ls /opt/intel/oneapi/mpi/latest/lib/libmpi_abi.so* >/dev/null 2>&1; then
+              echo "::error::this Intel MPI ships its own libmpi_abi.so, so wrapping it is redundant; see the comment above this step"
+              exit 1
+          fi
+        env:
+          # 2021.15.0-493 is the newest Intel MPI that both lacks a
+          # standard-ABI library of its own and compiles (see above).
+          INTEL_MPI_VERSION: 2021.15.0-493
 
       # vars.sh rather than the whole toolkit's setvars.sh -- only MPI is
       # installed here. `set +u` around it for the reason the icx step gives:
@@ -540,7 +581,7 @@ jobs:
       # MPI_LABEL is why linux-test.sh gained the variable. Left to itself the
       # script derives its label from the mpicc path's second-from-last
       # component, which is right for our own prefixes and here yields
-      # `2021.18` -- `command -v mpicc` resolves through to the versioned
+      # `2021.15` -- `command -v mpicc` resolves through to the versioned
       # directory rather than the `latest` symlink -- so the logs the failure
       # step below wants to print would be named after a version nobody wrote.
       - name: Set up the Intel MPI environment
@@ -561,41 +602,41 @@ jobs:
           } >>"${GITHUB_ENV}"
 
       # ---------------------------------------------------------------------
-      # **LD_LIBRARY_PATH is deliberately NOT exported, and this is the single
-      # most important line in this job.**
+      # **LD_LIBRARY_PATH is deliberately NOT exported.** At the pinned version
+      # this is belt and braces; it is kept because of what happened without it
+      # at the unpinned one, and because it is the guard that turns a careless
+      # version bump into a clear failure instead of a subtle one.
       #
-      # Intel MPI 2021.18 ships its own `libmpi_abi.so` -- it implements the
-      # standard MPI ABI natively, 670 MPI_* symbols including 159 `_c` ones,
-      # SONAME libmpi_abi.so.1 -- and vars.sh puts that directory on
+      # Intel MPI 2021.17 and later ship their own `libmpi_abi.so` -- 670 MPI_*
+      # symbols, SONAME libmpi_abi.so.1 -- and vars.sh puts that directory on
       # LD_LIBRARY_PATH. Our own library has the same *filename*. Our test
       # binaries record `NEEDED libmpi_abi.so` with a RUNPATH to the build
       # tree, and **DT_RUNPATH is searched after LD_LIBRARY_PATH**, so with
-      # vars.sh's value exported the loader binds our binaries to Intel's
-      # library instead of ours:
+      # vars.sh's value exported the loader bound our binaries to Intel's:
       #
       #   libmpi_abi.so => /opt/intel/oneapi/mpi/2021.18/lib/libmpi_abi.so
       #
-      # Measured, not reasoned about (dev/third-implementations/): with
-      # LD_LIBRARY_PATH exported, 5 of 13 tests fail -- exactly the five
-      # black-box tests that load a wrapper -- and with it cleared all 13 pass.
-      # The five failures are the good case. The bad one is that a future test
-      # tolerant enough to pass against a *real* ABI implementation would go
-      # green here having never loaded this project at all, which is
-      # HISTORY.md #2.14's failure mode with a new cause.
+      # Measured, not reasoned about (dev/third-implementations/): 5 of 13 tests
+      # failed -- exactly the five black-box tests that load a wrapper -- and
+      # all 13 passed with the variable cleared. Five red tests was the *good*
+      # case; a test tolerant enough to pass against a real ABI implementation
+      # would have gone green having never loaded this project, which is
+      # HISTORY.md #2.14's failure mode with a new cause. It is recorded as a
+      # limitation of this design rather than a fact about Intel in
+      # NOTES.md #13.2, because MPICH 5.0 and MVAPICH 4.1 can both be built
+      # with the same library.
       #
-      # Nothing needs the variable: `mpicc -show` bakes `-Xlinker -rpath` to
-      # $I_MPI_ROOT/lib into every link, mpiexec and its hydra proxies carry
-      # their own RPATHs, and Intel MPI finds its bundled libfabric through
-      # I_MPI_ROOT rather than the loader path. check-install.sh was already
-      # immune -- it runs every route under `env -u LD_LIBRARY_PATH` for
-      # precisely this class of accident, and its six legs pass here either
-      # way, which is what made the ctest failures worth chasing rather than
-      # dismissing.
+      # The pin means CI does not rely on any of that: 2021.15 ships no
+      # libmpi_abi.so, and the step above fails loudly if a version bump ever
+      # brings one back. Nothing needs the variable anyway -- `mpicc -show`
+      # bakes `-Xlinker -rpath` to $I_MPI_ROOT/lib into every link, mpiexec and
+      # its hydra proxies carry their own RPATHs, and Intel MPI finds its
+      # bundled libfabric through I_MPI_ROOT rather than the loader path.
       #
-      # NOTES.md #10's fifth oracle -- wrapping an MPI that already exports the
-      # ABI -- is a *different* row that does not exist yet, and it needs
-      # MPIWRAPPER_WRAP_ABI_IMPL. This job is the ordinary wrap of Intel MPI's
-      # native `libmpi.so.12`, which is what its plain mpicc links.
+      # NOTES.md #10's fifth oracle -- deliberately wrapping an MPI that
+      # already exports the ABI -- is a *different* row that does not exist yet
+      # and needs MPIWRAPPER_WRAP_ABI_IMPL. This job is the ordinary wrap of
+      # Intel MPI's native `libmpi.so.12`, which is what its plain mpicc links.
       # ---------------------------------------------------------------------
 
       # The same gate every row that provisions its own MPI carries, and for

@@ -13,6 +13,11 @@
 set -uo pipefail
 
 repo=${REPO:-/repo}
+# The apt version to pin, matching ci.yaml's `linux-oneapi` job. Empty means
+# whatever the repository offers newest, which is what this probe was first
+# written to do and is now the wrong thing -- see README.md, "Which Intel MPI
+# merits wrapping".
+version=${VERSION:-2021.15.0-493}
 status=0
 
 step() { printf '\n=== %s\n' "$*"; }
@@ -45,10 +50,22 @@ echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt
 apt-get update -qq
 apt-cache policy intel-oneapi-mpi-devel | head -3
 
-step "install intel-oneapi-mpi-devel"
-apt-get install -y -qq intel-oneapi-mpi-devel >/dev/null \
-  || { fail "apt could not install intel-oneapi-mpi-devel"; exit $status; }
+step "install intel-oneapi-mpi-devel${version:+=$version}"
+apt-get install -y -qq "intel-oneapi-mpi-devel${version:+=$version}" >/dev/null \
+  || { fail "apt could not install intel-oneapi-mpi-devel${version:+=$version}"; exit $status; }
 ls -d /opt/intel/oneapi/mpi/*/ 2>/dev/null
+
+step "does this release ship a standard-ABI library of its own?"
+# The question that decides whether wrapping this release means anything.
+# 2021.17 is the first that ships one, so a pinned row must land at or below
+# 2021.16 -- README.md, "Which Intel MPI merits wrapping", has the bisection.
+if ls /opt/intel/oneapi/mpi/latest/lib/libmpi_abi.so* >/dev/null 2>&1; then
+  fail "this release ships libmpi_abi.so, so wrapping it is redundant:"
+  ls -l /opt/intel/oneapi/mpi/latest/lib/libmpi_abi.so* | sed 's/^/    /'
+else
+  echo "  no libmpi_abi.so -- this release has no standard ABI, which is what"
+  echo "  makes it worth wrapping, and removes the NOTES.md #13.2 collision"
+fi
 
 step "the environment script, and what it puts on PATH"
 vars=/opt/intel/oneapi/mpi/latest/env/vars.sh
@@ -136,7 +153,7 @@ for so in "${I_MPI_ROOT}"/lib/libmpi.so*; do
   break
 done
 
-step "the hijack this row exists to avoid"
+step "the collision that a newer release would have brought back"
 # Intel MPI ships its own libmpi_abi.so -- it implements the standard ABI
 # natively -- and vars.sh puts that directory on LD_LIBRARY_PATH. Our binaries
 # record `NEEDED libmpi_abi.so` with a RUNPATH to the build tree, and DT_RUNPATH
@@ -158,9 +175,12 @@ ci_status=0
 # $MPICC is `2021.18` -- `command -v mpicc` resolves through the `latest`
 # symlink to the versioned directory -- which names nothing a reader recognises.
 #
-# `env -u LD_LIBRARY_PATH` is the whole point of the step above. Without it,
-# five of thirteen tests fail against Intel's libmpi_abi.so rather than ours,
-# and they fail for a reason that has nothing to do with the wrapper.
+# `env -u LD_LIBRARY_PATH` is belt and braces at the pinned version, which
+# ships no libmpi_abi.so for vars.sh to put in the way -- but it is exactly
+# what stops a version bump past 2021.16 from turning into five mysterious
+# failures instead of a clear one. NOTES.md #13.2 has the measurement from
+# 2021.18: with the variable exported, five of thirteen tests bind to Intel's
+# ABI library rather than ours.
 env -u LD_LIBRARY_PATH MPI_LABEL=intelmpi \
   "$repo/ci-scripts/linux-test.sh" "$MPICC" || ci_status=1
 # check-install.sh needs no such help: it already runs every consumption route

@@ -83,7 +83,7 @@ exit status.** Two steps measure the environment rather than this project:
   `PMPI_*`. It varies by implementation and platform, and **three distinct
   patterns have now been measured**: Ubuntu's MPICH and Open MPI define both
   strongly at one address; macOS MPICH keeps `PMPI_*` in a separate library; and
-  MVAPICH 4.1 (672) and Intel MPI 2021.18.1 (680) both define *weak* `MPI_*`
+  MVAPICH 4.1 (672) and Intel MPI 2021.15 (613) both define *weak* `MPI_*`
   over *strong* `PMPI_*` (`dev/third-implementations/`). `MPI_Send` and
   `PMPI_Send` share an address in every one of them, which is all the design
   needs. Worth noting that the two agreeing rows are the MPICH-derived ones
@@ -114,7 +114,7 @@ here, next to the code they are about, and stay runnable by hand.
 | `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks, plus `exported-symbols`, which is oracle 1 |
 | `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root. Both arches |
 | `linux-source` | `install-{mpich,openmpi,mvapich}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches. The two MVAPICH legs are report-only and expected at **12/13** — `abi_arrays_test` times out on an upstream `MPI_Dist_graph_create` hang, capped at 45 s |
-| `linux-oneapi` | apt, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | Intel MPI from the oneAPI repository — a binary distribution, so there is no installer to call. x86_64 only, because Intel ships no aarch64 build. **Gating**, green on its first run |
+| `linux-oneapi` | apt, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | Intel MPI from the oneAPI repository — a binary distribution, so there is no installer to call. **Pinned to 2021.15**, the newest release that has no standard ABI of its own and still compiles: 2021.17 ships `libmpi_abi.so`, which makes wrapping pointless, and 2021.16 declares a callback with `int count` the wrapper cannot build against. x86_64 only, because Intel ships no aarch64 build. **Gating** |
 | `linux-i386` | `docker/mpich-i386.dockerfile`, whose last `RUN` is `linux-test.sh` | Debian i386's. The only 32-bit row, and the only one where an ABI handle is not 64 bits |
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |

@@ -1671,7 +1671,7 @@ Version choice is about coverage, not admissibility:
 | MPICH >= 4.0 | provides the `_c` surface, so the large-count half of the ABI is exercised at all. Was "the only implementation that does", and is not any more — see the row below |
 | Open MPI >= 5.0 | sessions, and the current component architecture; 4.1 is *wrappable* and is a legitimate extra row rather than an excluded one |
 | MPICH 3.1.4 | the MPI-3.0 floor itself, verified rather than declared |
-| MVAPICH 4.1, Intel MPI 2021.18 | **the `_c` surface is not MPICH's alone.** Measured, not read off a page: MVAPICH 4.1 declares MPI 4.1 and carries 387 `_c` prototypes in `src/include/mpi_proto.h`, and Intel MPI 2021.18.1 declares MPI 4.1 and links `MPI_Type_size_c`. Open MPI 5.0.10 remains the implementation with no `_c` entry point at all, which is what makes decision 6's stubs load-bearing (`dev/third-implementations/`) |
+| MVAPICH 4.1, Intel MPI 2021.15 | **the `_c` surface is not MPICH's alone, and `MPI_VERSION` does not predict it.** Measured, not read off a page: MVAPICH 4.1 declares MPI 4.1 and carries 387 `_c` prototypes in `src/include/mpi_proto.h`; Intel MPI 2021.15 declares MPI **3.1** and still links `MPI_Type_size_c`. Open MPI 5.0.10 remains the implementation with no `_c` entry point at all, which is what makes decision 6's stubs load-bearing (`dev/third-implementations/`) |
 
 ---
 
@@ -1821,7 +1821,7 @@ position on the device.
 
 **Both new rows show a symbol binding neither old one does**, and they agree with
 each other: MVAPICH 4.1's `libmpi.so.0` has 672 *weak* `MPI_*` over 672 *strong*
-`PMPI_*`, and Intel MPI 2021.18.1's `libmpi.so.12` has 680 over 680 — where the
+`PMPI_*`, and Intel MPI 2021.15's `libmpi.so.12` has 613 over 613 — where the
 distro MPICH and Open MPI rows define both strongly at one address, and macOS
 MPICH keeps `PMPI_*` in a separate library. `MPI_Send` and `PMPI_Send` still
 resolve to one address in every case, which is the whole of what §2 requires;
@@ -1836,6 +1836,26 @@ once here.
 distribution from an apt repository the `compile` job already trusts for icx, so
 there is no installer to write and nothing to cache: one package, source
 `vars.sh`, done.
+
+**But which Intel MPI is the whole question, and the newest is the wrong
+answer.** Wrapping an MPI that already implements the standard ABI is not what
+this project is for — a consumer of such a release links the vendor's ABI
+library and needs nothing here — so the row is only worth having against a
+release that lacks one. Bisecting the apt repository (`dev/third-implementations/`)
+puts that line at **2021.17, the first release shipping `libmpi_abi.so`**;
+Intel documents it as an MPI-5.0 standard-ABI technical preview, C only, reached
+through `mpicc -mpi-abi`, so the default `mpicc` on those releases is still an
+ordinary wrap target — but redundantly so.
+
+So `linux-oneapi` pins **2021.15**, the newest release below that line for which
+the wrapper builds, and the step refuses if a bump ever brings an ABI library
+back. Not 2021.16, and that gap is §13.4's: that one release declares
+`MPI_T_event_dropped_cb_function` with `int count` where everything else says
+`MPI_Count count`, and the wrapper does not compile against it. **This is the
+first place the availability probe's question was the wrong question** — it asks
+whether an entry point is declared, not with what signature — and it is worth
+noting that a *pinned old* row found it where a floating-newest row never would
+have.
 
 **Neither of the two gets an MPICH-C-suite leg, and that is deliberate rather
 than pending.** A suite leg gates against a measured expected-failure list, and
@@ -2026,7 +2046,10 @@ Intel MPI row rather than by thinking about it.
   by filename in the one environment guaranteed to contain both: the wrapped
   implementation's own. **Measured over Intel MPI 2021.18**, which ships
   `libmpi_abi.so.1` with 670 `MPI_*` symbols and puts its `lib` directory on
-  `LD_LIBRARY_PATH` from `vars.sh`. Our binaries carry `NEEDED libmpi_abi.so`
+  `LD_LIBRARY_PATH` from `vars.sh`. **2021.17 is the first release that ships
+  one**, bisected in `dev/third-implementations/`; CI's `linux-oneapi` row pins
+  2021.15 and fails loudly if a bump ever brings the library back, so the
+  workaround below is a guard rather than something a green run depends on. Our binaries carry `NEEDED libmpi_abi.so`
   with a `DT_RUNPATH`, and **`DT_RUNPATH` is searched after `LD_LIBRARY_PATH`**,
   so the loader binds them to the implementation's library: five of thirteen
   tests fail — precisely the five that load a wrapper — and all thirteen pass
@@ -2343,6 +2366,25 @@ wrong reading that hid it is kept in `HISTORY.md` §2.6a.
   anything better is possible at finalize.
 
 ### 13.4 Platforms and configurations not yet supported
+
+- **Intel MPI 2021.16 specifically**, and it is a one-release hole rather than a
+  version floor. That release declares
+
+  ```c
+  typedef void (MPI_T_event_dropped_cb_function)(int count, ...);
+  ```
+
+  where MPI-4.1, MPICH, MVAPICH and Intel MPI 2021.17+ all say `MPI_Count
+  count`, so `src/mpiwrapper/toolevents.c`'s trampoline gets `conflicting types
+  for 'mpiwrapper_t_event_dropped_tramp'` and the wrapper does not build.
+  2021.15 and earlier do not declare that callback at all, so the
+  availability probe leaves the trampoline out and they build clean; 2021.17
+  fixed the type. **The `MPIWRAPPER_HAVE_*` probe answers "is it declared", and
+  this is the first case where the answer needed to be "declared with what
+  signature".** A fix is a configure-time probe of the parameter type plus a
+  second trampoline body, which is §8 work rather than a CI change, and nobody
+  has needed 2021.16 yet — `ci.yaml`'s `linux-oneapi` job pins 2021.15 and says
+  why. Measured in `dev/third-implementations/`.
 
 - **Windows/mingw**: a `dlopen` → `LoadLibrary` shim, no RTLD flags, and it is
   not settled which MPI is even the target there.
