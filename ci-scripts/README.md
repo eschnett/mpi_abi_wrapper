@@ -113,14 +113,18 @@ here, next to the code they are about, and stay runnable by hand.
 |---|---|---|
 | `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks, plus `exported-symbols`, which is oracle 1 |
 | `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root. Both arches |
-| `linux-source` | `install-{mpich,openmpi,mvapich}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches. The two MVAPICH legs are report-only until one has been seen green |
-| `linux-oneapi` | apt, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | Intel MPI from the oneAPI repository — a binary distribution, so there is no installer to call. x86_64 only, because Intel ships no aarch64 build. Report-only until seen green |
+| `linux-source` | `install-{mpich,openmpi,mvapich}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches. The two MVAPICH legs are report-only and expected at **12/13** — `abi_arrays_test` times out on an upstream `MPI_Dist_graph_create` hang, capped at 45 s |
+| `linux-oneapi` | apt, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | Intel MPI from the oneAPI repository — a binary distribution, so there is no installer to call. x86_64 only, because Intel ships no aarch64 build. **Gating**, green on its first run |
 | `linux-i386` | `docker/mpich-i386.dockerfile`, whose last `RUN` is `linux-test.sh` | Debian i386's. The only 32-bit row, and the only one where an ABI handle is not 64 bits |
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
 | `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Sixteen legs**: two implementations × x86_64/aarch64 × four shards of the suite |
 | `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.1, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
+
+**The MPICH legs gate; the Open MPI legs are still report-only.** So do the two MVAPICH
+`linux-source` legs, for a different and narrower reason — one upstream hang, not an
+uncalibrated list. `linux-oneapi` gates.
 
 **The MPICH legs gate; the Open MPI legs are still report-only.** That is per
 leg, not per job: `continue-on-error: ${{ matrix.leg.report_only }}`. The rule the

@@ -16,6 +16,16 @@ Each probe ends with `PROBE-<NAME>: all claims hold` or names what failed.
 Neither is wired into `ctest` or CI: these are measurements behind a claim, not
 a gate. The CI rows themselves are the standing check.
 
+**Everything below was measured in a container first and then confirmed by CI**
+(run 32611538158, the first run of both rows). The container and the runner
+agreed exactly, including the MVAPICH hang and its 45 s cap, which is the only
+reason the numbers here are quoted without hedging. One thing CI found that the
+container could not: the consumption-routes step was `skipped` on the MVAPICH
+legs, because a failed `ctest` short-circuits a step whose default condition is
+`success()`. Running the two by hand locally hid it. Both jobs now carry
+`if: ${{ !cancelled() }}` on that step, so the leg those rows exist for reports
+even when a hang fails the one before it.
+
 ## Why the two rows differ in shape
 
 | | MVAPICH 4.1 | Intel MPI 2021.18.1 |

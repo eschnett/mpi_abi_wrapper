@@ -238,18 +238,27 @@ jobs:
             os: ubuntu-24.04-arm
             arch: aarch64
             report_only: true
-    # Report-only for the MVAPICH legs and gating for the other four. This is
-    # the rule the `compile` job established and the Open MPI suite legs still
-    # live under: a row nobody has ever seen green cannot tell a regression
-    # from the thing it was added to find, so it reports until it has passed
-    # once and then gates. `== true` rather than a bare `matrix.report_only`
-    # because the key is absent on the four older rows, where the expression
-    # would evaluate to the empty string.
+    # Report-only for the MVAPICH legs and gating for the other four. `== true`
+    # rather than a bare `matrix.report_only` because the key is absent on the
+    # four older rows, where the expression would evaluate to the empty string.
     #
-    # **Flip this to gating in the commit that records the first green run**,
-    # and delete the two `report_only:` keys with it -- a report-only row left
-    # in place after it starts passing is a row that has stopped being a test,
-    # which is the FreeBSD lesson in the other direction.
+    # **These two are report-only for a measured reason, not as a precaution,
+    # and the reason is upstream.** Run 32611538158 was the first CI run of
+    # them and both architectures produced exactly the same thing:
+    #
+    #   MPI 4.1, two ranks with no wrapper, then
+    #   92% tests passed, 1 tests failed out of 13
+    #       8 - abi_arrays_test (Timeout)   45.05 sec
+    #
+    # That one test is MVAPICH's MPI_Dist_graph_create not returning -- see the
+    # `Build and test` step below for how that was pinned on the implementation
+    # rather than on this project. So the state to expect from these legs is
+    # 12/13 and nothing else; anything more is a regression, and the day it
+    # becomes 13/13 is the day to delete this and the two `report_only:` keys.
+    # **Do not flip them while that test still times out**: a report-only row
+    # that has started passing has stopped being a test, but a *gating* row
+    # with a known upstream hang turns every unrelated PR red, which is the
+    # FreeBSD lesson in its original direction.
     continue-on-error: ${{ matrix.report_only == true }}
     steps:
       - uses: actions/checkout@v6
@@ -422,7 +431,18 @@ jobs:
       # each binary's only MPI dependency. This is also the only place the
       # Linux RPATH story is tested: on macOS the absolute install names make
       # every route pass for free.
+      #
+      # **`!cancelled()` because this and the step above are independent
+      # oracles, and the default `success()` let one hide the other.** The
+      # MVAPICH legs are what exposed it: their ctest fails on a hang that is
+      # MVAPICH's own (MPI_Dist_graph_create, see the `Build and test` step),
+      # which skipped the consumption check -- the one thing those rows were
+      # added to exercise, and the one that passes. A row that cannot report
+      # its own subject when an unrelated step fails is not reporting.
+      # `!cancelled()` rather than `always()` so a cancelled workflow still
+      # stops promptly.
       - name: Check the installed prefix's consumption routes
+        if: ${{ !cancelled() }}
         run: ci-scripts/check-install.sh "${PREFIX}/bin/mpicc"
 
       # linux-test.sh tails 25 lines of its own configure log; FindMPI
@@ -478,10 +498,12 @@ jobs:
     name: linux / intel mpi / x86_64 (apt)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    # Report-only until it has been green once -- the same rule as the MVAPICH
-    # legs above, and the same instruction: delete this line in the commit that
-    # records the first green run.
-    continue-on-error: true
+    # **Gating.** It was report-only for exactly one run, which is what the
+    # `compile` job's rule asks for: run 32611538158 was green on the first
+    # attempt on a real runner -- intel-oneapi-mpi-devel 2021.18.1-9, MPI 4.1,
+    # two ranks, 13/13 tests and all of check-install.sh's legs -- so the row
+    # can now tell a regression from the thing it was added to find, and the
+    # `continue-on-error` that used to be here is gone rather than left to rot.
     steps:
       - uses: actions/checkout@v6
 
@@ -603,7 +625,12 @@ jobs:
       - name: Build and test
         run: ci-scripts/linux-test.sh "${MPICC}"
 
+      # `!cancelled()` for the reason the linux-source job's copy of this step
+      # gives: the two are independent oracles, and check-install.sh clears
+      # LD_LIBRARY_PATH itself, so it is exactly the leg that keeps reporting
+      # when a loader problem takes ctest down.
       - name: Check the installed prefix's consumption routes
+        if: ${{ !cancelled() }}
         run: ci-scripts/check-install.sh "${MPICC}"
 
       - name: Show CMake's check logs
