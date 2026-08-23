@@ -880,6 +880,17 @@ MPI_User_function_c *mpiwrapper_op_c_tramp(int slot);
 void                 mpiwrapper_op_c_slot_release(int slot);
 #endif
 
+/* The same three for the fallback pool, whose trampoline has the *small*
+ * shape because that is what an implementation without MPI_Op_create_c stores
+ * (NOTES.md #5.10).
+ */
+#if !defined(MPIWRAPPER_HAVE_MPI_Op_create_c) &&                               \
+    defined(MPIWRAPPER_HAVE_MPI_Op_create)
+int                mpiwrapper_op_ca_slot_alloc(MPIABI_User_function_c *fn);
+MPI_User_function *mpiwrapper_op_ca_tramp(int slot);
+void               mpiwrapper_op_ca_slot_release(int slot);
+#endif
+
 #ifdef MPIWRAPPER_HAVE_MPI_File_create_errhandler
 int mpiwrapper_file_errh_slot_alloc(MPIABI_File_errhandler_function *fn);
 MPI_File_errhandler_function *mpiwrapper_file_errh_tramp(int slot);
@@ -971,6 +982,20 @@ int mpiwrapper_datarep_c_fns(MPIABI_Datarep_conversion_function_c *abi_read_fn,
                              MPI_Datarep_conversion_function_c **write_fn,
                              MPI_Datarep_extent_function      **extent_fn,
                              void                             **state);
+#endif
+/* The fallback installer: an ABI large-count conversion pair, handed to the
+ * implementation as small-count trampolines (NOTES.md #5.10).
+ */
+#if !defined(MPIWRAPPER_HAVE_MPI_Register_datarep_c) &&                        \
+    defined(MPIWRAPPER_HAVE_MPI_Register_datarep)
+int mpiwrapper_datarep_ca_fns(MPIABI_Datarep_conversion_function_c *abi_read_fn,
+                              MPIABI_Datarep_conversion_function_c *abi_write_fn,
+                              MPIABI_Datarep_extent_function *abi_extent_fn,
+                              void                           *abi_extra_state,
+                              MPI_Datarep_conversion_function **read_fn,
+                              MPI_Datarep_conversion_function **write_fn,
+                              MPI_Datarep_extent_function     **extent_fn,
+                              void                            **state);
 #endif
 #if defined(MPIWRAPPER_HAVE_MPI_Register_datarep) ||                           \
     defined(MPIWRAPPER_HAVE_MPI_Register_datarep_c)

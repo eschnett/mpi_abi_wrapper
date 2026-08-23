@@ -259,6 +259,85 @@ void mpiwrapper_op_c_slot_release(int slot)
 
 #endif /* MPIWRAPPER_HAVE_MPI_Op_create_c */
 
+/* ------------------------------- large-count user ops, over a small MPI ---- */
+
+/* The fallback's pool (NOTES.md #5.10): the caller registered an
+ * MPI_User_function_c through MPI_Op_create_c, and the implementation has only
+ * MPI_Op_create, whose callback takes `int *len`. So the trampoline has the
+ * *small* shape -- that is what the implementation stores and will call -- and
+ * widens the length on its way into the caller's function.
+ *
+ * **This adapter cannot fail, and that is worth stating because every other
+ * part of #5.10 can.** The narrowing everywhere else is on a value the caller
+ * supplies; here the value comes from the implementation, which produced it as
+ * an `int`, so widening it to MPIABI_Count is exact. MPI_Op_create itself
+ * takes no count, so the registration cannot overflow either. There is no
+ * MPI_ERR_VALUE_TOO_LARGE arm anywhere in this pool.
+ *
+ * It is a third pool rather than a third entry in one of the others for the
+ * reason the second one gives: the trampoline's type is what the
+ * implementation stores. It costs another 1024 function bodies of text, and
+ * only in a build that takes the fallback arm -- an implementation with
+ * MPI_Op_create_c compiles none of this.
+ */
+#if !defined(MPIWRAPPER_HAVE_MPI_Op_create_c) &&                               \
+    defined(MPIWRAPPER_HAVE_MPI_Op_create)
+
+static _Atomic(MPIABI_User_function_c *) op_ca_fn[MPIWRAPPER_OP_SLOTS];
+
+static void op_ca_dispatch(int slot, void *invec, void *inoutvec, int *len,
+                           MPI_Datatype *datatype)
+{
+  MPIABI_User_function_c *fn =
+      atomic_load_explicit(&op_ca_fn[slot], memory_order_acquire);
+
+  MPIABI_Datatype abi_datatype = mpiwrapper_datatype_toabi(*datatype);
+  MPIABI_Count    abi_len      = (MPIABI_Count)*len;
+
+  fn(invec, inoutvec, &abi_len, &abi_datatype);
+}
+
+#  define MPIWRAPPER_DEFINE_OP_CA_TRAMP(SUF)                                   \
+    static void op_ca_tramp_##SUF(void *a, void *b, int *n, MPI_Datatype *d)   \
+    {                                                                          \
+      op_ca_dispatch(0x##SUF, a, b, n, d);                                     \
+    }
+#  define MPIWRAPPER_REF_OP_CA_TRAMP(SUF) op_ca_tramp_##SUF,
+
+MPIWRAPPER_OP_POOL(MPIWRAPPER_DEFINE_OP_CA_TRAMP)
+
+static MPI_User_function *const op_ca_tramps[] = {
+    MPIWRAPPER_OP_POOL(MPIWRAPPER_REF_OP_CA_TRAMP)};
+
+_Static_assert(sizeof op_ca_tramps / sizeof *op_ca_tramps
+                   == MPIWRAPPER_OP_SLOTS,
+               "large-count op fallback trampoline pool size does not match "
+               "MPIWRAPPER_OP_SLOTS");
+
+int mpiwrapper_op_ca_slot_alloc(MPIABI_User_function_c *fn)
+{
+  for (int i = 0; i < MPIWRAPPER_OP_SLOTS; ++i) {
+    MPIABI_User_function_c *expected = NULL;
+    if (atomic_compare_exchange_strong_explicit(&op_ca_fn[i], &expected, fn,
+                                                memory_order_acq_rel,
+                                                memory_order_acquire))
+      return i;
+  }
+  return -1;
+}
+
+MPI_User_function *mpiwrapper_op_ca_tramp(int slot)
+{
+  return op_ca_tramps[slot];
+}
+
+void mpiwrapper_op_ca_slot_release(int slot)
+{
+  atomic_store_explicit(&op_ca_fn[slot], NULL, memory_order_release);
+}
+
+#endif /* the large-count op fallback */
+
 /* ------------------------------------ file, window and session handlers ---- */
 
 /* The remaining three error-handler classes. Each is the communicator pool
