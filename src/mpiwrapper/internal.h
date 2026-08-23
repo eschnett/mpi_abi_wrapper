@@ -803,6 +803,7 @@ int mpiwrapper_neighbor_extents(MPI_Comm comm, int *indegree, int *outdegree);
 int mpiwrapper_dist_graph_extents(MPI_Comm comm, int *indegree, int *outdegree);
 int mpiwrapper_graph_nedges(MPI_Comm comm, int *nedges);
 int mpiwrapper_graph_nneighbors(MPI_Comm comm, int rank, int *nneighbors);
+int mpiwrapper_root_extent(MPI_Comm comm, int root, int *n);
 int mpiwrapper_type_ndatatypes(MPI_Datatype datatype, int *ndatatypes);
 int mpiwrapper_type_ndatatypes_c(MPI_Datatype datatype, MPI_Count *ndatatypes);
 

@@ -101,7 +101,7 @@ FROZEN = {
     # that surface is served rather than refused. Frozen because an entry point
     # joining or leaving the set changes what a build over an MPI-3
     # implementation can do.
-    "large-count fallbacks": 115,
+    "large-count fallbacks": 124,
 }
 
 # ---------------------------------------------------------------------------
@@ -437,7 +437,7 @@ class Extent:
 
 # The group whose size sizes MPI_Alltoallw's datatype arrays -- the *remote*
 # group on an intercommunicator, which extents.c handles.
-_COMM_PROBE = ("int ntypes = 0;", "mpiwrapper_comm_extent(comm, &ntypes)")
+_COMM_PROBE = ("int nranks = 0;", "mpiwrapper_comm_extent(comm, &nranks)")
 
 # The neighbourhood forms instead take one degree per direction. indegree sizes
 # the receive arrays and outdegree the send ones, which is the argument order
@@ -448,6 +448,14 @@ _NEIGHBOR_PROBE = ("int nsendtypes = 0, nrecvtypes = 0;",
 _DIST_PROBE = ("int nsources = 0, ndestinations = 0;",
                "mpiwrapper_dist_graph_extents(comm, &nsources, &ndestinations)")
 
+# The same group as _COMM_PROBE, but zero wherever the array is not significant
+# -- MPI_Gatherv's and MPI_Scatterv's vector arrays away from the root. Only
+# the large-count fallback needs it (NOTES.md #5.10): a count array is a
+# pointer cast normally, so nothing reads it and a non-root rank may legally
+# pass a null one, and narrowing has to read it.
+_ROOT_PROBE = ("int nranks = 0;",
+               "mpiwrapper_root_extent(comm, root, &nranks)")
+
 ARRAY_EXTENT = {}
 
 # The twelve *alltoallw* forms. Their datatype arrays are the one array class
@@ -456,7 +464,8 @@ ARRAY_EXTENT = {}
 for _base in ("Alltoallw", "Alltoallw_c", "Alltoallw_init", "Alltoallw_init_c",
               "Ialltoallw", "Ialltoallw_c"):
     for _p in ("sendtypes", "recvtypes"):
-        ARRAY_EXTENT[("MPI_" + _base, _p)] = Extent("ntypes", probe=_COMM_PROBE)
+        ARRAY_EXTENT[("MPI_" + _base, _p)] = Extent("nranks",
+                                                    probe=_COMM_PROBE)
 for _base in ("Neighbor_alltoallw", "Neighbor_alltoallw_c",
               "Neighbor_alltoallw_init", "Neighbor_alltoallw_init_c",
               "Ineighbor_alltoallw", "Ineighbor_alltoallw_c"):
@@ -464,6 +473,44 @@ for _base in ("Neighbor_alltoallw", "Neighbor_alltoallw_c",
         "nsendtypes", probe=_NEIGHBOR_PROBE)
     ARRAY_EXTENT[("MPI_" + _base, "recvtypes")] = Extent(
         "nrecvtypes", probe=_NEIGHBOR_PROBE)
+
+# The vector collectives' count and displacement arrays, which apis.json gives
+# a length of `*` and which only the large-count fallback ever stages -- in
+# every other body they are a pointer cast (HISTORY.md #1.9). Blocking forms
+# only for now; the nonblocking and persistent ones have to keep the block
+# alive past return, which is #5.7's separate problem.
+#
+# The two shapes are "sized by the group" and "sized by the group, at the root
+# only". Getting the second wrong is not a wrong answer but a fault, so
+# assign_fallbacks cross-checks every one of these against apis.json's own
+# root_only flag.
+for _base in ("Alltoallv_c", "Alltoallw_c"):
+    for _p in ("sendcounts", "sdispls", "recvcounts", "rdispls"):
+        ARRAY_EXTENT[("MPI_" + _base, _p)] = Extent("nranks",
+                                                    probe=_COMM_PROBE)
+for _p in ("recvcounts", "displs"):
+    ARRAY_EXTENT[("MPI_Allgatherv_c", _p)] = Extent("nranks",
+                                                    probe=_COMM_PROBE)
+    ARRAY_EXTENT[("MPI_Gatherv_c", _p)] = Extent("nranks", probe=_ROOT_PROBE)
+for _p in ("sendcounts", "displs"):
+    ARRAY_EXTENT[("MPI_Scatterv_c", _p)] = Extent("nranks", probe=_ROOT_PROBE)
+ARRAY_EXTENT[("MPI_Reduce_scatter_c", "recvcounts")] = Extent(
+    "nranks", probe=_COMM_PROBE)
+
+# The neighbourhood vector forms, sized by degree rather than by group size.
+# MPI_Neighbor_alltoallw's displacements are already MPI_Aint in the small
+# form, so only its counts narrow and only they appear here.
+for _p in ("recvcounts", "displs"):
+    ARRAY_EXTENT[("MPI_Neighbor_allgatherv_c", _p)] = Extent(
+        "nrecvtypes", probe=_NEIGHBOR_PROBE)
+for _p, _n in (("sendcounts", "nsendtypes"), ("sdispls", "nsendtypes"),
+               ("recvcounts", "nrecvtypes"), ("rdispls", "nrecvtypes")):
+    ARRAY_EXTENT[("MPI_Neighbor_alltoallv_c", _p)] = Extent(
+        _n, probe=_NEIGHBOR_PROBE)
+ARRAY_EXTENT[("MPI_Neighbor_alltoallw_c", "sendcounts")] = Extent(
+    "nsendtypes", probe=_NEIGHBOR_PROBE)
+ARRAY_EXTENT[("MPI_Neighbor_alltoallw_c", "recvcounts")] = Extent(
+    "nrecvtypes", probe=_NEIGHBOR_PROBE)
 
 # The graph constructors. `edges` is as long as the last entry of the index
 # array says, which is an expression over two other parameters rather than an
@@ -811,7 +858,7 @@ _ADDED_RE = re.compile(r"added:\s*MPI-(\d+)\.(\d+)")
 
 class Param:
     __slots__ = ("base", "name", "suffix", "kind", "direction", "length",
-                 "constant", "cls")
+                 "constant", "cls", "root_only")
 
     def __init__(self, base, name, suffix):
         self.base = base
@@ -822,6 +869,11 @@ class Param:
         self.length = None
         self.constant = False
         self.cls = None
+        # apis.json's own flag for "not significant except at the root". Read
+        # only to cross-check the extent table (NOTES.md #5.10): an array a
+        # fallback narrows has to be *read*, and reading one at a rank where it
+        # is not significant faults on a legal program.
+        self.root_only = False
 
     @property
     def is_array(self):
@@ -3763,6 +3815,7 @@ def load(mpi_h_text):
             p.direction = ap["param_direction"]
             p.length = ap["length"]
             p.constant = ap["constant"]
+            p.root_only = ap["root_only"]
         ep.ret_kind = fn["return_kind"]
     return protos
 
@@ -3841,7 +3894,7 @@ NARROWABLE = {"int", "MPI_Aint", "MPI_Count", "MPI_Offset"}
 NARROW_FN = {"int": "mpiwrapper_narrow_int", "MPI_Aint": "mpiwrapper_narrow_aint"}
 
 
-def fallback_param(p, ap):
+def fallback_param(ep_name, p, ap):
     """The parameter a fallback body converts to, or None if it cannot.
 
     `p` is the large-count form's, `ap` the twin's at the same position. The
@@ -3893,12 +3946,25 @@ def fallback_param(p, ap):
             return None
         if not p.length.isidentifier():
             # apis.json gives this array's length as `*`, meaning "ask the
-            # communicator": the v- and w-collectives, whose extents live in
-            # ARRAY_EXTENT and whose root-only forms must not read the array at
-            # a rank where it is not significant. A different problem, and the
-            # stub stays until it is solved. What is left here is the array
-            # whose length is another parameter -- the datatype constructors.
-            return None
+            # communicator". Those extents are named one at a time in
+            # ARRAY_EXTENT, and an array with no entry there cannot be sized,
+            # so it keeps the stub -- which is what still holds the
+            # nonblocking and persistent vector forms back.
+            extent = ARRAY_EXTENT.get((ep_name, p.name))
+            if extent is None:
+                return None
+            # **The cross-check that keeps a fault from being a typo.** An
+            # array not significant away from the root must be sized by the
+            # root-aware probe and nothing else: sizing MPI_Gatherv's
+            # recvcounts by the group everywhere would read, at every non-root
+            # rank, an array the standard lets the caller leave null.
+            if p.root_only != (extent.probe is _ROOT_PROBE):
+                raise SystemExit(
+                    f"{ep_name}: {p.name} is "
+                    + ("root-only in apis.json but sized by the group"
+                       if p.root_only else
+                       "sized by the root probe but not root-only in "
+                       "apis.json"))
         out.cls = "array_narrow_in"
         return out
 
@@ -3976,7 +4042,8 @@ def assign_fallbacks(protos):
             continue
         if len(alt.params) != len(ep.params):
             continue      # MPI_Type_get_envelope_c and _get_contents_c
-        params = [fallback_param(p, ap) for p, ap in zip(ep.params, alt.params)]
+        params = [fallback_param(name, p, ap)
+                  for p, ap in zip(ep.params, alt.params)]
         if any(q is None for q in params):
             continue
         ep.fallback, ep.fallback_params = alt.name, params
