@@ -101,7 +101,7 @@ FROZEN = {
     # that surface is served rather than refused. Frozen because an entry point
     # joining or leaving the set changes what a build over an MPI-3
     # implementation can do.
-    "large-count fallbacks": 3,
+    "large-count fallbacks": 108,
 }
 
 # ---------------------------------------------------------------------------
@@ -845,7 +845,8 @@ class Param:
 
 class EntryPoint:
     __slots__ = ("name", "ret", "params", "deprecated", "deprecated_in",
-                 "status", "detail", "ret_kind", "unguarded", "fallback")
+                 "status", "detail", "ret_kind", "unguarded", "fallback",
+                 "fallback_params")
 
     def __init__(self, name, ret, params, deprecated, deprecated_in=None):
         self.name = name
@@ -861,8 +862,11 @@ class EntryPoint:
         self.detail = None   # the reason, for gen/report.txt
         self.unguarded = False  # true where the body never calls the impl
         # The implementation entry point this one falls back to where the
-        # implementation does not have it, or None (NOTES.md #5.10).
+        # implementation does not have it, or None (NOTES.md #5.10), and the
+        # parameter list that body converts to -- the twin's types under this
+        # entry point's ABI-side names.
         self.fallback = None
+        self.fallback_params = None
 
     @property
     def base(self):
@@ -1745,6 +1749,40 @@ def emit_body(ep, target="TARGET"):
             else:
                 decls.append(("const " + p.base, name, abi))
             args.append(name)
+        elif cls == "narrow_in":
+            # NOTES.md #5.10. The local cannot be initialized and const like
+            # every other one here, because the whole point is that the
+            # conversion can fail: `const int count = abi_count;` *is* the
+            # defect. So it is declared defined, then filled by the check that
+            # decides whether it can be.
+            decls.append((p.base, name, "0"))
+            # And the rejection owes the caller exactly what decision 6's stub
+            # owes: every out parameter defined. This is the same early return
+            # the stub makes, for a narrower reason, and a caller that ignores
+            # the return code -- which the standard permits and real code does
+            # -- would otherwise read its own uninitialized stack. Without this
+            # a rejected MPI_Type_create_resized_c hands back an
+            # uninitialized MPI_Datatype.
+            cond = f"if (!{NARROW_FN[p.base]}({abi}, &{name}))"
+            cleanup = null_out_handles(ep, "  ") + stub_out_zeros(ep, "  ")
+            if cleanup:
+                checks.append((name, cond + " {"))
+                checks += [(name, line) for line in cleanup]
+                checks.append((name, "  return MPIABI_ERR_VALUE_TOO_LARGE;"))
+                checks.append((name, "}"))
+            else:
+                checks.append((name, cond))
+                checks.append((name, "  return MPIABI_ERR_VALUE_TOO_LARGE;"))
+            args.append(name)
+        elif cls == "widen_out":
+            # The twin reports a narrower type than the ABI declares, so the
+            # answer widens on the way back and cannot be lost. The caller's
+            # pointer cannot be passed through -- it points at the wrong
+            # type -- so this keeps a local and writes it back, which is the
+            # shape every converted OUT scalar here has.
+            outs.append((p.pointee(), name, "0" if nullable else None))
+            post.append(writeback(abi, f"*{abi} = {name};"))
+            args.append(out_pointer(p, name, abi) if nullable else "&" + name)
         elif cls == "array_passthrough":
             ptr = local_type(p).rstrip()
             if (ep.name, p.name) in CONST_MISMATCH:
@@ -2945,7 +2983,8 @@ def emit_wrappers_c(pairs, handwritten_bodies):
                 # meaning "the implementation lacks this and cannot be asked
                 # for it another way".
                 chunk.append(f"#elif defined(MPIWRAPPER_HAVE_{ep.fallback})")
-                chunk += macro_lines(head, emit_body(ep, "FALLBACK"))
+                chunk += macro_lines(head,
+                                     emit_body(as_fallback(ep), "FALLBACK"))
             chunk.append("#else")
             chunk += stub
             chunk.append("#endif")
@@ -3744,6 +3783,95 @@ def assign_status(protos, handwritten_bodies):
             tp.cls = p.cls
 
 
+# The integer types a large-count argument can be narrowed between. Anything
+# else differing between the two forms -- a function-pointer typedef, an array,
+# a parameter the `_c` form has and its twin does not -- is not this mechanism's
+# business, and leaves the entry point with decision 6's stub.
+NARROWABLE = {"int", "MPI_Aint", "MPI_Count", "MPI_Offset"}
+
+# What mpiwrapper_narrow_* to call for a destination type (NOTES.md #5.10).
+NARROW_FN = {"int": "mpiwrapper_narrow_int", "MPI_Aint": "mpiwrapper_narrow_aint"}
+
+
+def fallback_param(p, ap):
+    """The parameter a fallback body converts to, or None if it cannot.
+
+    `p` is the large-count form's, `ap` the twin's at the same position. The
+    result carries the ABI-side identity of `p` -- its name is what `abi_<name>`
+    spells, and its kind is what the conversion tables are keyed on -- and the
+    implementation-side type of `ap`, which is what the twin actually takes.
+    """
+    # Matched on name and direction, deliberately not on kind. apis.json gives
+    # the two forms different kinds by design -- MPI_Type_size_c's `size` is
+    # POLYXFER_NUM_ELEM and MPI_Type_size_x's is XFER_NUM_ELEM, the POLY prefix
+    # being the standard's own marker for "this argument has a large-count
+    # twin" -- so requiring equality would reject exactly the pairs this
+    # mechanism exists to serve. What has to agree is the C type and the
+    # conversion class, both checked below; the kind kept is the large-count
+    # form's, because the signature being converted from is its.
+    if p.name != ap.name or p.direction != ap.direction:
+        return None
+    out = Param(ap.base, p.name, p.suffix)
+    out.kind, out.direction = p.kind, p.direction
+    out.length, out.constant = p.length, p.constant
+
+    if p.base == ap.base:
+        # Identical already: whatever the primary body does, the fallback does.
+        if p.cls != ap.cls:
+            return None
+        out.cls = p.cls
+        return out
+
+    # Only a passthrough can differ in width and still mean the same thing. A
+    # class that already converts (a handle, a rank, a status) means the two
+    # forms disagree about something other than width, which is not a case this
+    # mechanism knows how to serve.
+    if p.cls != "passthrough" or ap.cls != "passthrough":
+        return None
+    if p.is_array or ap.is_array:
+        return None       # stage 3's business: an array has to be staged
+
+    if not p.is_pointer and not ap.is_pointer:
+        if p.base not in NARROWABLE or ap.base not in NARROWABLE:
+            return None
+        if ap.base not in NARROW_FN:
+            return None
+        out.cls = "narrow_in"
+        return out
+
+    if p.is_pointer and ap.is_pointer and p.direction == "out":
+        # The twin reports a narrower type than the ABI declares, so the value
+        # widens on the way back and cannot be lost. The pointer itself cannot
+        # be passed through -- the two point at different types -- so the body
+        # keeps a local and writes it back.
+        if p.pointee() not in NARROWABLE or ap.pointee() not in NARROWABLE:
+            return None
+        out.cls = "widen_out"
+        return out
+
+    # An inout pointer -- MPI_Pack_c's `position` -- has to narrow on the way in
+    # and widen on the way out through one object, and a caller may legally pass
+    # a position above INT_MAX only to have the implementation refuse it. Left
+    # for a body that can say so; the stub is the honest answer meanwhile.
+    return None
+
+
+def as_fallback(ep):
+    """`ep` with its fallback's parameter list, for emitting the middle arm.
+
+    A shallow stand-in rather than a mutation, so that the two bodies can be
+    emitted from the same EntryPoint in either order. It keeps the large-count
+    name, because every table emit_body consults -- the array extents, the
+    MPI_IN_PLACE sites, the argument substitutions -- is keyed on the entry
+    point the *caller* called, not on what it is forwarded to.
+    """
+    out = EntryPoint(ep.name, ep.ret, ep.fallback_params, ep.deprecated,
+                     ep.deprecated_in)
+    out.status, out.detail = ep.status, ep.detail
+    out.ret_kind, out.unguarded = ep.ret_kind, ep.unguarded
+    return out
+
+
 def assign_fallbacks(protos):
     """Fill ep.fallback for every large-count entry point that can be served
     over an implementation lacking it (NOTES.md #5.10).
@@ -3754,13 +3882,15 @@ def assign_fallbacks(protos):
     probe_impl.py only probes a name that is one.
 
     **What is emittable is a property of the signature, and this is the whole
-    of the gate.** The fallback body is the same body with a different call
-    target, so it is correct exactly where the candidate's parameter types are
-    the ones the primary body already converts to. Where they differ -- an
-    `int` count where the `_c` form has an MPI_Count -- the body has to narrow,
-    which is a conversion class of its own and is not this function's business
-    to invent. So a type mismatch leaves ep.fallback None and the entry point
-    keeps decision 6's stub, exactly as before.
+    of the gate.** fallback_param decides it one parameter at a time: the
+    fallback body is the primary body converting to what the twin takes rather
+    than to what the `_c` form takes, so it exists exactly where every
+    parameter can be got from the ABI's to the twin's. One parameter that
+    cannot -- an array, an inout position, a callback typedef -- leaves
+    ep.fallback None and the entry point keeps decision 6's stub.
+
+    The synthetic parameter list is kept on ep.fallback_params, because
+    emit_body reads ep.params and the two bodies need different ones.
     """
     for name, ep in protos.items():
         if name.startswith("PMPI_") or not name.endswith("_c"):
@@ -3768,14 +3898,16 @@ def assign_fallbacks(protos):
         if ep.status != "generated":
             continue
         alt = protos.get(LARGE_COUNT_ALT.get(name, name[:-2]))
-        if alt is None:
+        if alt is None or alt.ret != ep.ret or alt.status != "generated":
             continue
-        if [p.base for p in alt.params] != [p.base for p in ep.params]:
+        if len(alt.params) != len(ep.params):
+            continue      # MPI_Type_get_envelope_c and _get_contents_c
+        params = [fallback_param(p, ap) for p, ap in zip(ep.params, alt.params)]
+        if any(q is None for q in params):
             continue
-        if alt.ret != ep.ret:
-            continue
-        ep.fallback = alt.name
-        protos["P" + name].fallback = "P" + alt.name
+        ep.fallback, ep.fallback_params = alt.name, params
+        twin = protos["P" + name]
+        twin.fallback, twin.fallback_params = "P" + alt.name, params
 
     named = set(LARGE_COUNT_ALT)
     unserved = {n for n in named

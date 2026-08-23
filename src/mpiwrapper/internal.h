@@ -64,6 +64,7 @@ MPIWRAPPER_WRAP_ABI_IMPL if you really are wrapping an ABI-implementing MPI."
 #  error "mpiwrapper_impl_config.h did not come from dev/probe_impl.py"
 #endif
 
+#include <limits.h> /* CHAR_BIT, for the large-count narrowing checks */
 #include <stddef.h>
 #include <stdint.h>
 
@@ -89,6 +90,52 @@ _Static_assert((MPI_Aint)-1 < 0 && (MPI_Count)-1 < 0 && (MPI_Offset)-1 < 0,
  */
 _Static_assert(sizeof(MPI_Comm) <= sizeof(MPIABI_Comm),
                "implementation handles do not fit in an ABI handle");
+
+/* -------------------------------------------------- large-count narrowing */
+
+/* NOTES.md #5.10. Where the implementation has no `_c` entry point, the
+ * wrapper calls its small twin, and every in-direction value has to be checked
+ * against the type that twin takes. These three are the only place that check
+ * is written, so what "will not fit" means is one definition rather than a
+ * hundred emitted comparisons.
+ *
+ * They are *not* the assertion above being relitigated. That one says the ABI's
+ * MPI_Count and the implementation's are the same width, which is still true
+ * and still what makes the ordinary path a pointer cast. This is the different
+ * question of whether a value fits the *small* twin's `int` -- and it has no
+ * build-time answer, because whether the small twin is called at all depends on
+ * what the implementation has.
+ */
+static inline int mpiwrapper_fits(MPIABI_Count v, size_t bytes)
+{
+  /* Unsigned throughout, and phrased as a magnitude rather than as a pair of
+   * limits.h names: MPI_Aint is a typedef whose spelling differs between
+   * implementations and has no MPI_AINT_MAX beside it, and the case where the
+   * destination is as wide as MPIABI_Count -- every 64-bit host, for
+   * mpiwrapper_narrow_aint -- must not overflow while being folded away.
+   */
+  const uint64_t magnitude = (uint64_t)1 << (bytes * CHAR_BIT - 1);
+  return v >= 0 ? (uint64_t)v < magnitude
+                : (uint64_t)(-(v + 1)) < magnitude;
+}
+
+static inline int mpiwrapper_narrow_int(MPIABI_Count v, int *out)
+{
+  if (!mpiwrapper_fits(v, sizeof(int))) return 0;
+  *out = (int)v;
+  return 1;
+}
+
+static inline int mpiwrapper_narrow_aint(MPIABI_Count v, MPI_Aint *out)
+{
+  /* Folds to an unconditional store wherever MPI_Aint is 64 bits, which is
+   * everywhere this project builds except the i386 row -- and that row is the
+   * reason this is a check and not a cast.
+   */
+  if (!mpiwrapper_fits(v, sizeof(MPI_Aint))) return 0;
+  *out = (MPI_Aint)v;
+  return 1;
+}
 
 /* ------------------------------------------------------------- handle bits */
 
