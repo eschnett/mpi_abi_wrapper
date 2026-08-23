@@ -78,6 +78,25 @@ static int rank, size;
         "MPI_ERR_VALUE_TOO_LARGE is the class that means that",                \
         (what))
 
+/* Not every `_c` entry point has a small twin on every implementation, and
+ * where neither exists the stub is the correct answer rather than a gap in the
+ * fallback. The persistent collectives are the case that matters: they arrived
+ * in **MPI-4.0**, so an MPI-3.0 implementation has neither MPI_Alltoallv_init_c
+ * nor MPI_Alltoallv_init, and MPI_ERR_UNSUPPORTED_OPERATION is what decision 6
+ * promises there.
+ *
+ * Found by the MPI-3.0 floor row and not by either of the two implementations
+ * this is usually run against, both of which have the small twin.
+ */
+static int unsupported(int ierror, const char *what)
+{
+  if (ierror != MPI_ERR_UNSUPPORTED_OPERATION) return 0;
+  if (rank == 0)
+    printf("  skipping %s: neither it nor its small twin is in this "
+           "implementation\n", what);
+  return 1;
+}
+
 /* A count no implementation can express in an int, used wherever the point is
  * to reach the ceiling rather than to move data. */
 static const MPI_Count too_large = (MPI_Count)INT_MAX + 7;
@@ -339,9 +358,12 @@ static void test_persistent_started_three_times(void)
     sc[i] = rc[i] = 1;
     sd[i] = rd[i] = i;
   }
-  MPI_Request req = MPI_REQUEST_NULL;
-  CHECK_MPI(MPI_Alltoallv_init_c(send, sc, sd, MPI_INT, recv, rc, rd, MPI_INT,
-                                 MPI_COMM_WORLD, MPI_INFO_NULL, &req));
+  MPI_Request req    = MPI_REQUEST_NULL;
+  const int   ierror = MPI_Alltoallv_init_c(send, sc, sd, MPI_INT, recv, rc,
+                                            rd, MPI_INT, MPI_COMM_WORLD,
+                                            MPI_INFO_NULL, &req);
+  if (unsupported(ierror, "MPI_Alltoallv_init_c")) return;
+  CHECK_MPI(ierror);
   memset(sc, 0x7f, sizeof sc);
   memset(sd, 0x7f, sizeof sd);
 
