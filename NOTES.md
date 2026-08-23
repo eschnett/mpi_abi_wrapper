@@ -107,17 +107,26 @@ rather than as a list.
   `gen/report.txt`. An application must be able to link and start against any
   wrapper and discover at run time what is missing.
 - **The implementation is expected to provide the MPI-4.0 API.** That is what
-  makes the common case a 1:1 mapping with no large-count narrowing fallback,
-  since the `_c` variants exist there. It is an expectation, not a hard floor.
+  makes the common case a 1:1 mapping, since the `_c` variants exist there. It
+  is an expectation, not a hard floor.
 
   **And it is not met by any released Open MPI.** Open MPI 5.0.10 defines
   `MPI_VERSION 3` / `MPI_SUBVERSION 1` and has **no `_c` entry point at all** —
   `MPI_Send_c`, `MPI_Type_create_struct_c` and the rest of the family are simply
   absent from its header. So the MPI-4.0 configure check is a warning rather
-  than a hard error, and the enforced floor is MPI-3.0. What that costs is
-  exactly the large-count half of the surface: those slots become decision 6's
-  stubs. It is worth knowing that the mechanism is **load-bearing on day one**
-  and not a contingency for exotic implementations.
+  than a hard error, and the enforced floor is MPI-3.0. It is worth knowing that
+  the mechanism is **load-bearing on day one** and not a contingency for exotic
+  implementations.
+
+  What that used to cost was exactly the large-count half of the surface: all
+  159 `_c` entry points became decision 6's stubs, which is 148 of the 182
+  absent generated names on that implementation — 81% of the whole gap. **It no
+  longer costs that.** Where the implementation lacks the `_c` form but has its
+  small twin, the wrapper narrows the call rather than refusing it, and refuses
+  only the values that will not fit (§5.10, decision 6). The expectation above
+  is therefore about *cost*, not about capability: meeting it buys a 1:1 mapping
+  with no narrowing check and no staged count array, and failing it buys a
+  ceiling at `INT_MAX` rather than a missing entry point.
 
 ---
 
@@ -1054,6 +1063,18 @@ Four independent reasons, each sufficient:
   routine that hands back a request. That predicate produces exactly eight
   entry points, and the count is a frozen tally, so a ninth must be admitted
   deliberately.
+
+  **The narrowing fallback (§5.10) makes the predicate arm-dependent, and adds
+  fourteen.** A `_c` v-collective's count and displacement arrays cross as
+  pointer casts in the primary body and as staged `int` arrays in the narrowing
+  body, so `MPI_Ialltoallv_c`, `MPI_Iallgatherv_c`, `MPI_Igatherv_c`,
+  `MPI_Iscatterv_c`, `MPI_Ireduce_scatter_c`, the two `MPI_Ineighbor_*v_c` forms
+  and the seven `*_init_c` forms stage past return **only where the
+  implementation lacks the `_c` entry point**. Rather than mutate the eight into
+  twenty-two and lose the distinction, the generator freezes the two separately:
+  `staged past return` stays 8 and describes the primary bodies, and
+  `narrowed staged past return` is 14. A fifteenth still has to be admitted
+  deliberately, which is the whole point of freezing either number.
 - **`MPI_STATUSES_IGNORE`** (NULL in the ABI) must short-circuit before any
   temporary is allocated.
 - **Stage for value mapping or for representation, never for spelling.** What an
@@ -1190,8 +1211,88 @@ not.
 |---|---|
 | `MPI_MAX_*` | cold paths only, and truncation is visible → run time |
 | `sizeof(MPI_Count)`/`MPI_Aint`/`MPI_Offset` | a narrowing check would land on `MPI_Send_c` and every large-count call → `_Static_assert` |
+| a large-count value against the *small* twin's `int` | a different question from the row above, and it goes the other way: there is no build-time answer, because whether the small twin is called at all depends on what the implementation has → run time (§5.10) |
 | status layout | **no runtime recourse exists** — nowhere to put a private part exceeding 20 bytes, and side storage keyed on a status address is unsound because statuses are freely copied → build failure |
 | dynamic handle collision | one compare, and only on object creation → run time |
+
+---
+
+### 5.10 Narrowing a large-count call onto a small-count implementation
+
+The ABI's surface is MPI-5.0 and includes **159 `_c` entry points**. An
+implementation below MPI-4.0 has none of them — every released Open MPI, and
+MPICH before 4.0 — and decision 6 used to answer all 159 with
+`MPI_ERR_UNSUPPORTED_OPERATION`. It no longer does. Where the `_c` form is
+missing but its small twin is present, the wrapper calls the small twin.
+
+**Why this is worth the machinery, stated once because the obvious reading is
+wrong:** `_c` is not the big-message API, it is *the* API. A program compiled
+against MPI-4 C bindings calls `MPI_Send_c` with `count = 1`. The narrowing
+fallback is therefore not a large-message feature — it is what makes the
+large-count half of the ABI usable at all on an implementation that predates it,
+and the ceiling it introduces sits above every count real programs pass.
+
+**Four fates, and which applies is a property of the signature.** The generator
+decides per entry point by diffing the `_c` prototype against its small twin;
+nothing here is keyed on a name.
+
+1. **Exact, by an `_x` twin.** MPI-3.0 already answers five of these questions
+   in `MPI_Count`: `MPI_Type_size_x`, `MPI_Type_get_extent_x`,
+   `MPI_Type_get_true_extent_x`, `MPI_Get_elements_x`,
+   `MPI_Status_set_elements_x`. Prefer them — they are exact, need no guard, and
+   are present on everything at the enforced MPI-3.0 floor. Deprecated in
+   MPI-4.1 means "do not write new code against it", not "absent" (§8).
+2. **Exact, by widening.** An out parameter that the small twin reports as `int`
+   or `MPI_Aint` always fits in an `MPI_Count`. Six entry points, no guard.
+3. **Narrowing, guarded.** Every in-direction value must be checked against the
+   small twin's type before the call.
+4. **No small twin either.** Decision 6's stub, unchanged.
+
+**The error class is `MPI_ERR_VALUE_TOO_LARGE`, not
+`MPI_ERR_UNSUPPORTED_OPERATION`.** MPI-4.0 has a class meaning exactly "a value
+is too large to be stored in the given parameter" and this is that case. Keeping
+the two apart is what lets a caller tell "this wrapper has no such entry point"
+from "the entry point is here and your value will not fit" — and the two need
+different responses, since the first is permanent and the second depends on the
+argument. It also keeps `test/`'s own `unsupported()` helper honest: that helper
+treats `MPI_ERR_UNSUPPORTED_OPERATION` as *skip this check*, so returning it for
+an oversized count would turn a real failure into a silent skip at 46 call
+sites.
+
+**Arrays must be staged, and this is where the fallback stops being free.** A
+count or displacement array crosses today as a pointer cast, because the ABI and
+the implementation agree on the representation of `MPI_Count` and `MPI_Aint`
+(`HISTORY.md` §1.9). Narrowed to `int` they do not agree, so §5.7's rule applies
+in full: allocate, convert element by element, and — for a routine that hands
+back a request — keep the block alive past return. That is a per-call allocation
+and an O(*n*) loop where there was a cast, on the v- and w-collectives, whose
+*n* is the communicator's size.
+
+**`root_only` is the hazard, and it is the one that can crash a legal program.**
+`MPI_Gatherv`'s `recvcounts` and `displs`, and `MPI_Scatterv`'s `sendcounts` and
+`displs`, are significant **only at the root**. Nothing reads them today, so a
+non-root rank may legally pass a null pointer or an uninitialized array.
+Narrowing has to read them, and reading them at a non-root rank faults on a
+program that was doing nothing wrong. So a narrowed array whose parameter is
+marked `root_only` in `dev/apis.json` is staged **only where it is
+significant** — which on an intercommunicator means testing `root` against
+`MPI_ROOT` rather than comparing it to the local rank. `apis.json` carries the
+flag on 59 parameters and the generator ignored it entirely before this rule
+existed.
+
+**What a caller can observe that a native MPI-4 implementation would not.** The
+envelope of a datatype is a property of the *constructor*, not of the values:
+`MPI_Type_contiguous_c(5, MPI_INT)` reports one large count and zero integers on
+MPICH, and the small `MPI_Type_get_envelope` **refuses** such a type with
+`MPI_ERR_TYPE` and the message "use MPI_Type_get_envelope_c to query large count
+datatype". Measured in `dev/large-count-envelope/`. Since the fallback builds
+every datatype through a small-count constructor, its envelope and contents
+answers are internally consistent and are exactly right for the types that can
+exist in such a build — but they differ from a native MPI-4 implementation's,
+and the small envelope succeeds where a native one refuses. §13.2 carries it as
+a limitation; the alternative is a side table of which types the caller built
+through the large-count entry points, keyed on a handle the implementation owns
+and recycles, which is the unsound shape §5.2 rejects for statuses.
 
 ---
 
@@ -1445,6 +1546,13 @@ the decision rather than working around it.
    expectation, warned about at configure time and not enforced, since no
    released Open MPI meets it. The enforced floor is **MPI-3.0**, verified with
    MPICH 3.1.4. §1, §9.
+
+   **Failing the MPI-4.0 expectation costs a ceiling, not a surface.** It used
+   to cost the whole large-count half: 159 entry points answering
+   `MPI_ERR_UNSUPPORTED_OPERATION`. The wrapper now narrows a `_c` call onto its
+   small twin and refuses only the values that will not fit (§5.10). What the
+   expectation buys is the absence of a narrowing check and of a staged count
+   array — a cost question — rather than whether the entry point works at all.
 4. **`mpiwrapper` exports exactly one symbol**, a getter carrying
    `MPI_ABI_VERSION`, `MPI_ABI_SUBVERSION`, a generated layout hash and the
    vtable's `sizeof`. **All four are checked for exact equality**; there is no
@@ -1463,6 +1571,18 @@ the decision rather than working around it.
    `dev/probe_impl.py` from the implementation's own header — not a version
    test, not `nm`, and not `#ifdef` on the implementation's own name for a
    constant. §3, `HISTORY.md` §1.19.
+
+   **The stub is the last arm, not the only alternative.** A large-count entry
+   point whose `_c` name is absent but whose small twin is present gets a
+   narrowing body instead, and reaches the stub only when neither name exists
+   (§5.10). So the guard chain is `#ifdef HAVE_<name>_c` → `#elif defined
+   HAVE_<name>` → `#else`, and the stub's meaning tightens from "the
+   implementation lacks this" to "the implementation lacks this *and* cannot be
+   asked for it another way". This is a refinement of the decision and not a
+   reversal: nothing is omitted from the ABI, everything is still discovered at
+   run time, and a value the small twin cannot carry is still refused — with
+   `MPI_ERR_VALUE_TOO_LARGE`, which §5.10 explains is deliberately a different
+   class from the stub's.
 
    **A stub must leave every out parameter defined, not just the handles.** This
    was half-done for a long time: the stub nulled out-handles — `null_out_handles`,
@@ -1970,12 +2090,47 @@ One is deliberately *not* closed by an edit, because an edit cannot close it:
 
 ### 13.2 Limitations that are real
 
-Each is a behaviour a user can hit, and all four should be in the release notes.
-All four are now deliberate — the design chose them, and §6.2 says why for the
+Each is a behaviour a user can hit, and all six should be in the release notes.
+All six are now deliberate — the design chose them, and §6.2 says why for the
 first two. The staged-leak one used to be a conformance bug rather than a
 choice: a legal call answered with `MPI_ERR_INTERN`. That is fixed, and what is
 left in its place is a bounded leak, which is a limitation and not a bug; the
 wrong reading that hid it is kept in `HISTORY.md` §2.6a.
+
+The last two apply **only over an implementation that lacks the `_c` entry
+points** — every released Open MPI, and MPICH before 4.0. Over MPICH ≥ 4.0 or
+Open MPI `main` neither exists, because the narrowing fallback they come from is
+not compiled at all (§5.10).
+
+- **A large count is capped at `INT_MAX` where the implementation has no `_c`
+  form.** The fallback narrows the count onto the small twin and returns
+  `MPI_ERR_VALUE_TOO_LARGE` for a value that will not fit, so a program that
+  genuinely sends more than 2^31−1 elements in one call gets an error where a
+  native MPI-4 implementation would succeed. Raising the ceiling means
+  describing the payload with a temporary derived datatype and passing a count
+  of 1 — which works for point-to-point, RMA `Put`/`Get`, file I/O and the
+  uniform-count collectives, but **not** for anything applying a predefined op
+  elementwise (`MPI_Reduce`, `MPI_Allreduce`, `MPI_Scan`, `MPI_Exscan`,
+  `MPI_Reduce_scatter*`, `MPI_Accumulate`), because predefined ops are not
+  defined on derived types. Chunking those into several calls serves the
+  blocking forms and cannot serve the nonblocking or persistent ones, which owe
+  a single request. `MPI_Pack_c`/`MPI_Unpack_c` are blocked separately: the
+  small twin's `position` is an `int *`, so a buffer above 2 GiB cannot be
+  walked without reimplementing packing. So the ceiling is not one decision but
+  a family of them, and it is deliberately left where it is until a user appears
+  who is above it.
+- **A datatype's envelope reports the constructor the wrapper used, not the one
+  the caller called.** Measured in `dev/large-count-envelope/`: the envelope is
+  a property of the constructor, so `MPI_Type_contiguous_c(5, MPI_INT)` reports
+  one *large count* on MPICH and the small `MPI_Type_get_envelope` refuses the
+  type outright with `MPI_ERR_TYPE`. Under the fallback that same call builds a
+  small-count type, so `MPI_Type_get_envelope_c` reports one *integer* and the
+  small `MPI_Type_get_envelope` succeeds. The answers are self-consistent — the
+  envelope-then-contents-then-rebuild round trip every real consumer performs
+  gives the same datatype either way — and the difference is visible only to a
+  program asserting about how the implementation classifies its own types.
+  §5.10 has why the alternative, a side table keyed on a handle the
+  implementation owns and recycles, is worse than the limitation.
 
 - **Fixed-capacity tables are exhaustible, and ordinary programs reach them.**
   1024 op trampolines per variant, 256 errhandler slots per class, 1024 keyval
