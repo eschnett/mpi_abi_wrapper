@@ -129,6 +129,28 @@ it fails rather than by how annoying it is. In increasing loss of coverage:
 | `timelimit-ci-*.txt` | runs and **hangs** | the cap, not 180 s | unchanged; the test still reports |
 | `exclude-ci-*.txt` | takes the runner down before reporting | nothing | cannot see it at all — no TAP line exists |
 
+**The rows are not exclusive, and the pair that combines is `flaky` + `timelimit`.**
+The other three columns describe a verdict; `timelimit-ci-*.txt` describes a cost,
+so it composes with whichever verdict file the test belongs to. Every entry in
+`timelimit-ci-openmpi.txt` began as an `xfail` line — a test that hangs every run —
+and that made the combination easy to miss. Two tests have since needed the other
+one:
+
+* `threads/pt2pt/mt_bsendrecv` passes in **0.115 s** or hangs to the full limit,
+  depending on thread timing. As a `flaky` line alone it would have cost 180 s
+  every time the weather went the wrong way.
+* `errors/comm/subcomm_abort` and `subcomm_abort2` do the same on MPICH, passing in
+  0.047 s and 0.071 s, which is what `timelimit-ci-mpich.txt` exists for. The
+  MPICH legs had no cap list at all before that, on the measured but narrower
+  claim that "the MPICH legs have no test at the time limit" — true of the runs it
+  was written from, and blind to a test that only reaches the limit when it flaps.
+
+**A cap is the one thing here that can change a result rather than only its cost**,
+and only for a test that sometimes passes — so state the ratio when you cap a flaky
+line. Both cases above have between 260× and 640× headroom over the passing time,
+which is why 30 s is safe for them; a flaky test that passes in 20 s would need a
+different number or no cap at all.
+
 **The third of these is the newest and the cheapest thing in this directory.** A
 hang is not a runner kill: the test does report, at the end of runtests' 180-second
 default, so an `xfail` line describes it perfectly and the run pays three minutes
@@ -150,10 +172,35 @@ numbers below come from rather than a projection:
 | failures reported, p2p / rest | 61 / 84 | **61 / 84** |
 
 That last row is the one that matters: the caps changed how long a verdict took and
-not what it was. **The ceiling is now the MPICH `p2p` shard at 17.6 minutes**, which
-is real work with no test near its limit — pt2pt 8.5, threads 5.4, part 5.1. Further
-capping cannot shorten this workflow; splitting that shard is the next lever, and it
-costs four more jobs paying about a minute of fixed cost each.
+not what it was. Further capping cannot shorten this workflow much; splitting the
+longest shard is the next lever, and it costs four more jobs paying about a minute
+of fixed cost each.
+
+**Which shard is longest is not stable enough to name, and two metrics get confused
+here.** The table above is runtests' own test loop. What a wall-clock budget pays is
+the *job duration*, and across two warm runs those move by several minutes with no
+configuration change at all:
+
+| shard | 32655819244 | 32661937934 |
+|---|---|---|
+| mpich `p2p` x86_64 | 12 min | **20 min** |
+| openmpi `p2p` aarch64 | 15 | 16 |
+| openmpi `p2p` x86_64 | 15 | 14 |
+| mpich `coll` x86_64 | 14 | 14 |
+| mpich `p2p` i386 | 12 | 14 |
+| whole run | 19 | 20 |
+
+The first column says the MPICH `p2p` shard is mid-table; the second says it is the
+ceiling by four minutes. So the honest claim is the family and the spread: every
+shard over about ten minutes is `p2p` or `coll`, and whole warm runs land at 19–21
+minutes. **A ranking taken from one run has been wrong twice now** — once from the
+run the caps were measured on, once from the replacement written while correcting
+that. Quote a spread, or say nothing.
+
+Do not compare a 20-minute job duration against a 14.4-minute test loop, and do not
+compare either with a cold run: run 32659909508 took 36 minutes because all six MPI
+prefixes were building from source after a cache-key change. Re-derive whichever you
+mean from the artifacts.
 
 **The first capped run also added a line to the list.** `threads/comm/idup_nb` hung
 on both architectures having hung on only one before, and was 18% of what was left
@@ -289,18 +336,22 @@ intermittent tests and were removed when the second run passed them; a test that
 flaps cannot be listed at all, since listing it fails the run it passes and not
 listing it fails the run it fails.
 
-**All five are report-only until they have been green**, which is the rule that
-workflow's `compile` job records: a row nobody has seen pass cannot tell a
-regression from the thing it was added to find. Every CI list is empty as this
-lands, which states that nothing has been triaged for these five environments
-rather than that the runs are clean — MPICH 5.0.1 answers `init/version`
-correctly and fills in the entry points the older lists' largest group was about,
-so those lines could not simply be carried over. Each leg keeps `summary.tap` and
-its logs as an artifact whether it passed or not, because `--gate-only` writes a
-list from a TAP file in hand rather than from a fresh 40-minute run. Deleting
-`continue-on-error` is what makes a leg gate.
+**All five environments began report-only and none of them is now**, which is the
+rule that workflow's `compile` job records working as intended: a row nobody has
+seen pass cannot tell a regression from the thing it was added to find, so it
+reports until it can, and then it gates. The lists were empty when that sentence
+was first written — MPICH 5.0.1 answers `init/version` correctly and fills in the
+entry points the older lists' largest group was about, so nothing could be carried
+over — and they are now 41 MPICH lines, 110 shared Open MPI lines, eleven ILP32
+deltas and a handful of flaky entries. Each leg keeps `summary.tap` and its logs as
+an artifact whether it passed or not, because `--gate-only` writes a list from a
+TAP file in hand rather than from a fresh 40-minute run. Deleting
+`continue-on-error` is what makes a leg gate, and there is none left in `ci.yaml`.
 
-## Why the Open MPI lists are empty, and how the i386 ones stopped being
+## How the lists got written, and what took the longest
+
+*(This section was "Why the Open MPI lists are empty" while they were. The history
+is kept because the method is reusable, not because the state still holds.)*
 
 **Long jobs do not survive in this CI environment**, and the numbers say so
 plainly. Run 32155423441, every job in it:
@@ -665,8 +716,10 @@ and that single sentence accounts for every observation in this section:
 
 **What remains.** Nothing at this project's disposal fixes this, and the exclusion
 mechanism cannot chase it — the casualties are selected by datatype shape, which is not
-visible in a testlist line. The honest options are to stop running `rma` on the Open
-MPI legs until upstream moves, or to keep the shard as a known, report-only death. The
+visible in a testlist line. Of the two honest options — stop running `rma` on the Open
+MPI legs until upstream moves, or keep the shard as a known, report-only death — **the
+first was taken**, and the second is no longer available now that nothing in `ci.yaml`
+is report-only. The `exclude:` entries in the suite matrix are that decision. The
 finding itself is worth carrying upstream: **a 3.8 MB `MPI_Put` whose target datatype
 has a million elements exhausts a 16 GB host on a two-rank single-node job, where
 Open MPI 4.1.8 completes it**, and `rma/transpose1` from MPICH's test suite is a

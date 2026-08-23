@@ -1,0 +1,73 @@
+# Test lines whose per-test time limit is capped over MPICH, with a reason each.
+#
+# **This file exists for flaky hangs, where its Open MPI counterpart exists for
+# reliable ones**, and that difference is the whole reason it is a separate file
+# rather than two more lines beside them. Every rule in
+# timelimit-ci-openmpi.txt names a test that hangs on every run and is an expected
+# failure accordingly; the two rules here name tests that *pass* almost every
+# time and hang occasionally, and are flaky lines in flaky-ci-mpich.txt. The
+# suite's own `timeLimit=` key does not care about the difference -- it caps a
+# test's cost either way -- but a reader deciding whether a cap is safe does,
+# because a cap can only ever change a result for a test that sometimes passes.
+#
+# So the safety argument is stated per rule below as a ratio rather than left
+# implied: both tests pass in under a tenth of a second, and both are capped at
+# 30, which is between 400x and 640x their passing cost. A loaded runner cannot
+# stretch a 0.07-second test past 30 seconds without something being wrong that
+# no timeout setting should paper over.
+#
+# **The MPICH legs previously passed no --time-limit at all, deliberately**, and
+# .github/workflows/ci.yaml said why: "the MPICH legs have no test at the time
+# limit except coll/reduce at np=10, which is a slow test rather than a hang".
+# That was true of the runs it was written from and is not the same claim as "no
+# MPICH test ever reaches the limit" -- the two abort tests below reach it when
+# they flap, which is a hang by any measure that matters to a shard's wall clock.
+# coll/reduce at np=10 is still not capped and still should not be: it is slow
+# work, it completes, and MPITEST_TIMEOUT_MULTIPLIER=2 is what the MPICH legs
+# already set for it.
+#
+# Format, and the three traps in it, are timelimit-ci-openmpi.txt's -- read that
+# file's header before adding a rule here. In short: one rule per line, `SECONDS
+# <extended regular expression>`, matched against a testlist line with `grep -E`;
+# end a name with `[[:space:]]` rather than a literal space, because a testlist
+# name is often a prefix of another; and a rule for a directory whose testlist
+# indents its lines needs `^ *name[[:space:]]`.
+#
+# **A cap is not an exclusion.** A capped test still runs, still produces a TAP
+# line and still gates. That is what keeps the flaky lines these two rules serve
+# honest: the day MPICH stops flapping them, they are still in the run for
+# somebody to notice and promote back to a plain pass.
+#
+# **The number here is not the number of seconds these tests get.** Every MPICH
+# leg sets MPITEST_TIMEOUT_MULTIPLIER=2, and runtests multiplies a testlist's
+# `timeLimit=` by it like any other limit, so `30` below is 60 seconds in the run
+# -- against a 360-second uncapped default on those legs, and still three orders
+# of magnitude above what these tests cost when they pass. The Open MPI legs run
+# at multiplier 1, which is why its counterpart file can state its caps directly
+# and this one cannot.
+
+# **errors/comm/subcomm_abort at np=4 and subcomm_abort2 at np=6: a two-test
+# family that flaps into a hang.** MPI_Abort on a sub-communicator, which under
+# hydra's -disable-auto-cleanup is expected to leave the surviving ranks running.
+# On an unloaded runner both return promptly; on a loaded one they reach the time
+# limit instead, and the shard pays 180 seconds twice over for a verdict already
+# written into flaky-ci-mpich.txt.
+#
+# The passing times are the authority for the cap being safe, and they come from
+# run 32655819244's mpich/aarch64/rest TAP file rather than from a job log:
+# subcomm_abort 4 at 0.047 s and subcomm_abort2 6 at 0.071 s. The hangs are run
+# 32652409584 (subcomm_abort2, aarch64) and run 32398089529 (subcomm_abort,
+# x86_64).
+#
+# Both names are prefix-free within errors/comm/testlist -- there is no
+# subcomm_abort3 or subcomm_aborted -- but `^subcomm_abort[[:space:]]` would
+# otherwise have capped subcomm_abort2 as well, which is the trap the openmpi
+# file's header records paying for once. The two rules are therefore separate and
+# each anchored, so adding a third member later is a line rather than a puzzle.
+#
+# **What retires these rules:** the flaky lines they serve. If MPICH or a slower
+# limit settles the pair into passing every time, the flaky lines go and these
+# rules go with them; if they settle into failing every time, they become xfail
+# lines and the caps stay, because that is what the openmpi file is full of.
+30 ^subcomm_abort[[:space:]]
+30 ^subcomm_abort2[[:space:]]

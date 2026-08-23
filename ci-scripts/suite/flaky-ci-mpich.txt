@@ -28,3 +28,22 @@
 # 32280776848 and 32403337939. Promote it to xfail if it starts failing every
 # time, or delete it if a timeout multiplier settles it.
 errors/comm/subcomm_abort 4 : flaps on timing, like its sibling subcomm_abort2 -- MPI_Abort on a sub-communicator reaching the 180-second limit on a loaded runner. Failed in run 32398089529, passed in 32280776848 and 32403337939
+
+# **The sibling, which the comment above had been describing from the other file all
+# along.** `errors/comm/subcomm_abort2 6` is listed in xfail-mpich.txt, which describes
+# the *laptop*, and was in neither CI list -- so when it flapped on a runner it arrived
+# as an UNEXPECTED FAILURE and took the mpich/aarch64/rest shard red in run
+# 32652409584. It passed the same shard in run 32655819244 in 0.071 s, which is the
+# whole argument for this category over xfail: the two runs are a day apart on the same
+# commit range.
+#
+# That both members of a two-test family flap the same way is the pattern this file's
+# header warns about, and it is the second time in this workflow that listing one
+# member and not the other produced a red gate with nothing new in it -- the
+# mt_*probe* family above was the first. When a line goes in here, check whether it
+# has a sibling.
+#
+# Both are capped at 30 s in timelimit-ci-mpich.txt: passing costs 0.047 s and 0.071 s
+# respectively, so the cap has three orders of magnitude of headroom and it takes the
+# hanging half from 180 s to 30.
+errors/comm/subcomm_abort2 6 : flaps on timing exactly like its sibling subcomm_abort -- MPI_Abort on a sub-communicator, expected to leave the surviving ranks running under hydra's -disable-auto-cleanup, reaching the time limit instead on a loaded runner. Failed the mpich/aarch64/rest shard in run 32652409584, passed it in 0.071 s in run 32655819244. Capped at 30 s in timelimit-ci-mpich.txt

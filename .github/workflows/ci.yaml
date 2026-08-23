@@ -232,34 +232,38 @@ jobs:
             version: '4.1'
             os: ubuntu-24.04
             arch: x86_64
-            report_only: true
+            # See the `Build and test` step: this is what lets these two legs
+            # gate with a known upstream hang in them.
+            ctest_xfail: xfail-ctest-mvapich.txt
           - mpi: mvapich
             version: '4.1'
             os: ubuntu-24.04-arm
             arch: aarch64
-            report_only: true
-    # Report-only for the MVAPICH legs and gating for the other four. `== true`
-    # rather than a bare `matrix.report_only` because the key is absent on the
-    # four older rows, where the expression would evaluate to the empty string.
+            ctest_xfail: xfail-ctest-mvapich.txt
+    # **Every leg here gates, MVAPICH's included, and no `continue-on-error`
+    # remains in this job.**
     #
-    # **These two are report-only for a measured reason, not as a precaution,
-    # and the reason is upstream.** Run 32611538158 was the first CI run of
-    # them and both architectures produced exactly the same thing:
+    # The MVAPICH legs were report-only for a measured reason -- run 32611538158
+    # and every run since produced one failure on both architectures,
+    # `abi_arrays_test (Timeout)`, which is MVAPICH's MPI_Dist_graph_create not
+    # returning and is pinned on the implementation in dev/third-implementations/.
+    # The reasoning recorded here for keeping them report-only was that "a gating
+    # row with a known upstream hang turns every unrelated PR red", which was true
+    # of the only two options this job then had: fail on any ctest failure, or
+    # switch the row off.
     #
-    #   MPI 4.1, two ranks with no wrapper, then
-    #   92% tests passed, 1 tests failed out of 13
-    #       8 - abi_arrays_test (Timeout)   45.05 sec
+    # **It had a third option and now uses it.** ci-scripts/xfail-ctest-mvapich.txt
+    # names that one test with its reason, and ci-scripts/check-ctest.py checks the
+    # row against it in both directions. So the row's verdict is now "exactly this
+    # test fails" rather than "something failed" or "nothing is checked": a
+    # regression in the other fourteen turns it red, and MVAPICH fixing the hang
+    # also turns it red, asking for the line to be deleted. That is strictly more
+    # than `continue-on-error` reported, and it is what TODO.md's "do not ignore
+    # failures" asks for.
     #
-    # That one test is MVAPICH's MPI_Dist_graph_create not returning -- see the
-    # `Build and test` step below for how that was pinned on the implementation
-    # rather than on this project. So the state to expect from these legs is
-    # 12/13 and nothing else; anything more is a regression, and the day it
-    # becomes 13/13 is the day to delete this and the two `report_only:` keys.
-    # **Do not flip them while that test still times out**: a report-only row
-    # that has started passing has stopped being a test, but a *gating* row
-    # with a known upstream hang turns every unrelated PR red, which is the
-    # FreeBSD lesson in its original direction.
-    continue-on-error: ${{ matrix.report_only == true }}
+    # An expected *count* is deliberately not written down here. The comment this
+    # replaced said "the state to expect is 12/13", which was already 14/15 two
+    # commits later -- the suite grew, not the failures. The list names the test.
     steps:
       - uses: actions/checkout@v6
 
@@ -321,11 +325,23 @@ jobs:
       # edit to linux-test.sh or check-install.sh, neither of which can change a
       # single byte of an installed MPI, rebuilt four of them.
       #
-      # A glob rather than the two names: a third installer added later joins
-      # the key by existing, where a list of names would silently serve an MPI
-      # built without it.
+      # **It hashes only the installer that builds *this* prefix, and the glob it
+      # replaced was the same mistake one size smaller.** `install-*.sh` was chosen
+      # so "a third installer added later joins the key by existing" -- and when a
+      # third one did arrive, install-mvapich.sh, it joined every *other*
+      # implementation's key too and invalidated four prefixes that no byte of it
+      # can affect. Every future edit to it would do the same. The reason the glob
+      # was preferred is real but it is served by `format()` instead: the key names
+      # whichever installer the matrix row uses, so a new implementation still gets
+      # a correct key by existing, without touching anybody else's.
       #
-      # The suite is excluded by construction now rather than by a negation.
+      # The rule underneath, worth stating once for all three copies of this key:
+      # **hash exactly the inputs that can change the bytes in this prefix.**
+      # Broader is not safer, it is just slower -- linux-test.sh and
+      # check-install.sh were excluded for this reason and MVAPICH's installer
+      # belongs in the same category with respect to MPICH's prefix.
+      #
+      # The suite directory is excluded by construction rather than by a negation.
       # Keep it that way: `ci-scripts/*` would NOT have worked, because
       # @actions/glob expands a matched directory to all of its descendants. The
       # cache step prints the key it used, so a commit that changes only a
@@ -336,16 +352,30 @@ jobs:
       # here is not, so without it a version bump would restore the previous
       # MPI under an unchanged hash.
       #
+      # **The field order is load-bearing and is not the order it reads in.** os
+      # and arch come before the version so that `mpi1-<mpi>-<os>-<arch>-` is a
+      # usable restore-keys prefix -- which the `compile` job below needs and
+      # these rows must not have, for opposite reasons given there. A prefix
+      # ending before the arch would let an aarch64 archive restore onto an
+      # x86_64 runner, so this order is the one that makes a fallback safe to
+      # write at all.
+      #
       # `mpi1-` is a manual epoch: actions/cache restores an archive to the
       # absolute paths recorded at save time, so renaming the prefix means
       # bumping this or a stale cache restores to the old path and reads as a
-      # broken installation rather than a stale cache.
+      # broken installation rather than a stale cache. Narrowing the hash and
+      # reordering the fields both change every key once, which costs one cold
+      # rebuild per prefix and then nothing.
+      #
+      # **No restore-keys here, deliberately.** These rows test a named version;
+      # a fallback would quietly hand them a different one and report the result
+      # as though it were the pinned MPI's.
       - name: Restore the MPI installation
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-${{ matrix.mpi }}
-          key: mpi1-${{ matrix.mpi }}-${{ matrix.version }}-${{ matrix.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+          key: mpi1-${{ matrix.mpi }}-${{ matrix.os }}-${{ runner.arch }}-${{ matrix.version }}-${{ hashFiles(format('ci-scripts/install-{0}.sh', matrix.mpi)) }}
 
       - name: Build and install ${{ matrix.mpi }} ${{ matrix.version }}
         if: steps.cache-mpi.outputs.cache-hit != 'true'
@@ -422,6 +452,20 @@ jobs:
           # is not an -E: a capped test still runs and still reports, so the
           # day MVAPICH fixes this the row goes green on its own.
           CTEST_TIMEOUT: ${{ matrix.mpi == 'mvapich' && '45' || '' }}
+          # **The cap above bounds what the hang costs; this says what it means.**
+          # The two are orthogonal and the MVAPICH legs are the first row to need
+          # both: without a list, linux-test.sh takes ctest's exit status as the
+          # verdict, so one known upstream failure would fail the row and the only
+          # way to keep it quiet would be `continue-on-error` -- which stops the
+          # other fourteen tests from being checked at all. With the list, the
+          # verdict is "the failures are exactly these, each with a reason",
+          # enforced in both directions by ci-scripts/check-ctest.py.
+          #
+          # Empty on every other leg, which is the right default: those rows
+          # expect a clean run and should fail if they do not get one. Setting
+          # this where it is not needed would be the beginning of a list nobody
+          # prunes.
+          CTEST_XFAIL: ${{ matrix.ctest_xfail }}
         run: ci-scripts/linux-test.sh "${PREFIX}/bin/mpicc"
 
       # NOTES.md #9 decision 19. Installs this project into a prefix of its own
@@ -783,17 +827,41 @@ jobs:
       # did not is the informative one.
       #
       # Restore-only, sharing the key the linux-source rows save under: this job
-      # never writes that cache, so the two cannot race over it. A miss simply
-      # builds, which costs this row alone.
+      # never writes that cache, so the two cannot race over it.
+      #
+      # **The version in this key is a duplicate of a matrix value it cannot read,
+      # and `restore-keys` is what makes that duplicate harmless.** A matrix's
+      # `include:` cannot reference `env`, so there is no single place both this
+      # literal and the linux-source rows' `version:` can come from. Left exact-only,
+      # the next MPICH bump would leave this key matching nothing -- and because
+      # this job never saves, it would rebuild MPICH from source on every run,
+      # forever, with nothing red to say so. The fallback turns that failure mode
+      # into "restores a slightly older MPICH", which is *correct here and nowhere
+      # else in this file*: this row never runs an MPI program. It compiles, and all
+      # it needs from MPICH is a stock mpicc whose flags a third-party compiler will
+      # accept. The linux-source and suite rows test a named version and therefore
+      # have no restore-keys at all.
+      #
+      # The prefix stops after the arch on purpose. `mpi1-mpich-` would also match
+      # an aarch64 archive, which would restore an unusable prefix onto this x86_64
+      # runner and read as a broken MPICH rather than as a cache fallback; the field
+      # order in the linux-source key exists to make this line possible.
       - name: Restore the MPI installation
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-mpich
-          key: mpi1-mpich-5.0.1-ubuntu-24.04-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+          key: mpi1-mpich-ubuntu-24.04-${{ runner.arch }}-5.0.1-${{ hashFiles('ci-scripts/install-mpich.sh') }}
+          restore-keys: mpi1-mpich-ubuntu-24.04-${{ runner.arch }}-
 
+      # **`cache-matched-key`, not `cache-hit`.** `cache-hit` is 'true' only for an
+      # exact key match, so with the restore-keys above it would still be 'false'
+      # after a successful fallback restore and this step would rebuild the MPICH
+      # that is already sitting in the prefix -- which is the whole cost the
+      # fallback was added to avoid. `cache-matched-key` is empty only when nothing
+      # was restored at all.
       - name: Build and install MPICH 5.0.1
-        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        if: steps.cache-mpi.outputs.cache-matched-key == ''
         run: ci-scripts/install-mpich.sh "${PREFIX}" 5.0.1
 
       # Intel's oneAPI compilers come from Intel's own apt repository, and the
@@ -1089,26 +1157,41 @@ jobs:
   # plus a 200 MB artifact round trip would buy nothing that restoring the cache
   # directly does not.
   #
-  # **All five rows are report-only until they have been green**, the rule the
-  # compile job above records. Every list is empty as this lands, which is a
-  # statement that nothing has been triaged for these five environments rather
-  # than a claim that the runs are clean: the version jump invalidated both older
-  # lists, since MPICH 5.0.1 answers `init/version` correctly and fills in the
-  # entry points that the old lists' largest group was about. The first runs are
-  # what the lists get written from, and each row keeps its TAP file and logs as
-  # an artifact for exactly that.
+  # **Every row here gates, and none of them is report-only any more.** They began
+  # that way, under the rule the compile job above records -- a row nobody has seen
+  # green cannot tell a regression from the thing it was added to find -- and each
+  # half earned its way out separately. The MPICH legs went first: run 32155423441
+  # produced 842 tests, 789 passed and 41 failed identically on both architectures,
+  # and xfail-ci-mpich.txt matched them in both directions. The Open MPI legs stayed
+  # behind for longer than their evidence justified, which is the failure this commit
+  # is about: their lists have carried 110 shared lines plus per-architecture deltas
+  # since run 32182485327, five of the six legs passed their gates in run
+  # 32655819244, and the header here still said the lists were empty.
+  #
+  # **What actually kept them report-only was two incomplete families, not immaturity.**
+  # Both are now closed: threads/pt2pt/mt_bsendrecv joins the flaky list beside the
+  # mt_*probe* family it behaves like, and errors/comm/subcomm_abort2 joins its own
+  # sibling on the MPICH side. Each was a single unlisted member of a family whose
+  # other members were already described, and each took a leg red on its own.
+  #
+  # **What no list can absorb is the one honest gap left**: a runner that dies
+  # mid-shard, as `openmpi / x86_64 / rest` did in run 32655819244 with exit 143 and a
+  # shutdown signal. That leaves no TAP line for a list to excuse, so it now costs a
+  # re-run rather than a silent pass -- which is the trade this workflow is choosing,
+  # because report-only made that death invisible and it went unexamined for a day.
+  # If it recurs on a schedule rather than at random, ci-scripts/suite/README.md's
+  # "Debugging the rma dtp shard" is the method that localised the last one.
+  #
+  # Each row keeps its TAP file and logs as an artifact either way: a green run's TAP
+  # is what `run-suite.sh --gate-only` re-reads to write the next list without paying
+  # for another run.
   suite:
     name: suite / ${{ matrix.leg.mpi }} ${{ matrix.leg.version }} / ${{ matrix.leg.arch }} / ${{ matrix.shard.name }}
     runs-on: ${{ matrix.leg.os }}
-    # **Per leg, because the two implementations are at different stages.** The
-    # MPICH legs gate: run 32155423441 produced 842 tests, 789 passed and 41
-    # failed on both architectures, the 41 identical test for test, and
-    # xfail-ci-mpich.txt matches them exactly in both directions -- so the rule
-    # the compile job records is satisfied and TODO.md's "do not ignore mpich
-    # failures" is what this implements. The Open MPI legs stay report-only:
-    # their lists are still empty because no Open MPI leg has yet run to
-    # completion here.
-    continue-on-error: ${{ matrix.leg.report_only }}
+    # No `continue-on-error`, and the absence is the point -- see the paragraphs
+    # above. The `report_only` matrix key that used to drive it is gone from the leg
+    # objects *and* from the `exclude` entries that duplicate them; those two have to
+    # stay field-for-field identical or the rma shard comes back (see `exclude` below).
     # A shard is a quarter of the suite plus the fixed cost every job pays: the
     # MPI restore, the wrapper build and the suite's own configure. Well under
     # the ceiling described above, and far enough under that a slow shard is
@@ -1145,10 +1228,39 @@ jobs:
       # artifact with dev/suite-timings/tap-timings.py; the TAP file carries a
       # `# time=` per test.
       #
-      # **The ceiling after the caps is the MPICH p2p shard's 20.0 minutes**, and
-      # that is real work with no test near its limit -- pt2pt 8.5, threads 5.4,
-      # part 5.1. Splitting it is the next lever if this needs to be faster, and it
-      # costs four more jobs paying the ~1 minute of fixed cost each.
+      # **The ceiling is the `p2p` and `coll` shards, and *which* of them is longest
+      # is not stable enough to name.** Two warm runs, job durations as GitHub bills
+      # them:
+      #
+      #                              32655819244   32661937934
+      #   mpich   p2p   x86_64            12 min        20 min
+      #   openmpi p2p   aarch64           15            16
+      #   openmpi p2p   x86_64            15            14
+      #   mpich   coll  x86_64            14            14
+      #   mpich   p2p   i386              12            14
+      #   whole run                       19            20
+      #
+      # The first column alone says the MPICH p2p shard is comfortably mid-table; the
+      # second says it is the ceiling by four minutes. Nothing about the configuration
+      # changed between them. So the useful statement is the family rather than the
+      # ranking: every shard over about ten minutes is `p2p` or `coll`, whole warm runs
+      # land at 19-21 minutes, and splitting any one of those shards is the next lever
+      # if this needs to be faster -- four more jobs paying the ~1 minute of fixed cost
+      # each.
+      #
+      # **A single run cannot support a ranking here**, and this comment has now
+      # carried the wrong one twice: once from the run the caps were measured on, and
+      # once from the replacement written while fixing that. Runner-to-runner variance
+      # on these shards is worth several minutes, so quote a spread or say nothing.
+      #
+      # These are job durations rather than test-loop durations, which is the honest
+      # number for a wall-clock budget and not comparable line-for-line with the 46.3
+      # and 16.8 figures above -- those are runtests' own loop. Re-derive either from
+      # a shard's artifact with dev/suite-timings/tap-timings.py.
+      #
+      # A cold run is a third measurement, not a slow warm one: 36 minutes in run
+      # 32659909508, which is six MPI prefixes building from source at once after the
+      # cache keys changed. Compare it with neither column.
       #
       # **And it was still killed, which is why `exclude` below drops it from the
       # two Open MPI legs.** Not as a triage of an unexplained failure: the cause
@@ -1179,33 +1291,34 @@ jobs:
             arch: x86_64
             launcher: hydra
             timeout_multiplier: 2
-            report_only: false
             exclude_args: ""
-            # Empty on purpose: the MPICH legs have no test at the time limit
-            # except coll/reduce at np=10, which is a slow test rather than a
-            # hang -- run 32586710591 shows it at the limit and nothing else
-            # within 40 seconds of it. Capping is for hangs.
-            timelimit_args: ""
+            # **Was empty, on the reasoning that "capping is for hangs" and the
+            # MPICH legs had none.** The premise was measured -- run 32586710591
+            # showed coll/reduce at np=10 near the limit and nothing else within
+            # 40 seconds of it -- and it missed the two abort tests, which reach
+            # the limit only when they flap and so appear in no single run's
+            # timing table. timelimit-ci-mpich.txt caps that pair and nothing
+            # else; coll/reduce stays uncapped, because it is slow work that
+            # finishes rather than a hang.
+            timelimit_args: "--time-limit=timelimit-ci-mpich.txt"
           - mpi: mpich
             version: 5.0.1
             os: ubuntu-24.04-arm
             arch: aarch64
             launcher: hydra
             timeout_multiplier: 2
-            report_only: false
             exclude_args: ""
-            # Empty on purpose: the MPICH legs have no test at the time limit
-            # except coll/reduce at np=10, which is a slow test rather than a
-            # hang -- run 32586710591 shows it at the limit and nothing else
-            # within 40 seconds of it. Capping is for hangs.
-            timelimit_args: ""
+            # The same list the x86_64 leg above caps with, and its comment has
+            # the reasoning. This is the leg that measured it: run 32652409584
+            # lost mpich/aarch64/rest to errors/comm/subcomm_abort2 6 at the
+            # 180-second limit.
+            timelimit_args: "--time-limit=timelimit-ci-mpich.txt"
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04
             arch: x86_64
             launcher: prte
             timeout_multiplier: 1
-            report_only: true
             # **Currently inert, and kept deliberately.** Every pattern in
             # exclude-ci-openmpi.txt names a test in `rma`, and `rma` is excluded
             # from these legs by the matrix above, so nothing matches today. It
@@ -1227,7 +1340,6 @@ jobs:
             arch: aarch64
             launcher: prte
             timeout_multiplier: 1
-            report_only: true
             # **Currently inert, and kept deliberately.** Every pattern in
             # exclude-ci-openmpi.txt names a test in `rma`, and `rma` is excluded
             # from these legs by the matrix above, so nothing matches today. It
@@ -1287,7 +1399,6 @@ jobs:
               arch: x86_64
               launcher: prte
               timeout_multiplier: 1
-              report_only: true
               exclude_args: "--exclude=exclude-ci-openmpi.txt"
               timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
             shard:
@@ -1300,7 +1411,6 @@ jobs:
               arch: aarch64
               launcher: prte
               timeout_multiplier: 1
-              report_only: true
               exclude_args: "--exclude=exclude-ci-openmpi.txt"
               timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
             shard:
@@ -1354,12 +1464,22 @@ jobs:
       # The same key the linux-source rows save under, so a warm cache serves
       # both: restore-only here, exactly as the compile job does, so the two
       # cannot race over it. A miss simply builds, at the cost of this row alone.
+      #
+      # **"The same key" is a constraint, not an observation.** It has to be
+      # character-for-character what linux-source builds, including the field
+      # order and the narrowed `hashFiles`, or these rows quietly stop sharing
+      # that cache and every one of them builds its own MPI. Both were changed
+      # together in the commit that narrowed them; the linux-source copy carries
+      # the reasoning for both.
+      #
+      # And no restore-keys, for the reason given there: these rows are a claim
+      # about a named version of a named implementation.
       - name: Restore the MPI installation
         id: cache-mpi
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-${{ matrix.leg.mpi }}
-          key: mpi1-${{ matrix.leg.mpi }}-${{ matrix.leg.version }}-${{ matrix.leg.os }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-*.sh') }}
+          key: mpi1-${{ matrix.leg.mpi }}-${{ matrix.leg.os }}-${{ runner.arch }}-${{ matrix.leg.version }}-${{ hashFiles(format('ci-scripts/install-{0}.sh', matrix.leg.mpi)) }}
 
       # mpif's idea, and it earns its place on the run where the prefix cache
       # misses but the compiler cache does not -- a version bump invalidates the
@@ -1625,7 +1745,11 @@ jobs:
           MPIABI_IMAGE: i386/debian:trixie-slim
           MPIABI_LINUX_SCRIPT: /src/ci-scripts/suite/i386-suite.sh
           MPIABI_LINUX_OUT: ${{ runner.temp }}/suite-i386
-          MPIABI_LINUX_ARGS: --xfail=xfail-ci-mpich.txt --xfail=xfail-ci-mpich-i386.txt --flaky=flaky-ci-mpich.txt ${{ matrix.shard.args }}
+          # --time-limit is here for the same reason MPITEST_TIMEOUT_MULTIPLIER is:
+          # this row shares flaky-ci-mpich.txt with the 64-bit MPICH legs, so it has
+          # to share what bounds those flakes too. Leaving it off is how this row came
+          # to differ from the others once before.
+          MPIABI_LINUX_ARGS: --xfail=xfail-ci-mpich.txt --xfail=xfail-ci-mpich-i386.txt --flaky=flaky-ci-mpich.txt --time-limit=timelimit-ci-mpich.txt ${{ matrix.shard.args }}
         run: ci-scripts/run-linux-docker.sh mpich
 
       - name: What was left afterwards

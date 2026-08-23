@@ -34,6 +34,26 @@ threads/pt2pt/mt_probe_sendrecv 2 : Open MPI's, reproduced with no wrapper in th
 threads/pt2pt/mt_iprobe_sendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
 threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in the path in run 32418464622: MPI_Get_count on a probe-filled status yields a negative count under MPI_THREAD_MULTIPLE, which MPI_Recv rejects. Flaky rather than xfail because which member of the family trips moves with thread timing. Observed: *** An error occurred in MPI_Recv
 
+# **The bsend family's flapping member, and the line that let the Open MPI legs stop
+# being report-only.** It is the same shape as the mt_*probe* family above -- a
+# threads/pt2pt test whose outcome moves with thread timing -- but it flaps between
+# passing and *hanging* rather than between passing and failing, which is why it also
+# has a cap in timelimit-ci-openmpi.txt and they do not.
+#
+# The two observations, both from the aarch64 p2p shard: run 32655819244 passed it in
+# 0.115 s (its TAP file is the authority, not the job log) and run 32652409584 hung it
+# to the full 180-second limit, where it was the single UNEXPECTED FAILURE holding the
+# leg red. Its sibling mt_ibsendirecv hangs *every* run and is an xfail line
+# accordingly; this one cannot be, because an xfail line fails the runs it passes and
+# it passes often.
+#
+# **What would retire this line:** attribution. mt_ibsendirecv's xfail entry says "not
+# yet attributed" and this is the same unattributed thing seen from its intermittent
+# side, so whatever explains the pair explains both lines. Until then the honest claim
+# is the small one -- either outcome happens -- and the cap is what keeps the bad
+# outcome from costing 150 seconds of the workflow's critical path.
+threads/pt2pt/mt_bsendrecv 2 : flaps between passing in 0.115 s and hanging to the time limit, on the same shard and the same architecture -- run 32655819244 passed it, run 32652409584 hung it. Unattributed, like its always-hanging sibling mt_ibsendirecv; capped at 30 s in timelimit-ci-openmpi.txt so the hanging half costs 30 s rather than 180. Observed: The user-provided time limit for job execution has been reached
+
 # **Flaps on both architectures, and the run table in xfail-ci-openmpi-x86_64.txt is
 # eleven observations long.** It segfaults rather than failing: MPI_T_pvar_get_info,
 # through this project's wrapper and into Open MPI's mca_base_pvar_get, at address 0x44

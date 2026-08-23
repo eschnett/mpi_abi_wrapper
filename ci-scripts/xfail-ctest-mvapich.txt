@@ -1,0 +1,46 @@
+# Expected failures of *this project's own* ctest suite over MVAPICH, in GitHub
+# Actions, on both architectures.
+#
+# One line per test, `<ctest test name> : why`. ci-scripts/check-ctest.py enforces
+# it in both directions -- an unlisted failure fails the row, and so does a listed
+# test that passed or that this build does not declare -- and a line with no reason
+# after the colon fails the row too.
+#
+# **This is the ctest counterpart of ci-scripts/suite/xfail-ci-*.txt, and the
+# reason it exists is that the MVAPICH rows were report-only without it.** One
+# upstream hang was enough to make `continue-on-error` the only available
+# description of the row, and that switch does not describe one test -- it
+# switches off the other fourteen. With this file the row gates again: MVAPICH
+# fixing the hang, or this project regressing anything else, both turn it red.
+#
+# Not to be confused with the two neighbouring mechanisms:
+#
+#   CTEST_TIMEOUT (linux-test.sh) bounds what the hang *costs*. It says nothing
+#   about whether the failure is expected, and the row needs both.
+#
+#   `ctest -E` would remove the test. Then MVAPICH could fix MPI_Dist_graph_create
+#   and nothing would ever say so. The rule is suite/timelimit-ci-openmpi.txt's:
+#   cap a hang, do not exclude it.
+
+# **MVAPICH 4.1's MPI_Dist_graph_create does not return, and the attribution is
+# not a guess.** Measured in dev/third-implementations/ with two ranks and no
+# wrapper in the path at all: it hangs over MVAPICH's ch4:ofi device, is
+# unaffected by FI_PROVIDER=tcp and by FI_PROVIDER=shm, and its backtrace is
+# entirely inside libmpi.so below this project's pass-through frame. So the test
+# that exercises it hangs, and at ctest's 1500-second default that one test was
+# 25 minutes of a 90-minute job; the legs cap it at 45 s, which is two orders of
+# magnitude above the slowest test that passes here (c-bindings-cross-check at
+# 3.9 s) and therefore cannot turn a slow pass into a timeout.
+#
+# The state to expect from these legs is 14 of 15, and run 32655819244 is the
+# measurement -- "93% tests passed, 1 tests failed out of 15", the one being
+# `9 - abi_arrays_test (Timeout)`, on both architectures. The count is not written
+# down as a number anywhere that gates, deliberately: this file names the test, so
+# adding a fifteenth test to CMakeLists.txt does not make a stale total. An
+# earlier draft of the workflow did write "12/13" into a comment and it was stale
+# within two commits.
+#
+# **What retires this line:** an MVAPICH release whose MPI_Dist_graph_create
+# returns. Then abi_arrays_test passes, check-ctest.py reports EXPECTED FAILURE
+# THAT PASSED, and this file is where the one line to delete is.
+abi_arrays_test : MVAPICH 4.1's MPI_Dist_graph_create does not return over its ch4:ofi device -- measured with two ranks and no wrapper involved, unaffected by FI_PROVIDER=tcp or =shm, backtrace entirely inside libmpi.so below the wrapper's pass-through frame (dev/third-implementations/). Capped at 45 s by CTEST_TIMEOUT so it costs 45 seconds rather than ctest's 1500-second default. Observed: Timeout
