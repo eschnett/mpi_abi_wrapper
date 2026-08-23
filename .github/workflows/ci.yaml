@@ -1089,26 +1089,41 @@ jobs:
   # plus a 200 MB artifact round trip would buy nothing that restoring the cache
   # directly does not.
   #
-  # **All five rows are report-only until they have been green**, the rule the
-  # compile job above records. Every list is empty as this lands, which is a
-  # statement that nothing has been triaged for these five environments rather
-  # than a claim that the runs are clean: the version jump invalidated both older
-  # lists, since MPICH 5.0.1 answers `init/version` correctly and fills in the
-  # entry points that the old lists' largest group was about. The first runs are
-  # what the lists get written from, and each row keeps its TAP file and logs as
-  # an artifact for exactly that.
+  # **Every row here gates, and none of them is report-only any more.** They began
+  # that way, under the rule the compile job above records -- a row nobody has seen
+  # green cannot tell a regression from the thing it was added to find -- and each
+  # half earned its way out separately. The MPICH legs went first: run 32155423441
+  # produced 842 tests, 789 passed and 41 failed identically on both architectures,
+  # and xfail-ci-mpich.txt matched them in both directions. The Open MPI legs stayed
+  # behind for longer than their evidence justified, which is the failure this commit
+  # is about: their lists have carried 110 shared lines plus per-architecture deltas
+  # since run 32182485327, five of the six legs passed their gates in run
+  # 32655819244, and the header here still said the lists were empty.
+  #
+  # **What actually kept them report-only was two incomplete families, not immaturity.**
+  # Both are now closed: threads/pt2pt/mt_bsendrecv joins the flaky list beside the
+  # mt_*probe* family it behaves like, and errors/comm/subcomm_abort2 joins its own
+  # sibling on the MPICH side. Each was a single unlisted member of a family whose
+  # other members were already described, and each took a leg red on its own.
+  #
+  # **What no list can absorb is the one honest gap left**: a runner that dies
+  # mid-shard, as `openmpi / x86_64 / rest` did in run 32655819244 with exit 143 and a
+  # shutdown signal. That leaves no TAP line for a list to excuse, so it now costs a
+  # re-run rather than a silent pass -- which is the trade this workflow is choosing,
+  # because report-only made that death invisible and it went unexamined for a day.
+  # If it recurs on a schedule rather than at random, ci-scripts/suite/README.md's
+  # "Debugging the rma dtp shard" is the method that localised the last one.
+  #
+  # Each row keeps its TAP file and logs as an artifact either way: a green run's TAP
+  # is what `run-suite.sh --gate-only` re-reads to write the next list without paying
+  # for another run.
   suite:
     name: suite / ${{ matrix.leg.mpi }} ${{ matrix.leg.version }} / ${{ matrix.leg.arch }} / ${{ matrix.shard.name }}
     runs-on: ${{ matrix.leg.os }}
-    # **Per leg, because the two implementations are at different stages.** The
-    # MPICH legs gate: run 32155423441 produced 842 tests, 789 passed and 41
-    # failed on both architectures, the 41 identical test for test, and
-    # xfail-ci-mpich.txt matches them exactly in both directions -- so the rule
-    # the compile job records is satisfied and TODO.md's "do not ignore mpich
-    # failures" is what this implements. The Open MPI legs stay report-only:
-    # their lists are still empty because no Open MPI leg has yet run to
-    # completion here.
-    continue-on-error: ${{ matrix.leg.report_only }}
+    # No `continue-on-error`, and the absence is the point -- see the paragraphs
+    # above. The `report_only` matrix key that used to drive it is gone from the leg
+    # objects *and* from the `exclude` entries that duplicate them; those two have to
+    # stay field-for-field identical or the rma shard comes back (see `exclude` below).
     # A shard is a quarter of the suite plus the fixed cost every job pays: the
     # MPI restore, the wrapper build and the suite's own configure. Well under
     # the ceiling described above, and far enough under that a slow shard is
@@ -1145,10 +1160,18 @@ jobs:
       # artifact with dev/suite-timings/tap-timings.py; the TAP file carries a
       # `# time=` per test.
       #
-      # **The ceiling after the caps is the MPICH p2p shard's 20.0 minutes**, and
-      # that is real work with no test near its limit -- pt2pt 8.5, threads 5.4,
-      # part 5.1. Splitting it is the next lever if this needs to be faster, and it
-      # costs four more jobs paying the ~1 minute of fixed cost each.
+      # **The ceiling moved, and it is no longer the MPICH p2p shard.** That shard was
+      # 20.0 minutes when the paragraph above was written; measured end-to-end as
+      # billed by GitHub in run 32655819244 the ranking is Open MPI p2p at 15 minutes
+      # on both architectures, then MPICH coll at 14-15 and MPICH p2p at 12. Whole
+      # runs land at 19-21 minutes. So the next lever, if this needs to be faster, is
+      # splitting `coll` or the Open MPI `p2p` shard rather than MPICH's, and it costs
+      # four more jobs paying the ~1 minute of fixed cost each.
+      #
+      # These are job durations rather than test-loop durations, which is the honest
+      # number for a wall-clock budget and not comparable line-for-line with the 46.3
+      # and 16.8 figures above -- those are runtests' own loop. Re-derive either from
+      # a shard's artifact with dev/suite-timings/tap-timings.py.
       #
       # **And it was still killed, which is why `exclude` below drops it from the
       # two Open MPI legs.** Not as a triage of an unexplained failure: the cause
@@ -1179,33 +1202,34 @@ jobs:
             arch: x86_64
             launcher: hydra
             timeout_multiplier: 2
-            report_only: false
             exclude_args: ""
-            # Empty on purpose: the MPICH legs have no test at the time limit
-            # except coll/reduce at np=10, which is a slow test rather than a
-            # hang -- run 32586710591 shows it at the limit and nothing else
-            # within 40 seconds of it. Capping is for hangs.
-            timelimit_args: ""
+            # **Was empty, on the reasoning that "capping is for hangs" and the
+            # MPICH legs had none.** The premise was measured -- run 32586710591
+            # showed coll/reduce at np=10 near the limit and nothing else within
+            # 40 seconds of it -- and it missed the two abort tests, which reach
+            # the limit only when they flap and so appear in no single run's
+            # timing table. timelimit-ci-mpich.txt caps that pair and nothing
+            # else; coll/reduce stays uncapped, because it is slow work that
+            # finishes rather than a hang.
+            timelimit_args: "--time-limit=timelimit-ci-mpich.txt"
           - mpi: mpich
             version: 5.0.1
             os: ubuntu-24.04-arm
             arch: aarch64
             launcher: hydra
             timeout_multiplier: 2
-            report_only: false
             exclude_args: ""
-            # Empty on purpose: the MPICH legs have no test at the time limit
-            # except coll/reduce at np=10, which is a slow test rather than a
-            # hang -- run 32586710591 shows it at the limit and nothing else
-            # within 40 seconds of it. Capping is for hangs.
-            timelimit_args: ""
+            # The same list the x86_64 leg above caps with, and its comment has
+            # the reasoning. This is the leg that measured it: run 32652409584
+            # lost mpich/aarch64/rest to errors/comm/subcomm_abort2 6 at the
+            # 180-second limit.
+            timelimit_args: "--time-limit=timelimit-ci-mpich.txt"
           - mpi: openmpi
             version: 5.0.10
             os: ubuntu-24.04
             arch: x86_64
             launcher: prte
             timeout_multiplier: 1
-            report_only: true
             # **Currently inert, and kept deliberately.** Every pattern in
             # exclude-ci-openmpi.txt names a test in `rma`, and `rma` is excluded
             # from these legs by the matrix above, so nothing matches today. It
@@ -1227,7 +1251,6 @@ jobs:
             arch: aarch64
             launcher: prte
             timeout_multiplier: 1
-            report_only: true
             # **Currently inert, and kept deliberately.** Every pattern in
             # exclude-ci-openmpi.txt names a test in `rma`, and `rma` is excluded
             # from these legs by the matrix above, so nothing matches today. It
@@ -1287,7 +1310,6 @@ jobs:
               arch: x86_64
               launcher: prte
               timeout_multiplier: 1
-              report_only: true
               exclude_args: "--exclude=exclude-ci-openmpi.txt"
               timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
             shard:
@@ -1300,7 +1322,6 @@ jobs:
               arch: aarch64
               launcher: prte
               timeout_multiplier: 1
-              report_only: true
               exclude_args: "--exclude=exclude-ci-openmpi.txt"
               timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
             shard:
@@ -1625,7 +1646,11 @@ jobs:
           MPIABI_IMAGE: i386/debian:trixie-slim
           MPIABI_LINUX_SCRIPT: /src/ci-scripts/suite/i386-suite.sh
           MPIABI_LINUX_OUT: ${{ runner.temp }}/suite-i386
-          MPIABI_LINUX_ARGS: --xfail=xfail-ci-mpich.txt --xfail=xfail-ci-mpich-i386.txt --flaky=flaky-ci-mpich.txt ${{ matrix.shard.args }}
+          # --time-limit is here for the same reason MPITEST_TIMEOUT_MULTIPLIER is:
+          # this row shares flaky-ci-mpich.txt with the 64-bit MPICH legs, so it has
+          # to share what bounds those flakes too. Leaving it off is how this row came
+          # to differ from the others once before.
+          MPIABI_LINUX_ARGS: --xfail=xfail-ci-mpich.txt --xfail=xfail-ci-mpich-i386.txt --flaky=flaky-ci-mpich.txt --time-limit=timelimit-ci-mpich.txt ${{ matrix.shard.args }}
         run: ci-scripts/run-linux-docker.sh mpich
 
       - name: What was left afterwards

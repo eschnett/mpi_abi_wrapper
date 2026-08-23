@@ -119,6 +119,25 @@
 # own and does not hang.
 30 ^mt_ibsendirecv[[:space:]]
 
+# **threads/pt2pt/mt_bsendrecv: capped because it *flaps* into a hang, which is a
+# case this file had not carried before.** Every other entry here names a test
+# that hangs every time; this one passes in 0.115 s or hangs to the full limit
+# depending on thread timing, so the cap is what bounds the bad half. Run
+# 32655819244's aarch64 p2p TAP has the pass at 0.115 s and run 32652409584 has
+# the 180-second timeout on the same shard, which is where the 1500x figure in
+# flaky-ci-openmpi.txt's entry comes from.
+#
+# 30 s is 260x the passing time, so the cap cannot convert the good half into a
+# failure on a loaded runner -- the same margin argument every entry above rests
+# on, and worth restating here because a flaky test is the one case where a cap
+# could change a result rather than only its cost.
+#
+# The boundary is doing real work, verified against that TAP rather than assumed:
+# mt_bsendrecv_huge and mt_bsendrecv_pers_huge are separate tests in the same
+# file, they run 4 lines between them in 0.09-0.47 s, and `[[:space:]]` is what
+# keeps this cap off them.
+30 ^mt_bsendrecv[[:space:]]
+
 # threads/comm/idup_deadlock: its one line hangs. Sits beside idup_nb and
 # comm_idup, which fail and pass respectively in about a second.
 30 ^idup_deadlock[[:space:]]
