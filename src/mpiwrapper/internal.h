@@ -137,6 +137,39 @@ static inline int mpiwrapper_narrow_aint(MPIABI_Count v, MPI_Aint *out)
   return 1;
 }
 
+/* ------------------------------------------- one block, several array types */
+
+/* NOTES.md #5.7 gives a routine that stages past its return exactly one block
+ * per request, because that is what the request table holds. Until the
+ * large-count fallback existed, every such routine staged arrays of a single
+ * element type -- the alltoallw family's datatypes -- and the block was just an
+ * array of them. Under the fallback those same four routines also stage their
+ * narrowed `int` counts and displacements, so one block has to carry two
+ * element types.
+ *
+ * The layout rounds every array up to the strictest alignment any of them could
+ * need, rather than ordering the arrays by size. Ordering would be smaller and
+ * would be wrong: MPI_Datatype is a pointer in Open MPI and an int in MPICH, so
+ * "the widest type first" is not a fact the generator can know, and a build
+ * where MPI_Datatype is 4 bytes and MPI_Aint is 8 would land the second array
+ * on a 4-byte boundary. Padding costs at most alignof(max_align_t) - 1 bytes
+ * per array and cannot be wrong.
+ */
+#define MPIWRAPPER_STAGED_ALIGN (_Alignof(max_align_t))
+
+static inline size_t mpiwrapper_staged_next(size_t off, size_t n, size_t size)
+{
+  /* SIZE_MAX is the poison value rather than a separate error channel: a
+   * layout that overflows becomes an allocation that cannot succeed, and the
+   * caller already has to handle a failed allocation.
+   */
+  if (off == SIZE_MAX || (size && n > (SIZE_MAX - off) / size)) return SIZE_MAX;
+  off += n * size;
+  if (off > SIZE_MAX - (MPIWRAPPER_STAGED_ALIGN - 1)) return SIZE_MAX;
+  return (off + MPIWRAPPER_STAGED_ALIGN - 1)
+         & ~(size_t)(MPIWRAPPER_STAGED_ALIGN - 1);
+}
+
 /* ------------------------------------------------------------- handle bits */
 
 /* An implementation handle is either an integer (MPICH) or a pointer (Open

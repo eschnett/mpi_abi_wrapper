@@ -101,7 +101,14 @@ FROZEN = {
     # that surface is served rather than refused. Frozen because an entry point
     # joining or leaving the set changes what a build over an MPI-3
     # implementation can do.
-    "large-count fallbacks": 124,
+    "large-count fallbacks": 142,
+    # And where that fallback's temporaries outlive the call, which the tally
+    # above cannot see and which "staged past return" answers only for the
+    # primary body. The two differ because a vector collective's count arrays
+    # are a pointer cast in one and a staged block in the other (NOTES.md
+    # #5.7); frozen separately so that a routine entering either set stays a
+    # deliberate act.
+    "narrowed staged past return": 18,
 }
 
 # ---------------------------------------------------------------------------
@@ -476,41 +483,63 @@ for _base in ("Neighbor_alltoallw", "Neighbor_alltoallw_c",
 
 # The vector collectives' count and displacement arrays, which apis.json gives
 # a length of `*` and which only the large-count fallback ever stages -- in
-# every other body they are a pointer cast (HISTORY.md #1.9). Blocking forms
-# only for now; the nonblocking and persistent ones have to keep the block
-# alive past return, which is #5.7's separate problem.
+# every other body they are a pointer cast (HISTORY.md #1.9).
+#
+# Each family is listed once and spelled three ways, because a large-count
+# vector collective always comes as a blocking, a nonblocking and a persistent
+# form and there is no reason for the three to disagree about how long their
+# arrays are. The nonblocking and persistent ones additionally have to keep the
+# block alive past their return, which they get from #5.7's existing machinery
+# rather than from anything here.
 #
 # The two shapes are "sized by the group" and "sized by the group, at the root
 # only". Getting the second wrong is not a wrong answer but a fault, so
 # assign_fallbacks cross-checks every one of these against apis.json's own
 # root_only flag.
-for _base in ("Alltoallv_c", "Alltoallw_c"):
-    for _p in ("sendcounts", "sdispls", "recvcounts", "rdispls"):
-        ARRAY_EXTENT[("MPI_" + _base, _p)] = Extent("nranks",
-                                                    probe=_COMM_PROBE)
-for _p in ("recvcounts", "displs"):
-    ARRAY_EXTENT[("MPI_Allgatherv_c", _p)] = Extent("nranks",
-                                                    probe=_COMM_PROBE)
-    ARRAY_EXTENT[("MPI_Gatherv_c", _p)] = Extent("nranks", probe=_ROOT_PROBE)
-for _p in ("sendcounts", "displs"):
-    ARRAY_EXTENT[("MPI_Scatterv_c", _p)] = Extent("nranks", probe=_ROOT_PROBE)
-ARRAY_EXTENT[("MPI_Reduce_scatter_c", "recvcounts")] = Extent(
-    "nranks", probe=_COMM_PROBE)
+def _vector_forms(family):
+    """The blocking, nonblocking and persistent spellings of one collective.
+
+    `Alltoallv` -> MPI_Alltoallv_c, MPI_Ialltoallv_c, MPI_Alltoallv_init_c.
+    The nonblocking spelling lowercases the first letter after its I, which is
+    the standard's convention and not a rule anything else here relies on.
+    """
+    return (f"MPI_{family}_c",
+            f"MPI_I{family[0].lower()}{family[1:]}_c",
+            f"MPI_{family}_init_c")
+
+
+for _family in ("Alltoallv", "Alltoallw"):
+    for _name in _vector_forms(_family):
+        for _p in ("sendcounts", "sdispls", "recvcounts", "rdispls"):
+            ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_COMM_PROBE)
+for _name in _vector_forms("Allgatherv"):
+    for _p in ("recvcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_COMM_PROBE)
+for _name in _vector_forms("Gatherv"):
+    for _p in ("recvcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_ROOT_PROBE)
+for _name in _vector_forms("Scatterv"):
+    for _p in ("sendcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nranks", probe=_ROOT_PROBE)
+for _name in _vector_forms("Reduce_scatter"):
+    ARRAY_EXTENT[(_name, "recvcounts")] = Extent("nranks", probe=_COMM_PROBE)
 
 # The neighbourhood vector forms, sized by degree rather than by group size.
 # MPI_Neighbor_alltoallw's displacements are already MPI_Aint in the small
 # form, so only its counts narrow and only they appear here.
-for _p in ("recvcounts", "displs"):
-    ARRAY_EXTENT[("MPI_Neighbor_allgatherv_c", _p)] = Extent(
-        "nrecvtypes", probe=_NEIGHBOR_PROBE)
-for _p, _n in (("sendcounts", "nsendtypes"), ("sdispls", "nsendtypes"),
-               ("recvcounts", "nrecvtypes"), ("rdispls", "nrecvtypes")):
-    ARRAY_EXTENT[("MPI_Neighbor_alltoallv_c", _p)] = Extent(
-        _n, probe=_NEIGHBOR_PROBE)
-ARRAY_EXTENT[("MPI_Neighbor_alltoallw_c", "sendcounts")] = Extent(
-    "nsendtypes", probe=_NEIGHBOR_PROBE)
-ARRAY_EXTENT[("MPI_Neighbor_alltoallw_c", "recvcounts")] = Extent(
-    "nrecvtypes", probe=_NEIGHBOR_PROBE)
+for _name in _vector_forms("Neighbor_allgatherv"):
+    for _p in ("recvcounts", "displs"):
+        ARRAY_EXTENT[(_name, _p)] = Extent("nrecvtypes",
+                                           probe=_NEIGHBOR_PROBE)
+for _name in _vector_forms("Neighbor_alltoallv"):
+    for _p, _n in (("sendcounts", "nsendtypes"), ("sdispls", "nsendtypes"),
+                   ("recvcounts", "nrecvtypes"), ("rdispls", "nrecvtypes")):
+        ARRAY_EXTENT[(_name, _p)] = Extent(_n, probe=_NEIGHBOR_PROBE)
+for _name in _vector_forms("Neighbor_alltoallw"):
+    ARRAY_EXTENT[(_name, "sendcounts")] = Extent("nsendtypes",
+                                                 probe=_NEIGHBOR_PROBE)
+    ARRAY_EXTENT[(_name, "recvcounts")] = Extent("nrecvtypes",
+                                                 probe=_NEIGHBOR_PROBE)
 
 # The graph constructors. `edges` is as long as the last entry of the index
 # array says, which is an expression over two other parameters rather than an
@@ -1709,6 +1738,9 @@ class Staged:
     def fill(self, lead):
         """The conversion loop's assignment, `lead` being everything up to and
         including the `= `."""
+        assert self.family, (
+            f"{self.p.name}: staged with neither a conversion family nor a "
+            "narrowing function, so there is nothing to fill it with")
         convert = f"mpiwrapper_{self.family}_fromabi(abi_{self.p.name}[i])"
         if not self.ignored:
             return [f"{lead}{convert};"]
@@ -2143,6 +2175,20 @@ def stages_past_return(ep):
             and any(p.cls == "array_convert_in" for p in ep.params))
 
 
+def fallback_stages_past_return(ep):
+    """True where the *fallback* body's staged temporaries outlive its call.
+
+    stages_past_return asks this of the primary body. The two answers differ,
+    and that is the whole reason both are frozen (NOTES.md #5.7): a vector
+    collective's count and displacement arrays are a pointer cast in the
+    primary body and a staged temporary in the fallback, so the fallback keeps
+    a block alive past its return where the primary keeps nothing.
+    """
+    return (ep.fallback_params is not None and request_out(ep) is not None
+            and any(p.cls in ("array_convert_in", "array_narrow_in")
+                    for p in ep.fallback_params))
+
+
 def request_out(ep):
     """The out request parameter, for the routines whose staged temporaries
     have to outlive the call."""
@@ -2380,12 +2426,17 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
             f"{ep.name}: a routine that stages past its return may produce no "
             "handle but the request: " + ", ".join(p.name for p in others))
     elems = {s.elem for s in staged}
-    if len(elems) != 1 or any(s.mode != "in" for s in staged):
+    if any(s.mode != "in" for s in staged):
         raise SystemExit(
             f"{ep.name}: temporaries that outlive their call are carved out of "
-            "one block, so they must all be in-direction and of one element "
-            f"type; got {sorted(elems)}")
-    elem = elems.pop()
+            "one block, so they must all be in-direction; got "
+            + ", ".join(sorted({s.mode for s in staged})))
+    # One element type is the common case and keeps the simpler layout, which
+    # is every routine that stages past its return without the large-count
+    # fallback. Two arise only there, and only for the alltoallw family, whose
+    # datatype arrays are joined by narrowed counts and displacements.
+    mixed = len(elems) > 1
+    elem = None if mixed else elems.pop()
     ind = "    "
     body = ["  {"]
 
@@ -2402,26 +2453,76 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
     body += emit_extent_queries(ep, probes, pre, rejects, ind)
 
     total = " + ".join(f"(size_t){s.extent.alloc}" for s in staged)
-    rows = [("const size_t", "nstaged", total), (elem + " *", "block", "NULL")]
-    body += [ind + ln for ln in align(rows, ind)]
-    body.append(ind + "if (nstaged <= SIZE_MAX / sizeof *block)")
-    body.append(ind + "  block = malloc(nstaged * sizeof *block);")
-    body.append(ind + "if (!block && nstaged > 0) {")
-    body += null_out_handles(ep, ind + "  ")
-    body.append(ind + "  return MPIABI_ERR_INTERN;")
-    body.append(ind + "}")
+    if not mixed:
+        rows = [("const size_t", "nstaged", total),
+                (elem + " *", "block", "NULL")]
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append(ind + "if (nstaged <= SIZE_MAX / sizeof *block)")
+        body.append(ind + "  block = malloc(nstaged * sizeof *block);")
+        body.append(ind + "if (!block && nstaged > 0) {")
+        body += null_out_handles(ep, ind + "  ")
+        body.append(ind + "  return MPIABI_ERR_INTERN;")
+        body.append(ind + "}")
 
-    offset = None
-    rows = []
-    for s in staged:
-        init = "block" if offset is None else f"block + {offset}"
-        rows.append((elem + " *const", s.name, init))
-        offset = s.extent.alloc if offset is None \
-            else f"{offset} + {s.extent.alloc}"
-    body += [ind + ln for ln in align(rows, ind)]
-    body.append("")
+        offset = None
+        rows = []
+        for s in staged:
+            init = "block" if offset is None else f"block + {offset}"
+            rows.append((elem + " *const", s.name, init))
+            offset = s.extent.alloc if offset is None \
+                else f"{offset} + {s.extent.alloc}"
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append("")
+    else:
+        # Arrays of more than one element type in one block, so the offsets are
+        # in bytes and each is rounded up to the strictest alignment any of them
+        # could need (internal.h). `nstaged` stays an element count, because
+        # what mpiwrapper_staged_keep does with it is ask whether anything was
+        # staged at all.
+        # mpiwrapper_staged_keep reads nstaged only to ask whether anything
+        # was staged at all, so repeated extents collapse: six arrays sized by
+        # the same group make the same zero-test as one. This is not merely
+        # shorter -- the undeduped sum of MPI_Ialltoallw_c's six runs past the
+        # margin and reads as though the number meant something.
+        seen, terms = set(), []
+        for st in staged:
+            if st.extent.alloc not in seen:
+                seen.add(st.extent.alloc)
+                terms.append(f"(size_t){st.extent.alloc}")
+        rows = [("const size_t", "nstaged", " + ".join(terms))]
+        prev = "0"
+        for i, s in enumerate(staged):
+            rows.append((("const size_t" if i else "const size_t"),
+                         "off_" + s.name, prev))
+            prev = (f"mpiwrapper_staged_next(off_{s.name}, "
+                    f"(size_t){s.extent.alloc}, sizeof({s.elem}))")
+        rows.append(("const size_t", "nbytes", prev))
+        rows.append(("unsigned char *", "block", "NULL"))
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append(ind + "if (nbytes != SIZE_MAX) block = malloc(nbytes);")
+        body.append(ind + "if (!block && nstaged > 0) {")
+        body += null_out_handles(ep, ind + "  ")
+        body.append(ind + "  return MPIABI_ERR_INTERN;")
+        body.append(ind + "}")
+
+        rows = [(s.elem + " *const", s.name,
+                 f"({s.elem} *)(block + off_{s.name})") for s in staged]
+        body += [ind + ln for ln in align(rows, ind)]
+        body.append("")
 
     for s in staged:
+        if s.narrow_fn:
+            # The one conversion loop that can fail, and this assembler has no
+            # `done:` to jump to: the block is already on the heap and nothing
+            # owns it yet, since the call that would hand it to the request
+            # table has not happened. So the element that does not fit frees it
+            # here and returns, leaving the request null like every other early
+            # return in this body.
+            body += s.narrow_loop(
+                ind, ["free(block);"]
+                + [ln.strip() for ln in null_out_handles(ep, "")]
+                + ["return MPIABI_ERR_VALUE_TOO_LARGE;"])
+            continue
         body.append(ind + f"for ({s.extent.ctype} i = 0; "
                           f"i < {s.extent.alloc}; ++i)")
         body += s.fill(f"{ind}  {s.name}[i] = ")
@@ -3996,6 +4097,25 @@ def fallback_param(ep_name, p, ap):
     return None
 
 
+def assert_extent_table_is_real(protos):
+    """Every ARRAY_EXTENT key names an entry point and a parameter it has.
+
+    A typo here is silent in the worst way: the array simply has no extent, so
+    the entry point quietly keeps decision 6's stub and nothing says why. That
+    is the failure mode this table acquired the moment it started deciding
+    which large-count forms are served (NOTES.md #5.10) rather than only how
+    long an already-served array is.
+    """
+    for (name, param), _ in sorted(ARRAY_EXTENT.items()):
+        ep = protos.get(name)
+        if ep is None:
+            raise SystemExit(f"ARRAY_EXTENT names {name}, which the ABI header "
+                             "does not declare")
+        if not any(p.name == param for p in ep.params):
+            raise SystemExit(f"ARRAY_EXTENT names {name}'s {param!r}, which is "
+                             "not one of its parameters")
+
+
 def as_fallback(ep):
     """`ep` with its fallback's parameter list, for emitting the middle arm.
 
@@ -4288,6 +4408,7 @@ def main():
 
     handwritten_bodies = parse_handwritten_h()
     assign_status(protos, handwritten_bodies)
+    assert_extent_table_is_real(protos)
     assign_fallbacks(protos)
 
     names = list(protos)
@@ -4318,6 +4439,8 @@ def main():
         "ABI-side aliases": sum(1 for e in mpi_eps if e.status == "abi-alias"),
         "staged past return": sum(1 for e in mpi_eps if stages_past_return(e)),
         "large-count fallbacks": sum(1 for e in mpi_eps if e.fallback),
+        "narrowed staged past return":
+            sum(1 for e in mpi_eps if fallback_stages_past_return(e)),
     }
     drift = {k: (v, FROZEN[k]) for k, v in tallies.items() if v != FROZEN.get(k)}
     if drift:

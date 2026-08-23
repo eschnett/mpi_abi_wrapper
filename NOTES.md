@@ -1064,17 +1064,22 @@ Four independent reasons, each sufficient:
   entry points, and the count is a frozen tally, so a ninth must be admitted
   deliberately.
 
-  **The narrowing fallback (§5.10) makes the predicate arm-dependent, and adds
-  fourteen.** A `_c` v-collective's count and displacement arrays cross as
-  pointer casts in the primary body and as staged `int` arrays in the narrowing
-  body, so `MPI_Ialltoallv_c`, `MPI_Iallgatherv_c`, `MPI_Igatherv_c`,
-  `MPI_Iscatterv_c`, `MPI_Ireduce_scatter_c`, the two `MPI_Ineighbor_*v_c` forms
-  and the seven `*_init_c` forms stage past return **only where the
+  **The narrowing fallback (§5.10) makes the predicate arm-dependent.** A `_c`
+  vector collective's count and displacement arrays cross as pointer casts in
+  the primary body and as staged `int` arrays in the narrowing body, so the
+  nonblocking and persistent vector forms stage past return **only where the
   implementation lacks the `_c` entry point**. Rather than mutate the eight into
-  twenty-two and lose the distinction, the generator freezes the two separately:
-  `staged past return` stays 8 and describes the primary bodies, and
-  `narrowed staged past return` is 14. A fifteenth still has to be admitted
-  deliberately, which is the whole point of freezing either number.
+  one number covering both arms and lose the distinction, the generator freezes
+  the two separately: `staged past return` stays **8** and describes the primary
+  bodies, and `narrowed staged past return` is **18**. A nineteenth still has to
+  be admitted deliberately, which is the whole point of freezing either number.
+
+  The two sets overlap rather than nest: four of the eighteen — the `_c`
+  spellings of `Alltoallw_init`, `Ialltoallw`, `Neighbor_alltoallw_init` and
+  `Ineighbor_alltoallw` — are already in the eight, because their *datatype*
+  arrays are staged in both arms. What the fallback adds to those four is a
+  second element type in the same block, which is why `mpiwrapper_staged_next`
+  exists.
 - **`MPI_STATUSES_IGNORE`** (NULL in the ABI) must short-circuit before any
   temporary is allocated.
 - **Stage for value mapping or for representation, never for spelling.** What an
