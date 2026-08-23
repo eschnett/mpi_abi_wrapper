@@ -95,6 +95,13 @@ FROZEN = {
     # get wrong silently (NOTES.md #5.7, #6.3). Frozen so that a routine
     # entering or leaving the set is a deliberate act.
     "staged past return": 8,
+    # Large-count entry points that get a fallback body for an implementation
+    # that does not have them (NOTES.md #5.10). The ABI declares 159 `_c` forms
+    # and no released Open MPI has any of them, so this number is how much of
+    # that surface is served rather than refused. Frozen because an entry point
+    # joining or leaving the set changes what a build over an MPI-3
+    # implementation can do.
+    "large-count fallbacks": 3,
 }
 
 # ---------------------------------------------------------------------------
@@ -295,6 +302,28 @@ ABI_ALIAS = {
 ALIAS_TYPEDEF_PAIRS = {
     ("MPI_Copy_function", "MPI_Comm_copy_attr_function"),
     ("MPI_Delete_function", "MPI_Comm_delete_attr_function"),
+}
+
+# What a large-count entry point falls back to where the implementation does
+# not have it (NOTES.md #5.10). The default is its own small twin -- MPI_Send
+# for MPI_Send_c -- and this table names the entry points for which that is the
+# wrong answer.
+#
+# All three are MPI-3.0's `_x` forms, which already answer in MPI_Count and so
+# are *exact*: same signature, same types, no narrowing check, and no ceiling.
+# Preferring them over the small twin is not a style choice -- MPI_Type_size
+# reports an int, so a datatype larger than 2 GiB would come back as
+# MPI_UNDEFINED where MPI_Type_size_x gives the answer. Deprecated in MPI-4.1
+# means "do not write new code against it", not "absent" (NOTES.md #8), and
+# every implementation at the enforced MPI-3.0 floor has them.
+#
+# MPI_Get_elements_c and MPI_Status_set_elements_c belong to this group too and
+# are not here: they consume a status in the *in* direction, so they are
+# hand-written, and hw_status.c names their `_x` fallbacks itself.
+LARGE_COUNT_ALT = {
+    "MPI_Type_size_c": "MPI_Type_size_x",
+    "MPI_Type_get_extent_c": "MPI_Type_get_extent_x",
+    "MPI_Type_get_true_extent_c": "MPI_Type_get_true_extent_x",
 }
 
 # ---------------------------------------------------------------------------
@@ -816,7 +845,7 @@ class Param:
 
 class EntryPoint:
     __slots__ = ("name", "ret", "params", "deprecated", "deprecated_in",
-                 "status", "detail", "ret_kind", "unguarded")
+                 "status", "detail", "ret_kind", "unguarded", "fallback")
 
     def __init__(self, name, ret, params, deprecated, deprecated_in=None):
         self.name = name
@@ -831,6 +860,9 @@ class EntryPoint:
         self.status = None   # 'generated' | 'hand-written' | 'deferred'
         self.detail = None   # the reason, for gen/report.txt
         self.unguarded = False  # true where the body never calls the impl
+        # The implementation entry point this one falls back to where the
+        # implementation does not have it, or None (NOTES.md #5.10).
+        self.fallback = None
 
     @property
     def base(self):
@@ -1613,8 +1645,15 @@ def impl_null_handle(kind):
     return "MPI_" + HANDLE_KIND[kind].upper() + "_NULL"
 
 
-def emit_body(ep):
-    """The lines of BODY_MPI_X(TARGET), or None if some class blocks it."""
+def emit_body(ep, target="TARGET"):
+    """The lines of BODY_MPI_X(TARGET), or None if some class blocks it.
+
+    `target` is the macro parameter the call is written against. It is TARGET
+    for the body that calls the entry point's own name and FALLBACK for the one
+    that calls what it falls back to over an implementation lacking it
+    (NOTES.md #5.10); the two arms of that #if chain are otherwise the same
+    text, which is the point.
+    """
     if ep.name in STATUS_FIELD:
         return emit_status_field(ep)
 
@@ -1961,7 +2000,7 @@ def emit_body(ep):
 
     return assemble(ep, decls, outs, post, args, staged, checks, handle_out,
                     status_local, probes, pre, rejects, extent_post, maps,
-                    releases, late_decls)
+                    releases, late_decls, target)
 
 
 def length_type(ep, length):
@@ -2029,10 +2068,10 @@ def staged_kind(ep):
 
 def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
              status_local, probes, pre, rejects, extent_post, maps, releases,
-             late_decls=()):
+             late_decls=(), target="TARGET"):
     if staged and any(s.mode == "in" for s in staged) and request_out(ep):
         return assemble_outliving(ep, decls, args, staged, checks, probes, pre,
-                                  rejects)
+                                  rejects, target)
 
     # Absolute indentation, including the two columns the body macro adds:
     # the outer brace sits at column 3 and statements at column 5, which is
@@ -2128,18 +2167,18 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         rows.append(("const int", "ierror", None))
         lines = [ind + ln for ln in align(rows, ind)]
         lines[-1] = lines[-1][:-1] + " ="
-        oneline = wrap("TARGET", args, ";", lines[-1] + " ",
-                       len(ind) + 4 + len("TARGET("))
+        oneline = wrap(target, args, ";", lines[-1] + " ",
+                       len(ind) + 4 + len(target + "("))
         if len(oneline) == 1:
             body += lines[:-1] + oneline
         else:
             body += lines
-            body += wrap("TARGET", args, ";", ind + "    ",
-                         len(ind) + 4 + len("TARGET("))
+            body += wrap(target, args, ";", ind + "    ",
+                         len(ind) + 4 + len(target + "("))
     else:
         body += [ind + ln for ln in align(rows, ind)]
-        body += wrap("return TARGET", args, ";", ind,
-                     len(ind) + len("return TARGET("))
+        body += wrap("return " + target, args, ";", ind,
+                     len(ind) + len("return " + target + "("))
         body.append("  }")
         return body
 
@@ -2180,7 +2219,8 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
     return body
 
 
-def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
+def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
+                       target="TARGET"):
     """The body of a routine whose staged arrays outlive it.
 
     A nonblocking or persistent collective may keep reading the arrays it was
@@ -2251,8 +2291,8 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects):
 
     name = local_name(p_request)
     body.append(ind + f"{p_request.pointee()} {name};")
-    body += wrap("const int ierror = TARGET", args, ";", ind,
-                 len(ind) + len("const int ierror = TARGET("))
+    body += wrap("const int ierror = " + target, args, ";", ind,
+                 len(ind) + len("const int ierror = " + target + "("))
     body.append(ind + "if (ierror != MPI_SUCCESS) {")
     body.append(ind + "  free(block);")
     body += null_out_handles(ep, ind + "  ")
@@ -2857,6 +2897,9 @@ def emit_wrappers_c(pairs, handwritten_bodies):
     """`pairs` is [(MPI_X, PMPI_X)] in header order."""
     out = [WRAPPERS_PREAMBLE]
     initializers = []
+    # A fallback always names an MPI_ entry point the ABI declares, so this
+    # covers every one of them (assign_fallbacks enforces it).
+    by_name = {ep.name: ep for ep, _ in pairs}
 
     for ep, pep in pairs:
         if ep.status == "abi-alias":
@@ -2867,7 +2910,12 @@ def emit_wrappers_c(pairs, handwritten_bodies):
             continue
 
         chunk = [banner(ep.name), ""]
-        head = f"#define BODY_{ep.name}(TARGET)"
+        # A fallback body needs a second macro parameter to call, and only the
+        # entry points that have one take it -- so every other entry point's
+        # emitted text is unchanged, and the diff of this feature is exactly
+        # the entry points it serves.
+        head = (f"#define BODY_{ep.name}(TARGET, FALLBACK)" if ep.fallback
+                else f"#define BODY_{ep.name}(TARGET)")
         stub = macro_lines(head, emit_stub(ep))
         if ep.status == "generated" and ep.unguarded:
             # A body that never reaches the implementation works over one that
@@ -2889,6 +2937,15 @@ def emit_wrappers_c(pairs, handwritten_bodies):
             # there.
             chunk.append(f"#ifdef MPIWRAPPER_HAVE_{ep.name}")
             chunk += body
+            if ep.fallback:
+                # NOTES.md #5.10: a large-count entry point the implementation
+                # lacks is served by what it falls back to, and reaches the
+                # stub only when that is missing too. So decision 6's stub
+                # stops meaning "the implementation lacks this" and starts
+                # meaning "the implementation lacks this and cannot be asked
+                # for it another way".
+                chunk.append(f"#elif defined(MPIWRAPPER_HAVE_{ep.fallback})")
+                chunk += macro_lines(head, emit_body(ep, "FALLBACK"))
             chunk.append("#else")
             chunk += stub
             chunk.append("#endif")
@@ -2901,7 +2958,20 @@ def emit_wrappers_c(pairs, handwritten_bodies):
         # implementations attach a deprecation attribute to their own
         # declaration of it -- which -Werror turns into a build failure for
         # code whose whole job is to call it.
-        if ep.deprecated:
+        #
+        # A *fallback* to a deprecated name needs the same cover, and this is
+        # not hypothetical bookkeeping: all three of LARGE_COUNT_ALT's answers
+        # are MPI-4.1-deprecated `_x` forms, so MPI_Type_size_c's fallback arm
+        # calls a name the ABI header marks deprecated. Neither MPICH 4.3.1 nor
+        # Open MPI 5.0.10 attaches the attribute today -- checked in both
+        # headers rather than assumed -- so this arm currently protects a build
+        # that has not happened yet. It costs three lines and the alternative
+        # is a -Werror failure on the first implementation that adds it, in the
+        # one configuration nobody builds by default.
+        deprecation_cover = bool(
+            ep.deprecated
+            or (ep.fallback and by_name[ep.fallback].deprecated))
+        if deprecation_cover:
             chunk.insert(1, '#pragma GCC diagnostic push')
             chunk.insert(2, '#pragma GCC diagnostic ignored '
                             '"-Wdeprecated-declarations"')
@@ -2909,14 +2979,33 @@ def emit_wrappers_c(pairs, handwritten_bodies):
         for e in (ep, pep):
             head = signature("static " + abi_type(e.ret), "w_" + e.name,
                              e.params)
-            tail = f"BODY_{ep.name}({e.name})"
+            # The PMPI_ twin falls back to the fallback's own PMPI_ name, never
+            # across the shifted-name boundary: decision 7 gives PMPI its own
+            # slots precisely so an interposed MPI_ cannot capture our internal
+            # calls, and a fallback that reached MPI_X from w_PMPI_X_c would
+            # reintroduce exactly that.
+            if ep.fallback:
+                alt = ("P" + ep.fallback if e.name.startswith("PMPI_")
+                       else ep.fallback)
+                tail = f"BODY_{ep.name}({e.name}, {alt})"
+            else:
+                tail = f"BODY_{ep.name}({e.name})"
             if len(head[-1]) + 1 + len(tail) <= 79:
                 head[-1] += " " + tail
-            else:
+            elif len("    " + tail) <= 79:
                 head.append("    " + tail)
+            else:
+                # Two long names and a macro name do not fit on one line, so
+                # the fallback goes under the target at the open paren --
+                # clang-format's own shape, and the reason this arm exists at
+                # all is that the *_true_extent_c pair is 91 columns.
+                opening, rest = tail.split("(", 1)
+                first, second = rest.rsplit(", ", 1)
+                head.append(f"    {opening}({first},")
+                head.append(" " * (4 + len(opening) + 1) + second)
             chunk += head
             initializers.append((e.name, f"w_{e.name}"))
-        if ep.deprecated:
+        if deprecation_cover:
             chunk.append("#pragma GCC diagnostic pop")
         out.append("\n".join(chunk) + "\n")
 
@@ -3655,6 +3744,48 @@ def assign_status(protos, handwritten_bodies):
             tp.cls = p.cls
 
 
+def assign_fallbacks(protos):
+    """Fill ep.fallback for every large-count entry point that can be served
+    over an implementation lacking it (NOTES.md #5.10).
+
+    The candidate is LARGE_COUNT_ALT's answer where there is one and the small
+    twin otherwise, and it has to be an entry point the ABI itself declares --
+    the guard the emitted body tests is MPIWRAPPER_HAVE_<candidate>, and
+    probe_impl.py only probes a name that is one.
+
+    **What is emittable is a property of the signature, and this is the whole
+    of the gate.** The fallback body is the same body with a different call
+    target, so it is correct exactly where the candidate's parameter types are
+    the ones the primary body already converts to. Where they differ -- an
+    `int` count where the `_c` form has an MPI_Count -- the body has to narrow,
+    which is a conversion class of its own and is not this function's business
+    to invent. So a type mismatch leaves ep.fallback None and the entry point
+    keeps decision 6's stub, exactly as before.
+    """
+    for name, ep in protos.items():
+        if name.startswith("PMPI_") or not name.endswith("_c"):
+            continue
+        if ep.status != "generated":
+            continue
+        alt = protos.get(LARGE_COUNT_ALT.get(name, name[:-2]))
+        if alt is None:
+            continue
+        if [p.base for p in alt.params] != [p.base for p in ep.params]:
+            continue
+        if alt.ret != ep.ret:
+            continue
+        ep.fallback = alt.name
+        protos["P" + name].fallback = "P" + alt.name
+
+    named = set(LARGE_COUNT_ALT)
+    unserved = {n for n in named
+                if protos[n].status == "generated" and not protos[n].fallback}
+    if unserved:
+        raise SystemExit(
+            "LARGE_COUNT_ALT names an alternate whose signature does not "
+            "match: " + ", ".join(sorted(unserved)))
+
+
 def parse_handwritten_h():
     """The set of MPI_ names src/mpiwrapper/handwritten.h has a body for."""
     text = HANDWRITTEN_H.read_text()
@@ -3671,7 +3802,12 @@ def parse_handwritten_h():
 # Post-hoc assertions over the emitted text (NOTES.md #3)
 # ---------------------------------------------------------------------------
 
-_TARGET_CALL_RE = re.compile(r"\bTARGET\((?P<args>[^;]*?)\)\s*;", re.DOTALL)
+# Both arms of a large-count entry point's #if chain, so that the assertion
+# below covers the fallback body too. A fallback that let an ABI-typed
+# parameter through would be the same defect over an older implementation, and
+# it is the one this project would be least likely to notice by hand.
+_TARGET_CALL_RE = re.compile(r"\b(?:TARGET|FALLBACK)\((?P<args>[^;]*?)\)\s*;",
+                             re.DOTALL)
 
 
 def assert_no_abi_argument_reaches_the_call(wrappers_text):
@@ -3879,6 +4015,7 @@ def main():
 
     handwritten_bodies = parse_handwritten_h()
     assign_status(protos, handwritten_bodies)
+    assign_fallbacks(protos)
 
     names = list(protos)
     mpi_eps = [ep for n, ep in protos.items() if not n.startswith("PMPI_")]
@@ -3907,6 +4044,7 @@ def main():
         "deferred to S3": sum(1 for e in mpi_eps if e.status == "deferred"),
         "ABI-side aliases": sum(1 for e in mpi_eps if e.status == "abi-alias"),
         "staged past return": sum(1 for e in mpi_eps if stages_past_return(e)),
+        "large-count fallbacks": sum(1 for e in mpi_eps if e.fallback),
     }
     drift = {k: (v, FROZEN[k]) for k, v in tallies.items() if v != FROZEN.get(k)}
     if drift:

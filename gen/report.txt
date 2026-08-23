@@ -19,6 +19,7 @@ Frozen tallies
   deferred to S3         0
   ABI-side aliases       5
   staged past return     8
+  large-count fallbacks  3
 
 Generated (563)
 ----------------------------------------

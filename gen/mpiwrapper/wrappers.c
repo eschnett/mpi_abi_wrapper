@@ -20395,9 +20395,11 @@ static int w_PMPI_Type_get_extent(MPIABI_Datatype abi_datatype,
     BODY_MPI_Type_get_extent(PMPI_Type_get_extent)
 
 /* -------------------------------------------------- MPI_Type_get_extent_c */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_extent_c
-#define BODY_MPI_Type_get_extent_c(TARGET)                                     \
+#define BODY_MPI_Type_get_extent_c(TARGET, FALLBACK)                           \
   {                                                                            \
     const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
     MPI_Count *const   lb       = (MPI_Count *)abi_lb;                         \
@@ -20406,8 +20408,18 @@ static int w_PMPI_Type_get_extent(MPIABI_Datatype abi_datatype,
     const int ierror = TARGET(datatype, lb, extent);                           \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_extent_x)
+#define BODY_MPI_Type_get_extent_c(TARGET, FALLBACK)                           \
+  {                                                                            \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    MPI_Count *const   lb       = (MPI_Count *)abi_lb;                         \
+    MPI_Count *const   extent   = (MPI_Count *)abi_extent;                     \
+                                                                               \
+    const int ierror = FALLBACK(datatype, lb, extent);                         \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_get_extent_c(TARGET)                                     \
+#define BODY_MPI_Type_get_extent_c(TARGET, FALLBACK)                           \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_lb;                                                              \
@@ -20421,11 +20433,12 @@ static int w_PMPI_Type_get_extent(MPIABI_Datatype abi_datatype,
 static int w_MPI_Type_get_extent_c(MPIABI_Datatype abi_datatype,
                                    MPIABI_Count *abi_lb,
                                    MPIABI_Count *abi_extent)
-    BODY_MPI_Type_get_extent_c(MPI_Type_get_extent_c)
+    BODY_MPI_Type_get_extent_c(MPI_Type_get_extent_c, MPI_Type_get_extent_x)
 static int w_PMPI_Type_get_extent_c(MPIABI_Datatype abi_datatype,
                                     MPIABI_Count *abi_lb,
                                     MPIABI_Count *abi_extent)
-    BODY_MPI_Type_get_extent_c(PMPI_Type_get_extent_c)
+    BODY_MPI_Type_get_extent_c(PMPI_Type_get_extent_c, PMPI_Type_get_extent_x)
+#pragma GCC diagnostic pop
 
 /* -------------------------------------------------- MPI_Type_get_extent_x */
 #pragma GCC diagnostic push
@@ -20497,9 +20510,11 @@ static int w_PMPI_Type_get_true_extent(MPIABI_Datatype abi_datatype,
     BODY_MPI_Type_get_true_extent(PMPI_Type_get_true_extent)
 
 /* --------------------------------------------- MPI_Type_get_true_extent_c */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_get_true_extent_c
-#define BODY_MPI_Type_get_true_extent_c(TARGET)                                \
+#define BODY_MPI_Type_get_true_extent_c(TARGET, FALLBACK)                      \
   {                                                                            \
     const MPI_Datatype datatype    = mpiwrapper_datatype_fromabi(abi_datatype);\
     MPI_Count *const   true_lb     = (MPI_Count *)abi_true_lb;                 \
@@ -20508,8 +20523,18 @@ static int w_PMPI_Type_get_true_extent(MPIABI_Datatype abi_datatype,
     const int ierror = TARGET(datatype, true_lb, true_extent);                 \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_get_true_extent_x)
+#define BODY_MPI_Type_get_true_extent_c(TARGET, FALLBACK)                      \
+  {                                                                            \
+    const MPI_Datatype datatype    = mpiwrapper_datatype_fromabi(abi_datatype);\
+    MPI_Count *const   true_lb     = (MPI_Count *)abi_true_lb;                 \
+    MPI_Count *const   true_extent = (MPI_Count *)abi_true_extent;             \
+                                                                               \
+    const int ierror = FALLBACK(datatype, true_lb, true_extent);               \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_get_true_extent_c(TARGET)                                \
+#define BODY_MPI_Type_get_true_extent_c(TARGET, FALLBACK)                      \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_true_lb;                                                         \
@@ -20523,11 +20548,14 @@ static int w_PMPI_Type_get_true_extent(MPIABI_Datatype abi_datatype,
 static int w_MPI_Type_get_true_extent_c(MPIABI_Datatype abi_datatype,
                                         MPIABI_Count *abi_true_lb,
                                         MPIABI_Count *abi_true_extent)
-    BODY_MPI_Type_get_true_extent_c(MPI_Type_get_true_extent_c)
+    BODY_MPI_Type_get_true_extent_c(MPI_Type_get_true_extent_c,
+                                    MPI_Type_get_true_extent_x)
 static int w_PMPI_Type_get_true_extent_c(MPIABI_Datatype abi_datatype,
                                          MPIABI_Count *abi_true_lb,
                                          MPIABI_Count *abi_true_extent)
-    BODY_MPI_Type_get_true_extent_c(PMPI_Type_get_true_extent_c)
+    BODY_MPI_Type_get_true_extent_c(PMPI_Type_get_true_extent_c,
+                                    PMPI_Type_get_true_extent_x)
+#pragma GCC diagnostic pop
 
 /* --------------------------------------------- MPI_Type_get_true_extent_x */
 #pragma GCC diagnostic push
@@ -20818,9 +20846,11 @@ static int w_PMPI_Type_size(MPIABI_Datatype abi_datatype, int *abi_size)
     BODY_MPI_Type_size(PMPI_Type_size)
 
 /* -------------------------------------------------------- MPI_Type_size_c */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 #ifdef MPIWRAPPER_HAVE_MPI_Type_size_c
-#define BODY_MPI_Type_size_c(TARGET)                                           \
+#define BODY_MPI_Type_size_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
     MPI_Count *const   size     = (MPI_Count *)abi_size;                       \
@@ -20828,8 +20858,17 @@ static int w_PMPI_Type_size(MPIABI_Datatype abi_datatype, int *abi_size)
     const int ierror = TARGET(datatype, size);                                 \
     return mpiwrapper_errorcode_toabi(ierror);                                 \
   }
+#elif defined(MPIWRAPPER_HAVE_MPI_Type_size_x)
+#define BODY_MPI_Type_size_c(TARGET, FALLBACK)                                 \
+  {                                                                            \
+    const MPI_Datatype datatype = mpiwrapper_datatype_fromabi(abi_datatype);   \
+    MPI_Count *const   size     = (MPI_Count *)abi_size;                       \
+                                                                               \
+    const int ierror = FALLBACK(datatype, size);                               \
+    return mpiwrapper_errorcode_toabi(ierror);                                 \
+  }
 #else
-#define BODY_MPI_Type_size_c(TARGET)                                           \
+#define BODY_MPI_Type_size_c(TARGET, FALLBACK)                                 \
   {                                                                            \
     (void)abi_datatype;                                                        \
     (void)abi_size;                                                            \
@@ -20840,10 +20879,11 @@ static int w_PMPI_Type_size(MPIABI_Datatype abi_datatype, int *abi_size)
 
 static int w_MPI_Type_size_c(MPIABI_Datatype abi_datatype,
                              MPIABI_Count *abi_size)
-    BODY_MPI_Type_size_c(MPI_Type_size_c)
+    BODY_MPI_Type_size_c(MPI_Type_size_c, MPI_Type_size_x)
 static int w_PMPI_Type_size_c(MPIABI_Datatype abi_datatype,
                               MPIABI_Count *abi_size)
-    BODY_MPI_Type_size_c(PMPI_Type_size_c)
+    BODY_MPI_Type_size_c(PMPI_Type_size_c, PMPI_Type_size_x)
+#pragma GCC diagnostic pop
 
 /* -------------------------------------------------------- MPI_Type_size_x */
 #pragma GCC diagnostic push
