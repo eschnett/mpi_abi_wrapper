@@ -12,10 +12,16 @@
 # enough to produce results: three of its four shards completed and the fourth did
 # not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
 # / 20, rest 316 / 82. That run put 109 lines here, the failures both architectures
-# produced, and four in the two delta files. **There are 110 now**, and one delta
-# line: run 32302208489 failed threads/pt2pt/mt_iprobe_isendrecv 2 on both
-# architectures over five attempts, so it moved here from the x86_64 file, which
-# explains its own longer reason below.
+# produced, and four in the two delta files. **There are 105 now**
+# (`grep -cvE '^\s*(#|$)' xfail-ci-openmpi.txt`, which is how check-tap.py reads
+# the file), and one delta line: run 32302208489 failed
+# threads/pt2pt/mt_iprobe_isendrecv 2 on both architectures over five attempts, so
+# it moved here from the x86_64 file, which explains its own longer reason below.
+#
+# That number said 110 until the large-count branch, and 110 was wrong before that
+# branch touched anything: the file held 106. Counted from the artifact this time
+# rather than from the previous sentence, with the command written down beside it
+# so the next reader does not have to trust this one either.
 #
 # **`rma` is missing from this list, and it is no longer a gap: the directory is not
 # run on the Open MPI legs.** It was a gap for a while -- both shards were killed six
@@ -68,13 +74,25 @@
 #     expected.
 #   * `pt2pt/sendself` -- "expected (1,2) ... but found (0,1)", in about the
 #     simplest operation the suite has.
-#   * `coll/coll_large` -- "expect 0, got 255" on aarch64 and "got -1" on x86_64.
 #
-# The first two both report their mismatch one element off, which is a shape worth
-# looking at as one bug rather than several. All of them pass over MPICH 5.0.1 on
-# the same runners with the same wrapper build, so whatever they are, they are on
-# the Open MPI side of the conversion. The method for settling any of it is S7's
-# throughout: build the same test with Open MPI's own mpicc and see whether it
+# **`coll/coll_large` used to be the third of these and is now fixed**, which is
+# worth recording because the diagnosis above was wrong about it. It was filed as
+# wrong *data* -- "expect 0, got 255" -- and 255 is not data at all but the exit
+# status of a process that aborted. The test uses the large-count collectives; over
+# an Open MPI with no `_c` entry point those were decision 6's stubs, the stub's
+# MPI_ERR_UNSUPPORTED_OPERATION met the default MPI_ERRORS_ARE_FATAL, and the
+# abort became a 255. NOTES.md #5.10's fallback serves those entry points now and
+# the test passes on both architectures, so the line is gone from below.
+#
+# The lesson is cheap and worth keeping: an exit status is not a value, and
+# "expect 0, got 255" should have been read as "it died" rather than as "it
+# computed the wrong thing".
+#
+# Both remaining families report their mismatch one element off, which is a shape
+# worth looking at as one bug rather than several. All of them pass over MPICH
+# 5.0.1 on the same runners with the same wrapper build, so whatever they are, they
+# are on the Open MPI side of the conversion. The method for settling any of it is
+# S7's throughout: build the same test with Open MPI's own mpicc and see whether it
 # still fails without the wrapper.
 #
 # Groups keep the letters xfail-ci-mpich.txt uses, so the two lists share a
@@ -137,7 +155,6 @@ session/session_re_init 4 : an erroneous argument the implementation would have 
 
 # --- (f) measured, not yet attributed ------------------------------------------
 
-coll/coll_large 4 : not yet attributed. Observed: i = 0, expect 0, got 255
 part/parrived 2 : not yet attributed. Observed: expected 1.0 but received 0.0 at buf[1] (partition 0 count 64 off 1), iteration 0
 part/parrived_wait 2 : not yet attributed. Observed: expected 1.0 but received 0.0 at buf[1] (partition 0 count 64 off 1), iteration 0
 part/parrived_pready_out_of_order 2 : not yet attributed. Observed: expected 16.0 but received 0.0 at buf[16] (partition 1 count 16 off 0), iteration 0
