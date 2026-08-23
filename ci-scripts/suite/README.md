@@ -150,10 +150,38 @@ numbers below come from rather than a projection:
 | failures reported, p2p / rest | 61 / 84 | **61 / 84** |
 
 That last row is the one that matters: the caps changed how long a verdict took and
-not what it was. **The ceiling is now the MPICH `p2p` shard at 17.6 minutes**, which
-is real work with no test near its limit — pt2pt 8.5, threads 5.4, part 5.1. Further
-capping cannot shorten this workflow; splitting that shard is the next lever, and it
-costs four more jobs paying about a minute of fixed cost each.
+not what it was. Further capping cannot shorten this workflow: what was left was the
+MPICH `p2p` shard at 17.6 minutes, and that is real work with no test near its limit.
+
+**So `part` was split out of `p2p`, which is the next lever and the last cheap one.**
+Inside the p2p shard, by minutes of test loop in run 32605598678:
+
+| leg | pt2pt | threads | part | total |
+|---|---|---|---|---|
+| mpich x86_64 | 7.0 | 5.3 | 4.1 | 16.3 |
+| mpich aarch64 | 4.1 | 5.6 | 2.1 | 11.8 |
+| mpich i386 | 3.6 | 5.1 | 1.8 | 10.5 |
+| openmpi x86_64 | 4.2 | 4.2 | 6.0 | 14.4 |
+| openmpi aarch64 | 3.7 | 4.4 | **8.8** | 16.9 |
+
+`part` is Open MPI's expensive directory here exactly as `rma` was, and for a
+related reason — Open MPI 5.0.10 declares `MPI_VERSION` 3.1 and partitioned
+communication is MPI-4.0, so nearly all of those 8.8 minutes are capped hangs and
+failures. `pt2pt` and `threads` are where the MPICH legs' real work is. Splitting
+along that line separates the two implementations' costs rather than making every
+leg carry both, and of the three candidate two-way splits (worst shard 13.2, 12.2,
+12.5 minutes) it is the 12.2.
+
+**A three-way split would reach 8.8 minutes and buy nothing.** The ceiling it would
+have to beat is the MPICH `coll` shard at 14.2–15.2 minutes, which no split of `p2p`
+touches. Two shards clear that; a third would cost five more jobs at about a minute
+of fixed cost each and leave the workflow the same length. Suite jobs go from 18 to
+23 for this split, and the expected wall clock is about 16 minutes.
+
+**`coll` is the next lever and it is a different kind.** Its time is real work rather
+than waiting: `bcast` and `bcast_comm_world_only` at np=10 are 141 s and 144 s of it
+and they *pass*. Nothing in the timelimit mechanism helps there; only splitting the
+directory, or accepting 15 minutes, will.
 
 **The first capped run also added a line to the list.** `threads/comm/idup_nb` hung
 on both architectures having hung on only one before, and was 18% of what was left
