@@ -8,10 +8,10 @@ must hash these scripts and must *not* hash the suite's expected-failure list,
 or every edit to a reason rebuilds MPI on every variant (a mistake mpif's own
 `ci-scripts/README.md` records getting wrong twice).
 
-S6 (build, packaging, CI matrix) added the rest: the two pinned-tarball
-installers and the install-consumption check. The Linux runner is older,
-added in S1 because the developers' machines are macOS and the two platforms
-do not fail the same way.
+S6 (build, packaging, CI matrix) added the rest: the pinned-tarball installers —
+two then, three now that MVAPICH has a row — and the install-consumption check.
+The Linux runner is older, added in S1 because the developers' machines are macOS
+and the two platforms do not fail the same way.
 
 | script | runs | what it does |
 |---|---|---|
@@ -20,11 +20,12 @@ do not fail the same way.
 | `linux-floor.sh` | inside Linux | the `floor` row: builds MPICH 3.1.4 from source and hands over to `linux-test.sh`. Opt-in — the build takes some fifteen minutes |
 | `install-mpich.sh <prefix> [<version>]` | anywhere | downloads, configures (stock, no patches), builds and installs a pinned MPICH release |
 | `install-openmpi.sh <prefix> [<version>]` | anywhere | the same for Open MPI |
+| `install-mvapich.sh <prefix> [<version>]` | anywhere | the same for MVAPICH. Needs `libibverbs-dev` and `librdmacm-dev` present — its bundled libfabric carries two providers MPICH's does not (`prov/mverbs`, `prov/ucr`) and they include `<infiniband/ib.h>` unconditionally |
 | `suite/i386-suite.sh` | inside a `linux/386` container | builds MPICH from source, asserts that pointers really are 4 bytes, launches two ranks with no wrapper involved, and hands over to `suite/run-suite.sh` |
 | `check-install.sh mpich\|openmpi\|/path/to/mpicc` | anywhere | S6's exit check: configure, build and install this project into a prefix of its own, then build and run a program through each of the three consumption routes (NOTES.md #9) with the loader's search path cleared |
 
-Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, these two are a stock
-`configure && make && make install` with nothing carried: mpif needs an MPI
+Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, all three of these are a
+stock `configure && make && make install` with nothing carried: mpif needs an MPI
 that already implements the standard ABI, hence its pinned commit from
 MPICH's `main`, its header substitution and its pruning of everything the ABI
 does not define (NOTES.md #9, "Provisioning MPI in CI"). This project wraps
@@ -79,10 +80,16 @@ container.
 exit status.** Two steps measure the environment rather than this project:
 
 - *symbol binding* — evidence for NOTES.md §2's claims about `MPI_*` versus
-  `PMPI_*`. It varies by implementation and platform (Ubuntu's MPICH and Open
-  MPI define both strongly at one address; macOS MPICH keeps `PMPI_*` in a
-  separate library), and the design only needs both names to exist and reach the
-  same code.
+  `PMPI_*`. It varies by implementation and platform, and **three distinct
+  patterns have now been measured**: Ubuntu's MPICH and Open MPI define both
+  strongly at one address; macOS MPICH keeps `PMPI_*` in a separate library; and
+  MVAPICH 4.1 (672) and Intel MPI 2021.15 (613) both define *weak* `MPI_*`
+  over *strong* `PMPI_*` (`dev/third-implementations/`). `MPI_Send` and
+  `PMPI_Send` share an address in every one of them, which is all the design
+  needs. Worth noting that the two agreeing rows are the MPICH-derived ones
+  while Ubuntu's MPICH is not among them, so the pattern tracks the build rather
+  than the family — which is the reason this stays a per-row report rather than
+  a table written down once.
 - *`dlmopen` mode* — known not to work with any real MPI, for a reason outside
   this project: PMIx `dlopen`s components with `RTLD_GLOBAL`, and glibc cannot
   add to the global scope of a namespace with no main map, so `MPI_Init`
@@ -97,7 +104,7 @@ run.
 
 ## What GitHub Actions runs
 
-`.github/workflows/ci.yaml` holds nine jobs over thirty-five legs, and each one
+`.github/workflows/ci.yaml` holds ten jobs over thirty-eight legs, and each one
 calls a script from this directory wherever a script exists rather than
 repeating its recipe in YAML. That is the point of the split: the reasons live
 here, next to the code they are about, and stay runnable by hand.
@@ -106,13 +113,18 @@ here, next to the code they are about, and stay runnable by hand.
 |---|---|---|
 | `checks` | `cmake -DMPI_ABI_BUILD_WRAPPER=OFF` + `ctest` | no MPI at all — the five generator and header checks, plus `exported-symbols`, which is oracle 1 |
 | `linux-distro` | `linux-test.sh mpich\|openmpi` in `container:` | the distro's, installed by the script itself as root. Both arches |
-| `linux-source` | `install-{mpich,openmpi}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches |
+| `linux-source` | `install-{mpich,openmpi,mvapich}.sh`, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | pinned tarballs, built once and cached. Both arches. The two MVAPICH legs are report-only and expected at **12/13** — `abi_arrays_test` times out on an upstream `MPI_Dist_graph_create` hang, capped at 45 s |
+| `linux-oneapi` | apt, then `linux-test.sh <mpicc>`, then `check-install.sh <mpicc>` | Intel MPI from the oneAPI repository — a binary distribution, so there is no installer to call. **Pinned to 2021.15**, the newest release that has no standard ABI of its own and still compiles: 2021.17 ships `libmpi_abi.so`, which makes wrapping pointless, and 2021.16 declares a callback with `int count` the wrapper cannot build against. x86_64 only, because Intel ships no aarch64 build. **Gating** |
 | `linux-i386` | `docker/mpich-i386.dockerfile`, whose last `RUN` is `linux-test.sh` | Debian i386's. The only 32-bit row, and the only one where an ABI handle is not 64 bits |
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
 | `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Sixteen legs**: two implementations × x86_64/aarch64 × four shards of the suite |
 | `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.1, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
+
+**The MPICH legs gate; the Open MPI legs are still report-only.** So do the two MVAPICH
+`linux-source` legs, for a different and narrower reason — one upstream hang, not an
+uncalibrated list. `linux-oneapi` gates.
 
 **The MPICH legs gate; the Open MPI legs are still report-only.** That is per
 leg, not per job: `continue-on-error: ${{ matrix.leg.report_only }}`. The rule the
@@ -165,7 +177,8 @@ Three things about it that are decisions rather than defaults:
   minus the suite, which honoured the letter of the rule above and was broader
   than its reason — an edit to `linux-test.sh`, which cannot change a byte of an
   installed MPI, rebuilt four of them. A glob rather than the two names, so a
-  third installer joins the key by existing. The version is in the key too,
+  third installer joins the key by existing — which `install-mvapich.sh` now
+  has, with no edit to the key. The version is in the key too,
   because it is passed as a matrix argument rather than read from a file, so the
   installer's own default is hashed and the value actually used is not.
   (`ci-scripts/*` would still be the wrong spelling if the broad form ever comes
