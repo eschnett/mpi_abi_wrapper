@@ -302,7 +302,14 @@ Three routes, all generated from one source of truth for flags:
   with the rpath set so the produced executable starts without help, and never
   naming `libmpiwrapper`. On macOS they bake in `-isysroot` from
   `CMAKE_OSX_SYSROOT`, because `CMAKE_C_COMPILER` can be the Xcode toolchain's
-  own binary rather than the `/usr/bin/cc` shim.
+  own binary rather than the `/usr/bin/cc` shim. **Those paths are baked in at
+  *configure* time**, from `CMAKE_INSTALL_FULL_INCLUDEDIR`/`LIBDIR`, so
+  `cmake --install --prefix P` relocates the files and leaves the wrapper
+  pointing at the configured prefix — `/usr/local` if none was given.
+  `find_package(MPI)` then rejects the result with `missing:
+  MPI_mpi_abi_LIBRARY MPI_C_HEADER_DIR MPI_C_WORKS`, which reads like a bug in
+  this project rather than a mis-built prefix. Configure with
+  `-DCMAKE_INSTALL_PREFIX`, the way `ci-scripts/check-install.sh` does.
 - **CMake package files** — `find_package(mpi_abi)`, plus a `FindMPI` shim for
   consumers written against `find_package(MPI)`. Two mechanisms: CMake's own
   bundled `FindMPI` already finds this project through compiler-wrapper
