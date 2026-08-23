@@ -1848,15 +1848,15 @@ def emit_body(ep, target="TARGET"):
             return extent
         if extent.alloc not in checked_lengths:
             checked_lengths.add(extent.alloc)
-            checks.append((extent.alloc,
-                           f"if ({extent.alloc} < 0) return MPIABI_ERR_COUNT;"))
+            checks.extend(guarded_check(
+                ep, extent.alloc, f"{extent.alloc} < 0", "MPIABI_ERR_COUNT"))
         if extent.ctype != "int":
             # The length is wider than size_t may be, so the byte count can
             # overflow before mpiwrapper_stage sees it.
-            checks.append((extent.alloc,
-                           f"if ((uint64_t){extent.alloc} > SIZE_MAX / "
-                           f"sizeof({elem}))"))
-            checks.append((extent.alloc, "  return MPIABI_ERR_COUNT;"))
+            checks.extend(guarded_check(
+                ep, extent.alloc,
+                f"(uint64_t){extent.alloc} > SIZE_MAX / sizeof({elem})",
+                "MPIABI_ERR_COUNT"))
         return extent
 
     for p in ep.params:
@@ -1897,16 +1897,9 @@ def emit_body(ep, target="TARGET"):
             # -- would otherwise read its own uninitialized stack. Without this
             # a rejected MPI_Type_create_resized_c hands back an
             # uninitialized MPI_Datatype.
-            cond = f"if (!{NARROW_FN[p.base]}({abi}, &{name}))"
-            cleanup = null_out_handles(ep, "  ") + stub_out_zeros(ep, "  ")
-            if cleanup:
-                checks.append((name, cond + " {"))
-                checks += [(name, line) for line in cleanup]
-                checks.append((name, "  return MPIABI_ERR_VALUE_TOO_LARGE;"))
-                checks.append((name, "}"))
-            else:
-                checks.append((name, cond))
-                checks.append((name, "  return MPIABI_ERR_VALUE_TOO_LARGE;"))
+            checks += guarded_check(ep, name,
+                                    f"!{NARROW_FN[p.base]}({abi}, &{name})",
+                                    "MPIABI_ERR_VALUE_TOO_LARGE")
             args.append(substitute or name)
         elif cls == "large_only_zero":
             # Nothing to ask the implementation for, and a caller that reads it
@@ -1930,16 +1923,9 @@ def emit_body(ep, target="TARGET"):
             # buffer above 2 GiB cannot be walked at all over an
             # implementation that lacks the `_c` form. #13.2 has it.
             decls.append((p.pointee(), name, "0"))
-            cond = f"if (!{NARROW_FN[p.pointee()]}(*{abi}, &{name}))"
-            cleanup = null_out_handles(ep, "  ") + stub_out_zeros(ep, "  ")
-            if cleanup:
-                checks.append((name, cond + " {"))
-                checks += [(name, line) for line in cleanup]
-                checks.append((name, "  return MPIABI_ERR_VALUE_TOO_LARGE;"))
-                checks.append((name, "}"))
-            else:
-                checks.append((name, cond))
-                checks.append((name, "  return MPIABI_ERR_VALUE_TOO_LARGE;"))
+            checks += guarded_check(
+                ep, name, f"!{NARROW_FN[p.pointee()]}(*{abi}, &{name})",
+                "MPIABI_ERR_VALUE_TOO_LARGE")
             post.append(writeback(abi, f"*{abi} = {name};"))
             args.append("&" + name)
         elif cls == "widen_out":
@@ -2345,6 +2331,14 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
         rows.append(("int", "abi_ierror", "MPIABI_ERR_INTERN"))
         body += [ind + ln for ln in align(rows, ind)]
         body.append("")
+        # Every `goto done` below is a failure exit, but `done:` is where the
+        # success path leaves too, so the outs cannot be defined at the label.
+        # They are defined here instead -- once, before the first jump to it
+        # (NOTES.md #7 decision 6).
+        defined = out_defined(ep, ind)
+        if defined:
+            body += defined
+            body.append("")
         for s in staged:
             # An array the caller does not want is not allocated at all, which
             # is the point of testing MPI_STATUSES_IGNORE -- or MPI_T's null
@@ -2389,8 +2383,7 @@ def assemble(ep, decls, outs, post, args, staged, checks, handle_out,
                 # defect on a path decision 6 does not reach; the scratch
                 # check for this stage is what found it.
                 loops += s.narrow_loop(
-                    ind, [ln.strip() for ln in null_out_handles(ep, "")]
-                    + [ln.strip() for ln in stub_out_zeros(ep, "")]
+                    ind, [ln.strip() for ln in out_defined(ep, "")]
                     + ["abi_ierror = MPIABI_ERR_VALUE_TOO_LARGE;",
                        "goto done;"])
                 continue
@@ -2522,7 +2515,7 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
         body.append(ind + "if (nstaged <= SIZE_MAX / sizeof *block)")
         body.append(ind + "  block = malloc(nstaged * sizeof *block);")
         body.append(ind + "if (!block && nstaged > 0) {")
-        body += null_out_handles(ep, ind + "  ")
+        body += out_defined(ep, ind + "  ")
         body.append(ind + "  return MPIABI_ERR_INTERN;")
         body.append(ind + "}")
 
@@ -2563,7 +2556,7 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
         body += [ind + ln for ln in align(rows, ind)]
         body.append(ind + "if (nbytes != SIZE_MAX) block = malloc(nbytes);")
         body.append(ind + "if (!block && nstaged > 0) {")
-        body += null_out_handles(ep, ind + "  ")
+        body += out_defined(ep, ind + "  ")
         body.append(ind + "  return MPIABI_ERR_INTERN;")
         body.append(ind + "}")
 
@@ -2582,7 +2575,7 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
             # return in this body.
             body += s.narrow_loop(
                 ind, ["free(block);"]
-                + [ln.strip() for ln in null_out_handles(ep, "")]
+                + [ln.strip() for ln in out_defined(ep, "")]
                 + ["return MPIABI_ERR_VALUE_TOO_LARGE;"])
             continue
         body.append(ind + f"for ({s.extent.ctype} i = 0; "
@@ -2596,7 +2589,7 @@ def assemble_outliving(ep, decls, args, staged, checks, probes, pre, rejects,
                  len(ind) + len("const int ierror = " + target + "("))
     body.append(ind + "if (ierror != MPI_SUCCESS) {")
     body.append(ind + "  free(block);")
-    body += null_out_handles(ep, ind + "  ")
+    body += out_defined(ep, ind + "  ")
     body.append(ind + "  return mpiwrapper_errorcode_toabi(ierror);")
     body.append(ind + "}")
     body.append("")
@@ -2704,6 +2697,50 @@ def null_out_handles(ep, ind):
     return lines
 
 
+def out_defined(ep, ind):
+    """Every out parameter of `ep`, given a defined value.
+
+    Decision 6 pairs null_out_handles with stub_out_zeros because either alone
+    leaves half the caller's outputs undefined, and a caller is allowed to
+    ignore the return code. Every early return in a generated body owes the
+    same pair, not just the stub -- see NOTES.md #7 decision 6.
+    """
+    return null_out_handles(ep, ind) + stub_out_zeros(ep, ind)
+
+
+def guarded_lines(ep, cond, err, ind="    "):
+    """`if (cond) return err;` with every out parameter defined first.
+
+    Every guard that leaves a generated body early owes the caller what
+    decision 6's stub owes -- a negative length, a `_c` value that will not
+    narrow, the inout narrowing, an array extent the implementation refuses --
+    and each of them built the same braced block by hand. The braces appear
+    only when there is something to put inside them, so a routine with no out
+    parameter keeps the flat form it always had.
+
+    The lines come back unindented, because the two consumers indent
+    differently; `ind` is passed only to decide whether the flat form fits in
+    79 columns.
+    """
+    defined = out_defined(ep, "  ")
+    if defined:
+        return ([f"if ({cond}) {{"] + defined
+                + [f"  return {err};", "}"])
+    oneline = f"if ({cond}) return {err};"
+    if len(ind) + len(oneline) <= 79:
+        return [oneline]
+    return [f"if ({cond})", f"  return {err};"]
+
+
+def guarded_check(ep, key, cond, err, ind="    "):
+    """guarded_lines as a `checks` entry.
+
+    `key` is the local whose declaration the check must follow; both
+    assemblers cut the declaration group at the last key mentioned.
+    """
+    return [(key, line) for line in guarded_lines(ep, cond, err, ind)]
+
+
 def emit_extent_queries(ep, probes, pre, rejects, ind):
     """The extent queries of an array whose length apis.json gives as `*`.
 
@@ -2714,13 +2751,13 @@ def emit_extent_queries(ep, probes, pre, rejects, ind):
         return []
     body = []
     for decl, call in probes:
-        nulls = null_out_handles(ep, ind + "    ")
+        defined = out_defined(ep, ind + "    ")
         body.append(ind + decl)
         body.append(ind + "{")
         body += assign("const int ierror", call, ind + "  ")
-        if nulls:
+        if defined:
             body.append(ind + "  if (ierror != MPI_SUCCESS) {")
-            body += nulls
+            body += defined
             body.append(ind + "    return mpiwrapper_errorcode_toabi(ierror);")
             body.append(ind + "  }")
         else:
@@ -2729,14 +2766,7 @@ def emit_extent_queries(ep, probes, pre, rejects, ind):
         body.append(ind + "}")
     body += [ind + line for line in pre]
     for cond, err in rejects:
-        nulls = null_out_handles(ep, ind + "  ")
-        if nulls:
-            body.append(ind + f"if ({cond}) {{")
-            body += nulls
-            body.append(ind + f"  return {err};")
-            body.append(ind + "}")
-        else:
-            body.append(ind + f"if ({cond}) return {err};")
+        body += [ind + line for line in guarded_lines(ep, cond, err, ind)]
     body.append("")
     return body
 
@@ -2839,8 +2869,7 @@ def emit_stub(ep):
     for p in ep.params:
         if p.name != "...":
             body.append(f"    (void)abi_{p.name};")
-    body += null_out_handles(ep, "    ")
-    body += stub_out_zeros(ep, "    ")
+    body += out_defined(ep, "    ")
     if ep.ret == "int":
         body.append("    return MPIABI_ERR_UNSUPPORTED_OPERATION;")
     elif ep.ret == "double":

@@ -115,6 +115,7 @@ dev/               the Python generator and the dev-time cross-checks
   layout_hash.py     the vtable layout hash and its --check
   check_prototype.py the S1-reproduction check
   check-c-bindings.py  the MPI-5.0 Appendix A.3 cross-check
+  check_out_params.py  the out-parameter check over generated bodies
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
   dispatch-bench/ dlopen-probe/ get-contents-extent/ handle-map-bench/
@@ -358,7 +359,7 @@ outside the `MPI_*`/`PMPI_*` patterns.
 
 ## 10. Tests
 
-`ctest` runs fourteen tests. Six need no MPI at all and are the cheapest gate
+`ctest` runs fifteen tests. Seven need no MPI at all and are the cheapest gate
 in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 `-DMPI_ABI_BUILD_WRAPPER=OFF`.
 
@@ -367,6 +368,7 @@ in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 | `headers-up-to-date`, `compile_mpi_h`, `compile_mpiabi_h`, `compile_both_headers` | no | both generated headers compile standalone and *together* in one TU, with no tag/typedef/macro/enumerator collision |
 | `generated-up-to-date` | no | a fresh generation reproduces `gen/` byte for byte, the frozen tallies hold, and all 688 are accounted for |
 | `prototype-reproduced` | no | the generator still reproduces `dev/s1-reference/`: **194 items, 190 exactly, 4 exempted with a reason** that fails when it stops firing |
+| `out-params-defined` | no | no early return in a generated body leaves an out handle or out scalar undefined — **415 of the 705 generated arms own one**, and the rule closed 71 such returns across 26 entry points, 22 of them in narrowing arms an earlier revision of the check could not see (`NOTES.md` #7 decision 6) |
 | `layout-hash` | no | `MPIWRAPPER_LAYOUT_HASH` still matches the slot list it summarizes |
 | `c-bindings-cross-check` | no | all 688 signatures match MPI-5.0 Appendix A.3, or are one of 8 named exemptions |
 | `exported-symbols` | no | `libmpi_abi`'s exports are exactly the header's 1376, both directions — the leg that needs no MPI, and the reason this test is registered outside the wrapper block. Given a wrapper it adds two more: `libmpiwrapper` exports exactly one symbol, and the application's only MPI dependency is `libmpi_abi`. Its summary names the legs it ran, so a no-MPI pass cannot be read as all three |
