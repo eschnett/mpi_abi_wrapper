@@ -483,6 +483,21 @@ int main(int argc, char **argv)
   if (rank == 0)
     printf("abi_large_count_test: %d rank%s\n", size, size == 1 ? "" : "s");
 
+  /* This test deliberately provokes errors -- a count the implementation
+   * cannot express is half of what it checks -- so it cannot run under the
+   * default MPI_ERRORS_ARE_FATAL. Both communicators, because an error raised
+   * on a datatype rather than on a communicator goes to the initial error
+   * handler and not to MPI_COMM_WORLD's alone.
+   *
+   * The i386 row is what made this necessary rather than merely tidy: there
+   * MPICH refuses MPI_Type_contiguous_c(INT_MAX + 7) outright -- "the input
+   * argument count is too big to fit for internal routines" -- where on a
+   * 64-bit host it simply succeeds, so every other row ran the check without
+   * ever reaching an error at all.
+   */
+  CHECK_MPI(MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN));
+  CHECK_MPI(MPI_Comm_set_errhandler(MPI_COMM_SELF, MPI_ERRORS_RETURN));
+
   test_agrees_with_small_twin();
   test_send_recv();
   test_constructors();

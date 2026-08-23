@@ -301,12 +301,20 @@ static void test_narrowing(void)
   CHECK(mpiwrapper_narrow_aint(0, &a) && a == 0, "0 must narrow to MPI_Aint");
   CHECK(mpiwrapper_narrow_aint(-1, &a) && a == -1,
         "-1 must narrow to MPI_Aint");
+
+  /* Computed once, in MPIABI_Count, and cast rather than recomputed. Spelling
+   * the expected value `(MPI_Aint)INT_MAX + 1` does the arithmetic in whatever
+   * MPI_Aint promotes to -- which on the i386 row is a 32-bit int, so it
+   * overflows at compile time and gcc rejects it under -Werror=overflow. The
+   * branch it sits in is dead there, and that does not help: both arms are
+   * compiled either way.
+   */
+  const MPIABI_Count over_int = (MPIABI_Count)INT_MAX + 1;
   if (sizeof(MPI_Aint) == sizeof(MPIABI_Count)) {
-    CHECK(mpiwrapper_narrow_aint((MPIABI_Count)INT_MAX + 1, &a)
-              && a == (MPI_Aint)INT_MAX + 1,
+    CHECK(mpiwrapper_narrow_aint(over_int, &a) && a == (MPI_Aint)over_int,
           "a 64-bit MPI_Aint must take anything an MPIABI_Count holds");
   } else {
-    CHECK(!mpiwrapper_narrow_aint((MPIABI_Count)INT_MAX + 1, &a),
+    CHECK(!mpiwrapper_narrow_aint(over_int, &a),
           "a 32-bit MPI_Aint must refuse INT_MAX + 1");
   }
 
