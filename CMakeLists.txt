@@ -635,6 +635,29 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   set_tests_properties(abi_arrays_test PROPERTIES
     ENVIRONMENT "${MPIABI_TEST_ENV}")
 
+  # The ABI's large-count half, which over an implementation lacking the `_c`
+  # entry points is the narrowing fallback and over one that has them is the
+  # implementation itself (NOTES.md #5.10). The test is written to pass
+  # identically either way -- the `_c` form and its small twin must agree --
+  # which is what makes it an oracle rather than a description, and which is
+  # why it is one test rather than a per-implementation pair.
+  #
+  # Two ranks matter here more than elsewhere: at one rank a vector collective
+  # has nothing to exchange, the nonblocking forms complete on return, and the
+  # staged block that has to outlive the call is never entered into the
+  # request table at all.
+  add_executable(abi_large_count_test test/abi_large_count_test.c)
+  target_include_directories(abi_large_count_test
+    PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
+  target_compile_options(abi_large_count_test PRIVATE ${MPIABI_WARNINGS})
+  target_link_libraries(abi_large_count_test PRIVATE mpi_abi)
+
+  add_test(NAME abi_large_count_test
+    COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_large_count_test>
+            ${MPIABI_RUN_POST})
+  set_tests_properties(abi_large_count_test PROPERTIES
+    ENVIRONMENT "${MPIABI_TEST_ENV}")
+
   # The same for S3's second half: keyvals, output-string buffers with an
   # explicit length, MPI_T's handle and enumerated classes, and the obj_handle
   # whose class comes from a query rather than from the signature. Its sharpest
