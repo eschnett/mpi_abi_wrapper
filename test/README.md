@@ -17,6 +17,7 @@ are ranks, `MPI_LASTUSEDCODE` an error code, `MPI_WIN_CREATE_FLAVOR` and
 |---|---|---|
 | `compile_mpi_h.c`, `compile_mpiabi_h.c`, `compile_both_headers.c` | no | both generated headers compile standalone in a TU of their own, and together in one TU with no tag/typedef/macro/enumerator collision — the configuration `src/mpi_abi/` is built in |
 | `layout-hash` (`dev/layout_hash.py --check`) | no | `MPIWRAPPER_LAYOUT_HASH` still matches the slot list it summarizes |
+| `out-params-defined` (`dev/check_out_params.py`) | no | decision 6's promise reaches the generated bodies, not just the stubs: no `return` or `goto done` ahead of the implementation call may leave an out handle or out scalar undefined, since a caller is allowed to ignore the return code. It classifies parameters through `generate.py` itself, splits each `BODY_` macro into its arms on the preprocessor directive that introduces them — so the narrowing arm is audited too — and its scope rule is indent-aware in both directions, since an assignment inside some *other* guarded early return defines nothing on the path that falls through |
 | `generated-up-to-date` (`dev/generate.py --check`) | no | a fresh generation reproduces the committed `gen/` byte for byte, the frozen tallies still hold, and every one of the 688 entry points is generated, in the ledger, or deferred with a reason |
 | `prototype-reproduced` (`dev/check_prototype.py`) | no | S2's exit check: the generator still reproduces `dev/s1-reference/`, item by item, or the difference is a named exemption that fails when it stops firing |
 | `mpiwrapper_impl_config.h` (`dev/probe_impl.py`, at configure time) | yes, its header | not a test but a build step, and the thing every guard in the generated sources tests: which entry points and which optional constants this implementation actually has. Asked of the compiler, because `#ifdef` on the implementation's own name is quietly false wherever it spells a constant as an enumerator |
@@ -49,7 +50,7 @@ implementation's binaries under another's `mpiexec` silently produces N
 singletons instead of an N-rank job.
 
 **On the laptop this is developed on, prefix `ctest` with
-`scripts/host-env.sh`** — six of the thirteen tests fail without it, against
+`scripts/host-env.sh`** — six of the fifteen tests fail without it, against
 MPICH and against Open MPI 5.0.x alike, for two reasons that are entirely about
 this machine's firewall and VPN interfaces and are the second and third of the
 environment quirks below:

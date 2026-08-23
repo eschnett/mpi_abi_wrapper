@@ -35,6 +35,7 @@ set(MPIABI_PROBE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/probe_impl.py)
 set(MPIABI_LAYOUT_HASH_SCRIPT ${CMAKE_SOURCE_DIR}/dev/layout_hash.py)
 set(MPIABI_CHECK_PROTOTYPE_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check_prototype.py)
 set(MPIABI_CHECK_C_BINDINGS_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check-c-bindings.py)
+set(MPIABI_CHECK_OUT_PARAMS_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check_out_params.py)
 
 # `-DMPI_ABI_BUILD_WRAPPER=OFF` builds libmpi_abi alone, which needs no MPI at
 # all. That is a developer option, not part of the normal flow: a user
@@ -122,6 +123,15 @@ add_test(NAME generated-up-to-date
 # difference is a named exemption that fails when it stops firing.
 add_test(NAME prototype-reproduced
   COMMAND ${Python3_EXECUTABLE} ${MPIABI_CHECK_PROTOTYPE_SCRIPT}
+  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+)
+
+# NOTES.md #7 decision 6's promise reaches the generated bodies too, not just
+# the stubs: a caller may ignore the return code, so no early return may leave
+# an out parameter undefined. This closed 49 such returns across 21 entry
+# points and is here so they cannot reopen.
+add_test(NAME out-params-defined
+  COMMAND ${Python3_EXECUTABLE} ${MPIABI_CHECK_OUT_PARAMS_SCRIPT}
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
