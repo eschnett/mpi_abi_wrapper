@@ -174,12 +174,18 @@ jobs:
         run: bash ci-scripts/linux-test.sh ${{ matrix.mpi }}
 
   # ------------------------------- pinned tarballs, cached, + consumption
-  # NOTES.md #9's version table: MPICH >= 4.0 is the only implementation that
-  # provides the ABI's `_c` large-count surface, and Open MPI >= 5.0 is
-  # sessions plus the current component architecture -- which nothing else in
-  # this workflow covers, the distro row above being 4.1.6. Both versions are
-  # the installers' own defaults, restated here so they are visible and can
-  # enter the cache key.
+  # NOTES.md #9's version table: MPICH >= 4.0 provides the ABI's `_c`
+  # large-count surface, and Open MPI >= 5.0 is sessions plus the current
+  # component architecture -- which nothing else in this workflow covers, the
+  # distro row above being 4.1.6. Every version here is the matching
+  # installer's own default, restated so it is visible and can enter the cache
+  # key.
+  #
+  # The table's "MPICH is the *only* implementation with the `_c` surface" is
+  # what the MVAPICH rows below amend: 4.1 has it too, measured. That does not
+  # demote MPICH's rows -- they are the gating ones and MVAPICH's are not yet --
+  # but it does mean the large-count half of the ABI is no longer a
+  # single-implementation claim.
   linux-source:
     name: linux / ${{ matrix.mpi }} ${{ matrix.version }} / ${{ matrix.arch }} (from source)
     runs-on: ${{ matrix.os }}
@@ -204,6 +210,47 @@ jobs:
             version: 5.0.10
             os: ubuntu-24.04-arm
             arch: aarch64
+          # MVAPICH is the third implementation NOTES.md #9's matrix asks for,
+          # and that paragraph is also what this row is *not* about: MVAPICH is
+          # MPICH-derived, so its handle values, error classes and status layout
+          # are MPICH's and the conversion tables are already exercised. What it
+          # adds is a third *installation* shape -- its own library naming, its
+          # own mpicc, its own launcher -- which is where decision 19's three
+          # consumption routes get tested against something nobody tuned them
+          # for. install-mvapich.sh has the four things about 4.1 that were
+          # measured from the tarball rather than read off the vendor's page,
+          # which still claims an MPICH-3.4.3 base and is stale by two major
+          # versions. The one that matters to the matrix: 4.1 declares MPI 4.1
+          # and carries 387 `_c` prototypes, so it is the **second**
+          # implementation in CI providing the ABI's large-count surface, where
+          # the table above has MPICH >= 4.0 as the only one.
+          #
+          # `mvapich` needs no aarch64 exception: MVAPICH supports ARM, and the
+          # only leg verified by hand before this was committed is in fact the
+          # aarch64 one (dev/third-implementations/).
+          - mpi: mvapich
+            version: '4.1'
+            os: ubuntu-24.04
+            arch: x86_64
+            report_only: true
+          - mpi: mvapich
+            version: '4.1'
+            os: ubuntu-24.04-arm
+            arch: aarch64
+            report_only: true
+    # Report-only for the MVAPICH legs and gating for the other four. This is
+    # the rule the `compile` job established and the Open MPI suite legs still
+    # live under: a row nobody has ever seen green cannot tell a regression
+    # from the thing it was added to find, so it reports until it has passed
+    # once and then gates. `== true` rather than a bare `matrix.report_only`
+    # because the key is absent on the four older rows, where the expression
+    # would evaluate to the empty string.
+    #
+    # **Flip this to gating in the commit that records the first green run**,
+    # and delete the two `report_only:` keys with it -- a report-only row left
+    # in place after it starts passing is a row that has stopped being a test,
+    # which is the FreeBSD lesson in the other direction.
+    continue-on-error: ${{ matrix.report_only == true }}
     steps:
       - uses: actions/checkout@v6
 
@@ -223,6 +270,26 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
               build-essential gfortran cmake python3 patch binutils \
               poppler-utils curl ca-certificates pkg-config
+
+      # The MVAPICH legs only, and the restriction is load-bearing rather than
+      # frugal. MVAPICH's bundled libfabric has two providers MPICH's does not,
+      # prov/mverbs and prov/ucr, and both include <infiniband/ib.h>
+      # unconditionally, so a stock build dies at prov/ucr/src/ucr_domain.lo
+      # without these; install-mvapich.sh's header has the measurement.
+      #
+      # Why not simply add them to the step above: the MPI cache key hashes the
+      # install scripts and *not* the runner's package list, so a package that
+      # changes what a configure finds would change the installed bytes with
+      # nothing to invalidate the cache that serves them. MPICH and Open MPI
+      # both probe for verbs; MVAPICH's legs have their own prefixes and their
+      # own cache entries, so the blast radius of these two packages stops
+      # where the `if` does. Headers only -- no hardware, no kernel module, and
+      # nothing consulted at run time.
+      - name: Install the rdma-core headers MVAPICH's libfabric needs
+        if: matrix.mpi == 'mvapich'
+        run: |
+          sudo apt-get install -y -qq --no-install-recommends \
+              libibverbs-dev librdmacm-dev
 
       # runner.temp is usable in a step's with:/env: but not in a job's env:
       # block, hence a step. The prefix carries the implementation name so the
@@ -329,6 +396,23 @@ jobs:
       # 4.x spelling and a no-op on 5.0.10. If the 5.0.10 leg ever shows
       # single-copy errors, the variable to add here is OMPI_MCA_smsc=^cma.
       - name: Build and test
+        env:
+          # The MVAPICH legs only, and this is a cap rather than an exclusion.
+          # MVAPICH 4.1's MPI_Dist_graph_create does not return over its
+          # ch4:ofi device -- measured with two ranks and no wrapper involved,
+          # unaffected by FI_PROVIDER=tcp or =shm, and with a backtrace that is
+          # entirely inside libmpi.so below the wrapper's pass-through frame
+          # (dev/third-implementations/). abi_arrays_test therefore hangs, and
+          # at ctest's 1500 s default that one test is 25 minutes of a 90-minute
+          # job to re-learn something written down.
+          #
+          # 45 s is two orders of magnitude above the slowest test that passes
+          # here (c-bindings-cross-check, 3.9 s), so it cannot turn a slow pass
+          # into a failure on a loaded runner. **Cap a hang, do not exclude
+          # it** -- suite/timelimit-ci-openmpi.txt's rule, and the reason this
+          # is not an -E: a capped test still runs and still reports, so the
+          # day MVAPICH fixes this the row goes green on its own.
+          CTEST_TIMEOUT: ${{ matrix.mpi == 'mvapich' && '45' || '' }}
         run: ci-scripts/linux-test.sh "${PREFIX}/bin/mpicc"
 
       # NOTES.md #9 decision 19. Installs this project into a prefix of its own
@@ -350,6 +434,184 @@ jobs:
           for log in /tmp/cmake-mpi-${{ matrix.mpi }}.log \
                      /tmp/build-mpi-${{ matrix.mpi }}/CMakeFiles/CMakeConfigureLog.yaml \
                      /tmp/build-mpi-${{ matrix.mpi }}/CMakeFiles/CMakeError.log; do
+              if [[ -f ${log} ]]; then
+                  echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
+              fi
+          done
+
+  # -------------------------------------------------------------- Intel MPI
+  # The fourth implementation, and the cheapest of the three NOTES.md #9 names
+  # after MPICH and Open MPI: the `compile` job below already adds this exact
+  # apt repository to get icx, so Intel MPI is one more package from a source
+  # this workflow trusts already. Cray MPICH is the third name in that
+  # paragraph and cannot be a row here at all -- it ships with an HPE system.
+  #
+  # Not a `linux-source` leg, because there is no tarball: Intel MPI is a
+  # binary distribution, so this job is the from-source rows' shape with apt
+  # in place of an installer, and it keeps their two mandatory steps -- launch
+  # two ranks with nothing of ours involved, then check-install.sh's
+  # consumption routes.
+  #
+  # **One leg where every from-source row has two.** Intel MPI ships no
+  # aarch64 build; that is the implementation's limit, not an omission here.
+  #
+  # What the probe in dev/third-implementations/ measured against
+  # intel-oneapi-mpi-devel 2021.18.1-9, all four of which this job depends on:
+  #
+  #   * mpi.h declares MPI_VERSION 4 / MPI_SUBVERSION 1 and MPI_Type_size_c
+  #     links and runs, so this is the **third** implementation in CI carrying
+  #     the ABI's `_c` large-count surface, after MPICH and MVAPICH.
+  #   * The library is libmpi.so.12, which check-install.sh's
+  #     check_only_mpi_abi_dependency already matches on `libmpi\.` -- no new
+  #     alternative needed, and worth checking because a miss there turns the
+  #     leg into a silent pass.
+  #   * `mpicc -show` bakes `-Xlinker -rpath` to $I_MPI_ROOT/lib into every
+  #     link, which is what lets check-install.sh's `env -u LD_LIBRARY_PATH`
+  #     legs resolve the wrapped implementation at all.
+  #   * Symbol binding is a **third pattern**, and the first new one since
+  #     ci-scripts/README.md wrote that section: 680 weak MPI_* over 680 strong
+  #     PMPI_*, where Ubuntu's MPICH and Open MPI define both strongly at one
+  #     address and macOS MPICH keeps PMPI_* in a separate library. NOTES.md #2
+  #     only needs "both names exist and reach the same code", and this is the
+  #     cleanest evidence for it in the matrix.
+  linux-oneapi:
+    name: linux / intel mpi / x86_64 (apt)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Report-only until it has been green once -- the same rule as the MVAPICH
+    # legs above, and the same instruction: delete this line in the commit that
+    # records the first green run.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      # No gfortran: nothing here builds an MPI from source, so the reason the
+      # from-source rows need it does not apply. poppler-utils does, though --
+      # the c-bindings cross-check shells out to pdftotext, and without it that
+      # test fails as a missing package reported as a failing gate.
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+              build-essential cmake python3 patch binutils \
+              poppler-utils curl ca-certificates pkg-config
+
+      # Byte for byte the `compile` job's icx step, minus the compiler package.
+      # Unpinned deliberately, for the reason that step gives about the NVIDIA
+      # SDK: the version is in the package's *candidate*, not its name, so
+      # writing one down would rot -- the newest the repository offers is what
+      # gets installed and the step prints which that was.
+      - name: Install Intel MPI
+        run: |
+          curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+              | sudo gpg --dearmor -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+              | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt-get update -qq
+          apt-cache policy intel-oneapi-mpi-devel | head -3
+          sudo apt-get install -y intel-oneapi-mpi-devel
+
+      # vars.sh rather than the whole toolkit's setvars.sh -- only MPI is
+      # installed here. `set +u` around it for the reason the icx step gives:
+      # these scripts read unset variables.
+      #
+      # MPI_LABEL is why linux-test.sh gained the variable. Left to itself the
+      # script derives its label from the mpicc path's second-from-last
+      # component, which is right for our own prefixes and here yields
+      # `2021.18` -- `command -v mpicc` resolves through to the versioned
+      # directory rather than the `latest` symlink -- so the logs the failure
+      # step below wants to print would be named after a version nobody wrote.
+      - name: Set up the Intel MPI environment
+        run: |
+          set +u
+          source /opt/intel/oneapi/mpi/latest/env/vars.sh
+          set -u
+          {
+              echo "I_MPI_ROOT=${I_MPI_ROOT}"
+              echo "MPICC=$(command -v mpicc)"
+              echo "MPI_LABEL=intelmpi"
+              echo "PATH=${PATH}"
+              # shm is the shared-memory-only fabric. Named for the same reason
+              # scripts/host-env.sh names FI_PROVIDER=tcp: a runner has no
+              # interconnect, and an implementation guessing at one is what
+              # test/README.md is largely about.
+              echo "I_MPI_FABRICS=shm"
+          } >>"${GITHUB_ENV}"
+
+      # ---------------------------------------------------------------------
+      # **LD_LIBRARY_PATH is deliberately NOT exported, and this is the single
+      # most important line in this job.**
+      #
+      # Intel MPI 2021.18 ships its own `libmpi_abi.so` -- it implements the
+      # standard MPI ABI natively, 670 MPI_* symbols including 159 `_c` ones,
+      # SONAME libmpi_abi.so.1 -- and vars.sh puts that directory on
+      # LD_LIBRARY_PATH. Our own library has the same *filename*. Our test
+      # binaries record `NEEDED libmpi_abi.so` with a RUNPATH to the build
+      # tree, and **DT_RUNPATH is searched after LD_LIBRARY_PATH**, so with
+      # vars.sh's value exported the loader binds our binaries to Intel's
+      # library instead of ours:
+      #
+      #   libmpi_abi.so => /opt/intel/oneapi/mpi/2021.18/lib/libmpi_abi.so
+      #
+      # Measured, not reasoned about (dev/third-implementations/): with
+      # LD_LIBRARY_PATH exported, 5 of 13 tests fail -- exactly the five
+      # black-box tests that load a wrapper -- and with it cleared all 13 pass.
+      # The five failures are the good case. The bad one is that a future test
+      # tolerant enough to pass against a *real* ABI implementation would go
+      # green here having never loaded this project at all, which is
+      # HISTORY.md #2.14's failure mode with a new cause.
+      #
+      # Nothing needs the variable: `mpicc -show` bakes `-Xlinker -rpath` to
+      # $I_MPI_ROOT/lib into every link, mpiexec and its hydra proxies carry
+      # their own RPATHs, and Intel MPI finds its bundled libfabric through
+      # I_MPI_ROOT rather than the loader path. check-install.sh was already
+      # immune -- it runs every route under `env -u LD_LIBRARY_PATH` for
+      # precisely this class of accident, and its six legs pass here either
+      # way, which is what made the ctest failures worth chasing rather than
+      # dismissing.
+      #
+      # NOTES.md #10's fifth oracle -- wrapping an MPI that already exports the
+      # ABI -- is a *different* row that does not exist yet, and it needs
+      # MPIWRAPPER_WRAP_ABI_IMPL. This job is the ordinary wrap of Intel MPI's
+      # native `libmpi.so.12`, which is what its plain mpicc links.
+      # ---------------------------------------------------------------------
+
+      # The same gate every row that provisions its own MPI carries, and for
+      # the same reason: it separates "this runner cannot launch a job" from
+      # "the wrapper is broken", which are otherwise the same red ctest.
+      - name: Two ranks, with no wrapper involved
+        run: |
+          cat >"${RUNNER_TEMP}/hello.c" <<'EOF'
+          #include <mpi.h>
+          #include <stdio.h>
+          int main(int argc, char **argv) {
+              int size = -1, rank = -1;
+              MPI_Init(&argc, &argv);
+              MPI_Comm_size(MPI_COMM_WORLD, &size);
+              MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+              printf("rank %d of %d\n", rank, size);
+              MPI_Finalize();
+              return size == 2 ? 0 : 1;
+          }
+          EOF
+          "${MPICC}" -o "${RUNNER_TEMP}/hello" "${RUNNER_TEMP}/hello.c"
+          if ! mpiexec -n 2 "${RUNNER_TEMP}/hello"; then
+              echo "::error::Intel MPI cannot launch two ranks on this runner; ctest below would have blamed the wrapper"
+              exit 1
+          fi
+
+      - name: Build and test
+        run: ci-scripts/linux-test.sh "${MPICC}"
+
+      - name: Check the installed prefix's consumption routes
+        run: ci-scripts/check-install.sh "${MPICC}"
+
+      - name: Show CMake's check logs
+        if: failure()
+        run: |
+          for log in /tmp/cmake-intelmpi.log \
+                     /tmp/build-intelmpi/CMakeFiles/CMakeConfigureLog.yaml \
+                     /tmp/build-intelmpi/CMakeFiles/CMakeError.log; do
               if [[ -f ${log} ]]; then
                   echo "::group::${log}"; cat "${log}"; echo "::endgroup::"
               fi

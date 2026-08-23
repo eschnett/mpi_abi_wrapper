@@ -80,14 +80,17 @@ check.
 ## 3. Repository layout
 
 ```
-.github/workflows/ ci.yaml -- nine CI jobs over thirty-five legs, each calling a
+.github/workflows/ ci.yaml -- ten CI jobs over thirty-eight legs, each calling a
                      ci-scripts entry point rather than repeating its recipe.
                      Twenty of those legs are the MPICH C suite: five
-                     environments x four shards, the MPICH ones gating
+                     environments x four shards, the MPICH ones gating. Three
+                     are report-only until first seen green: two MVAPICH and
+                     one Intel MPI (NOTES.md #9's third and fourth
+                     implementations)
 bin/               mpicc.in, mpicxx.in -- the compiler wrappers, configured at install
 ci-scripts/        MPI install and build-shape checks
   check-install.sh   the five-leg installed-prefix consumption test
-  install-mpich.sh, install-openmpi.sh
+  install-mpich.sh, install-openmpi.sh, install-mvapich.sh
   linux-test.sh, run-linux-docker.sh
   linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
                        to linux-test.sh (§11)
@@ -108,6 +111,8 @@ dev/               the Python generator and the dev-time cross-checks
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
   dispatch-bench/ dlopen-probe/ get-contents-extent/ handle-map-bench/
   request-identity/ type-identity/   the six probe directories NOTES.md cites
+  third-implementations/  what the MVAPICH and Intel MPI rows assume, checked
+                       in a container rather than asserted (§11)
 doc/               mpi.h.patch, mpi50-report.pdf
 examples/          narrated excerpts of each shape; src/ is the reference
 gen/               committed generated output, never hand-edited
@@ -487,8 +492,10 @@ their old evidence.
 | Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker); and 13/13, two ranks on **x86_64** (Debian 13 container, GitHub Actions, `MPI 4.1`) |
 | Linux glibc, MPICH 4.2.0 | same | **cannot run two ranks** (Ubuntu 24.04): PMIx-only `libmpi`, PMI-1 hydra, so `-n 2` is two singletons. `HISTORY.md` §2.14 |
 | Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker); and 13/13, two ranks on **x86_64** (Ubuntu 24.04 container, GitHub Actions, `MPI 3.1`) |
-| Linux glibc x86_64, MPICH 4.3.1 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-mpich.sh`, GitHub Actions. The primary MPICH row of `NOTES.md` #9's version table, and the only one providing the `_c` surface |
+| Linux glibc x86_64, MPICH 4.3.1 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-mpich.sh`, GitHub Actions. The primary MPICH row of `NOTES.md` #9's version table. Was "the only one providing the `_c` surface"; the MVAPICH and Intel MPI rows below both provide it too |
 | Linux glibc x86_64, Open MPI 5.0.6 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-openmpi.sh`, GitHub Actions. The only Open MPI 5.x row on Linux |
+| Linux glibc aarch64, MVAPICH 4.1 | same | **works, 12/13**, two ranks — built from the pinned tarball by `install-mvapich.sh`, in a container (`dev/third-implementations/run.sh mvapich`). `abi_arrays_test` is the one failure and it is upstream: `MPI_Dist_graph_create` does not return over MVAPICH's ch4:ofi device, reproduced with two ranks and no wrapper loaded, unaffected by `FI_PROVIDER`. `check-install.sh` passes. Needs `libibverbs-dev`/`librdmacm-dev` to build at all. **Not yet run on GitHub Actions** — the two `linux-source` MVAPICH legs are report-only until one is |
+| Linux glibc x86_64, Intel MPI 2021.18.1 | same | **works**, 13/13, two ranks — `apt install intel-oneapi-mpi-devel`, in a container under qemu (`dev/third-implementations/run.sh intelmpi`); `MPI 4.1`, and it provides the `_c` surface. 13/13 **only with `LD_LIBRARY_PATH` cleared**: Intel MPI ships its own `libmpi_abi.so`, which otherwise captures ours and fails the five wrapper-loading tests (`NOTES.md` #13.2). `check-install.sh` passes either way, since it clears the variable itself. **Not yet run on GitHub Actions** — `linux-oneapi` is report-only until it is |
 | Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6, two ranks — the configure floor, verified. `run-linux-docker.sh floor`, built from source on Ubuntu 20.04 / gcc 9, the newest gfortran its configure accepts |
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI** (`NOTES.md` #2) |

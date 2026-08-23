@@ -12,6 +12,26 @@
 #   SRC        source tree (default: the parent of this script's directory)
 #   BUILD      build directory (default: /tmp/build-$MPI; must be writable, and
 #              deliberately not inside SRC, which CI mounts read-only)
+#   MPI_LABEL  what to call this MPI in the build directory and log names.
+#              Defaults to the second-from-last path component of <mpicc>,
+#              which is right for a prefix this project's own installers built
+#              -- $RUNNER_TEMP/opt/mpi-mpich/bin/mpicc gives `mpi-mpich` -- and
+#              wrong for a vendor layout that versions the prefix rather than
+#              naming the implementation: Intel MPI installs its wrapper at
+#              /opt/intel/oneapi/mpi/latest/bin/mpicc, so the derived label is
+#              `latest` and the logs a failing row wants to print are named
+#              after nothing. Only ever a label; nothing behavioural reads it.
+#   CTEST_TIMEOUT  seconds to give any one test, passed to ctest --timeout.
+#              Unset means ctest's own default, which is **1500 s per test** --
+#              fine for a row where a test either passes in under a second or
+#              fails, and expensive for one with a known hang. MVAPICH 4.1 has
+#              exactly that: MPI_Dist_graph_create does not return over its
+#              ch4:ofi device, so abi_arrays_test would cost 25 minutes to
+#              learn something already recorded. Same principle as
+#              suite/timelimit-ci-openmpi.txt -- **cap a hang, do not exclude
+#              it**: a capped test still runs, still reports and still tells
+#              you the day the implementation fixes it, where an excluded one
+#              tells you nothing ever again.
 #
 # Gating steps exit non-zero on failure. Two steps are informational and say so,
 # because they measure the environment rather than this project:
@@ -34,7 +54,7 @@ case $which in
   */*|mpicc*)
     [ -x "$which" ] || { echo "$which: not executable" >&2; exit 2; }
     MPICC=$which
-    which=$(basename "$(dirname "$(dirname "$MPICC")")")
+    which=${MPI_LABEL:-$(basename "$(dirname "$(dirname "$MPICC")")")}
     ;;
   *) echo "usage: $0 mpich|openmpi|/path/to/mpicc" >&2; exit 2 ;;
 esac
@@ -121,7 +141,8 @@ export OMPI_MCA_rmaps_base_oversubscribe=1
 export OMPI_MCA_btl_vader_single_copy_mechanism=none
 
 step "ctest, default isolation (RTLD_LOCAL | RTLD_DEEPBIND)"
-ctest --test-dir "$BUILD" --output-on-failure || fail "ctest"
+ctest --test-dir "$BUILD" --output-on-failure \
+      ${CTEST_TIMEOUT:+--timeout "$CTEST_TIMEOUT"} || fail "ctest"
 
 step "dlmopen mode (informational, expected to fail; NOTES.md #2)"
 MPI_ABI_WRAPPER_DLOPEN_MODE=dlmopen \
