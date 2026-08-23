@@ -176,14 +176,31 @@ not what it was. Further capping cannot shorten this workflow much; splitting th
 longest shard is the next lever, and it costs four more jobs paying about a minute
 of fixed cost each.
 
-**Which shard is longest has since moved, and the metric matters when comparing.**
-The table above is runtests' own test loop. Measured as *job durations*, which is
-what a wall-clock budget actually pays, run 32655819244 ranks them: Open MPI `p2p`
-at 15 min on both architectures, MPICH `coll` at 14–15, MPICH `p2p` at 12, and
-whole runs landing at 19–21 min. So the MPICH `p2p` shard is no longer the ceiling
-and `coll` — which no cap list touches, because its long tests finish — is now
-level with it. Do not compare a 15-minute job against a 14.4-minute test loop and
-conclude anything; re-derive both from the artifacts.
+**Which shard is longest is not stable enough to name, and two metrics get confused
+here.** The table above is runtests' own test loop. What a wall-clock budget pays is
+the *job duration*, and across two warm runs those move by several minutes with no
+configuration change at all:
+
+| shard | 32655819244 | 32661937934 |
+|---|---|---|
+| mpich `p2p` x86_64 | 12 min | **20 min** |
+| openmpi `p2p` aarch64 | 15 | 16 |
+| openmpi `p2p` x86_64 | 15 | 14 |
+| mpich `coll` x86_64 | 14 | 14 |
+| mpich `p2p` i386 | 12 | 14 |
+| whole run | 19 | 20 |
+
+The first column says the MPICH `p2p` shard is mid-table; the second says it is the
+ceiling by four minutes. So the honest claim is the family and the spread: every
+shard over about ten minutes is `p2p` or `coll`, and whole warm runs land at 19–21
+minutes. **A ranking taken from one run has been wrong twice now** — once from the
+run the caps were measured on, once from the replacement written while correcting
+that. Quote a spread, or say nothing.
+
+Do not compare a 20-minute job duration against a 14.4-minute test loop, and do not
+compare either with a cold run: run 32659909508 took 36 minutes because all six MPI
+prefixes were building from source after a cache-key change. Re-derive whichever you
+mean from the artifacts.
 
 **The first capped run also added a line to the list.** `threads/comm/idup_nb` hung
 on both architectures having hung on only one before, and was 18% of what was left

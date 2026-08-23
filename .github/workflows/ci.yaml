@@ -1228,18 +1228,39 @@ jobs:
       # artifact with dev/suite-timings/tap-timings.py; the TAP file carries a
       # `# time=` per test.
       #
-      # **The ceiling moved, and it is no longer the MPICH p2p shard.** That shard was
-      # 20.0 minutes when the paragraph above was written; measured end-to-end as
-      # billed by GitHub in run 32655819244 the ranking is Open MPI p2p at 15 minutes
-      # on both architectures, then MPICH coll at 14-15 and MPICH p2p at 12. Whole
-      # runs land at 19-21 minutes. So the next lever, if this needs to be faster, is
-      # splitting `coll` or the Open MPI `p2p` shard rather than MPICH's, and it costs
-      # four more jobs paying the ~1 minute of fixed cost each.
+      # **The ceiling is the `p2p` and `coll` shards, and *which* of them is longest
+      # is not stable enough to name.** Two warm runs, job durations as GitHub bills
+      # them:
+      #
+      #                              32655819244   32661937934
+      #   mpich   p2p   x86_64            12 min        20 min
+      #   openmpi p2p   aarch64           15            16
+      #   openmpi p2p   x86_64            15            14
+      #   mpich   coll  x86_64            14            14
+      #   mpich   p2p   i386              12            14
+      #   whole run                       19            20
+      #
+      # The first column alone says the MPICH p2p shard is comfortably mid-table; the
+      # second says it is the ceiling by four minutes. Nothing about the configuration
+      # changed between them. So the useful statement is the family rather than the
+      # ranking: every shard over about ten minutes is `p2p` or `coll`, whole warm runs
+      # land at 19-21 minutes, and splitting any one of those shards is the next lever
+      # if this needs to be faster -- four more jobs paying the ~1 minute of fixed cost
+      # each.
+      #
+      # **A single run cannot support a ranking here**, and this comment has now
+      # carried the wrong one twice: once from the run the caps were measured on, and
+      # once from the replacement written while fixing that. Runner-to-runner variance
+      # on these shards is worth several minutes, so quote a spread or say nothing.
       #
       # These are job durations rather than test-loop durations, which is the honest
       # number for a wall-clock budget and not comparable line-for-line with the 46.3
       # and 16.8 figures above -- those are runtests' own loop. Re-derive either from
       # a shard's artifact with dev/suite-timings/tap-timings.py.
+      #
+      # A cold run is a third measurement, not a slow warm one: 36 minutes in run
+      # 32659909508, which is six MPI prefixes building from source at once after the
+      # cache keys changed. Compare it with neither column.
       #
       # **And it was still killed, which is why `exclude` below drops it from the
       # two Open MPI legs.** Not as a triage of an unexplained failure: the cause
