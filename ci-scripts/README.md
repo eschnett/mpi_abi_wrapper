@@ -23,6 +23,21 @@ and the two platforms do not fail the same way.
 | `install-mvapich.sh <prefix> [<version>]` | anywhere | the same for MVAPICH. Needs `libibverbs-dev` and `librdmacm-dev` present — its bundled libfabric carries two providers MPICH's does not (`prov/mverbs`, `prov/ucr`) and they include `<infiniband/ib.h>` unconditionally |
 | `suite/i386-suite.sh` | inside a `linux/386` container | builds MPICH from source, asserts that pointers really are 4 bytes, launches two ranks with no wrapper involved, and hands over to `suite/run-suite.sh` |
 | `check-install.sh mpich\|openmpi\|/path/to/mpicc` | anywhere | S6's exit check: configure, build and install this project into a prefix of its own, then build and run a program through each of the three consumption routes (NOTES.md #9) with the loader's search path cleared |
+| `install-abi-mpi.sh mpich\|openmpi <prefix>` | anywhere | builds an MPI that implements the **standard ABI itself**, by delegating to mpif's own installer; the reference half of the mpif rows |
+| `install-git-mpi.sh mpich\|openmpi <prefix>` | anywhere | builds the **same commit** stock and unpruned: the wrap target of those rows |
+| `test-mpif.sh <abi-prefix> [<launcher-prefix>]` | anywhere | builds mpif at the pinned tag against an ABI prefix and runs **mpif's `ctest`** (not its MPICH Fortran suite) |
+| `mpif-version.sh` | sourced | the pinned mpif tag, in one place, for all three above |
+
+**The released-tarball rule has exactly one exception, and it is named.**
+`install-abi-mpi.sh` and `install-git-mpi.sh` build from pinned *git commits*,
+because the mpif rows need an MPI whose standard-ABI implementation works and
+no release of either has one: MPICH 5.0.1 shipped without it (its
+`-version-info` never reached libtool, fixed upstream in `bb167f1c`) and no
+released Open MPI implements the ABI at all. The pins are mpif's own, read out
+of its installers by name rather than copied, so the reference and the wrap
+target cannot come to be different commits without anyone noticing. Everything
+else here — every row that wraps an ordinary MPI — stays on released tarballs,
+which is what an ordinary user has.
 
 Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, all three of these are a
 stock `configure && make && make install` with nothing carried: mpif needs an MPI

@@ -252,6 +252,31 @@ message(STATUS "libmpi_abi soname version (MPI_ABI_VERSION): ${MPIABI_SOVERSION}
 set_target_properties(mpi_abi PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${MPIABI_SOVERSION})
+
+# **Mach-O gates on a second number, and it is not the one in the file name.**
+# dyld records the compatibility version a client was linked against and
+# refuses at load any library offering a lower one -- so getting the leaf name
+# right and this wrong produces exactly the failure the soname exists to
+# prevent, and produces it only on macOS and only when the swap is actually
+# attempted.
+#
+# The ecosystem's number comes from libtool: every implementation of ABI
+# version 1 is built `-version-info 1:0:0`, which libtool turns into the name
+# libmpi_abi.1.dylib and the compatibility version (current - age + 1) = 2.0.0.
+# Open MPI's ABI branch installs exactly that, and mpif's
+# ci-scripts/check-mpi-install.sh asserts both fields -- it is what caught this
+# here, having found our compatibility version at CMake's default of 1.0.0.
+#
+# CMake derives -compatibility_version from SOVERSION, which has to stay 1 for
+# the file name, so the two are decoupled with MACHO_*_VERSION. Kept as
+# SOVERSION + 1 rather than written as 2, so the arithmetic that ties it to the
+# ABI version survives an ABI 2 that nobody has thought about yet.
+if(APPLE)
+  math(EXPR MPIABI_MACHO_VERSION "${MPIABI_SOVERSION} + 1")
+  set_target_properties(mpi_abi PROPERTIES
+    MACHO_COMPATIBILITY_VERSION ${MPIABI_MACHO_VERSION}.0.0
+    MACHO_CURRENT_VERSION ${MPIABI_MACHO_VERSION}.0.0)
+endif()
 target_include_directories(mpi_abi PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
 target_compile_options(mpi_abi PRIVATE ${MPIABI_WARNINGS})
 # dlopen/dlsym/dlerror live in libdl on glibc older than 2.34 and in libc from

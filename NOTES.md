@@ -1962,6 +1962,23 @@ and it is `file(STRINGS)`-ed out of the generated header so that no edit can
 put the two out of step. `VERSION` is `PROJECT_VERSION` and moves freely; the
 two are deliberately different numbers that happen to agree at 1.0.0 today.
 
+**Mach-O gates on a second number, and it is not the one in the file name.**
+dyld records the compatibility version a client was linked against and refuses
+at load any library offering a lower one — so the leaf name being right and
+this being wrong produces exactly the failure the soname exists to prevent,
+on macOS only, and only when a swap is actually attempted. The ecosystem's
+number comes from libtool: ABI version 1 is `-version-info 1:0:0`, which gives
+the name `libmpi_abi.1.dylib` and compatibility version *2.0.0*. CMake derives
+`-compatibility_version` from `SOVERSION`, which must stay 1 for the file name,
+so the two are decoupled with `MACHO_COMPATIBILITY_VERSION`.
+
+This was wrong for a day, between decision 21 and the mpif rows of §10 —
+`libmpi_abi.1.dylib` with compatibility version 1.0.0, which is a library
+correctly named and unloadable by anything linked against a real one. Nothing
+here found it; mpif's `ci-scripts/check-mpi-install.sh` asserts both fields and
+did. The lesson is §10's, not §9's: **the export-side conventions of an ABI are
+only checkable against another implementation of it.**
+
 `libmpiwrapper` gets neither, and the asymmetry is the two-library split
 showing through: nothing links it, so nothing records a name for it, so there
 is no name to keep stable. It is found by the absolute path decision 5 bakes
@@ -2085,6 +2102,26 @@ Version choice is about coverage, not admissibility:
    is the correct outcome and not a fixable one (§2). On ELF `RTLD_DEEPBIND`
    resolves it, because scope order there beats weak-vs-strong. So this oracle
    runs on the Linux rows, and the macOS rows get its refusal as a test instead.
+
+   **mpif is now a CI row rather than an aspiration**, four of them:
+   `{mpich, openmpi} × {native, wrapper}`, where the native legs run mpif over
+   an implementation's own standard ABI and the wrapper legs run the same mpif
+   over this project wrapping *the same commit* of that implementation, built
+   stock. The comparison is the product: a wrapper-leg failure its native
+   counterpart lacks is a defect here, one they share is not. Neither
+   statement can be had from a single leg.
+
+   It earned its cost immediately. mpif's first run answered 69 of 81 where
+   the native ABI answered 81, and the twelve were three separate defects that
+   all thirteen of this project's own tests had passed over — `HISTORY.md`
+   §2.18's converter bug, and decisions 24 and 25. Two more came from mpif's
+   `check-mpi-install.sh` alone, before any test ran: the Mach-O
+   compatibility version (§9) and the export style (§13.2).
+
+   `ci-scripts/test-mpif.sh` is the runner and takes **two** prefixes, because
+   this project's has no `mpiexec` — the launcher belongs to the wrapped MPI.
+   Only mpif's `ctest` runs; its MPICH Fortran suite is a separate thing and is
+   out of scope.
 
    **It does not currently build against Open MPI's own ABI mode**, for a reason
    that has nothing to do with the wrapper: `mpicc_abi`'s `mpi.h` does not
@@ -2642,6 +2679,31 @@ not compiled at all (§5.10).
 - **A program that creates unboundedly many ops or keyvals over its lifetime is
   outside what this design serves.** Stated plainly because the table in §6.2
   reads like a corner case and is not.
+- **On macOS, a binary linked against this `libmpi_abi` cannot be re-pointed at
+  another implementation's, because ours exports `MPI_*` as *strong* symbols
+  and the convention is weak.** A Mach-O client linked against a weak-exporting
+  `libmpi_abi` binds `MPI_*` through a weak-def-only lookup that a strong
+  definition does not satisfy, so mixing the two export styles breaks
+  substitution in one direction. Open MPI's ABI branch and MPICH's binding
+  generator both emit weak definitions; mpif emits them too, and its
+  `check-mpi-install.sh` refuses a prefix without them — which is how this was
+  found, and it is Darwin-only, ELF's lookup not distinguishing the two.
+
+  **It is not merely a missing `#pragma weak`, which is why it is recorded here
+  rather than fixed.** §2's macOS isolation rests on exactly this mechanism
+  read from the other side: dyld coalesces weak definitions across images, and
+  `HISTORY.md` §2.3 measures our *strong* `MPI_Send` winning over an
+  implementation's weak one — the reason a wrapper cannot be layered over an
+  ABI-implementing MPI on macOS at all, and the reason the behavioural probe
+  exists. Making our definitions weak changes what wins in that contest, so it
+  cannot be done without re-measuring the capture detection that the whole
+  "either it works or it refuses to start" property depends on.
+
+  So: the swap works on ELF today and not on Mach-O, the four mpif rows of §10
+  are Linux for this reason among others, and **this is the open question a
+  1.0 should state rather than the bug it looks like.** A `dev/` probe of one
+  weak and one strong `libmpi_abi` under dyld, in the shape of
+  `dev/symbol-versioning/`, is what would settle it.
 
 - **A wrapped MPI that ships its own `libmpi_abi.so` can capture ours through
   `LD_LIBRARY_PATH`.** `libmpi_abi.so` is what this project builds, and it is

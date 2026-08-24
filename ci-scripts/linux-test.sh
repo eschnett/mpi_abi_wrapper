@@ -86,7 +86,13 @@ if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null; then
   # to: it reads MPI-5.0's Appendix A.3 out of doc/mpi50-report.pdf. Without it
   # that test fails on a stock container with a FileNotFoundError, which is a
   # missing package reported as a failing gate.
-  pkgs="build-essential cmake python3 patch binutils poppler-utils"
+  # gfortran is for decision 25's probe, and it is what makes this row cover
+  # the Fortran path at all: enable_language(Fortran OPTIONAL) means a
+  # container without one still builds and still passes, with the two Fortran
+  # getters answering "not set". That is a supported configuration and a
+  # silently narrower test, which is the combination worth avoiding on the only
+  # rows that exercise ELF.
+  pkgs="build-essential gfortran cmake python3 patch binutils poppler-utils"
   case ${MPICC:+path}$which in
     mpich)   pkgs="$pkgs libmpich-dev mpich" ;;
     openmpi) pkgs="$pkgs libopenmpi-dev openmpi-bin" ;;
