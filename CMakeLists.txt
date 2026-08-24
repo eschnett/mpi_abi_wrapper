@@ -626,6 +626,14 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     gen/mpiwrapper/wrappers.c
     src/mpiwrapper/getvtable.c
   )
+  # The banner src/mpiwrapper/hw_strings.c puts in front of the wrapped
+  # library's MPI_Get_library_version string. PROJECT_VERSION rather than
+  # MPIABI_SOVERSION: this one names *the wrapper's* release, which is what a
+  # bug report needs and the one number in that banner not derivable from the
+  # ABI header.
+  target_compile_definitions(mpiwrapper PRIVATE
+    "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
+
   if(CMAKE_Fortran_COMPILER)
     # Pinned, because CMake picks the "highest" language among a target's
     # objects to drive the link -- and with one Fortran object that is
@@ -698,6 +706,8 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       gen/mpiwrapper/wrappers.c
       src/mpiwrapper/getvtable.c
     )
+    target_compile_definitions(mpiwrapper_unisolated PRIVATE
+      "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
     if(CMAKE_Fortran_COMPILER)
       set_target_properties(mpiwrapper_unisolated PROPERTIES LINKER_LANGUAGE C)
       target_compile_definitions(mpiwrapper_unisolated PRIVATE

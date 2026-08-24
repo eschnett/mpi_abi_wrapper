@@ -1206,6 +1206,40 @@ thing separating the safe class from the dangerous one. It is `MPI_Info_get`'s
 `valuelen`, `MPI_Info_get_string`'s `buflen`, `MPI_Session_get_nth_pset`'s
 `pset_len`, and MPI_T's twelve. `MPI_MAX_STRINGTAG_LEN` is an input limit only.
 
+**`MPI_Get_library_version` is the one that does not merely copy** (decision
+26). It puts a two-line banner in front of the wrapped library's own string:
+
+```
+mpi_abi_wrapper 1.0.0 (MPI 5.0 standard ABI, MPI_ABI_VERSION 1.0)
+wrapping:
+MPICH Version:      4.3.1
+...
+```
+
+The reason is that **after decision 24 nothing else tells an application there
+is a shim here at all**. `MPI_Get_version` reports the standard this library
+presents rather than the wrapped one's, and `MPI_Abi_get_version` reports the
+ABI; both are answers about the ABI rather than about the implementation of it.
+The library version string is where a person looks and what a bug report
+pastes, so it is where the wrapper's own identity belongs.
+
+It is *additive*, which is the property that keeps it safe: the implementation's
+text follows unchanged, every implementation names itself in that text, and
+consumers grep it — mpif's `MPIF_TEST_MPI_LIBRARY` does, which is why the
+banner names no implementation of its own. The four version numbers in it are
+stringified from the header rather than typed, per `CLAUDE.md`'s rule about
+writing down how to re-derive a number.
+
+Two consequences worth stating: the staged buffer grows by the banner and the
+implementation writes into the middle of it, so the composition costs no second
+copy and carries the implementation's own `resultlen` convention through
+unchanged; and **truncation becomes reachable**, where §4.4's "the ABI took the
+maximum over both" had made it impossible. A banner in front of a maximal
+8192-byte MPICH string exceeds the ABI's 8192. It truncates, per the table
+below, and the tail of the wrapped banner is the right end to lose — real ones
+run to one or two kilobytes, and the wrapper's line is the part a reader cannot
+reconstruct.
+
 **Truncate or error is a per-parameter judgement**, and belongs in the named
 `(routine, parameter)` table:
 
@@ -1782,6 +1816,12 @@ the decision rather than working around it.
     INTEGER handles hold ABI values. No availability guard and no decision-6
     stub, since no implementation entry point is involved. §4.4, `HISTORY.md`
     §2.18.
+26. **`MPI_Get_library_version` prepends a banner** naming this library and its
+    version, ahead of the wrapped implementation's own string, which follows
+    unchanged. It is the only entry point whose answer this library *adds to*
+    rather than converts or forwards, and it exists because decision 24 leaves
+    nothing else that reports the shim: `MPI_Get_version` answers for the ABI,
+    `MPI_Abi_get_version` for the ABI's version. §5.8.
 24. **`MPI_Get_version` reports the ABI's own version**, 5.0, not the wrapped
     implementation's. MPI-5.0 §2.7 requires the `MPI_VERSION` macro and this
     call to agree, and `gen/include/mpi.h` says 5; forwarding put a second and

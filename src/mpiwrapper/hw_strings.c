@@ -116,24 +116,98 @@ int mpiwrapper_w_PMPI_Error_string(int abi_errorcode, char *abi_string,
 
 /* ------------------------------------------------ MPI_Get_library_version ---- */
 
+/* **The one entry point whose answer this library adds to rather than
+ * converts.** Everything else here copies a string the implementation
+ * produced; this one puts a banner of its own in front of it.
+ *
+ * The reason is that the wrapper is otherwise invisible from inside a running
+ * program, and this is where a person looks. MPI_Get_version reports the
+ * standard *this* library presents rather than the wrapped one's (decision
+ * 24), and MPI_Abi_get_version reports the ABI -- so after those two, nothing
+ * an application can call says "there is a shim here, of this version". A bug
+ * report that pastes the library version string should not have to.
+ *
+ * The wrapped library's own text follows unchanged, which is what keeps this
+ * additive: every implementation's banner names itself and its version, and
+ * anything that greps this string for MPICH or Open MPI still finds them.
+ * mpif's tests do exactly that, and its `MPIF_TEST_MPI_LIBRARY` check is the
+ * reason the banner names neither implementation.
+ *
+ * **The version numbers are stringified from the header, not typed here.**
+ * Three of the four have been written down twice somewhere in this project's
+ * history and one of those copies was wrong; CLAUDE.md's rule is to write down
+ * how to re-derive a number rather than the number.
+ */
+#define MPIWRAPPER_STR_(x) #x
+#define MPIWRAPPER_STR(x)  MPIWRAPPER_STR_(x)
+
+#ifndef MPIWRAPPER_VERSION
+/* Set from PROJECT_VERSION by CMakeLists.txt. The fallback exists so that a
+ * build outside it still compiles, and says so rather than claiming a version.
+ */
+#  define MPIWRAPPER_VERSION "unknown-version"
+#endif
+
+#define MPIWRAPPER_BANNER                                                      \
+  "mpi_abi_wrapper " MPIWRAPPER_VERSION " (MPI "                               \
+  MPIWRAPPER_STR(MPIABI_VERSION) "." MPIWRAPPER_STR(MPIABI_SUBVERSION)         \
+  " standard ABI, MPI_ABI_VERSION "                                            \
+  MPIWRAPPER_STR(MPIABI_ABI_VERSION) "."                                       \
+  MPIWRAPPER_STR(MPIABI_ABI_SUBVERSION) ")\n"                                  \
+  "wrapping:\n"
+
+#define MPIWRAPPER_BANNER_LEN (sizeof MPIWRAPPER_BANNER - 1)
+
+/* The banner has to leave room for something after it. This cannot fail for
+ * any ABI this code compiles against -- MPIABI_MAX_LIBRARY_VERSION_STRING is
+ * 8192 against a banner under a hundred bytes -- and is a _Static_assert
+ * rather than a run-time check for #5.9's reason: there is no run-time
+ * recourse, since a banner that does not fit is one this body cannot write.
+ */
+_Static_assert(MPIWRAPPER_BANNER_LEN < MPIABI_MAX_LIBRARY_VERSION_STRING / 2,
+               "the mpi_abi_wrapper banner leaves too little of the ABI's "
+               "library-version buffer for the wrapped library's own string");
+
 /* The one staged buffer big enough to be worth a word: MPICH's
- * MPI_MAX_LIBRARY_VERSION_STRING is 8192, so this is an 8 KB automatic array.
- * It is a once-per-process call, so the alternative -- a heap allocation with
- * a failure path of its own -- would be more code and more ways to be wrong.
+ * MPI_MAX_LIBRARY_VERSION_STRING is 8192, so this is an 8 KB automatic array
+ * plus the banner. It is a once-per-process call, so the alternative -- a heap
+ * allocation with a failure path of its own -- would be more code and more
+ * ways to be wrong.
+ *
+ * The implementation writes *into the middle of it*, straight after the
+ * banner, so the composition costs no second copy and the length handed to
+ * string_out is simply the sum. That matters for more than tidiness: it
+ * carries the implementation's own resultlen convention through unchanged,
+ * including Open MPI's habit of reporting one more than strlen (the comment on
+ * check_terminated in test/abi_converters_test.c has the measurement).
+ *
+ * **Truncation is now reachable, where before it was not.** #4.4 gave the ABI
+ * the maximum over both implementations, so a copy could never overflow; a
+ * banner in front of a maximal 8192-byte MPICH string can. It truncates, which
+ * is this function's row in the table above and the right end to lose: the
+ * banner is the part a reader cannot reconstruct, and no banner has ever been
+ * observed to displace anything, since real ones run to one or two kilobytes.
  */
 #ifdef MPIWRAPPER_HAVE_MPI_Get_library_version
 #  define BODY_MPI_Get_library_version(TARGET)                                 \
     {                                                                          \
-      char buf[MPI_MAX_LIBRARY_VERSION_STRING];                                \
+      char buf[MPIWRAPPER_BANNER_LEN + MPI_MAX_LIBRARY_VERSION_STRING];        \
       int  resultlen = 0;                                                      \
                                                                                \
-      const int ierror = TARGET(buf, &resultlen);                              \
+      memcpy(buf, MPIWRAPPER_BANNER, MPIWRAPPER_BANNER_LEN);                   \
+      const int ierror = TARGET(buf + MPIWRAPPER_BANNER_LEN, &resultlen);      \
       if (ierror == MPI_SUCCESS)                                               \
         (void)string_out(abi_version, MPIABI_MAX_LIBRARY_VERSION_STRING, buf,  \
-                         resultlen, abi_resultlen);                            \
+                         (int)MPIWRAPPER_BANNER_LEN + resultlen,               \
+                         abi_resultlen);                                       \
       return mpiwrapper_errorcode_toabi(ierror);                               \
     }
 #else
+/* Decision 6's stub, unchanged, and deliberately not "answer the banner
+ * alone": the rule is that a function the implementation lacks reports at run
+ * time, and a half-answer here would be a special case in it. Unreachable in
+ * any case -- MPI_Get_library_version is MPI-3.0 and #9's floor is MPI-3.0.
+ */
 #  define BODY_MPI_Get_library_version(TARGET)                                 \
     {                                                                          \
       (void)abi_version;                                                       \

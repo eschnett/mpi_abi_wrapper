@@ -509,6 +509,24 @@ static void test_output_strings(void)
     check_terminated("MPI_Get_library_version", version, resultlen,
                      MPI_MAX_LIBRARY_VERSION_STRING);
     CHECK(resultlen > 0, "MPI_Get_library_version produced an empty string");
+
+    /* The one entry point whose answer this library adds to rather than
+     * converts (NOTES.md #5.8): a banner naming the wrapper and its version
+     * goes in front of the wrapped library's own string. Asserted here because
+     * it is the only way an application can tell there is a shim at all --
+     * MPI_Get_version reports the ABI's version (decision 24) and
+     * MPI_Abi_get_version the ABI's, so neither of those says so.
+     */
+    CHECK(strncmp(version, "mpi_abi_wrapper ", 16) == 0,
+          "MPI_Get_library_version does not begin with the wrapper's banner; "
+          "it begins \"%.32s\"", version);
+
+    /* And the wrapped library's text still follows, which is what keeps the
+     * banner additive rather than a replacement -- every implementation names
+     * itself in that text, and consumers grep it. mpif is one.
+     */
+    CHECK(strlen(version) > 16 && strchr(version, '\n') != NULL,
+          "MPI_Get_library_version is the banner and nothing else");
   }
 
   {
