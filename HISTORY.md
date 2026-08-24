@@ -243,11 +243,16 @@ indices 2, 3 and 4 where `MPI_F_SOURCE` — an ABI constant fixed at 0 by MPI-5.
 implementation is not involved.
 
 `MPI_Comm_toint`/`_fromint` **must not** be forwarded either, and here the
-reason is the standard rather than a layout: §20.4 puts the C–Fortran converters
-*outside* the ABI, so forwarding `c2f`/`f2c` is free, while §20.4.5 pins
-serialization to the ABI's own predefined values — "for all predefined handles,
-the integer value must be the same as the values listed in Section A". So the 22
-serialization forms never call the implementation, even where it has them.
+reason is the standard rather than a layout: §20.4.5 pins serialization to the
+ABI's own predefined values — "for all predefined handles, the integer value
+must be the same as the values listed in Section A". So the 22 serialization
+forms never call the implementation, even where it has them.
+
+**This entry also carried a third claim, and it was wrong**: that because §20.4
+puts the C–Fortran converters *outside* the ABI, "forwarding `c2f`/`f2c` is
+free". It is not, and §2.18 has the measurement. All 26 converters are now
+answered from the ABI's own values, which makes this one rule instead of the
+two-and-an-exception it reads as above.
 
 ### 1.15 A `_Static_assert` on `MPI_MAX_*`
 
@@ -783,6 +788,40 @@ Third instance of §2.11's pattern, a benchmark reporting a confidently wrong
 number, and the first where the wrong number came from a *fix*. The rule it
 adds: a host-specific environment workaround is part of what any benchmark on
 that host measures.
+
+### 2.18 "`c2f`/`f2c` are outside the ABI, so forwarding them is free"
+
+§1.14's third claim, and the one defect of the three that mpif found which was
+a *bug* rather than a decision (`NOTES.md` §10's consumer oracle, run for the
+first time). The 22 handle `_c2f`/`_f2c` forms converted the ABI handle to the
+implementation's and asked *it* for a Fortran integer. mpif's `c2f` test
+compares that integer against its own `MPI_COMM_NULL` and stops; over MPICH the
+two are nowhere near each other.
+
+The reasoning that produced it is one step long and looks sound: MPI-5.0 §20.4
+excludes the `MPI_Fint`-dependent converters from the ABI, therefore the ABI
+constrains nothing about them, therefore forwarding is as good as anything else.
+The second step is the error. **Being outside the ABI is exactly why the
+Fortran layer's expectation is the only constraint there is** — an ABI with no
+opinion does not leave the question open, it delegates it. And the answer is not
+in doubt once asked: `MPI_Fint` is not in the ABI, so nothing but a Fortran
+binding *over* the ABI ever calls these, and such a binding holds ABI values in
+its INTEGER handles because §20.4.5 requires `_toint` to produce them. mpif
+implements `MPI_Comm_c2f` as literally `return MPI_Comm_toint(comm)`
+(`fortran/f2c_abi_mpich.c:144`), which is the whole specification.
+
+**The test that existed asserted the wrong property.** `abi_converters_test`'s
+`TEST_C2F` checked `f2c(c2f(h)) == h` — a round trip, which a forwarding pair
+satisfies just as exactly as a correct one, since it is self-consistent about
+an integer that is merely the wrong integer. Five stages of green. The
+assertion it needed was against `_toint`, and it has it now.
+
+The rule this leaves, wider than the bug: **a round-trip test cannot check a
+representation.** It checks that a pair of functions agree with each other,
+which is a weaker claim and often the one that is already safe. Where an
+external party fixes the representation — a file format, a wire protocol, an
+ABI — something has to compare against *that*, and here the only available
+"that" was a second implementation of the same standard.
 
 ---
 

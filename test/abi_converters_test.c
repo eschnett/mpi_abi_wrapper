@@ -191,12 +191,33 @@ static void test_serialization(void)
  * (S8); this catches a pair that is not even self-consistent, which is the
  * failure a per-class copy-paste actually produces.
  */
+/* The round trip is not the property, and testing only the round trip is how a
+ * real bug survived here to be found by mpif instead (HISTORY.md #2.18). A
+ * forwarding _c2f -- one that hands back the *implementation's* Fortran handle
+ * -- round-trips perfectly through its own _f2c, so `f2c(c2f(h)) == h` holds
+ * under both the right semantics and the wrong ones and can distinguish
+ * neither.
+ *
+ * What the ABI fixes is the integer itself: MPI-5.0 20.4.5 pins serialization
+ * to the ABI's own predefined values, a Fortran layer over the ABI holds those
+ * values in its INTEGER handles, and such a layer is the only caller these
+ * functions have. So the assertion that matters is against _toint, which is
+ * already checked against the header's constants by TEST_SERIAL above.
+ */
 #define TEST_C2F(CLASS, TYPE, HANDLE)                                          \
   do {                                                                         \
     const MPI_Fint f    = MPI_##CLASS##_c2f(HANDLE);                           \
     const TYPE     back = MPI_##CLASS##_f2c(f);                                \
     CHECK(back == (HANDLE),                                                    \
           #CLASS "_f2c(" #CLASS "_c2f(" #HANDLE ")) is not " #HANDLE);         \
+                                                                               \
+    CHECK(f == (MPI_Fint)MPI_##CLASS##_toint(HANDLE),                          \
+          #CLASS "_c2f(" #HANDLE ") is %d but " #CLASS "_toint is %d -- the "  \
+          "converters must answer the ABI's own integer, not the "             \
+          "implementation's",                                                  \
+          (int)f, MPI_##CLASS##_toint(HANDLE));                                \
+    CHECK(MPI_##CLASS##_f2c(f) == MPI_##CLASS##_fromint((int)f),               \
+          #CLASS "_f2c and " #CLASS "_fromint disagree on %d", (int)f);        \
   } while (0)
 
 static void test_c2f(void)
@@ -251,17 +272,13 @@ static void test_c2f(void)
           rank);
   }
 
-  /* MPI_SESSION_NULL only when the implementation has sessions at all: the
-   * class exists in the ABI either way, and the slot then reports at run time.
+  /* Sessions need no skip any more, and that is the point of the change these
+   * assertions came with: MPI_Session_c2f is answered from the ABI's own
+   * values, so it exists and is correct whether or not the implementation has
+   * sessions at all. This used to test `f != 0` and skip, because a stub
+   * returned 0 over an implementation without them.
    */
-  {
-    const MPI_Fint f = MPI_Session_c2f(MPI_SESSION_NULL);
-    if (f != 0)
-      CHECK(MPI_Session_f2c(f) == MPI_SESSION_NULL,
-            "MPI_Session_f2c did not invert MPI_Session_c2f");
-    else if (rank == 0)
-      printf("  skipping MPI_Session_c2f: not in this implementation\n");
-  }
+  TEST_C2F(Session, MPI_Session, MPI_SESSION_NULL);
 
   CHECK_MPI(MPI_Info_free(&info));
   CHECK_MPI(MPI_Type_free(&datatype));

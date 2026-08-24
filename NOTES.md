@@ -743,6 +743,31 @@ That sentence admits two readings and only one is right: the four converters do
 between two spellings of the same thing. `HISTORY.md` §1.14 has why forwarding
 would be actively wrong.
 
+**And neither do the other 22** (decision 23). All 26 converters — the four
+status forms, the 11 classes' `_c2f`/`_f2c`, and the `_toint`/`_fromint` pairs
+beside them — are answered from **the ABI's own handle values, with the
+implementation never asked**. `MPI_Comm_c2f` *is* `MPI_Comm_toint` and
+`MPI_Comm_f2c` *is* `MPI_Comm_fromint`; the same for every class.
+
+The reason is that `MPI_Fint` is not in the ABI at all (§20.4), so the only
+caller these functions can ever have is a Fortran binding layered *over* the
+ABI — and such a layer holds ABI values in its INTEGER handles, because
+§20.4.5 requires `_toint` to produce exactly those. So the class the standard
+declines to define is fixed by the one consumer it can have. mpif implements
+`MPI_Comm_c2f` as `return MPI_Comm_toint(comm)` and its `c2f` test fails
+against anything else.
+
+Two consequences worth stating separately, because both were wrong before:
+
+- **No `MPIWRAPPER_HAVE_` guard, and no decision-6 stub.** These bodies touch
+  no implementation entry point, so there is nothing for the availability probe
+  to find missing. `MPI_Session_c2f` used to return 0 over an implementation
+  without sessions; it now answers correctly over every implementation, because
+  the question was never the implementation's to answer.
+- **A round trip does not test this.** `f2c(c2f(h)) == h` holds under the
+  forwarding semantics too. `HISTORY.md` §2.18 is the measurement, and
+  `test/abi_converters_test.c` now compares against `_toint` instead.
+
 ---
 
 ## 5. Conversion rules
@@ -1729,6 +1754,14 @@ the decision rather than working around it.
     implementation's `libmpi_abi`, which has never heard of that node, then
     fails to satisfy it. An anonymous node filters the export set identically,
     which is the only thing §9 wanted a version script for. §9.
+23. **All 26 C–Fortran converters are answered from the ABI's own values**, and
+    the implementation is never asked: `MPI_X_c2f` is `MPI_X_toint`, `MPI_X_f2c`
+    is `MPI_X_fromint`, and the four status forms are a 32-byte copy. §20.4
+    leaving `MPI_Fint` out of the ABI is what *settles* this rather than what
+    frees it — the only possible caller is a Fortran layer over the ABI, whose
+    INTEGER handles hold ABI values. No availability guard and no decision-6
+    stub, since no implementation entry point is involved. §4.4, `HISTORY.md`
+    §2.18.
 
 ---
 
