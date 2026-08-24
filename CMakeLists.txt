@@ -23,6 +23,40 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 # failure.
 enable_language(CXX OPTIONAL)
 
+# Fortran, for one translation unit and one question: what this platform's
+# Fortran compiler does with LOGICAL, which MPI-5.0 20.4.1 requires
+# MPI_ABI_GET_FORTRAN_BOOLEANS to answer and which C cannot find out
+# (src/mpiwrapper/fortran_probe.f90 has the argument, decision 25 the rule).
+#
+# OPTIONAL, like CXX above: a host with no Fortran compiler still builds
+# everything, and the two Fortran getters then answer "not set" -- which is a
+# legal answer, and was the *only* answer before this. So the degradation is
+# to the previous behaviour rather than to a broken one. It is still a
+# degradation, and a build meant to serve a Fortran consumer wants a Fortran
+# compiler present; the mpif rows of NOTES.md #10 are the ones that notice.
+enable_language(Fortran OPTIONAL)
+
+# **The Fortran runtime is deliberately not linked**, and this is the third and
+# last mechanism it took to keep it out (the other two are at the probe's own
+# target, below). CMake adds these to any target holding a Fortran object, so
+# even with an object library and LINKER_LANGUAGE C the link line still carried
+# -lgfortran -lquadmath.
+#
+# Emptying them is safe *because of a property the probe is written to have*:
+# src/mpiwrapper/fortran_probe.f90 uses no I/O, no allocatables and no derived
+# types, and its object's only undefined symbols are malloc, free and memcpy.
+# libmpiwrapper is dlopen'd into a process that already has the application's
+# Fortran runtime -- mpif's, for the consumer this exists to serve -- and a
+# second, differently-versioned copy of one is its own class of failure.
+#
+# If Fortran is ever added here that genuinely needs the runtime, this does not
+# hide it: the link fails with the undefined symbols named, which is the
+# constraint stating itself rather than a silent second libgfortran.
+if(CMAKE_Fortran_COMPILER)
+  set(CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "")
+  set(CMAKE_Fortran_IMPLICIT_LINK_DIRECTORIES "")
+endif()
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
@@ -522,13 +556,61 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
             ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_vtable.h
             ${MPIABI_IMPL_CONFIG})
 
+  # The Fortran probe, when there is a compiler for it (decision 25). Its
+  # object pulls in no Fortran runtime -- see the source -- so the link stays
+  # a C link and the version script, visibility and rpath rules below are
+  # untouched. LINKER_LANGUAGE is pinned to C for the same reason: CMake would
+  # otherwise promote the link to Fortran on account of one .f90, putting
+  # libgfortran on the link line of a library that must not carry one.
+  #
+  # **An OBJECT library, not a source in the target**, and that is not a style
+  # choice: CMake adds CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES to any target that
+  # has a Fortran source, so naming the .f90 directly put libgfortran and
+  # libquadmath into libmpiwrapper's DT_NEEDED -- measured with otool -L, and
+  # exactly the second Fortran runtime in one process that the probe's own
+  # header warns about, since the application's Fortran layer brings its own.
+  # LINKER_LANGUAGE C does not prevent it. An object library is compiled and
+  # its objects handed over, so the wrapper's link line stays a C link.
+  #
+  # Hidden visibility for the same reason the C half has it: bind(C) gives the
+  # subroutine default visibility, and `exported-symbols` caught it beside
+  # mpiwrapper_get_vtable. C_VISIBILITY_PRESET does not reach Fortran, and on
+  # macOS there is no version script to catch it either.
+  if(CMAKE_Fortran_COMPILER)
+    add_library(mpiwrapper_fortran_probe OBJECT src/mpiwrapper/fortran_probe.f90)
+    set_target_properties(mpiwrapper_fortran_probe PROPERTIES
+      POSITION_INDEPENDENT_CODE ON
+      Fortran_VISIBILITY_PRESET hidden)
+    set(MPIABI_WRAPPER_FORTRAN_SOURCES
+      $<TARGET_OBJECTS:mpiwrapper_fortran_probe>)
+    message(STATUS
+      "Fortran probe: ${CMAKE_Fortran_COMPILER_ID} -- MPI_Abi_get_fortran_* "
+      "will answer from it")
+  else()
+    set(MPIABI_WRAPPER_FORTRAN_SOURCES)
+    message(STATUS
+      "No Fortran compiler: MPI_Abi_get_fortran_booleans/_info will answer "
+      "\"not set\" unless the application registers them (MPI-5.0 20.4.1)")
+  endif()
+
   add_library(mpiwrapper SHARED
     gen/mpiwrapper/constants.c
     ${MPIABI_WRAPPER_RUNTIME_SOURCES}
     ${MPIABI_WRAPPER_BODY_SOURCES}
+    ${MPIABI_WRAPPER_FORTRAN_SOURCES}
     gen/mpiwrapper/wrappers.c
     src/mpiwrapper/getvtable.c
   )
+  if(CMAKE_Fortran_COMPILER)
+    # Pinned, because CMake picks the "highest" language among a target's
+    # objects to drive the link -- and with one Fortran object that is
+    # gfortran, which puts its own runtime on the link line. Measured: the
+    # generated link.txt began with gfortran-mp-15 and otool -L then showed
+    # libgfortran and libquadmath. The object library alone does not prevent
+    # this; the objects carry their language with them.
+    set_target_properties(mpiwrapper PROPERTIES LINKER_LANGUAGE C)
+    target_compile_definitions(mpiwrapper PRIVATE MPIWRAPPER_HAVE_FORTRAN)
+  endif()
   target_include_directories(mpiwrapper PRIVATE
     ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
   add_dependencies(mpiwrapper mpiabi_h_for_wrapper)
@@ -551,6 +633,14 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       "-Wl,--version-script=${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version")
     set_target_properties(mpiwrapper PROPERTIES
       LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version)
+  else()
+    # There *is* a Mach-O counterpart now, and decision 25's Fortran probe is
+    # why: a bind(C) subroutine is exported whatever -fvisibility=hidden says,
+    # so on macOS nothing but this restricts the set. See the file's comment.
+    target_link_options(mpiwrapper PRIVATE
+      "-Wl,-exported_symbols_list,${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.exported_symbols")
+    set_target_properties(mpiwrapper PROPERTIES
+      LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.exported_symbols)
   endif()
   # This library is never linked, only dlopen'd (MPI-5.0 20.2.1), so nothing
   # ever asks the loader to resolve *it* by rpath -- but it still has to
@@ -579,9 +669,15 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       gen/mpiwrapper/constants.c
       ${MPIABI_WRAPPER_RUNTIME_SOURCES}
       ${MPIABI_WRAPPER_BODY_SOURCES}
+      ${MPIABI_WRAPPER_FORTRAN_SOURCES}
       gen/mpiwrapper/wrappers.c
       src/mpiwrapper/getvtable.c
     )
+    if(CMAKE_Fortran_COMPILER)
+      set_target_properties(mpiwrapper_unisolated PROPERTIES LINKER_LANGUAGE C)
+      target_compile_definitions(mpiwrapper_unisolated PRIVATE
+        MPIWRAPPER_HAVE_FORTRAN)
+    endif()
     target_include_directories(mpiwrapper_unisolated PRIVATE
       ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
     add_dependencies(mpiwrapper_unisolated mpiabi_h_for_wrapper)

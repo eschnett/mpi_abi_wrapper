@@ -128,6 +128,18 @@ rather than as a list.
   with no narrowing check and no staged count array, and failing it buys a
   ceiling at `INT_MAX` rather than a missing entry point.
 
+  **True of every release, and no longer true of `main`.** Open MPI's
+  development branch — the commit mpif pins for its ABI rows, and the one the
+  mpif legs of §10 wrap — declares `MPI_VERSION 5` / `MPI_SUBVERSION 0` and
+  declares `MPI_Send_c` and the rest in its ordinary `mpi.h`. So the
+  large-count half of the surface is exercised over Open MPI there, where over
+  5.0.10 it is entirely decision 6's stubs.
+
+  Either way **`MPI_Get_version` answers 5.0**, because that is the standard
+  *this library* presents (decision 24); what the wrapped implementation
+  supports is discovered per entry point, at run time, by
+  `MPI_ERR_UNSUPPORTED_OPERATION`.
+
 ---
 
 ## 2. Architecture
@@ -320,6 +332,14 @@ independent:
    vtable and sees whether the call comes back. `MPI_Get_version` is the probe:
    legal before `MPI_Init` in every version of the standard, no side effects.
    (`MPI_Wtime` reads better and is wrong — `HISTORY.md` §2.5.)
+
+   **`MPI_Get_version` is hand-written now (decision 24) and still makes this
+   call on purpose.** Its *answer* is the ABI's own 5.0 and the
+   implementation's is discarded — but the call itself is what this probe
+   observes, so a body that computed two constants and returned would leave
+   the probe with nothing to detect and retire the check silently. The comment
+   in `src/mpiwrapper/hw_lifecycle.c` says so at that end too; a call whose
+   result is thrown away is exactly what a later reader deletes.
 
 **The probe's mechanism keeps the generated code out of it entirely.** A
 captured call re-enters `libmpi_abi`'s own exported entry point, which does
@@ -1762,6 +1782,28 @@ the decision rather than working around it.
     INTEGER handles hold ABI values. No availability guard and no decision-6
     stub, since no implementation entry point is involved. §4.4, `HISTORY.md`
     §2.18.
+24. **`MPI_Get_version` reports the ABI's own version**, 5.0, not the wrapped
+    implementation's. MPI-5.0 §2.7 requires the `MPI_VERSION` macro and this
+    call to agree, and `gen/include/mpi.h` says 5; forwarding put a second and
+    contradictory answer in front of an application, which then believes its
+    library is older than the header it compiled against. What actually varies
+    is *which entry points answer* `MPI_ERR_UNSUPPORTED_OPERATION`, and
+    decision 3 already makes that a run-time discovery rather than a version
+    comparison. `MPI_Get_library_version` still forwards, so the wrapped
+    implementation's own version is still available where implementations put
+    it. **The body still calls the implementation**, because that call is §2's
+    isolation probe. §1, §2.
+25. **The Fortran getters answer from this build's Fortran compiler**, when
+    there is one and when the wrapped MPI has Fortran datatypes; otherwise
+    "not set", which is what §20.4.1 defines that to mean. The values cannot
+    come from anywhere else — the standard passes `.TRUE.` and `.FALSE.` *by
+    address* precisely because no C code and no MPI call can produce them — so
+    one Fortran translation unit is compiled into `libmpiwrapper` and read at
+    run time. It brings **no Fortran runtime**: `libmpiwrapper` is `dlopen`ed
+    beside the application's own, and a second `libgfortran` in one process is
+    its own class of failure. An explicit `MPI_Abi_set_fortran_booleans` still
+    wins, because the standard makes the application's answer authoritative.
+    §8, §9.
 
 ---
 
@@ -1788,6 +1830,14 @@ generator could match and answers it could not choose.
 forwarded questions; the trampoline pools and maps of §6; the dynamic error-code
 and keyval registries of §5.6; the attached buffer's ownership record; the
 intern table behind handle serialization.
+
+**2a. State that is neither ours nor the implementation's.** The Fortran
+getters of decision 25 are the only instance, and they are why this is a
+separate line rather than a case of 2: what they report belongs to *the
+compiler this library was built with*, which neither the wrapper nor the
+wrapped MPI can be asked for at run time. The value arrives through a build
+input — one Fortran translation unit, `src/mpiwrapper/fortran_probe.f90` — and
+the entry point exists to hand it over. §9 has what that costs the build.
 
 **3. A class no signature carries.** The attribute getters of §5.6, whose
 returned `void *` means whatever the keyval says. This is the category worth
@@ -1922,6 +1972,33 @@ starting against a vendor `libmpi_abi`, and the reverse. That is a test this
 project does not have; §10's oracle 5 wraps an ABI-implementing MPI, which is a
 different question. It is the next thing to build, and it is what would have
 caught both of these choices while they were still implicit.
+
+**A Fortran compiler is an optional build input** (decision 25), and the
+degradation without one is to the previous behaviour rather than to a broken
+one: the two Fortran getters answer "not set", which is legal and was the only
+answer before. A build meant to serve a Fortran consumer wants one present, and
+§10's mpif rows are what notice.
+
+Three separate mechanisms keep its runtime out of `libmpiwrapper`, and all
+three are needed — each was added after the previous one proved insufficient,
+measured with `otool -L`:
+
+1. an **object library**, so the `.f90` is compiled apart from the wrapper;
+2. `LINKER_LANGUAGE C` on the wrapper, because CMake otherwise picks `gfortran`
+   to drive the link on account of that object's language;
+3. `CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES` emptied, because CMake adds
+   `-lgfortran -lquadmath` to any target holding a Fortran object regardless.
+
+Emptying (3) is safe only because the probe is written to need no runtime — no
+I/O, no allocatables, no derived types, and `nm -u` showing `malloc`, `free`
+and `memcpy` as its only undefined symbols. **Check that with `nm -u` if
+anything is ever added to it**; if it does need the runtime, the link fails
+naming the symbols, which is the constraint stating itself rather than a
+silent second `libgfortran`.
+
+The probe also forced `cmake/mpiwrapper.exported_symbols` into existence: a
+`bind(C)` subroutine is exported whatever `-fvisibility=hidden` says, ELF's
+version script caught it for free, and macOS had no counterpart until now.
 
 **Shared only in v1.** Static linking would require splitting `entrypoints.c`
 into 688 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI

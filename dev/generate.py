@@ -74,13 +74,13 @@ FROZEN = {
     "handle classes": 11,
     "predefined handles": 103,
     "error classes": 80,
-    "generated": 563,
-    "hand-written": 120,
+    "generated": 562,
+    "hand-written": 121,
     # S4b's exit check as a tally rather than an assertion: every ledger entry
     # has a body in src/mpiwrapper/, counted from handwritten.h. A body that
     # disappears -- or a new ledger entry nobody wrote -- fails here rather
     # than becoming one more run-time-reporting stub.
-    "hand-written bodies": 120,
+    "hand-written bodies": 121,
     # The five MPI-3.0 deleted from the standard, answered by libmpi_abi in
     # terms of their replacements rather than forwarded to an implementation
     # that need not have them. Frozen, because a sixth is a decision.
@@ -153,6 +153,14 @@ _ledger(
     "MPI_Abi_get_version", "MPI_Abi_get_info", "MPI_Abi_get_fortran_info",
     "MPI_Abi_set_fortran_info", "MPI_Abi_get_fortran_booleans",
     "MPI_Abi_set_fortran_booleans",
+)
+# Same category as the six above -- what standard does *this* library present --
+# but it keeps the forwarding call the generated body had, because that call is
+# the isolation probe (NOTES.md #2, decision 24). Hand-written is the only way
+# to have both: the answer overridden and the call retained.
+_ledger(
+    "reports the ABI's own MPI version, and is the isolation probe's call",
+    "MPI_Get_version",
 )
 _ledger(
     "consumes a status in the *in* direction (NOTES.md #5.2)",

@@ -51,6 +51,9 @@ int mpiwrapper_w_PMPI_Initialized(int *abi_flag);
 int mpiwrapper_w_MPI_Finalized(int *abi_flag);
 int mpiwrapper_w_PMPI_Finalized(int *abi_flag);
 
+int mpiwrapper_w_MPI_Get_version(int *abi_version, int *abi_subversion);
+int mpiwrapper_w_PMPI_Get_version(int *abi_version, int *abi_subversion);
+
 int mpiwrapper_w_MPI_Abort(MPIABI_Comm abi_comm, int abi_errorcode);
 int mpiwrapper_w_PMPI_Abort(MPIABI_Comm abi_comm, int abi_errorcode);
 

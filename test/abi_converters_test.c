@@ -689,13 +689,26 @@ static void test_abi_fortran(void)
 {
   if (rank == 0) printf("test_abi_fortran\n");
 
+  /* Before the application registers anything, **either answer is correct**
+   * and which one it is depends on the build (decision 25): a wrapper built
+   * with a Fortran compiler, over an MPI that has Fortran datatypes, answers
+   * from src/mpiwrapper/fortran_probe.f90; anything else answers "not set",
+   * which is what MPI-5.0 20.4.1 defines as "the implementation does not know
+   * the properties of the Fortran compiler".
+   *
+   * So this asserts the property that holds either way, which is the one a
+   * caller depends on: **the two getters agree**. A library that knows the
+   * booleans and not the sizes, or the reverse, would hand a Fortran layer
+   * half an answer -- and that is a state no caller can act on, since it
+   * cannot tell which half it is missing.
+   */
   MPI_Info info = (MPI_Info)0x1;
   int      ierror = MPI_Abi_get_fortran_info(&info);
+  int      info_known = -1;
   if (!unsupported(ierror, "MPI_Abi_get_fortran_info")) {
     CHECK(ierror == MPI_SUCCESS, "MPI_Abi_get_fortran_info returned %d",
           ierror);
-    CHECK(info == MPI_INFO_NULL,
-          "MPI_Abi_get_fortran_info answered before anything was set");
+    info_known = info != MPI_INFO_NULL;
   }
 
   int is_set = -1;
@@ -704,8 +717,37 @@ static void test_abi_fortran(void)
   if (!unsupported(ierror, "MPI_Abi_get_fortran_booleans")) {
     CHECK(ierror == MPI_SUCCESS, "MPI_Abi_get_fortran_booleans returned %d",
           ierror);
-    CHECK(is_set == 0, "the Fortran booleans report themselves already set");
+    CHECK(is_set == 0 || is_set == 1,
+          "MPI_Abi_get_fortran_booleans left is_set at %d", is_set);
+
+    if (info_known >= 0)
+      CHECK(info_known == is_set,
+            "MPI_Abi_get_fortran_info %s but MPI_Abi_get_fortran_booleans %s "
+            "-- half an answer is one no Fortran layer can use",
+            info_known ? "knows" : "does not know",
+            is_set ? "knows" : "does not know");
+
+    if (is_set) {
+      /* Whatever the compiler is, these two cannot be the same bytes. */
+      CHECK(t != f, "the Fortran booleans report .TRUE. and .FALSE. alike (%d)",
+            t);
+
+      /* And the size the booleans came in must be the size the info reports,
+       * or the two describe different Fortran compilers.
+       */
+      char value[32];
+      int  flag = 0;
+      memset(value, 0, sizeof value);
+      CHECK_MPI(info_get(info, "mpi_logical_size", value, (int)sizeof value,
+                         &flag));
+      CHECK(flag && atoi(value) == (int)sizeof(int),
+            "mpi_logical_size is \"%s\" (flag %d) but the booleans answered "
+            "for a %d-byte LOGICAL",
+            value, flag, (int)sizeof(int));
+    }
   }
+  /* The object is the caller's, per MPI_Info_create's ownership. */
+  if (info_known == 1) CHECK_MPI(MPI_Info_free(&info));
 
   /* Fortran's .TRUE. is not required to be C's 1, so the values registered
    * here are deliberately not 1 and 0 -- a body that "helpfully" normalized
