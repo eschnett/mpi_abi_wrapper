@@ -9,7 +9,17 @@
 # as an exemption because nothing suppressed them; this makes them local
 # instead, so the exemption list in that test is gone along with the symbols
 # it was for.
-MPIABI_1 {
+#
+# The node is *anonymous*, and that is the ABI-relevant half of this file.
+# A named node (this was MPIABI_1) stamps every definition with a version, so
+# a binary linked here records MPI_Send@MPIABI_1 rather than MPI_Send -- and
+# the point of the standard ABI is that such a binary runs against *another*
+# implementation's libmpi_abi, which has never heard of that node and would be
+# rejected for a missing version. An anonymous node filters the export set
+# exactly as a named one does and versions nothing, which is all this file was
+# ever for. It also stops emitting the absolute symbol for the node itself,
+# which test/check_exports.cmake used to have to exempt by name.
+{
   global:
     MPI_*;
     PMPI_*;

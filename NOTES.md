@@ -1711,6 +1711,24 @@ the decision rather than working around it.
 20. **The five entry points MPI-3.0 deleted are answered by `libmpi_abi`
     itself**, in terms of their replacements, with no slot and no wrapper body.
     §3.
+21. **`libmpi_abi`'s soname is `MPI_ABI_VERSION`, not the project's version**,
+    and `libmpiwrapper` has none. The soname is the name a client binary
+    records, so it is the thing that decides whether a binary built here starts
+    against *another* implementation's `libmpi_abi` — which is the entire
+    promise of a standard ABI, and is therefore not ours to pick freely. Open
+    MPI's ABI branch installs `libmpi_abi.so.1`/`libmpi_abi.1.dylib`, so this
+    does too. It is read out of `gen/include/mpi.h` at configure time rather
+    than written down again, and **must never be made to follow
+    `PROJECT_VERSION`**: a 1.1.0 or a 2.0.0 of this project still implements
+    ABI major 1 and must still answer to `libmpi_abi.so.1`. `libmpiwrapper` is
+    reached by `dlopen` at an absolute path and MPI-5.0 §20.2.1 forbids the
+    application naming it at all, so a soname on it would name nothing. §9.
+22. **Neither ELF version script names its node**, so no symbol this project
+    defines carries a version. A named node stamps every definition — `MPI_Send`
+    becomes `MPI_Send@MPIABI_1` in a client's relocations — and another
+    implementation's `libmpi_abi`, which has never heard of that node, then
+    fails to satisfy it. An anonymous node filters the export set identically,
+    which is the only thing §9 wanted a version script for. §9.
 
 ---
 
@@ -1837,6 +1855,40 @@ dependency of the application binary, and the wrapper is reached by `dlopen`.
 are needed: the visibility preset reaches every symbol this project writes and
 not the handful the linker inserts into every shared object. `libmpi_abi`
 exports only `MPI_*`/`PMPI_*`; `libmpiwrapper` only `mpiwrapper_get_vtable`.
+
+**The version scripts filter; they do not version** (decision 22). Both nodes
+are anonymous. The distinction is invisible in the export set — which is all
+either script was added for, and why the named nodes survived unexamined — and
+decisive one level up: a named node puts `MPI_Send@MPIABI_1` in every client
+binary's relocations, and a client that carries a version can only be satisfied
+by a library that defines it. Since no other implementation of the standard ABI
+defines `MPIABI_1`, a named node would have made every binary built here
+unrunnable against exactly the libraries the ABI exists to let it run against.
+An anonymous node also emits no symbol for itself, which is what let
+`test/check_exports.cmake` drop its exemption list.
+
+**The soname is the ABI's, and it is a cross-implementation agreement**
+(decision 21). This is the sharpest instance of a rule the rest of this section
+only implies: **a name a client binary records is not this project's to
+choose.** `libmpi_abi.so`'s consumers are compiled elsewhere, possibly against
+someone else's implementation, and MPI-5.0 §20.2.1 both requires the name
+`mpi_abi` and permits an application to depend on "its versioned variant" —
+which makes the version part of the contract rather than packaging trivia. So
+`SOVERSION` is `MPI_ABI_VERSION`, matching what Open MPI's ABI branch installs,
+and it is `file(STRINGS)`-ed out of the generated header so that no edit can
+put the two out of step. `VERSION` is `PROJECT_VERSION` and moves freely; the
+two are deliberately different numbers that happen to agree at 1.0.0 today.
+
+`libmpiwrapper` gets neither, and the asymmetry is the two-library split
+showing through: nothing links it, so nothing records a name for it, so there
+is no name to keep stable. It is found by the absolute path decision 5 bakes
+in, or by `MPI_ABI_WRAPPER_LIB`.
+
+What none of this yet establishes is the swap itself — a binary built here
+starting against a vendor `libmpi_abi`, and the reverse. That is a test this
+project does not have; §10's oracle 5 wraps an ABI-implementing MPI, which is a
+different question. It is the next thing to build, and it is what would have
+caught both of these choices while they were still implicit.
 
 **Shared only in v1.** Static linking would require splitting `entrypoints.c`
 into 688 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI

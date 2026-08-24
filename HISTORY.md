@@ -372,6 +372,41 @@ by exactly that drift. `NOTES.md` §13.2's (a) and (b) get the same effect from
 a question the standard answers (`MPI_Request_get_status`) rather than from
 values nobody promises.
 
+### 1.23 Named ELF version nodes on `libmpi_abi`
+
+Both version scripts named their node — `MPIABI_1` and `MPIWRAPPER_1` — from
+the day they were added, and the reason is worth keeping because the mistake is
+the *conventional* choice. Every guide to shared-library hygiene tells you to
+version your symbols; it is the mechanism glibc uses to keep binaries running
+across decades, and nothing about it looks like a hazard.
+
+It is a hazard here, and only because of what this library is. A named node
+puts a version on every definition, so a binary linked against `libmpi_abi`
+records `MPI_Send@MPIABI_1` rather than `MPI_Send`, and a versioned reference
+can be satisfied *only* by a library that defines that version. No other
+implementation of the standard ABI defines `MPIABI_1` and none ever will. The
+whole point of the standard ABI is that a binary built against one
+implementation's `libmpi_abi` runs against another's — so the best-practice
+default would have made every binary built here fail to start against precisely
+the libraries it was built to be portable to.
+
+An anonymous node — the same script with the name deleted — filters the export
+set identically, versions nothing, and emits no node symbol of its own (which
+is what let `test/check_exports.cmake` drop its exemption list). So the fix cost
+one identifier and no capability.
+
+**The general lesson, and the reason this is not merely a linker footnote:** a
+default is safe in proportion to how private the artifact is. Symbol versioning
+protects a library whose ABI *you* own and whose consumers link *your* copy.
+`libmpi_abi` is the opposite of that on both counts, and every convention aimed
+at the ordinary case has to be re-read against it. `NOTES.md` §9's soname rule
+(decision 21) is the same lesson in the other direction: there the ecosystem's
+convention had to be *adopted* rather than declined, because the name a client
+records is likewise not ours to choose. Both were found by a pre-1.0 review
+asking what a binary records, not by any test — the project had none that
+looked at a client binary's dynamic section, which is why the binary-swap test
+is worth building.
+
 ---
 
 ## 2. Beliefs a measurement overturned

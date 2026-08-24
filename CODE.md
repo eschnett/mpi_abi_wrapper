@@ -359,8 +359,26 @@ against a released tarball is the whole of what CI needs.
 version script on ELF / `-exported_symbols_list` on Mach-O. The second half is
 not redundant: the handful of symbols the linker inserts into every shared
 object (`_init`, `_fini`, `_edata`, `_end`, `__bss_start`) are reachable by no
-visibility attribute. `MPIABI_1`, the ELF version node, is the one exported name
-outside the `MPI_*`/`PMPI_*` patterns.
+visibility attribute. **Both ELF version scripts use an anonymous node**, so
+they filter the export set and version nothing (decision 22): `libmpi_abi`'s
+dynamic table is exactly the `MPI_*`/`PMPI_*` names with no node symbol beside
+them, which is why `test/check_exports.cmake` carries no exemption list.
+
+**`libmpi_abi` carries a soname and `libmpiwrapper` does not** (decision 21).
+`SOVERSION` is `MPI_ABI_VERSION`, read out of `gen/include/mpi.h` at configure
+time so the two cannot drift, and `VERSION` is `PROJECT_VERSION`:
+
+| | installed | recorded by a client binary |
+|---|---|---|
+| ELF | `libmpi_abi.so.1.0.0`, `.so.1`, `.so` | `libmpi_abi.so.1` |
+| Mach-O | `libmpi_abi.1.0.0.dylib`, `.1.dylib`, `.dylib` | `@rpath/libmpi_abi.1.dylib` |
+
+The leaf name in the right-hand column is the one Open MPI's ABI branch also
+installs (`libmpi_abi.1.dylib`, checked with `otool -D`), which is the point:
+that name is what decides whether a binary built here starts against someone
+else's `libmpi_abi`. All three consumption routes name `-lmpi_abi` or an
+imported target and so resolve through the unversioned symlink;
+`ci-scripts/check-install.sh` runs all five legs against the versioned layout.
 
 ## 10. Tests
 

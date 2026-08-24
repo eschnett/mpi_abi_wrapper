@@ -57,18 +57,19 @@ endfunction()
 
 set(errors 0)
 
-# The one name a version script always adds to the dynamic table: an absolute
-# symbol for its own version node, not a leak of anything this project wrote.
-# One per script, so one per library that has one, and neither appears on macOS,
-# which has no version scripts. cmake/mpiwrapper.version is newer than
-# cmake/mpi_abi.version -- it was added when FreeBSD showed libmpiwrapper
-# exporting _init and _fini -- and it brought MPIWRAPPER_1 with it.
-set(LINKER_PROVIDED MPIABI_1 MPIWRAPPER_1)
+# There is no exemption list any more, and that is a property of the version
+# scripts rather than of this test. A *named* version node adds an absolute
+# symbol of its own to the dynamic table -- MPIABI_1 and MPIWRAPPER_1 were
+# exempted here for exactly that reason. Both nodes are anonymous now (see
+# cmake/mpi_abi.version for why: a named node versions every symbol, and a
+# versioned MPI_Send cannot be resolved by another implementation's
+# libmpi_abi), and an anonymous node contributes no symbol. So each library's
+# dynamic table is now precisely what this project wrote and nothing else,
+# which is what the two checks below can therefore say without qualification.
 
 # --- libmpiwrapper: exactly one symbol -------------------------------------
 if(WRAPPER_LIB)
   exported_symbols(wrapper_syms ${WRAPPER_LIB})
-  list(REMOVE_ITEM wrapper_syms ${LINKER_PROVIDED})
   if(NOT "${wrapper_syms}" STREQUAL "mpiwrapper_get_vtable")
     message(SEND_ERROR
       "libmpiwrapper must export exactly mpiwrapper_get_vtable, but exports: "
@@ -84,8 +85,6 @@ exported_symbols(abi_syms ${ABI_LIB})
 # not survive to be seen at all now, on any ELF linker or toolchain, rather
 # than being tolerated by a list this test has to keep in sync with whichever
 # ones a given libc/binutils happens to emit.
-#
-# LINKER_PROVIDED is set once above, both libraries' version nodes together.
 
 file(STRINGS ${ENTRYPOINTS} bases)
 set(expected)
@@ -102,8 +101,6 @@ set(exported)
 foreach(sym ${abi_syms})
   if(sym MATCHES "^P?MPI_")
     list(APPEND exported ${sym})
-  elseif(sym IN_LIST LINKER_PROVIDED)
-    # not ours
   else()
     list(APPEND bad ${sym})
   endif()

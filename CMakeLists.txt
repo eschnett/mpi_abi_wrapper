@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(mpi_abi_wrapper
-  VERSION 0.1.0
+  VERSION 1.0.0
   DESCRIPTION "An MPI-5.0 standard-ABI shim over any MPI-3.0+ implementation"
   HOMEPAGE_URL "https://github.com/eschnett/mpi_abi_wrapper"
   LANGUAGES C)
@@ -177,6 +177,47 @@ add_library(mpi_abi SHARED
   gen/mpi_abi/entrypoints.c
 )
 set_target_properties(mpi_abi PROPERTIES OUTPUT_NAME mpi_abi)
+
+# The soname, and the one number in this file that is *not* the project's.
+#
+# MPI-5.0 20.2.1 requires the library be named mpi_abi, says implementors "are
+# expected to follow platform-specific conventions for dynamic shared library
+# naming and versioning", and permits an application to depend on "mpi_abi or
+# its versioned variant". The whole promise of the standard ABI is that a
+# binary built against one libmpi_abi runs against another's, and that swap is
+# decided by the *filename* the binary records -- so this has to agree with
+# what the other implementations chose, not merely be self-consistent. Open
+# MPI's ABI branch installs libmpi_abi.so.1 / libmpi_abi.1.dylib, so 1 it is.
+#
+# It tracks MPI_ABI_VERSION and must never be made to follow PROJECT_VERSION:
+# this project's 1.1.0 or 2.0.0 would still implement ABI major 1 and must
+# still answer to the same soname. Read out of the generated header rather
+# than written here twice, so the two cannot drift -- the same discipline
+# CLAUDE.md asks for of every other count.
+file(STRINGS ${MPIABI_GEN_INCLUDE_DIR}/mpi.h MPIABI_ABI_VERSION_LINE
+  REGEX "^#define[ \t]+MPI_ABI_VERSION[ \t]+[0-9]+")
+if(NOT MPIABI_ABI_VERSION_LINE MATCHES "MPI_ABI_VERSION[ \t]+([0-9]+)")
+  message(FATAL_ERROR
+    "Could not read MPI_ABI_VERSION from ${MPIABI_GEN_INCLUDE_DIR}/mpi.h; "
+    "libmpi_abi's soname is derived from it and must not be guessed.")
+endif()
+set(MPIABI_SOVERSION ${CMAKE_MATCH_1})
+message(STATUS "libmpi_abi soname version (MPI_ABI_VERSION): ${MPIABI_SOVERSION}")
+
+# VERSION is the project's and moves with every release; SOVERSION is the ABI's
+# and does not. On ELF that gives libmpi_abi.so.${PROJECT_VERSION} with an
+# soname of libmpi_abi.so.${MPIABI_SOVERSION}; on Mach-O, libmpi_abi.1.dylib
+# with -compatibility_version ${MPIABI_SOVERSION} -- the same layout Open MPI's
+# ABI branch installs. Both leave the unversioned name as a symlink, which is
+# what bin/mpicc's -lmpi_abi resolves through at link time.
+#
+# libmpiwrapper deliberately gets none of this. It is not a linked dependency
+# of anything: libmpi_abi dlopens it by the absolute path baked in below, and
+# MPI-5.0 20.2.1 forbids the application binary naming it at all. A soname on a
+# plugin located by path buys nothing and would only add symlinks.
+set_target_properties(mpi_abi PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${MPIABI_SOVERSION})
 target_include_directories(mpi_abi PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
 target_compile_options(mpi_abi PRIVATE ${MPIABI_WARNINGS})
 # dlopen/dlsym/dlerror live in libdl on glibc older than 2.34 and in libc from
