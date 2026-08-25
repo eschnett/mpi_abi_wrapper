@@ -119,7 +119,15 @@ errors/coll/reduce_local 1 : MPI_IN_PLACE passed to MPI_Reduce_local, where MPI-
 
 threads/comm/dup_leak_test 2 : 12345 MPI_Comm_dup/MPI_Comm_free pairs across threads, which takes 150 seconds of the suite's 180-second limit on this host and exceeds it under any other load. Verified to pass standalone at the same iteration count.
 errors/comm/subcomm_abort2 6 : MPI_Abort on a sub-communicator with hydra's -disable-auto-cleanup; the surviving ranks are meant to keep running, and here the job reaches the 180-second limit instead. Passes standalone.
-errors/comm/intercomm_abort 6 : the same test one communicator further out, and this one fails in five seconds rather than timing out. Passes standalone, which is the whole of what is known: the difference between the two invocations is the rest of the suite having run first.
+
+# --- (h) the wrapped implementation does this without us -------------------
+#
+# One line so far. It is here rather than in (g) because (g)'s claim is that the
+# test passes standalone and this one does not, and rather than in (f) because it
+# is attributed: a build of the same source with the wrapped MPI's own mpicc fails
+# the identical check.
+
+errors/comm/intercomm_abort 6 : rank 0 calls MPI_Abort on an intercommunicator and the testlist's resultTest=TestStatusNoErrors demands three things -- "No Errors" in the output, no stray output, and mpiexec exiting nonzero. Only the third fails: under hydra 4.3.1 on this host `mpiexec -disable-auto-cleanup -n 6` returns 0 in 30 runs out of 30. The same source built with MPICH's own mpicc fails the same check with the same message, so this is the launcher's abort reporting and not a conversion (dev/abort-exit-status/ re-runs both halves); the only difference the wrapper makes is that the abort message reads Abort(7) where native says Abort(8), which is #5's error-code rule mapping MPIABI_ERR_ROOT to MPI_ERR_ROOT and which runtests does not read. It flaps rather than fails in CI, where it is a flaky-ci-mpich.txt line.
 
 # --- (f) measured, not yet attributed --------------------------------------
 

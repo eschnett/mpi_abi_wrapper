@@ -47,3 +47,51 @@ errors/comm/subcomm_abort 4 : flaps on timing, like its sibling subcomm_abort2 -
 # respectively, so the cap has three orders of magnitude of headroom and it takes the
 # hanging half from 180 s to 30.
 errors/comm/subcomm_abort2 6 : flaps on timing exactly like its sibling subcomm_abort -- MPI_Abort on a sub-communicator, expected to leave the surviving ranks running under hydra's -disable-auto-cleanup, reaching the time limit instead on a loaded runner. Failed the mpich/aarch64/rest shard in run 32652409584, passed it in 0.071 s in run 32655819244. Capped at 30 s in timelimit-ci-mpich.txt
+
+# **The third member of that family, and it flaps on something else entirely.**
+# `errors/comm/intercomm_abort 6` completes the set the two lines above open --
+# the sibling check this file's header asks for finds a third here, not a second
+# -- but the mechanism is not theirs and the treatment therefore differs in one
+# respect: it gets no entry in timelimit-ci-mpich.txt, because it never hangs.
+# Both outcomes are over in a tenth of a second.
+#
+# **What actually fails is the exit status, not the test.** `errors/comm/testlist`
+# runs it under `resultTest=TestStatusNoErrors`, which runtests implements as three
+# separate demands: "No Errors" in the output, no stray output, and *mpiexec
+# exiting nonzero*. Only the third ever fails. Rank 2 prints No Errors, the
+# surviving ranks do exactly what -disable-auto-cleanup is there to let them do,
+# and hydra then returns 0 instead of nonzero after rank 0's
+# `MPI_Abort(inter_comm, 8)`. The whole failure is runtests' one line, "mpiexec-
+# filter returned a zero status but the program intercomm_abort returned a nonzero
+# status".
+#
+# **It is not a segfault, and the log invites that reading.** The `EXIT CODE: 139`
+# blocks immediately above it in job 97914916643 belong to `comm_split_type_nullarg`
+# and `intercomm_create_nullarg`, which are xfail lines that segfault by design
+# (NOTES.md #13.3). intercomm_abort contributes no BAD TERMINATION block at all.
+#
+# **The wrapper is not in the failing path, and that is measured rather than
+# argued.** On the development laptop the test is not flaky but deterministic, and
+# deterministic on the losing side: runtests standalone fails it with the identical
+# message, and fails it identically when the same source is rebuilt with the wrapped
+# MPICH's own mpicc and no wrapper present. Raw `mpiexec -disable-auto-cleanup -n 6`
+# returns 0 in 30 runs out of 30 for both builds, under hydra 4.3.1. So what varies
+# between a red CI run and a green one is hydra's exit status after an abort on an
+# intercommunicator, which this project neither sets nor sees. dev/abort-exit-status/
+# is that measurement, re-runnable: it builds the test both ways and runs both. The one difference
+# the wrapper does make is visible and harmless: the abort message reads `Abort(7)`
+# where native MPICH says `Abort(8)`, because #5's error-code rule maps
+# MPIABI_ERR_ROOT to MPI_ERR_ROOT on the way down. runtests does not read that
+# value.
+#
+# **Why no cap.** timelimit-ci-mpich.txt's own rule is that a cap can only ever
+# change a result for a test that sometimes passes, so it is not something to add
+# speculatively. There is nothing here to shorten: the failing attempt ran all 21
+# tests of errors/comm in 3.9 seconds (18:14:36.98 to 18:14:40.92 in job
+# 97914916643), and the passing attempt's TAP puts this test at 0.0919 s beside its
+# siblings' 0.0659 s and 0.0828 s.
+#
+# **What retires this line:** promote it to xfail if hydra starts losing the status
+# every run, and delete it if a release starts reporting it reliably. The local list
+# carries the same test as a plain xfail, because on that host it never wins.
+errors/comm/intercomm_abort 6 : flaps on hydra's exit status, not on timing like its two siblings above -- TestStatusNoErrors also demands that mpiexec exit nonzero, and after rank 0's MPI_Abort on an intercommunicator hydra sometimes returns 0. Failed the mpich/x86_64/rest shard in run 32867153761 (job 97865122810) and in run 32882434798's first attempt (job 97914916643); the re-run of that same job on the identical commit passed it in 0.0919 s (job 97921543964). Not capped: it fails fast, and a native-mpicc build of the same test fails the same check on the development laptop with no wrapper involved

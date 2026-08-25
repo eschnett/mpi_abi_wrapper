@@ -121,9 +121,10 @@ dev/               the Python generator and the dev-time cross-checks
   check_out_params.py  the out-parameter check over generated bodies
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
-  dispatch-bench/ dlopen-probe/ get-contents-extent/ handle-map-bench/
-  request-identity/ type-identity/ weakdef-probe/   the seven probe
-                       directories NOTES.md cites
+  abort-exit-status/ dispatch-bench/ dlopen-probe/ get-contents-extent/
+  handle-map-bench/ request-identity/ type-identity/ weakdef-probe/
+                       the eight probe directories NOTES.md and the suite's
+                       lists cite
   third-implementations/  what the MVAPICH and Intel MPI rows assume, checked
                        in a container rather than asserted (§11)
 doc/               mpi.h.patch, mpi50-report.pdf
@@ -465,9 +466,9 @@ before it can report. The counts, by
 | list | lines |
 |---|---|
 | `xfail-ci-mpich.txt` + `-i386` delta | **41** + **6** (x86_64 and aarch64 deltas are empty) |
-| `xfail-ci-openmpi.txt` + `-x86_64` delta | **106** + **1** |
-| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **1**, **5** |
-| `timelimit-ci-openmpi.txt` | **15** patterns over 41 lines, 18 of them seen to hang |
+| `xfail-ci-openmpi.txt` + `-x86_64` delta | **104** + **1** |
+| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **3**, **6** |
+| `timelimit-ci-openmpi.txt` | **16** patterns over 41 lines, 18 of them seen to hang |
 | `exclude-ci-openmpi.txt` | **2**, both inert while `rma` is off the Open MPI legs |
 
 The authority for both is `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-*.txt`,
