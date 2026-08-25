@@ -81,8 +81,16 @@ _Static_assert(sizeof(MPI_Count) == sizeof(MPIABI_Count),
                "MPI_Count differs in size from the ABI's");
 _Static_assert(sizeof(MPI_Offset) == sizeof(MPIABI_Offset),
                "MPI_Offset differs in size from the ABI's");
+/* Guarded because an implementation without a Fortran interface has no
+ * MPI_Fint to name -- Open MPI's --enable-standard-abi mpi.h declares neither
+ * it nor any converter (NOTES.md #10, oracle 5). Keyed on MPI_Comm_c2f since
+ * declaring any converter requires MPI_Fint to type it; every other use of
+ * MPI_Fint here sits behind the converter's own MPIWRAPPER_HAVE_* guard.
+ */
+#if defined(MPIWRAPPER_HAVE_MPI_Comm_c2f)
 _Static_assert(sizeof(MPI_Fint) == sizeof(MPIABI_Fint),
                "MPI_Fint differs in size from the ABI's");
+#endif
 _Static_assert((MPI_Aint)-1 < 0 && (MPI_Count)-1 < 0 && (MPI_Offset)-1 < 0,
                "MPI_Aint/Count/Offset must be signed, as the ABI's are");
 /* Every implementation handle must fit in a pointer-sized ABI handle, in both
