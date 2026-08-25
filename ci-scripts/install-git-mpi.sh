@@ -111,8 +111,18 @@ if [ ! -f "${stamp}" ]; then
         # and the history is not wanted.
         git fetch --quiet --depth 1 origin "${commit}"
         git checkout --quiet "${commit}"
+        # **Both implementations, and without --depth.** MPICH needs its
+        # submodules as much as Open MPI does -- modules/hwloc, json-c and
+        # yaksa -- and its autogen.sh stops with "Submodule modules/hwloc is
+        # not checked out" rather than trying to continue. Doing this only for
+        # Open MPI is what a first attempt did.
+        #
+        # No --depth 1: a shallow submodule fetch gets the branch tip, which
+        # need not be the commit the superproject records. mpif's installers
+        # spell it exactly this way and this script exists to differ from them
+        # in the configure flags and nothing else.
+        git submodule update --init --recursive --quiet
         if [ "${which}" = openmpi ]; then
-            git submodule update --init --recursive --depth 1 --quiet
             ./autogen.pl
         else
             ./autogen.sh

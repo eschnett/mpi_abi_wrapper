@@ -1925,15 +1925,35 @@ jobs:
           path: ${{ runner.temp }}/mpif-src-${{ matrix.mpi }}
           key: ${{ steps.cache-src.outputs.cache-primary-key }}
 
+      # **Tarred, not handed to upload-artifact as a directory**, and this
+      # project has a particular reason beyond the general one. upload-artifact
+      # *dereferences symbolic links*, and an ABI prefix is a symlink chain by
+      # construction: lib/libmpi_abi.so -> .so.1 -> .so.1.0.0 is decision 21's
+      # whole subject. Uploading the tree would replace that chain with three
+      # identical files, and the restored prefix would then pass every check in
+      # sight while no longer demonstrating the thing these rows exist to
+      # check. mpif's upload-prefix action says the same in its own comment,
+      # which is where this was read from -- after a run whose log had already
+      # warned "Uploads are case insensitive: .../bin/mpicc ... will be
+      # overwritten", the same collision from the other end.
+      #
+      # A tarball also carries the executable bit, which the raw upload drops.
+      - name: Pack the prefix
+        run: |
+          tar -C "${RUNNER_TEMP}" -czf \
+              "${RUNNER_TEMP}/mpif-mpi-${{ matrix.mpi }}-${{ matrix.role }}.tar.gz" \
+              "opt/mpif-${{ matrix.mpi }}-${{ matrix.role }}"
+
       - name: Upload the prefix
         uses: actions/upload-artifact@v7
         with:
           name: mpif-mpi-${{ matrix.mpi }}-${{ matrix.role }}
-          path: ${{ runner.temp }}/opt/mpif-${{ matrix.mpi }}-${{ matrix.role }}
+          path: ${{ runner.temp }}/mpif-mpi-${{ matrix.mpi }}-${{ matrix.role }}.tar.gz
           retention-days: 1
-          # The prefixes hold symlinks (libmpi_abi.so -> .so.1 -> .so.1.0.0)
-          # that a tarball keeps and a zip does not.
-          include-hidden-files: true
+          if-no-files-found: error
+          # Re-running one stage of a chained run is ordinary recovery, and v4+
+          # artifacts are immutable unless told otherwise.
+          overwrite: true
 
   mpif:
     name: mpif / ${{ matrix.mpi }} / ${{ matrix.leg }}
@@ -1975,16 +1995,21 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           name: mpif-mpi-${{ matrix.mpi }}-${{ matrix.leg == 'native' && 'abi' || 'stock' }}
-          path: ${{ matrix.leg == 'native' && format('{0}/opt/mpif-{1}-abi', runner.temp, matrix.mpi) || format('{0}/opt/mpif-{1}-stock', runner.temp, matrix.mpi) }}
+          path: ${{ runner.temp }}/artifact
 
-      # download-artifact does not restore the executable bit, and every one of
-      # these prefixes is reached through bin/mpicc and bin/mpiexec.
-      - name: Make the prefix executable again
+      # Back to the *exact absolute path* it was installed at, which is not a
+      # convenience: bin/mpicc, the RPATHs and the install names all bake
+      # absolute paths in, and libmpiwrapper's rrpath to the wrapped MPI is one
+      # of them. Both jobs derive the path from RUNNER_TEMP for that reason.
+      - name: Unpack the prefix
         run: |
+          tar -C "${RUNNER_TEMP}" -xzf \
+              "${RUNNER_TEMP}/artifact/mpif-mpi-${{ matrix.mpi }}-${{ matrix.leg == 'native' && 'abi' || 'stock' }}.tar.gz"
           prefix=${{ matrix.leg == 'native' && '${ABI_MPI}' || '${STOCK_MPI}' }}
-          chmod -R u+rwX "${prefix}"
-          find "${prefix}/bin" -type f -exec chmod u+x {} +
-          find "${prefix}/lib" -name '*.so*' -type f -exec chmod u+x {} + || true
+          # The symlink chain decision 21 installs, which is what the tarball is
+          # for; printed so a broken restore is visible here rather than as a
+          # confusing link error later.
+          ls -l "${prefix}/lib" | grep -E 'libmpi_abi|libmpi\.' || true
 
       # Only the wrapper leg builds this project at all; the native leg is the
       # control and must not have it anywhere near the prefix it tests.
@@ -2005,8 +2030,16 @@ jobs:
       - name: Work out the launcher flags
         run: |
           if [ "${{ matrix.mpi }}" = openmpi ]; then
+              # Copied from mpif's own .github/actions/mpiexec-flags, and it
+              # matters that it is copied rather than invented: --oversubscribe
+              # because the runners have fewer cores than the tests ask
+              # processes for, and btl_tcp_if_include pinning the *interface*
+              # because prte otherwise chooses one on its own. A first attempt
+              # here set `--mca btl self,tcp`, which chooses a transport and
+              # leaves the interface question -- the one this project's
+              # test/README.md documents at length -- untouched.
               {
-                  echo "MPIEXEC_PREFLAGS=--oversubscribe;--mca;btl;self,tcp"
+                  echo "MPIEXEC_PREFLAGS=--oversubscribe;--mca;btl_tcp_if_include;lo"
                   echo "MPIF_TEST_MPI_LIBRARY=Open MPI"
               } >>"${GITHUB_ENV}"
           else
