@@ -75,7 +75,35 @@ inferred from an exit code that happened to be non-zero.
 
 Vendoring is what makes this project's copy a dated artifact rather than a
 moving one, and it is the whole reason this is ours to schedule rather than
-ours to be surprised by. What re-vendoring has to do is drop that hunk.
+ours to be surprised by.
+
+**Which of the four hunks survive a re-vendor**, read off a diff of the
+vendored copy against upstream `a8470014` rather than inferred from the patch
+failure:
+
+| hunk | what it does | at upstream tip |
+|---|---|---|
+| `@@ -37` | gives `MPI_Status` a struct tag | **still needed** — upstream still writes `typedef struct { … } MPI_Status;` |
+| `@@ -941` | `MPI_Psend_init`/`MPI_Precv_init` | **adopted upstream**, drop it |
+| `@@ -1609` | the `PMPI_` twins of the same | **adopted upstream**, drop it |
+| `@@ -1896` | the Fortran block | **needed permanently** — see below |
+
+So the patch does not become unnecessary; **half of it does**. And the Fortran
+half is not waiting on upstream at all: MPI-5.0 §20.4 puts `MPI_Fint` and
+everything depending on it *outside* the ABI on purpose, so the stub header
+will never carry it. That block is this project's extension, shared with mpif
+by agreement rather than by standard, and `HISTORY.md` §2.18 is what it cost to
+learn that being outside the ABI does not mean being unconstrained.
+
+**Upstream changed more than that hunk**, and the rest is re-vendoring work
+rather than patch work: the `MPI_T` handle tags were renamed
+(`struct MPI_T_enum_t` → `struct MPI_ABI_T_enum`, and five more like it), which
+is the same convention §2's renaming rules assume and worth re-checking against
+them; `MPI_Aint`/`MPI_Offset`/`MPI_Count` were restructured with an MSVC branch,
+which is the first thing in the stub header to acknowledge Windows (§13.4); and
+`MPI_ERR_LASTCODE`, `MPI_ORDER_C` and `MPI_ORDER_FORTRAN` were respelled from
+hex to decimal at the same values, which changes nothing and will still show up
+in a diff.
 
 **Scope, counted from the patched header rather than estimated.** 688 entry
 points, with `MPI_*` and `PMPI_*` exactly symmetric — every one has a twin, no

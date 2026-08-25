@@ -29,5 +29,18 @@ three do. Both were measured against a simulated future stub rather than
 argued. `--forward` is passed regardless, so the refusal is stated rather than
 inferred from an exit code that happened to be non-zero.
 
-What is left for whoever moves the pin: **drop the `Psend`/`Precv` hunk from
-`doc/mpi.h.patch`**, which `ctest -R headers-up-to-date` will demand by then.
+What is left for whoever moves the pin, from a diff against `a8470014`:
+
+- **Drop two hunks** from `doc/mpi.h.patch`, `@@ -941` and `@@ -1609` -- the
+  `MPI_Psend_init`/`MPI_Precv_init` correction and its `PMPI_` twin. Upstream
+  has both. `ctest -R headers-up-to-date` will demand it.
+- **Keep the other two.** `@@ -37`'s `MPI_Status` struct tag is not upstream,
+  and `@@ -1896`'s Fortran block never will be: MPI-5.0 20.4 excludes
+  `MPI_Fint` from the ABI deliberately.
+- **Re-check the renaming rules** (NOTES.md #2, "Naming"): upstream renamed the
+  MPI_T handle tags, `struct MPI_T_enum_t` becoming `struct MPI_ABI_T_enum` and
+  five more like it.
+- Expect noise in the diff that means nothing: `MPI_ERR_LASTCODE`,
+  `MPI_ORDER_C` and `MPI_ORDER_FORTRAN` were respelled from hex to decimal at
+  the same values. `MPI_Aint`/`Offset`/`Count` gained an MSVC branch, which is
+  the first Windows acknowledgement in the stub header (NOTES.md #13.4).
