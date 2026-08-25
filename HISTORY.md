@@ -1308,11 +1308,11 @@ authority column and the generator freezes each tally.
 | predefined handles | 104 | **103** | `PREDEF(...)` rows in `gen/mpiwrapper/constants.c` |
 | error classes | 81 | **80** | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
 | callback registration functions | 16 | **15**, then 16 again | §6.1's table, plus `MPI_T_event_handle_free` found on its own terms |
-| hand-written set | ~50 | ~90, then **120** | §8's own list added up; then the generator's ledger |
+| hand-written set | ~50 | ~90, then 120, then **121** | §8's own list added up; then the generator's ledger; then decision 24 moved `MPI_Get_version` into it |
 | S1 prototype | 28 entry points, 56 slots, 19 generated-shape | **29 / 58 / 20** | `dev/s1-reference/mpiwrapper_vtable.h` |
 | S1 stand-in files | "three" | **four** | they are named on the same line |
 | planned prototype size | fifteen | **sixteen** | the table has sixteen functions in thirteen rows |
-| mechanical entry points | "roughly 600", then 568 | **563** generated + 5 ABI-side | `gen/report.txt` |
+| mechanical entry points | "roughly 600", then 568 | **562** generated + 5 ABI-side | `gen/report.txt` |
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
 | MPICH suite failures | 45, then 43 | **41** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt` |
 | Open MPI suite failures | 171 | **168** | ditto for `xfail-openmpi.txt` |
