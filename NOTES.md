@@ -2804,11 +2804,30 @@ not compiled at all (§5.10).
   cannot be done without re-measuring the capture detection that the whole
   "either it works or it refuses to start" property depends on.
 
+  **`dev/macos-weak-symbols/` measures the cost, and it is one cell of four.**
+  A client linked against a weak-exporting `libmpi_abi` will not start against
+  a strong one — `dyld: Symbol not found` — and the other three combinations
+  run, the reverse included: a weak definition satisfies an ordinary lookup, so
+  a binary built against *this* project runs against a vendor's library.
+
+  The failing direction is the one that matters: **build against a vendor's ABI
+  library, run through this wrapper over a site MPI**, which is the case the
+  ABI exists for.
+
+  **What that probe does *not* settle is the other half**, and it says so
+  rather than guessing: its model of §2's three-library shape reports the
+  *weak* configuration being captured and the strong one isolated, which is the
+  opposite of `HISTORY.md` §2.3's measurement against a real ABI-built Open
+  MPI. A mock that disagrees with a measurement is evidence of nothing. Its
+  README has the likeliest missing ingredient — that the implementation's
+  library is *also* named `libmpi_abi`, so the two share an install-name leaf —
+  and why the decisive experiment is the real configuration rather than a
+  better mock.
+
   So: the swap works on ELF today and not on Mach-O, the four mpif rows of §10
   are Linux for this reason among others, and **this is the open question a
-  1.0 should state rather than the bug it looks like.** A `dev/` probe of one
-  weak and one strong `libmpi_abi` under dyld, in the shape of
-  `dev/symbol-versioning/`, is what would settle it.
+  1.0 should state rather than the bug it looks like** — now with the cost
+  measured and only the remedy's price unknown.
 
 - **A wrapped MPI that ships its own `libmpi_abi.so` can capture ours through
   `LD_LIBRARY_PATH`.** `libmpi_abi.so` is what this project builds, and it is
