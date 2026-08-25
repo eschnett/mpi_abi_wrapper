@@ -423,11 +423,13 @@ The tempting rule, and it is wrong in both directions:
 | Open MPI 6.1.0a1 built natively | **0 strong, 698 weak** | 698 strong | **works anyway** |
 | Open MPI 6.1.0a1 built `--enable-standard-abi` | **0 strong, 683 weak** | 683 strong | **refused at load** |
 
-The last two differ only in a configure flag, both are all-weak, and only one
-captures. Strong `MPI_*` is therefore *sufficient* and not necessary, and the
-deciding factor is narrower than symbol binding — the Mach-O header flags
-(`WEAK_DEFINES BINDS_TO_WEAK`) and install names are the same in both. It has
-not been pinned down.
+The last two are both all-weak and only one captures, which already breaks the
+tempting rule in the second direction. What this entry originally left "not
+pinned down" — it also claimed the two builds' Mach-O header flags were the
+same, which is false against the artifact — §2.18 settled: the refused build
+(mpif's gcc/libtool one, the 683-weak count identifies it) is linked
+`-flat_namespace`, lacking the `TWOLEVEL` and `NOUNDEFS` flags, and the
+namespace mode is the entire discriminator. Symbol binding decides nothing.
 
 An earlier note said that if a native macOS build with weak `MPI_*` ever
 appeared the wrapper would refuse it; native 6.1.0a1 is exactly that and wraps
@@ -439,13 +441,18 @@ It does not, and this is the sharpest measurement in the project. Wrapping an
 Open MPI built for the standard ABI on macOS:
 
 ```
-dladdr(&MPI_Send) inside the wrapper   ->  the implementation   (correct)
-the wrapper's actual call to MPI_Send  ->  libmpi_abi           (captured)
+dladdr(&MPI_Send) inside the wrapper  ->  the implementation    (correct)
+one call made through the wrapper     ->  re-enters libmpi_abi  (captured)
 ```
 
-dyld coalesces weak definitions across images, so our *strong* `MPI_Send` wins
-over the implementation's weak one even under a two-level namespace, while
-taking the symbol's address still resolves through the namespace record. The
+The mechanism this entry first wrote down — dyld coalescing weak definitions
+across images so that our strong `MPI_Send` wins even under a two-level
+namespace — was itself overturned by §2.18: the binding trace shows every one
+of the wrapper's calls reaching the implementation, and the edge that
+re-enters us is the *flat-built* implementation's own `MPI_X → PMPI_X`
+forward, resolved by load order into our strong `PMPI_X`. What the entry
+established survives intact: `dladdr` answers "where does this name resolve",
+the process needs "where does this call bind", and the two can differ. The
 symptom is not recursion but **silent double execution**: the operation runs
 once at each level and returns the right answer. It surfaced only because the
 second pass tried to attach a staged temporary to a request already in the
@@ -749,6 +756,60 @@ number, and the first where the wrong number came from a *fix*. The rule it
 adds: a host-specific environment workaround is part of what any benchmark on
 that host measures.
 
+### 2.18 "Weak-definition coalescing makes an ABI-implementing MPI unwrappable on macOS"
+
+Recorded in three places with increasing confidence — §2.3's mechanism ("dyld
+coalesces weak definitions across images, so our strong `MPI_Send` wins over
+the implementation's weak one even under a two-level namespace"), `NOTES.md`
+§2's consequence ("not fixable — nothing in the two-level namespace overrides
+weak coalescing"), and `NOTES.md` §13.4's verdict ("impossible, not merely
+unsupported") — and wrong in all three. `dev/weakdef-probe/` pins down what
+§2.2 left unpinned: **the discriminator is the implementation's namespace
+mode, and weak vs strong decides nothing.**
+
+Four measurements, from instrument to ground truth:
+
+- **`DYLD_PRINT_BINDINGS=1` on the refused configuration** shows dyld's
+  weak-coalescing pass choosing the *implementation's own* weak definition for
+  every one of the wrapper's binds ("looking for weak-def symbol '_MPI_Send':
+  using ... libmpi_abi.1.dylib") — with our strong `MPI_Send` loaded first.
+  Coalescing chooses among images that have weak definitions; our all-strong
+  `libmpi_abi` never participates, so it cannot win. The wrapper's calls were
+  never captured.
+- **What was captured is the implementation's own internals**: exactly 614 of
+  the refused library's references — every one a `PMPI_*` name — bind into our
+  `libmpi_abi.dylib`, because that build is **flat-namespace** (no `TWOLEVEL`
+  header flag; mpif's gcc/libtool build), and a flat image resolves even calls
+  to symbols it defines itself by global load order. Its weak `MPI_X` shims
+  forward to strong `PMPI_X`, that hop lands in us, and each level then runs
+  once — §2.3's double execution, with `dladdr` still answering correctly.
+  §2.2's claim that the two 6.1.0a1 builds' "header flags are the same" is
+  false against the artifact (eleventh-plus wrong count, same lesson): the
+  refused build lacks `TWOLEVEL` and `NOUNDEFS`.
+- **The mock matrix** (`dev/weakdef-probe/`): a two-level implementation is
+  never captured, weak or strong; a flat one always is, at its own internal
+  references. So no symbol scheme on our side can rescue a flat
+  implementation — the captured edges are all the implementation's, and we
+  must export both `MPI_*` and `PMPI_*` regardless — and refusing at load
+  stays the correct outcome for exactly that case. `NOTES.md` §2's "route the
+  wrapper's calls through `PMPI_*`" escape would have fixed nothing.
+- **The ground truth**: the wrapper built against Open MPI main
+  `--enable-standard-abi` from `build/mpi/ompi-main-prefix` — two-level, 657
+  weak `MPI_*` — loads, passes both isolation checks, and runs on macOS
+  (arrays, large-count and selftest clean at one rank; `MPI_Fint` assertion
+  guarded per `NOTES.md` §10 oracle 5). The failures that remain are the
+  implementation's, not the loader's: every one in the prototype and converter
+  suites (2 and 14) is a c2f/f2c round trip — decision-6 stubs, the build has
+  no Fortran interface — and `abi_tools_test` segfaults inside the
+  implementation's own `PMPI_T_pvar_reset`.
+
+What survives: `dladdr` still answers the wrong question (§2.3's observation
+stands, only its attribution fell), the behavioural probe stays load-bearing,
+and `dev/dlopen-probe/`'s rule that *our* wrapper must never acquire
+`-flat_namespace` now extends to the implementation: a flat MPI build cannot
+be wrapped by anyone who exports its names, and is refused with a diagnostic
+that now says so.
+
 ---
 
 ## 3. What each stage settled
@@ -810,7 +871,8 @@ after the parameter with `abi_` dropped, and one body macro instantiated twice.
 Those twenty are what S2 had to reproduce, and `dev/s1-reference/` is them.
 
 Most of §2's loader findings are S1's: the macOS symbol shapes (§2.1 above), the
-weak-coalescing capture (§2.3), the behavioural probe, and the per-platform
+identity-configuration capture (§2.3, whose mechanism §2.18 later corrected to
+the implementation's flat-namespace build), the behavioural probe, and the per-platform
 status table now in `CODE.md`. It also found that **no released Open MPI meets
 the MPI-4.0 expectation** — 5.0.10 defines `MPI_VERSION 3`/`MPI_SUBVERSION 1`
 and has no `_c` entry point at all — which turned the MPI-4.0 configure check

@@ -97,9 +97,11 @@ rather than as a list.
   be determined by running a program at configure time.* Every check is either a
   compile-time assertion or a runtime check inside the library.
 - On macOS it is acceptable to assume the MPI library uses a two-level
-  namespace. That assumption is load-bearing — a macOS build must never acquire
-  `-flat_namespace` by accident — and it is checked at load rather than at
-  configure time (§2).
+  namespace. That assumption is load-bearing — no macOS build may acquire
+  `-flat_namespace` by accident, ours *or the implementation's*, since a flat
+  implementation's own internal calls resolve into our exports by load order
+  (`HISTORY.md` §2.18) — and it is checked at load rather than at configure
+  time (§2).
 - **The ABI surface is complete and is MPI-5.0** (plus the Fortran extension of
   `doc/mpi.h.patch`). A function the implementation lacks is **reported at run
   time**, never omitted from the ABI: the slot returns
@@ -312,12 +314,14 @@ independent:
    This does not depend on knowing whether `RTLD_DEEPBIND` propagates to
    dependencies. `src/mpiwrapper/getvtable.c`.
 2. **Behaviourally.** `dladdr` answers a subtly different question than the one
-   that matters, and `HISTORY.md` §2.3 has the measured case where the two
-   answers differ — dyld coalesces weak definitions across images, so our strong
-   `MPI_Send` can win over an implementation's weak one *while taking the
-   symbol's address still resolves correctly*, and the symptom is silent double
-   execution rather than recursion. So the ABI side makes one call through the
-   vtable and sees whether the call comes back. `MPI_Get_version` is the probe:
+   that matters — "where does this *name* resolve", not "where does this *call*
+   bind" — and `HISTORY.md` §2.3 has the measured case where the two answers
+   differ: a flat-namespace implementation build whose own internal
+   `MPI_X → PMPI_X` forwards resolve by load order into our strong `PMPI_X`
+   *while taking the symbol's address still resolves correctly*, and the
+   symptom is silent double execution rather than recursion (§2.18 for the
+   mechanism, `dev/weakdef-probe/` for the matrix). So the ABI side makes one
+   call through the vtable and sees whether the call comes back. `MPI_Get_version` is the probe:
    legal before `MPI_Init` in every version of the standard, no side effects.
    (`MPI_Wtime` reads better and is wrong — `HISTORY.md` §2.5.)
 
@@ -343,13 +347,19 @@ provably reach the implementation, or it refuses to start and says why.** There
 is no configuration known to us in which it loads and silently does the wrong
 thing.
 
-One consequence for the design: **a wrapper cannot be layered over an
-ABI-implementing MPI on macOS at all.** Refusing at load is the best available
-outcome and is not fixable — nothing in the two-level namespace overrides weak
-coalescing. The fix that would exist is to route the wrapper's calls through
-`PMPI_*`, which is strong everywhere; the cost is decision 7's
-implementation-level interposition, so it would have to be opt-in and loud
-rather than a silent fallback. See oracle 5 in §10.
+One consequence for the design: **a flat-namespace implementation build cannot
+be wrapped on macOS, by us or by anything that exports its names.** A flat
+image resolves even calls to symbols it defines itself by global load order,
+so its internal `MPI_X → PMPI_X` forwards land in our strong `PMPI_X` — the
+captured edges are all the *implementation's*, which is why no choice of call
+target on our side avoids them (we must export both names), and why refusing
+at load is the correct outcome. A **two-level** implementation is never
+captured, weak symbols or strong: coalescing chooses among images that have
+weak definitions, and our all-strong `libmpi_abi` never participates. This
+replaces an earlier belief that weak coalescing made any ABI-implementing MPI
+unwrappable here — `HISTORY.md` §2.18 and `dev/weakdef-probe/` have the
+measurements, and oracle 5 in §10 has the two-level standard-ABI build that
+wraps.
 
 ### Naming, and the renaming rules for `mpiabi.h`
 
@@ -1917,20 +1927,29 @@ Version choice is about coverage, not admissibility:
    nothing to spare. It does *not* test the conversion tables, where most of the
    risk lives.
 
-   **It is a Linux-only oracle.** An ABI-implementing MPI declares its `MPI_*`
-   weak, and on macOS dyld's weak-definition coalescing binds the wrapper's
-   outward calls back to us; the wrapper detects this at load and refuses, which
-   is the correct outcome and not a fixable one (§2). On ELF `RTLD_DEEPBIND`
-   resolves it, because scope order there beats weak-vs-strong. So this oracle
-   runs on the Linux rows, and the macOS rows get its refusal as a test instead.
+   **It runs on macOS too, provided the implementation is a two-level build.**
+   An earlier version of this section called it a Linux-only oracle, blaming
+   dyld's weak-definition coalescing; `HISTORY.md` §2.18 overturned that — the
+   one refused configuration was a `-flat_namespace` implementation build
+   (mpif's gcc/libtool one), a two-level implementation is never captured
+   however weak its symbols, and a flat one still gets the refusal, which is
+   correct and stays worth keeping as a test. Measured against Open MPI main
+   `--enable-standard-abi` (`build/mpi/ompi-main-prefix`): the wrapper loads,
+   passes both isolation checks, and the arrays, large-count and selftest
+   suites run clean at one rank. The failures that remain are the
+   implementation's, and knowing that is itself oracle-5 information: every
+   one in the prototype and converter suites (2 and 14 respectively) is a
+   c2f/f2c round trip — decision 6 stubs, because the build ships no Fortran
+   interface — and `abi_tools_test` segfaults inside the implementation's own
+   `PMPI_T_pvar_reset`.
 
-   **It does not currently build against Open MPI's own ABI mode**, for a reason
-   that has nothing to do with the wrapper: `mpicc_abi`'s `mpi.h` does not
-   declare `MPI_Fint`, so `internal.h`'s `sizeof(MPI_Fint) ==
-   sizeof(MPIABI_Fint)` assertion has nothing to name. The right fix — probing
-   for `MPI_Fint` the way entry points are probed, or dropping the assertion
-   where the Fortran interface is absent — belongs with whoever makes that
-   oracle a CI row.
+   **Building against Open MPI's own ABI mode** needs one accommodation for
+   that missing Fortran interface: `mpicc_abi`'s `mpi.h` does not declare
+   `MPI_Fint`, so `internal.h`'s `sizeof(MPI_Fint) == sizeof(MPIABI_Fint)`
+   assertion is guarded on `MPIWRAPPER_HAVE_MPI_Comm_c2f` — an implementation
+   that declares any converter must declare `MPI_Fint` to type it, so the
+   guard skips the assertion exactly where there is nothing to name. Making
+   the oracle a CI row is what remains.
 
 ### Behavioural tests, in increasing cost
 
@@ -2660,7 +2679,12 @@ not compiled at all (§5.10).
 - **32-bit**: exercised for the loader probe and the type-identity probe, not
   for the library. S9's row.
 - **Static libraries**: §9.
-- **An ABI-implementing MPI on macOS**: impossible, not merely unsupported (§2).
+- **An ABI-implementing MPI on macOS**: works when the implementation is a
+  two-level build, measured against Open MPI main `--enable-standard-abi`
+  (§10's oracle 5) but with no CI row yet; a `-flat_namespace` implementation
+  build is refused at load, which is the correct outcome (§2, `HISTORY.md`
+  §2.18). An earlier version of this line said "impossible, not merely
+  unsupported", from measuring only the flat build.
 
 ---
 
@@ -2676,7 +2700,7 @@ documentation.
 | Open MPI header | `~/src/mpif/build/mpi-src/openmpi-gcc/ompi/ompi/include/mpi.h.in` |
 | MPI-5.0 standard | `doc/mpi50-report.pdf`, read with `pdftotext -layout` |
 | CI and build precedent | `~/src/mpif/ci-scripts/README.md`, `~/src/mpif/CMakeLists.txt` |
-| loader, dispatch, handle-map, request, type and extent behaviour | the six probes in `dev/`, each with its own README |
+| loader, weak-definition, dispatch, handle-map, request, type and extent behaviour | the seven probes in `dev/`, each with its own README |
 
 Standard sections cited: §2.5.2 (opaque object deallocation), §3.2.5 and §3.7.5
 (the status error field), §3.7.6 (`MPI_REQUEST_GET_STATUS`, and that it answers

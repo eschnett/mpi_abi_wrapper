@@ -122,7 +122,8 @@ dev/               the Python generator and the dev-time cross-checks
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
   dispatch-bench/ dlopen-probe/ get-contents-extent/ handle-map-bench/
-  request-identity/ type-identity/   the six probe directories NOTES.md cites
+  request-identity/ type-identity/ weakdef-probe/   the seven probe
+                       directories NOTES.md cites
   third-implementations/  what the MVAPICH and Intel MPI rows assume, checked
                        in a container rather than asserted (§11)
 doc/               mpi.h.patch, mpi50-report.pdf
@@ -498,7 +499,7 @@ and the MPICH row said "two ranks" for a year of runs that had none
 each test's environment and `test/expect_ranks.h` fails a test given a different
 one, so every row re-run since carries the claim in its exit status. Every row
 above with an image and a rank count has been re-run under it, `MPICH 3.1.4`
-included; the two `refused at load` rows and the ones marked unverified inherit
+included; the `refused at load` rows and the ones marked unverified inherit
 their old evidence.
 
 | configuration | mechanism | status |
@@ -510,7 +511,8 @@ their old evidence.
 | macOS 15 arm64, Homebrew MPICH 5.0.1 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`. The first MPI-5.0 implementation this has run against (`mpicc` reports `MPI 5.0`), and it does **not** ship the standard ABI, so it is an ordinary wrapped implementation like every other row here |
 | macOS 15 arm64, Homebrew Open MPI 5.0.9 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`; reports `MPI 3.1` |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
-| macOS, an ABI-implementing MPI | none available | **refused at load**; dyld coalesces weak definitions. Still *none available*, and the MPICH 5.0.1 row above is why that is worth saying twice: implementing MPI-5.0 and shipping the standard ABI are different things, and that one is the former without the latter |
+| macOS, ABI-implementing MPI, two-level build | `RTLD_LOCAL` + two-level namespace | **works**, one rank, no CI row — Open MPI main `--enable-standard-abi` (`build/mpi/ompi-main-prefix`, 657 weak `MPI_*`): arrays, large-count and selftest clean; every failure in the prototype and converter suites (2 and 14) is a c2f/f2c round trip, decision 6 stubs because the build ships no Fortran interface; `abi_tools_test` segfaults inside the implementation's own `PMPI_T_pvar_reset`. Oracle 5 on macOS, `NOTES.md` #10. No *released* ABI-implementing MPI exists yet, and the MPICH 5.0.1 row above is why that is worth saying: implementing MPI-5.0 and shipping the standard ABI are different things, and that one is the former without the latter |
+| macOS, ABI-implementing MPI built `-flat_namespace` | none | **refused at load**, correctly: the flat build's own `MPI_X → PMPI_X` forwards resolve into our exports by load order — 614 `PMPI_*` bindings under `DYLD_PRINT_BINDINGS`, every wrapper bind clean (mpif's gcc/libtool build; `dev/weakdef-probe/`). An earlier version of this row blamed weak-definition coalescing: `HISTORY.md` §2.18 |
 | Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker); and 13/13, two ranks on **x86_64** (Debian 13 container, GitHub Actions, `MPI 4.1`) |
 | Linux glibc, MPICH 4.2.0 | same | **cannot run two ranks** (Ubuntu 24.04): PMIx-only `libmpi`, PMI-1 hydra, so `-n 2` is two singletons. `HISTORY.md` §2.14 |
 | Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker); and 13/13, two ranks on **x86_64** (Ubuntu 24.04 container, GitHub Actions, `MPI 3.1`) |

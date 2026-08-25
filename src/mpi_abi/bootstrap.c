@@ -170,14 +170,16 @@ static void *vt_dlopen(const char *path, const char **how)
 
 /* The wrapper's own `dladdr` check answers "which library does the name
  * MPI_Send resolve to", and S1 found a configuration where that is the *wrong
- * question*: with an implementation whose MPI_* symbols are weak (Open MPI
- * built for the standard ABI has all 683 of them weak, and every ELF MPI does
- * the same so that profiling tools can override them), macOS resolves the
- * wrapper's *address-of* to the implementation while dyld's weak-definition
- * coalescing sends the actual *call* to our strong definition instead. The
- * consequence is silent double execution, not a crash: the operation runs
- * twice, once through each level, and only a duplicate key in the staged
- * temporaries table gave it away.
+ * question*: an implementation built -flat_namespace resolves even its own
+ * internal MPI_X -> PMPI_X forwards by global load order, landing them in our
+ * strong PMPI_* -- while the wrapper's address-of, and every one of the
+ * wrapper's own calls, still resolves to the implementation. (First
+ * misattributed to dyld's weak-definition coalescing; HISTORY.md #2.18 and
+ * dev/weakdef-probe/ show coalescing never captures a two-level
+ * implementation however weak its symbols, because our all-strong library
+ * does not participate in it.) The consequence is silent double execution,
+ * not a crash: the operation runs twice, once through each level, and only a
+ * duplicate key in the staged temporaries table gave it away.
  *
  * So this asks the question behaviourally instead: make one MPI call through
  * the wrapper and see whether it comes back. MPI_Get_version is the probe: it
@@ -273,9 +275,10 @@ static const struct mpiwrapper_vtable *vt_load(void)
     vt_fail("the wrapper's MPI calls come back into libmpi_abi",
             "one MPI call made by libmpiwrapper re-entered this library "
             "instead of reaching the MPI implementation. Every call would "
-            "recurse. On macOS this happens when the implementation's MPI_* "
-            "symbols are weak and ours are strong, because dyld coalesces weak "
-            "definitions across libraries even under a two-level namespace; on "
+            "recurse. On macOS this means a library in the wrapper's chain "
+            "was built -flat_namespace -- usually the MPI implementation "
+            "itself, whose internal MPI calls then resolve to whatever "
+            "loaded first ('otool -hv' on it shows no TWOLEVEL flag); on "
             "ELF it means the wrapper was loaded without RTLD_DEEPBIND or "
             "dlmopen");
 
