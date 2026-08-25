@@ -17,10 +17,31 @@ correction** -- it is absent from the commit above and present at
 moves past it.
 
 `patch` reports "Reversed (or previously applied) patch detected!" in that
-case. With no terminal to ask, it answers its own prompt and reverse-applies --
-which is how mpif, which clones the stubs unpinned rather than vendoring them,
-ended up installing a header with the Fortran declarations *removed*.
-NOTES.md #1 has that account.
+case, and mpif is where that has actually been seen: it clones the stubs rather
+than vendoring them, and through v1.0.0 that clone was unpinned. **What happens
+next depends on which `patch` runs**, which is why two accounts of it
+disagreed. Reproduced against `a8470014` with mpif v1.0.0's patch:
+
+```sh
+git clone --depth 1 https://github.com/mpi-forum/mpi-abi-stubs stubs
+git -C stubs fetch --depth 1 origin a8470014382bf4a4f39f9b3539857b36ac7b35c9
+git -C stubs checkout a8470014382bf4a4f39f9b3539857b36ac7b35c9
+mkdir inc && cp stubs/mpi.h inc/
+patch -d inc -p1 <path/to/mpif/fortran/mpi.h.patch
+```
+
+- **GNU `patch`**, the CI runner's, defaults its "Assume -R?" prompt to `n`:
+  skips, 3 of 3 hunks ignored, exit 1. That is run 32868258767, where both
+  `abi` rows died here after a full MPI build.
+- **`patch 2.0-12u11-Apple`**, this laptop's, defaults to **`y`**: it
+  reverse-applies the two `Psend`/`Precv` hunks and rejects the Fortran one.
+  The header comes out with the Fortran declarations absent *and* upstream's
+  `MPI_Count` correction undone, back to `int count`.
+
+Add `--forward` and the two agree -- Apple `patch` then ignores all three,
+exits 1, and leaves `MPI_Count` intact. mpif v1.0.1 pins the stubs to
+`a8470014`, the same commit named above, so neither outcome is reachable
+there; `ci-scripts/mpif-version.sh` is where this project names that version.
 
 Here it is a build failure instead, for two reasons worth knowing rather than
 assuming: `dev/generate_headers.py` checks `patch`'s exit code and raises, and

@@ -19,7 +19,23 @@
 
 # The released version. Bump deliberately, and expect the expected-failure
 # files under ci-scripts/mpif-xfail/ to need re-measuring when you do.
-MPIF_VERSION=${MPIF_VERSION:-v1.0.0}
+#
+# **v1.0.0 cannot be built and is not a candidate.** Its
+# ci-scripts/install-mpi-header.sh clones mpi-abi-stubs unpinned, and upstream
+# has since taken two of the three hunks of its fortran/mpi.h.patch, so `patch`
+# reports "Reversed (or previously applied) patch detected!", ignores 3 of 3
+# hunks and exits non-zero -- after the full MPI build, since the header is
+# installed last. Both `abi` rows failed that way in runs 32867153761 and
+# 32868258767. mpif 40c165d, released as v1.0.1, pins the stubs to a8470014
+# and drops the two retired hunks; the header dev/vendor/mpi-abi-stubs/
+# VERSION.md describes is that same commit, which is why our own
+# doc/mpi.h.patch faces the identical choice.
+#
+# v1.0.1 moves neither MPICH_COMMIT nor OMPI_COMMIT (both checked against the
+# artifact: ab53493d and 003e0ca0, unchanged), so the wrap target and the
+# reference are the same two MPIs they were -- the bump changes who provides
+# the ABI header and nothing about what is being compared.
+MPIF_VERSION=${MPIF_VERSION:-v1.0.1}
 MPIF_REPO=${MPIF_REPO:-https://github.com/eschnett/mpif}
 
 # Clone the pinned mpif into $1, or leave an existing checkout of the right

@@ -61,10 +61,31 @@ vendored copy moves past that fix, `patch` finds the hunk already applied and
 reports "Reversed (or previously applied)".
 
 That is not a prediction: it is what happened to mpif, whose
-`install-mpi-header.sh` clones the stubs *unpinned*, and which the mpif rows of
-§10 caught failing on exactly this. There the consequence was severe, because
-`patch` running with no terminal answers its own prompt and reverse-applies —
-mpif's header came out with the Fortran declarations *removed*.
+`install-mpi-header.sh` cloned the stubs *unpinned* through v1.0.0, and which
+the mpif rows of §10 caught failing on exactly this. mpif v1.0.1 pins them to
+`a8470014` and drops the two hunks upstream took, which is why
+`ci-scripts/mpif-version.sh` names that version and not the one before it.
+
+**Whether `patch` refuses or reverse-applies is decided by which `patch` it
+is**, which is why two accounts of this both stood and disagreed. Measured
+against stubs `a8470014` with mpif v1.0.0's three-hunk patch:
+
+| `patch` | default to "Assume -R?" | outcome |
+|---|---|---|
+| GNU, on the CI runner | `n` | skips, 3 of 3 ignored, exit 1 — run 32868258767 |
+| `2.0-12u11-Apple`, this laptop | **`y`** | reverse-applies 2, rejects the third, exit 1 |
+
+The macOS half is the older account, and it is worse than it was recorded as
+being. The Fortran block's hunk rejects, so those declarations are *absent* —
+but the two `Psend`/`Precv` hunks reverse cleanly, putting the **wrong `int
+count` prototypes back** over upstream's correction. A reversed patch does not
+merely fail to help; on a `patch` that defaults to `y` it actively undoes the
+fix that made it redundant.
+
+**`--forward` removes the difference**, and that is the whole reason this
+project only ever sees a build failure: with it, Apple `patch` ignores all
+three hunks, exits 1, and leaves upstream's `MPI_Count` signature intact —
+identical to GNU's default. `dev/generate_headers.py:92` passes it.
 
 **Here it is only a build failure**, and the difference is worth knowing rather
 than assuming: `dev/generate_headers.py` checks `patch`'s exit code and raises,
