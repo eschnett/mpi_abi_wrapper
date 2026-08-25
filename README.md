@@ -37,8 +37,10 @@ exsiting MPI implementation.
 
 The [Nibi](https://docs.alliancecan.ca/wiki/Nibi) HPC system provides,
 as its default MPI implementation, the [Open
-MPI](https://www.open-mpi.org) library version 4.1.5. This library
-implements the MPI 3.1 standard and does _not_ provide the MPI ABI.
+MPI](https://www.open-mpi.org) library version 4.1.5, presumably
+configured to make efficient use of this system's hardware. This
+library implements the MPI 3.1 standard and does _not_ provide the MPI
+ABI (which was only introduced with MPI 5.0).
 
 We thus install `mpi_abi_wrapper` to wrap this MPI library:
 ```sh
@@ -49,3 +51,10 @@ cmake -Bbuild -DCMAKE_INSTALL_PREFIX=$HOME/openmpi-4.1.5-mpi-abi -DCMAKE_BUILD_T
 cmake --build build
 cmake --install build
 ```
+
+When building an application, you can now choose
+`$HOME/openmpi-4.1.5-mpi-abi` as your MPI library.
+
+## Testing
+
+Tested agains MPICH 5.0.1, Open MPI 5.0.10, and MVAPICH 4.1.

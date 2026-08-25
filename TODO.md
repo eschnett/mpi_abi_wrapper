@@ -1,14 +1,4 @@
-# Erik's open tasks
-
-- remove the call overhead in the `mpi_abi` entrypoints: define the
-  functions `static inline`? requires changing the MPI ABI `mpi.h`.
-
-- add test with MPI 3.0? or 3.1?
-  (the MPI-3.0 floor row `ci-scripts/linux-floor.sh` exists and is
-  deliberately not in CI, which also leaves the *toolchain* floor —
-  CMake 3.20, Python 3.8, gcc 9 — with no coverage anywhere. If PR
-  wall-clock is the objection, a push-only or scheduled row buys it back
-  without slowing PRs.)
+# Erik's open tasks (not to be modified by Claude)
 
 - the `spawn` directory is run nowhere in CI. `run-suite.sh` excludes it by
   default because `MPI_Comm_spawn` hangs under hydra *on macOS*, which is
@@ -26,7 +16,13 @@
   `thread` sanitizer over `MPI_THREAD_MULTIPLE`, is still a comment in
   `ci.yaml` rather than a leg.
 
-Done, and dropped from the list above: the CI rows all gate now (no
-`continue-on-error` anywhere in `ci.yaml` — `ci-scripts/README.md` has how the
-last two got there), local and CI xfail lists are separate, and the workflow is
-about 20 minutes rather than 49.
+- use FindMPI to auto-detect the MPI implementation. (do this as well
+  to detect fortran features.) this may or may not supersede which
+  fortran compiler is used.
+
+- fortran bindings and compiler should be expected by default, need to
+  be disabled explicitly. this will catch accidental configuration
+  mismatches.
+
+- do we need an explicit no-fortran ci test? is the sanitize test
+  enough?
