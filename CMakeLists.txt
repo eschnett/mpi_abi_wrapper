@@ -133,6 +133,27 @@ else()
 endif()
 message(STATUS "Warning flags for ${CMAKE_C_COMPILER_ID}: ${MPIABI_WARNINGS}")
 
+# **libmpiwrapper forwards entry points the implementation has deprecated, and
+# that is its job rather than an oversight.** The ABI is the whole of MPI-5.0
+# and deprecated still means provided (NOTES.md #1): MPI_Get_elements_x and
+# MPI_Status_set_elements_x are among the 688, so their bodies must call the
+# implementation's -- which Open MPI's development branch marks
+# __attribute__((deprecated)) per MPI-4.1, turning -Werror into four errors and
+# failing the whole build.
+#
+# So the diagnostic is suppressed for the two targets that forward, and only
+# those: libmpi_abi does not call an implementation at all, and the tests are
+# applications, where the advice is real. Suppressing it *per call site*
+# instead was the alternative, and it is the worse one -- the next entry point
+# any implementation deprecates would break the build again, and the fix would
+# be another pragma, which is a rule nobody stated being rediscovered one
+# instance at a time.
+if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|IntelLLVM|Intel)$")
+  set(MPIABI_FORWARDS_DEPRECATED -Wno-deprecated-declarations)
+else()
+  set(MPIABI_FORWARDS_DEPRECATED)
+endif()
+
 # NOTES.md #11's S9. A string rather than a bool so the set is the caller's
 # choice -- `address`, `undefined`, `address,undefined`, `thread` -- and empty
 # by default, which is every build that does not ask.
@@ -671,7 +692,8 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   target_include_directories(mpiwrapper PRIVATE
     ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
   add_dependencies(mpiwrapper mpiabi_h_for_wrapper)
-  target_compile_options(mpiwrapper PRIVATE ${MPIABI_WARNINGS})
+  target_compile_options(mpiwrapper PRIVATE ${MPIABI_WARNINGS}
+    ${MPIABI_FORWARDS_DEPRECATED})
   target_link_libraries(mpiwrapper PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
   if(MPI_ABI_WRAP_ABI_IMPL)
     target_compile_definitions(mpiwrapper PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
@@ -740,7 +762,8 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     target_include_directories(mpiwrapper_unisolated PRIVATE
       ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
     add_dependencies(mpiwrapper_unisolated mpiabi_h_for_wrapper)
-    target_compile_options(mpiwrapper_unisolated PRIVATE ${MPIABI_WARNINGS})
+    target_compile_options(mpiwrapper_unisolated PRIVATE ${MPIABI_WARNINGS}
+      ${MPIABI_FORWARDS_DEPRECATED})
     target_link_libraries(mpiwrapper_unisolated PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
     if(MPI_ABI_WRAP_ABI_IMPL)
       target_compile_definitions(mpiwrapper_unisolated PRIVATE
