@@ -2081,6 +2081,19 @@ The probe also forced `cmake/mpiwrapper.exported_symbols` into existence: a
 `bind(C)` subroutine is exported whatever `-fvisibility=hidden` says, ELF's
 version script caught it for free, and macOS had no counterpart until now.
 
+**The no-Fortran configuration broke twice before it ever ran**, which is worth
+recording as a coverage fact rather than as two mistakes. Nothing gates it: the
+laptop has a Fortran compiler, and so does every Docker row, because the commit
+that introduced the probe added `gfortran` to `ci-scripts/linux-test.sh` in the
+same breath. **CI's only coverage is the `sanitize` job, and that is an
+accident** — it happens not to install one. Both failures were of the shape
+where the argument is obviously right and the build was never run: first the
+derived state declared inside the `#if` while the bodies reach it behind a
+run-time test, then `enable_language(... OPTIONAL)` reporting a language it had
+not found. A deliberate second configure in one existing row would make this a
+tested configuration rather than a claimed one; until there is, the claim that
+a C-only build works rests on the `sanitize` row noticing.
+
 **Shared only in v1.** Static linking would require splitting `entrypoints.c`
 into 688 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI
 functions that are not replaced may still be linked into an executable image

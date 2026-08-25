@@ -34,7 +34,27 @@ enable_language(CXX OPTIONAL)
 # to the previous behaviour rather than to a broken one. It is still a
 # degradation, and a build meant to serve a Fortran consumer wants a Fortran
 # compiler present; the mpif rows of NOTES.md #10 are the ones that notice.
-enable_language(Fortran OPTIONAL)
+# **check_language, not enable_language(... OPTIONAL).** OPTIONAL does not mean
+# what the name suggests: with no Fortran compiler on the machine it still
+# reports the language loaded, sets CMAKE_Fortran_COMPILER to the string
+# "CMAKE_Fortran_COMPILER-NOTFOUND", and defers the failure to build time --
+#
+#   -- The Fortran compiler identification is unknown
+#   gmake[2]: CMAKE_Fortran_COMPILER-NOTFOUND: No such file or directory
+#
+# -- which is what CI's sanitize job, the only row without gfortran, reported.
+# CMAKE_Fortran_COMPILER_LOADED is TRUE there too, so it is not the test
+# either. check_language() try-compiles and leaves NOTFOUND when that fails, so
+# it answers for a missing compiler and a broken one alike, and `if()` treats a
+# *-NOTFOUND value as false.
+include(CheckLanguage)
+check_language(Fortran)
+if(CMAKE_Fortran_COMPILER)
+  enable_language(Fortran)
+  set(MPIABI_HAVE_FORTRAN TRUE)
+else()
+  set(MPIABI_HAVE_FORTRAN FALSE)
+endif()
 
 # **The Fortran runtime is deliberately not linked**, and this is the third and
 # last mechanism it took to keep it out (the other two are at the probe's own
@@ -53,12 +73,10 @@ enable_language(Fortran OPTIONAL)
 # hide it: the link fails with the undefined symbols named, which is the
 # constraint stating itself rather than a silent second libgfortran.
 #
-# **_LOADED, not CMAKE_Fortran_COMPILER.** The latter holds whatever path was
-# asked for, including one that does not exist or does not work, so testing it
-# reports "Fortran probe: " with an empty compiler id and then fails at build
-# time. _LOADED is what enable_language(... OPTIONAL) sets only when the
-# language actually came up.
-if(CMAKE_Fortran_COMPILER_LOADED)
+# MPIABI_HAVE_FORTRAN is set once, above, by check_language -- see there for
+# why neither CMAKE_Fortran_COMPILER nor CMAKE_Fortran_COMPILER_LOADED answers
+# this question on its own.
+if(MPIABI_HAVE_FORTRAN)
   set(CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "")
   set(CMAKE_Fortran_IMPLICIT_LINK_DIRECTORIES "")
 endif()
@@ -607,7 +625,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # subroutine default visibility, and `exported-symbols` caught it beside
   # mpiwrapper_get_vtable. C_VISIBILITY_PRESET does not reach Fortran, and on
   # macOS there is no version script to catch it either.
-  if(CMAKE_Fortran_COMPILER_LOADED)
+  if(MPIABI_HAVE_FORTRAN)
     add_library(mpiwrapper_fortran_probe OBJECT src/mpiwrapper/fortran_probe.f90)
     set_target_properties(mpiwrapper_fortran_probe PROPERTIES
       POSITION_INDEPENDENT_CODE ON
@@ -640,7 +658,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   target_compile_definitions(mpiwrapper PRIVATE
     "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
 
-  if(CMAKE_Fortran_COMPILER_LOADED)
+  if(MPIABI_HAVE_FORTRAN)
     # Pinned, because CMake picks the "highest" language among a target's
     # objects to drive the link -- and with one Fortran object that is
     # gfortran, which puts its own runtime on the link line. Measured: the
@@ -714,7 +732,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     )
     target_compile_definitions(mpiwrapper_unisolated PRIVATE
       "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
-    if(CMAKE_Fortran_COMPILER_LOADED)
+    if(MPIABI_HAVE_FORTRAN)
       set_target_properties(mpiwrapper_unisolated PROPERTIES LINKER_LANGUAGE C)
       target_compile_definitions(mpiwrapper_unisolated PRIVATE
         MPIWRAPPER_HAVE_FORTRAN)
