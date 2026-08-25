@@ -90,6 +90,25 @@ static unsigned char fortran_false[MPIWRAPPER_MAX_LOGICAL_SIZE];
  * native ABI implementation is in the same position and simply reports its own
  * builder's compiler; the difference is that we can notice.
  */
+/* **Declared whether or not there is a Fortran compiler, and that is not
+ * tidiness.** The two getter bodies below reach these unconditionally, behind a
+ * *run-time* `if (!fortran_derived_usable())` rather than a `#if` -- so a
+ * no-Fortran build still has to compile those references even though it can
+ * never reach them. Putting the declarations inside the guard is what a first
+ * attempt did, and the result compiled everywhere a Fortran compiler happened
+ * to be installed and nowhere else: the laptop and the Docker rows had one,
+ * CI's sanitize job did not, and it failed there with six "undeclared" errors
+ * on a path this file's own comments called a supported configuration.
+ *
+ * They stay zero in that build, and nothing reads them, because
+ * fortran_derived_usable() is the constant 0.
+ */
+static int           derived_logical_size;
+static int           derived_integer_size;
+static int           derived_real_size;
+static unsigned char derived_true[MPIWRAPPER_MAX_LOGICAL_SIZE];
+static unsigned char derived_false[MPIWRAPPER_MAX_LOGICAL_SIZE];
+
 #if defined(MPIWRAPPER_HAVE_FORTRAN)
 void mpiwrapper_fortran_probe(int *logical_size, int *integer_size,
                               int *real_size, int nbytes,
@@ -103,12 +122,7 @@ void mpiwrapper_fortran_probe(int *logical_size, int *integer_size,
 #define FORTRAN_DERIVED_USABLE   1
 #define FORTRAN_DERIVED_UNUSABLE 2
 
-static atomic_int   derived_state;
-static int          derived_logical_size;
-static int          derived_integer_size;
-static int          derived_real_size;
-static unsigned char derived_true[MPIWRAPPER_MAX_LOGICAL_SIZE];
-static unsigned char derived_false[MPIWRAPPER_MAX_LOGICAL_SIZE];
+static atomic_int derived_state;
 
 static int fortran_derived_usable(void)
 {

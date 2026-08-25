@@ -52,7 +52,13 @@ enable_language(Fortran OPTIONAL)
 # If Fortran is ever added here that genuinely needs the runtime, this does not
 # hide it: the link fails with the undefined symbols named, which is the
 # constraint stating itself rather than a silent second libgfortran.
-if(CMAKE_Fortran_COMPILER)
+#
+# **_LOADED, not CMAKE_Fortran_COMPILER.** The latter holds whatever path was
+# asked for, including one that does not exist or does not work, so testing it
+# reports "Fortran probe: " with an empty compiler id and then fails at build
+# time. _LOADED is what enable_language(... OPTIONAL) sets only when the
+# language actually came up.
+if(CMAKE_Fortran_COMPILER_LOADED)
   set(CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "")
   set(CMAKE_Fortran_IMPLICIT_LINK_DIRECTORIES "")
 endif()
@@ -601,7 +607,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # subroutine default visibility, and `exported-symbols` caught it beside
   # mpiwrapper_get_vtable. C_VISIBILITY_PRESET does not reach Fortran, and on
   # macOS there is no version script to catch it either.
-  if(CMAKE_Fortran_COMPILER)
+  if(CMAKE_Fortran_COMPILER_LOADED)
     add_library(mpiwrapper_fortran_probe OBJECT src/mpiwrapper/fortran_probe.f90)
     set_target_properties(mpiwrapper_fortran_probe PROPERTIES
       POSITION_INDEPENDENT_CODE ON
@@ -634,7 +640,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   target_compile_definitions(mpiwrapper PRIVATE
     "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
 
-  if(CMAKE_Fortran_COMPILER)
+  if(CMAKE_Fortran_COMPILER_LOADED)
     # Pinned, because CMake picks the "highest" language among a target's
     # objects to drive the link -- and with one Fortran object that is
     # gfortran, which puts its own runtime on the link line. Measured: the
@@ -708,7 +714,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     )
     target_compile_definitions(mpiwrapper_unisolated PRIVATE
       "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
-    if(CMAKE_Fortran_COMPILER)
+    if(CMAKE_Fortran_COMPILER_LOADED)
       set_target_properties(mpiwrapper_unisolated PROPERTIES LINKER_LANGUAGE C)
       target_compile_definitions(mpiwrapper_unisolated PRIVATE
         MPIWRAPPER_HAVE_FORTRAN)

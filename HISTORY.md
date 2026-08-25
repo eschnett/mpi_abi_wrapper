@@ -1314,8 +1314,8 @@ authority column and the generator freezes each tally.
 | planned prototype size | fifteen | **sixteen** | the table has sixteen functions in thirteen rows |
 | mechanical entry points | "roughly 600", then 568 | **562** generated + 5 ABI-side | `gen/report.txt` |
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
-| MPICH suite failures | 45, then 43 | **41** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt` |
-| Open MPI suite failures | 171 | **168** | ditto for `xfail-openmpi.txt` |
+| MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
+| Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
 
 The 1376 line is the instructive one. It was right until S3b's follow-up gave
 the five deleted entry points to `libmpi_abi`, and it stayed in eight places

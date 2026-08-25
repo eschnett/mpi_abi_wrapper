@@ -4,7 +4,7 @@
 #
 # **This is the local row's list, and it is pinned to the older pair.** GitHub
 # Actions has its own lists (xfail-ci-openmpi*.txt), because it runs Open MPI
-# 5.0.10 built from source with the 5.0.1 suite while the 168 lines below were
+# 5.0.10 built from source with the 5.0.1 suite while the 167 lines below were
 # recorded against the Open MPI 4.1.6 Ubuntu 24.04 ships with the 4.3.1 suite.
 # Neither half of that pair is what CI provisions any more.
 #
@@ -12,7 +12,7 @@
 # starts, because when it was established no Open MPI 5.0.x launcher would run
 # a job on the development laptop. That has since been fixed
 # (scripts/host-env.sh), so the row could move and has not. The failures are
-# below -- 168 of them, which is the count of lines that are
+# below -- 167 of them, which is the count of lines that are
 # neither blank nor comment (`grep -cvE '^\s*(#|$)'`), the same lines
 # check-tap.py reads; plain `wc -l` counts this header too. The run's total is
 # not recorded here, for the reason ci-scripts/suite/README.md gives.
@@ -142,7 +142,6 @@ errors/group/group_range_excl_nullarg 1 : NULL for MPI_Group_range_excl's newgro
 errors/group/group_range_incl_nullarg 1 : NULL for MPI_Group_range_incl's newgroup.
 errors/group/group_rank_nullarg 1 : NULL for MPI_Group_rank's rank.
 errors/group/group_union_nullarg 1 : NULL for MPI_Group_union's newgroup.
-init/version 1 : MPI_Get_version forwards the implementation's answer (MPICH 4.3.1 says 4.1) while the ABI header is fixed at MPI-5.0, and the test compares the two. Forwarding is the honest half: an application told 5.0 would believe entry points work that this wrapper answers with MPI_ERR_UNSUPPORTED_OPERATION. The two can agree only over an implementation that is itself MPI-5.0.
 io/i_setviewcur 4 : the same, through MPI_File_iset_view.
 io/setviewcur 4 : MPI_DISPLACEMENT_CURRENT is (MPI_Offset)-1 in the ABI header and -54278278 in ROMIO, which is what both MPICH and Open MPI use for MPI-IO, so MPI_File_set_view is handed -1 and answers "Invalid displacement argument". A bug of ours, diagnosed in S7 and not fixed there: #5.3's sentinel rule is about *pointer* sentinels and this is the one that is an integer, in one parameter of one entry point.
 rma/wincall 2 : the same table for windows: the test loops MPI_Win_create_errhandler and MPI_Win_set_errhandler 1000 times, and past 256 the wrapper has no slot, so MPI_ERRHANDLER_NULL reaches MPI_Win_set_errhandler.

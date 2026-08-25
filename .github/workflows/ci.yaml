@@ -1844,12 +1844,21 @@ jobs:
       # the linux-source job. gfortran for the same reason that job needs it
       # (NOTES.md #9 forbids --disable-fortran), and additionally for decision
       # 25's probe.
+      #
+      # **libhwloc-dev is not optional and does not announce itself.** mpif's
+      # installers configure MPICH --with-hwloc, so a runner without the
+      # headers fails a thousand lines into configure with "--with-hwloc is
+      # given but not found" -- after autogen has run and after every patch
+      # MPICH's autogen reports as failing, none of which is the cause. It is
+      # also wanted in the *test* job below, which never builds an MPI: a
+      # restored prefix links hwloc and has to find it at run time. mpif's
+      # setup-toolchain action says the same in its own comment.
       - name: Install the toolchain
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
               build-essential gfortran cmake python3 git patch binutils \
-              autoconf automake libtool flex \
+              autoconf automake libtool flex libhwloc-dev \
               poppler-utils curl ca-certificates pkg-config
 
       - name: Set up paths
@@ -1949,6 +1958,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
               build-essential gfortran cmake python3 git patch binutils \
+              libhwloc-dev \
               poppler-utils curl ca-certificates pkg-config
 
       - name: Set up paths
