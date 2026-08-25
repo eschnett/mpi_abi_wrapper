@@ -71,3 +71,37 @@ threads/pt2pt/mt_bsendrecv 2 : flaps between passing in 0.115 s and hanging to t
 # of the question; a wrapper that returned MPI_T_ERR_INVALID_INDEX instead of a wild
 # read would also settle whether the negative index is ours to reject.
 mpi_t/mpit_vars 1 : segfaults intermittently on both architectures in MPI_T_pvar_get_info, at 0x44 = offsetof(mca_base_pvar_t, flags) with *pvar NULL -- an unchecked index rather than MPI_T_ERR_INVALID_INDEX. Failed in runs 32420200083 (both), 32425661806 and 32434698299 (aarch64), 32438146220 (x86_64); passed in 32403337939, 32436484546 and 32441107176. Observed: Signal: Segmentation fault (11), Failing at address: 0x44
+
+# **The flap that spent time in an xfail delta file before it landed here, and
+# the one this file did not exist for.** xfail-ci-openmpi-aarch64.txt held
+# session/session_4x4 16 on the strength of one run -- 32182485327, where aarch64
+# failed it and x86_64 did not -- and dropped it when run 32189118611 passed it.
+# That file's own header then explains, correctly for the time, that a test which
+# fails one run and passes the next "cannot be expressed here at all": listing it
+# fails the run it passes, not listing it fails the run it fails. This third
+# category is the answer to exactly that, and it was added afterwards.
+#
+# **It is not an architecture difference, and the second observation is what
+# settles that.** It failed the aarch64 rest shard in run 32887203728 (job
+# 97930338169) and the x86_64 rest shard in run 32861557171 (job 97846529127) --
+# x86_64 first, aarch64 4h21m later, one unexpected failure in each and everything
+# else in both legs matching its list. So it flaps on both, like mpi_t/mpit_vars
+# above, and the per-architecture delta files are the wrong home for it in both
+# directions.
+#
+# It passes far more often than it fails. Twelve openmpi/aarch64/rest legs between
+# runs 32794291754 and 32886784798 reached their gate and every one of them passed
+# it, including run 32882434798 immediately before the red one, which reported 0
+# unexpected on that shard. The two other legs in that window reached no gate at
+# all -- runner shutdowns rather than results, which is a distinction this file's
+# run tables have to keep, since a job that died at 76 seconds is evidence of
+# nothing.
+#
+# **What would retire this line:** attribution. MPI_Reduce reporting "on a NULL
+# communicator" at np=16, from a communicator the test built out of a session
+# group, is either a communicator this project converted wrongly under a race or
+# Open MPI losing it -- and which one is not measured. The pattern to copy is the
+# mt_*probe* family above: build one suite tree twice, once through this project's
+# prefix and once against Open MPI directly, and see whether it flaps with no
+# wrapper in the path. Until that runs, the honest claim is the small one.
+session/session_4x4 16 : flaps on both architectures at np=16, unattributed -- failed in runs 32887203728 (aarch64) and 32861557171 (x86_64), passed in 32189118611 and in every completed aarch64 rest leg from 32794291754 to 32886784798. Not an architecture delta, which is why it is here rather than in xfail-ci-openmpi-aarch64.txt, where it briefly lived. Observed: *** An error occurred in MPI_Reduce | *** on a NULL communicator
