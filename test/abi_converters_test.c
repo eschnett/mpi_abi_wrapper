@@ -191,12 +191,33 @@ static void test_serialization(void)
  * (S8); this catches a pair that is not even self-consistent, which is the
  * failure a per-class copy-paste actually produces.
  */
+/* The round trip is not the property, and testing only the round trip is how a
+ * real bug survived here to be found by mpif instead (HISTORY.md #2.18). A
+ * forwarding _c2f -- one that hands back the *implementation's* Fortran handle
+ * -- round-trips perfectly through its own _f2c, so `f2c(c2f(h)) == h` holds
+ * under both the right semantics and the wrong ones and can distinguish
+ * neither.
+ *
+ * What the ABI fixes is the integer itself: MPI-5.0 20.4.5 pins serialization
+ * to the ABI's own predefined values, a Fortran layer over the ABI holds those
+ * values in its INTEGER handles, and such a layer is the only caller these
+ * functions have. So the assertion that matters is against _toint, which is
+ * already checked against the header's constants by TEST_SERIAL above.
+ */
 #define TEST_C2F(CLASS, TYPE, HANDLE)                                          \
   do {                                                                         \
     const MPI_Fint f    = MPI_##CLASS##_c2f(HANDLE);                           \
     const TYPE     back = MPI_##CLASS##_f2c(f);                                \
     CHECK(back == (HANDLE),                                                    \
           #CLASS "_f2c(" #CLASS "_c2f(" #HANDLE ")) is not " #HANDLE);         \
+                                                                               \
+    CHECK(f == (MPI_Fint)MPI_##CLASS##_toint(HANDLE),                          \
+          #CLASS "_c2f(" #HANDLE ") is %d but " #CLASS "_toint is %d -- the "  \
+          "converters must answer the ABI's own integer, not the "             \
+          "implementation's",                                                  \
+          (int)f, MPI_##CLASS##_toint(HANDLE));                                \
+    CHECK(MPI_##CLASS##_f2c(f) == MPI_##CLASS##_fromint((int)f),               \
+          #CLASS "_f2c and " #CLASS "_fromint disagree on %d", (int)f);        \
   } while (0)
 
 static void test_c2f(void)
@@ -251,17 +272,13 @@ static void test_c2f(void)
           rank);
   }
 
-  /* MPI_SESSION_NULL only when the implementation has sessions at all: the
-   * class exists in the ABI either way, and the slot then reports at run time.
+  /* Sessions need no skip any more, and that is the point of the change these
+   * assertions came with: MPI_Session_c2f is answered from the ABI's own
+   * values, so it exists and is correct whether or not the implementation has
+   * sessions at all. This used to test `f != 0` and skip, because a stub
+   * returned 0 over an implementation without them.
    */
-  {
-    const MPI_Fint f = MPI_Session_c2f(MPI_SESSION_NULL);
-    if (f != 0)
-      CHECK(MPI_Session_f2c(f) == MPI_SESSION_NULL,
-            "MPI_Session_f2c did not invert MPI_Session_c2f");
-    else if (rank == 0)
-      printf("  skipping MPI_Session_c2f: not in this implementation\n");
-  }
+  TEST_C2F(Session, MPI_Session, MPI_SESSION_NULL);
 
   CHECK_MPI(MPI_Info_free(&info));
   CHECK_MPI(MPI_Type_free(&datatype));
@@ -492,6 +509,24 @@ static void test_output_strings(void)
     check_terminated("MPI_Get_library_version", version, resultlen,
                      MPI_MAX_LIBRARY_VERSION_STRING);
     CHECK(resultlen > 0, "MPI_Get_library_version produced an empty string");
+
+    /* The one entry point whose answer this library adds to rather than
+     * converts (NOTES.md #5.8): a banner naming the wrapper and its version
+     * goes in front of the wrapped library's own string. Asserted here because
+     * it is the only way an application can tell there is a shim at all --
+     * MPI_Get_version reports the ABI's version (decision 24) and
+     * MPI_Abi_get_version the ABI's, so neither of those says so.
+     */
+    CHECK(strncmp(version, "mpi_abi_wrapper ", 16) == 0,
+          "MPI_Get_library_version does not begin with the wrapper's banner; "
+          "it begins \"%.32s\"", version);
+
+    /* And the wrapped library's text still follows, which is what keeps the
+     * banner additive rather than a replacement -- every implementation names
+     * itself in that text, and consumers grep it. mpif is one.
+     */
+    CHECK(strlen(version) > 16 && strchr(version, '\n') != NULL,
+          "MPI_Get_library_version is the banner and nothing else");
   }
 
   {
@@ -672,13 +707,26 @@ static void test_abi_fortran(void)
 {
   if (rank == 0) printf("test_abi_fortran\n");
 
+  /* Before the application registers anything, **either answer is correct**
+   * and which one it is depends on the build (decision 25): a wrapper built
+   * with a Fortran compiler, over an MPI that has Fortran datatypes, answers
+   * from src/mpiwrapper/fortran_probe.f90; anything else answers "not set",
+   * which is what MPI-5.0 20.4.1 defines as "the implementation does not know
+   * the properties of the Fortran compiler".
+   *
+   * So this asserts the property that holds either way, which is the one a
+   * caller depends on: **the two getters agree**. A library that knows the
+   * booleans and not the sizes, or the reverse, would hand a Fortran layer
+   * half an answer -- and that is a state no caller can act on, since it
+   * cannot tell which half it is missing.
+   */
   MPI_Info info = (MPI_Info)0x1;
   int      ierror = MPI_Abi_get_fortran_info(&info);
+  int      info_known = -1;
   if (!unsupported(ierror, "MPI_Abi_get_fortran_info")) {
     CHECK(ierror == MPI_SUCCESS, "MPI_Abi_get_fortran_info returned %d",
           ierror);
-    CHECK(info == MPI_INFO_NULL,
-          "MPI_Abi_get_fortran_info answered before anything was set");
+    info_known = info != MPI_INFO_NULL;
   }
 
   int is_set = -1;
@@ -687,8 +735,37 @@ static void test_abi_fortran(void)
   if (!unsupported(ierror, "MPI_Abi_get_fortran_booleans")) {
     CHECK(ierror == MPI_SUCCESS, "MPI_Abi_get_fortran_booleans returned %d",
           ierror);
-    CHECK(is_set == 0, "the Fortran booleans report themselves already set");
+    CHECK(is_set == 0 || is_set == 1,
+          "MPI_Abi_get_fortran_booleans left is_set at %d", is_set);
+
+    if (info_known >= 0)
+      CHECK(info_known == is_set,
+            "MPI_Abi_get_fortran_info %s but MPI_Abi_get_fortran_booleans %s "
+            "-- half an answer is one no Fortran layer can use",
+            info_known ? "knows" : "does not know",
+            is_set ? "knows" : "does not know");
+
+    if (is_set) {
+      /* Whatever the compiler is, these two cannot be the same bytes. */
+      CHECK(t != f, "the Fortran booleans report .TRUE. and .FALSE. alike (%d)",
+            t);
+
+      /* And the size the booleans came in must be the size the info reports,
+       * or the two describe different Fortran compilers.
+       */
+      char value[32];
+      int  flag = 0;
+      memset(value, 0, sizeof value);
+      CHECK_MPI(info_get(info, "mpi_logical_size", value, (int)sizeof value,
+                         &flag));
+      CHECK(flag && atoi(value) == (int)sizeof(int),
+            "mpi_logical_size is \"%s\" (flag %d) but the booleans answered "
+            "for a %d-byte LOGICAL",
+            value, flag, (int)sizeof(int));
+    }
   }
+  /* The object is the caller's, per MPI_Info_create's ownership. */
+  if (info_known == 1) CHECK_MPI(MPI_Info_free(&info));
 
   /* Fortran's .TRUE. is not required to be C's 1, so the values registered
    * here are deliberately not 1 and 0 -- a body that "helpfully" normalized

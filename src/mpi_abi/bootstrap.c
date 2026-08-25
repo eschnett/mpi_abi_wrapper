@@ -174,7 +174,7 @@ static void *vt_dlopen(const char *path, const char **how)
  * internal MPI_X -> PMPI_X forwards by global load order, landing them in our
  * strong PMPI_* -- while the wrapper's address-of, and every one of the
  * wrapper's own calls, still resolves to the implementation. (First
- * misattributed to dyld's weak-definition coalescing; HISTORY.md #2.18 and
+ * misattributed to dyld's weak-definition coalescing; HISTORY.md #2.19 and
  * dev/weakdef-probe/ show coalescing never captures a two-level
  * implementation however weak its symbols, because our all-strong library
  * does not participate in it.) The consequence is silent double execution,

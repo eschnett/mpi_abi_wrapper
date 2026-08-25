@@ -4,7 +4,7 @@
 #
 # **This is the local row's list, and it is pinned to the older pair.** GitHub
 # Actions has its own lists (xfail-ci-mpich*.txt), because it runs MPICH 5.0.1
-# with the 5.0.1 suite while the 41 lines below were recorded against MPICH 4.3.1
+# with the 5.0.1 suite while the 40 lines below were recorded against MPICH 4.3.1
 # with the 4.3.1 suite. run-suite.sh now defaults to the 5.0.1 suite, so
 # reproducing this file takes `--suite=4.3.1` against a 4.3.1 installation;
 # anything else is a retriage rather than a comparison.
@@ -13,7 +13,7 @@
 # unlisted failure fails the run, and so does a listed test that passed or
 # that did not run. A line with no reason after the colon fails the run too.
 #
-# These are the failures -- 41 of them, which is the count of lines that are
+# These are the failures -- 40 of them, which is the count of lines that are
 # neither blank nor comment (`grep -cvE '^\s*(#|$)'`), the same lines
 # check-tap.py reads; plain `wc -l` counts this header too. The
 # run's *total* is deliberately not recorded here: it changes with three
@@ -41,7 +41,6 @@
 
 # --- (a) version -----------------------------------------------------------
 
-init/version 1 : MPI_Get_version forwards the implementation's answer (MPICH 4.3.1 says 4.1) while the ABI header is fixed at MPI-5.0, and the test compares the two. Forwarding is the honest half: an application told 5.0 would believe entry points work that this wrapper answers with MPI_ERR_UNSUPPORTED_OPERATION. The two can agree only over an implementation that is itself MPI-5.0.
 
 # --- (b) fixed-capacity tables, exhausted ----------------------------------
 

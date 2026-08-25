@@ -1,0 +1,18 @@
+# ld64 -exported_symbols_list for libmpiwrapper, the Mach-O counterpart of
+# cmake/mpiwrapper.version.
+#
+# That file used to say no Mach-O counterpart was needed, and it was right for
+# the reason it gave: the linker-inserted globals (_init, _fini and the rest)
+# that made the ELF script necessary do not appear in a Mach-O dynamic table.
+#
+# Fortran is what made it necessary anyway. src/mpiwrapper/fortran_probe.f90's
+# subroutine is bind(C), and gfortran gives such a symbol default visibility
+# whatever -fvisibility=hidden says -- measured with `nm -m`, which reports it
+# "external" in the object file compiled with that flag. On ELF the version
+# script already restricted the export set to one name and so caught it for
+# free; on Mach-O nothing did, and `exported-symbols` reported libmpiwrapper
+# exporting mpiwrapper_fortran_probe beside mpiwrapper_get_vtable.
+#
+# Mach-O C symbols carry a leading underscore that the source's own name does
+# not.
+_mpiwrapper_get_vtable

@@ -1,0 +1,15 @@
+# Tests of mpif's ctest expected to fail on the mpich-wrapper leg.
+#
+# **Empty is the intended state**, and this file exists so that a failure has
+# somewhere to be written down with a reason rather than being argued about in
+# a workflow file. One test name per line; blank lines and # comments ignored.
+#
+# Before adding anything here, compare against the leg's counterpart: the four
+# legs are {mpich, openmpi} x {native, wrapper}, and the *point* of running all
+# four is that a wrapper-leg failure its native counterpart does not have is a
+# defect in this project. Three were found that way on the first run
+# (HISTORY.md #2.18, decisions 24 and 25). An entry added without that
+# comparison turns the signal off.
+#
+# A failure the native leg has too is mpif's or the implementation's, and still
+# needs a reason -- which upstream issue, which version it appeared in.

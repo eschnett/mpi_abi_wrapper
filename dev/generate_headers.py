@@ -79,8 +79,18 @@ def apply_patch() -> str:
     """
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "mpi.h"
+        # --forward, so that a hunk upstream has since adopted is an *error*
+        # rather than a reversal. Without it, `patch` meets an already-applied
+        # hunk, reports "Reversed (or previously applied) patch detected!", and
+        # -- having no terminal to ask -- answers its own prompt by
+        # reverse-applying the rest, which here would delete the Fortran
+        # declarations doc/mpi.h.patch exists to add and leave a header that
+        # still compiles. mpif hit exactly that, having cloned the stubs
+        # unpinned; dev/vendor/mpi-abi-stubs/VERSION.md has the account and
+        # what to do at the next re-vendor. A no-op while the patch applies.
         proc = subprocess.run(
-            ["patch", "--quiet", "-p1", "-o", str(out), str(VENDORED_STUB)],
+            ["patch", "--quiet", "--forward", "-p1", "-o", str(out),
+             str(VENDORED_STUB)],
             input=PATCH.read_bytes(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

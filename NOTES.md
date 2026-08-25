@@ -53,6 +53,58 @@ variant instead of `MPI_Count count`; and it gives `MPI_Status` a struct tag
 (§2, "Naming"), which is worth proposing upstream since it costs nothing and
 changes nothing about the ABI.
 
+**Upstream has since made the `Psend`/`Precv` correction itself, and that is a
+trap waiting for whoever re-vendors.** `dev/vendor/mpi-abi-stubs/` is pinned at
+`a1183ce6` (2025-11-24), which still has the old signatures, so the hunk is
+still needed *today*; upstream's tip carries the corrected ones. The moment the
+vendored copy moves past that fix, `patch` finds the hunk already applied and
+reports "Reversed (or previously applied)".
+
+That is not a prediction: it is what happened to mpif, whose
+`install-mpi-header.sh` clones the stubs *unpinned*, and which the mpif rows of
+§10 caught failing on exactly this. There the consequence was severe, because
+`patch` running with no terminal answers its own prompt and reverse-applies —
+mpif's header came out with the Fortran declarations *removed*.
+
+**Here it is only a build failure**, and the difference is worth knowing rather
+than assuming: `dev/generate_headers.py` checks `patch`'s exit code and raises,
+and this project's patch has four hunks where mpif's has three, so the reversal
+does not reach the Fortran block. Measured against a simulated future stub, not
+argued. `--forward` is passed anyway, so the refusal is stated rather than
+inferred from an exit code that happened to be non-zero.
+
+Vendoring is what makes this project's copy a dated artifact rather than a
+moving one, and it is the whole reason this is ours to schedule rather than
+ours to be surprised by.
+
+**Which of the four hunks survive a re-vendor**, read off a diff of the
+vendored copy against upstream `a8470014` rather than inferred from the patch
+failure:
+
+| hunk | what it does | at upstream tip |
+|---|---|---|
+| `@@ -37` | gives `MPI_Status` a struct tag | **still needed** — upstream still writes `typedef struct { … } MPI_Status;` |
+| `@@ -941` | `MPI_Psend_init`/`MPI_Precv_init` | **adopted upstream**, drop it |
+| `@@ -1609` | the `PMPI_` twins of the same | **adopted upstream**, drop it |
+| `@@ -1896` | the Fortran block | **needed permanently** — see below |
+
+So the patch does not become unnecessary; **half of it does**. And the Fortran
+half is not waiting on upstream at all: MPI-5.0 §20.4 puts `MPI_Fint` and
+everything depending on it *outside* the ABI on purpose, so the stub header
+will never carry it. That block is this project's extension, shared with mpif
+by agreement rather than by standard, and `HISTORY.md` §2.18 is what it cost to
+learn that being outside the ABI does not mean being unconstrained.
+
+**Upstream changed more than that hunk**, and the rest is re-vendoring work
+rather than patch work: the `MPI_T` handle tags were renamed
+(`struct MPI_T_enum_t` → `struct MPI_ABI_T_enum`, and five more like it), which
+is the same convention §2's renaming rules assume and worth re-checking against
+them; `MPI_Aint`/`MPI_Offset`/`MPI_Count` were restructured with an MSVC branch,
+which is the first thing in the stub header to acknowledge Windows (§13.4); and
+`MPI_ERR_LASTCODE`, `MPI_ORDER_C` and `MPI_ORDER_FORTRAN` were respelled from
+hex to decimal at the same values, which changes nothing and will still show up
+in a diff.
+
 **Scope, counted from the patched header rather than estimated.** 688 entry
 points, with `MPI_*` and `PMPI_*` exactly symmetric — every one has a twin, no
 exceptions in either direction. `CODE.md` §2 carries the breakdown and the
@@ -100,7 +152,7 @@ rather than as a list.
   namespace. That assumption is load-bearing — no macOS build may acquire
   `-flat_namespace` by accident, ours *or the implementation's*, since a flat
   implementation's own internal calls resolve into our exports by load order
-  (`HISTORY.md` §2.18) — and it is checked at load rather than at configure
+  (`HISTORY.md` §2.19) — and it is checked at load rather than at configure
   time (§2).
 - **The ABI surface is complete and is MPI-5.0** (plus the Fortran extension of
   `doc/mpi.h.patch`). A function the implementation lacks is **reported at run
@@ -129,6 +181,18 @@ rather than as a list.
   is therefore about *cost*, not about capability: meeting it buys a 1:1 mapping
   with no narrowing check and no staged count array, and failing it buys a
   ceiling at `INT_MAX` rather than a missing entry point.
+
+  **True of every release, and no longer true of `main`.** Open MPI's
+  development branch — the commit mpif pins for its ABI rows, and the one the
+  mpif legs of §10 wrap — declares `MPI_VERSION 5` / `MPI_SUBVERSION 0` and
+  declares `MPI_Send_c` and the rest in its ordinary `mpi.h`. So the
+  large-count half of the surface is exercised over Open MPI there, where over
+  5.0.10 it is entirely decision 6's stubs.
+
+  Either way **`MPI_Get_version` answers 5.0**, because that is the standard
+  *this library* presents (decision 24); what the wrapped implementation
+  supports is discovered per entry point, at run time, by
+  `MPI_ERR_UNSUPPORTED_OPERATION`.
 
 ---
 
@@ -319,11 +383,19 @@ independent:
    differ: a flat-namespace implementation build whose own internal
    `MPI_X → PMPI_X` forwards resolve by load order into our strong `PMPI_X`
    *while taking the symbol's address still resolves correctly*, and the
-   symptom is silent double execution rather than recursion (§2.18 for the
+   symptom is silent double execution rather than recursion (§2.19 for the
    mechanism, `dev/weakdef-probe/` for the matrix). So the ABI side makes one
    call through the vtable and sees whether the call comes back. `MPI_Get_version` is the probe:
    legal before `MPI_Init` in every version of the standard, no side effects.
    (`MPI_Wtime` reads better and is wrong — `HISTORY.md` §2.5.)
+
+   **`MPI_Get_version` is hand-written now (decision 24) and still makes this
+   call on purpose.** Its *answer* is the ABI's own 5.0 and the
+   implementation's is discarded — but the call itself is what this probe
+   observes, so a body that computed two constants and returned would leave
+   the probe with nothing to detect and retire the check silently. The comment
+   in `src/mpiwrapper/hw_lifecycle.c` says so at that end too; a call whose
+   result is thrown away is exactly what a later reader deletes.
 
 **The probe's mechanism keeps the generated code out of it entirely.** A
 captured call re-enters `libmpi_abi`'s own exported entry point, which does
@@ -357,7 +429,7 @@ at load is the correct outcome. A **two-level** implementation is never
 captured, weak symbols or strong: coalescing chooses among images that have
 weak definitions, and our all-strong `libmpi_abi` never participates. This
 replaces an earlier belief that weak coalescing made any ABI-implementing MPI
-unwrappable here — `HISTORY.md` §2.18 and `dev/weakdef-probe/` have the
+unwrappable here — `HISTORY.md` §2.19 and `dev/weakdef-probe/` have the
 measurements, and oracle 5 in §10 has the two-level standard-ABI build that
 wraps.
 
@@ -752,6 +824,31 @@ That sentence admits two readings and only one is right: the four converters do
 *not* forward to the implementation's `MPI_Status_c2f`, they are a 32-byte copy
 between two spellings of the same thing. `HISTORY.md` §1.14 has why forwarding
 would be actively wrong.
+
+**And neither do the other 22** (decision 23). All 26 converters — the four
+status forms, the 11 classes' `_c2f`/`_f2c`, and the `_toint`/`_fromint` pairs
+beside them — are answered from **the ABI's own handle values, with the
+implementation never asked**. `MPI_Comm_c2f` *is* `MPI_Comm_toint` and
+`MPI_Comm_f2c` *is* `MPI_Comm_fromint`; the same for every class.
+
+The reason is that `MPI_Fint` is not in the ABI at all (§20.4), so the only
+caller these functions can ever have is a Fortran binding layered *over* the
+ABI — and such a layer holds ABI values in its INTEGER handles, because
+§20.4.5 requires `_toint` to produce exactly those. So the class the standard
+declines to define is fixed by the one consumer it can have. mpif implements
+`MPI_Comm_c2f` as `return MPI_Comm_toint(comm)` and its `c2f` test fails
+against anything else.
+
+Two consequences worth stating separately, because both were wrong before:
+
+- **No `MPIWRAPPER_HAVE_` guard, and no decision-6 stub.** These bodies touch
+  no implementation entry point, so there is nothing for the availability probe
+  to find missing. `MPI_Session_c2f` used to return 0 over an implementation
+  without sessions; it now answers correctly over every implementation, because
+  the question was never the implementation's to answer.
+- **A round trip does not test this.** `f2c(c2f(h)) == h` holds under the
+  forwarding semantics too. `HISTORY.md` §2.18 is the measurement, and
+  `test/abi_converters_test.c` now compares against `_toint` instead.
 
 ---
 
@@ -1170,6 +1267,40 @@ buffer and checked against the signature — because that naming is the *only*
 thing separating the safe class from the dangerous one. It is `MPI_Info_get`'s
 `valuelen`, `MPI_Info_get_string`'s `buflen`, `MPI_Session_get_nth_pset`'s
 `pset_len`, and MPI_T's twelve. `MPI_MAX_STRINGTAG_LEN` is an input limit only.
+
+**`MPI_Get_library_version` is the one that does not merely copy** (decision
+26). It puts a two-line banner in front of the wrapped library's own string:
+
+```
+mpi_abi_wrapper 1.0.0 (MPI 5.0 standard ABI, MPI_ABI_VERSION 1.0)
+wrapping:
+MPICH Version:      4.3.1
+...
+```
+
+The reason is that **after decision 24 nothing else tells an application there
+is a shim here at all**. `MPI_Get_version` reports the standard this library
+presents rather than the wrapped one's, and `MPI_Abi_get_version` reports the
+ABI; both are answers about the ABI rather than about the implementation of it.
+The library version string is where a person looks and what a bug report
+pastes, so it is where the wrapper's own identity belongs.
+
+It is *additive*, which is the property that keeps it safe: the implementation's
+text follows unchanged, every implementation names itself in that text, and
+consumers grep it — mpif's `MPIF_TEST_MPI_LIBRARY` does, which is why the
+banner names no implementation of its own. The four version numbers in it are
+stringified from the header rather than typed, per `CLAUDE.md`'s rule about
+writing down how to re-derive a number.
+
+Two consequences worth stating: the staged buffer grows by the banner and the
+implementation writes into the middle of it, so the composition costs no second
+copy and carries the implementation's own `resultlen` convention through
+unchanged; and **truncation becomes reachable**, where §4.4's "the ABI took the
+maximum over both" had made it impossible. A banner in front of a maximal
+8192-byte MPICH string exceeds the ABI's 8192. It truncates, per the table
+below, and the tail of the wrapped banner is the right end to lose — real ones
+run to one or two kilobytes, and the wrapper's line is the part a reader cannot
+reconstruct.
 
 **Truncate or error is a per-parameter judgement**, and belongs in the named
 `(routine, parameter)` table:
@@ -1721,6 +1852,60 @@ the decision rather than working around it.
 20. **The five entry points MPI-3.0 deleted are answered by `libmpi_abi`
     itself**, in terms of their replacements, with no slot and no wrapper body.
     §3.
+21. **`libmpi_abi`'s soname is `MPI_ABI_VERSION`, not the project's version**,
+    and `libmpiwrapper` has none. The soname is the name a client binary
+    records, so it is the thing that decides whether a binary built here starts
+    against *another* implementation's `libmpi_abi` — which is the entire
+    promise of a standard ABI, and is therefore not ours to pick freely. Open
+    MPI's ABI branch installs `libmpi_abi.so.1`/`libmpi_abi.1.dylib`, so this
+    does too. It is read out of `gen/include/mpi.h` at configure time rather
+    than written down again, and **must never be made to follow
+    `PROJECT_VERSION`**: a 1.1.0 or a 2.0.0 of this project still implements
+    ABI major 1 and must still answer to `libmpi_abi.so.1`. `libmpiwrapper` is
+    reached by `dlopen` at an absolute path and MPI-5.0 §20.2.1 forbids the
+    application naming it at all, so a soname on it would name nothing. §9.
+22. **Neither ELF version script names its node**, so no symbol this project
+    defines carries a version. A named node stamps every definition — `MPI_Send`
+    becomes `MPI_Send@MPIABI_1` in a client's relocations — and another
+    implementation's `libmpi_abi`, which has never heard of that node, then
+    fails to satisfy it. An anonymous node filters the export set identically,
+    which is the only thing §9 wanted a version script for. §9.
+23. **All 26 C–Fortran converters are answered from the ABI's own values**, and
+    the implementation is never asked: `MPI_X_c2f` is `MPI_X_toint`, `MPI_X_f2c`
+    is `MPI_X_fromint`, and the four status forms are a 32-byte copy. §20.4
+    leaving `MPI_Fint` out of the ABI is what *settles* this rather than what
+    frees it — the only possible caller is a Fortran layer over the ABI, whose
+    INTEGER handles hold ABI values. No availability guard and no decision-6
+    stub, since no implementation entry point is involved. §4.4, `HISTORY.md`
+    §2.18.
+26. **`MPI_Get_library_version` prepends a banner** naming this library and its
+    version, ahead of the wrapped implementation's own string, which follows
+    unchanged. It is the only entry point whose answer this library *adds to*
+    rather than converts or forwards, and it exists because decision 24 leaves
+    nothing else that reports the shim: `MPI_Get_version` answers for the ABI,
+    `MPI_Abi_get_version` for the ABI's version. §5.8.
+24. **`MPI_Get_version` reports the ABI's own version**, 5.0, not the wrapped
+    implementation's. MPI-5.0 §2.7 requires the `MPI_VERSION` macro and this
+    call to agree, and `gen/include/mpi.h` says 5; forwarding put a second and
+    contradictory answer in front of an application, which then believes its
+    library is older than the header it compiled against. What actually varies
+    is *which entry points answer* `MPI_ERR_UNSUPPORTED_OPERATION`, and
+    decision 3 already makes that a run-time discovery rather than a version
+    comparison. `MPI_Get_library_version` still forwards, so the wrapped
+    implementation's own version is still available where implementations put
+    it. **The body still calls the implementation**, because that call is §2's
+    isolation probe. §1, §2.
+25. **The Fortran getters answer from this build's Fortran compiler**, when
+    there is one and when the wrapped MPI has Fortran datatypes; otherwise
+    "not set", which is what §20.4.1 defines that to mean. The values cannot
+    come from anywhere else — the standard passes `.TRUE.` and `.FALSE.` *by
+    address* precisely because no C code and no MPI call can produce them — so
+    one Fortran translation unit is compiled into `libmpiwrapper` and read at
+    run time. It brings **no Fortran runtime**: `libmpiwrapper` is `dlopen`ed
+    beside the application's own, and a second `libgfortran` in one process is
+    its own class of failure. An explicit `MPI_Abi_set_fortran_booleans` still
+    wins, because the standard makes the application's answer authoritative.
+    §8, §9.
 
 ---
 
@@ -1747,6 +1932,14 @@ generator could match and answers it could not choose.
 forwarded questions; the trampoline pools and maps of §6; the dynamic error-code
 and keyval registries of §5.6; the attached buffer's ownership record; the
 intern table behind handle serialization.
+
+**2a. State that is neither ours nor the implementation's.** The Fortran
+getters of decision 25 are the only instance, and they are why this is a
+separate line rather than a case of 2: what they report belongs to *the
+compiler this library was built with*, which neither the wrapper nor the
+wrapped MPI can be asked for at run time. The value arrives through a build
+input — one Fortran translation unit, `src/mpiwrapper/fortran_probe.f90` — and
+the entry point exists to hand it over. §9 has what that costs the build.
 
 **3. A class no signature carries.** The attribute getters of §5.6, whose
 returned `void *` means whatever the keyval says. This is the category worth
@@ -1848,6 +2041,97 @@ are needed: the visibility preset reaches every symbol this project writes and
 not the handful the linker inserts into every shared object. `libmpi_abi`
 exports only `MPI_*`/`PMPI_*`; `libmpiwrapper` only `mpiwrapper_get_vtable`.
 
+**The version scripts filter; they do not version** (decision 22). Both nodes
+are anonymous. The distinction is invisible in the export set — which is all
+either script was added for, and why the named nodes survived unexamined — and
+decisive one level up: a named node puts `MPI_Send@MPIABI_1` in every client
+binary's relocations, and a client that carries a version can only be satisfied
+by a library that defines it. Since no other implementation of the standard ABI
+defines `MPIABI_1`, a named node would have made every binary built here
+unrunnable against exactly the libraries the ABI exists to let it run against.
+An anonymous node also emits no symbol for itself, which is what let
+`test/check_exports.cmake` drop its exemption list.
+
+**The soname is the ABI's, and it is a cross-implementation agreement**
+(decision 21). This is the sharpest instance of a rule the rest of this section
+only implies: **a name a client binary records is not this project's to
+choose.** `libmpi_abi.so`'s consumers are compiled elsewhere, possibly against
+someone else's implementation, and MPI-5.0 §20.2.1 both requires the name
+`mpi_abi` and permits an application to depend on "its versioned variant" —
+which makes the version part of the contract rather than packaging trivia. So
+`SOVERSION` is `MPI_ABI_VERSION`, matching what Open MPI's ABI branch installs,
+and it is `file(STRINGS)`-ed out of the generated header so that no edit can
+put the two out of step. `VERSION` is `PROJECT_VERSION` and moves freely; the
+two are deliberately different numbers that happen to agree at 1.0.0 today.
+
+**Mach-O gates on a second number, and it is not the one in the file name.**
+dyld records the compatibility version a client was linked against and refuses
+at load any library offering a lower one — so the leaf name being right and
+this being wrong produces exactly the failure the soname exists to prevent,
+on macOS only, and only when a swap is actually attempted. The ecosystem's
+number comes from libtool: ABI version 1 is `-version-info 1:0:0`, which gives
+the name `libmpi_abi.1.dylib` and compatibility version *2.0.0*. CMake derives
+`-compatibility_version` from `SOVERSION`, which must stay 1 for the file name,
+so the two are decoupled with `MACHO_COMPATIBILITY_VERSION`.
+
+This was wrong for a day, between decision 21 and the mpif rows of §10 —
+`libmpi_abi.1.dylib` with compatibility version 1.0.0, which is a library
+correctly named and unloadable by anything linked against a real one. Nothing
+here found it; mpif's `ci-scripts/check-mpi-install.sh` asserts both fields and
+did. The lesson is §10's, not §9's: **the export-side conventions of an ABI are
+only checkable against another implementation of it.**
+
+`libmpiwrapper` gets neither, and the asymmetry is the two-library split
+showing through: nothing links it, so nothing records a name for it, so there
+is no name to keep stable. It is found by the absolute path decision 5 bakes
+in, or by `MPI_ABI_WRAPPER_LIB`.
+
+What none of this yet establishes is the swap itself — a binary built here
+starting against a vendor `libmpi_abi`, and the reverse. That is a test this
+project does not have; §10's oracle 5 wraps an ABI-implementing MPI, which is a
+different question. It is the next thing to build, and it is what would have
+caught both of these choices while they were still implicit.
+
+**A Fortran compiler is an optional build input** (decision 25), and the
+degradation without one is to the previous behaviour rather than to a broken
+one: the two Fortran getters answer "not set", which is legal and was the only
+answer before. A build meant to serve a Fortran consumer wants one present, and
+§10's mpif rows are what notice.
+
+Three separate mechanisms keep its runtime out of `libmpiwrapper`, and all
+three are needed — each was added after the previous one proved insufficient,
+measured with `otool -L`:
+
+1. an **object library**, so the `.f90` is compiled apart from the wrapper;
+2. `LINKER_LANGUAGE C` on the wrapper, because CMake otherwise picks `gfortran`
+   to drive the link on account of that object's language;
+3. `CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES` emptied, because CMake adds
+   `-lgfortran -lquadmath` to any target holding a Fortran object regardless.
+
+Emptying (3) is safe only because the probe is written to need no runtime — no
+I/O, no allocatables, no derived types, and `nm -u` showing `malloc`, `free`
+and `memcpy` as its only undefined symbols. **Check that with `nm -u` if
+anything is ever added to it**; if it does need the runtime, the link fails
+naming the symbols, which is the constraint stating itself rather than a
+silent second `libgfortran`.
+
+The probe also forced `cmake/mpiwrapper.exported_symbols` into existence: a
+`bind(C)` subroutine is exported whatever `-fvisibility=hidden` says, ELF's
+version script caught it for free, and macOS had no counterpart until now.
+
+**The no-Fortran configuration broke twice before it ever ran**, which is worth
+recording as a coverage fact rather than as two mistakes. Nothing gates it: the
+laptop has a Fortran compiler, and so does every Docker row, because the commit
+that introduced the probe added `gfortran` to `ci-scripts/linux-test.sh` in the
+same breath. **CI's only coverage is the `sanitize` job, and that is an
+accident** — it happens not to install one. Both failures were of the shape
+where the argument is obviously right and the build was never run: first the
+derived state declared inside the `#if` while the bodies reach it behind a
+run-time test, then `enable_language(... OPTIONAL)` reporting a language it had
+not found. A deliberate second configure in one existing row would make this a
+tested configuration rather than a claimed one; until there is, the claim that
+a C-only build works rests on the `sanitize` row noticing.
+
 **Shared only in v1.** Static linking would require splitting `entrypoints.c`
 into 688 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI
 functions that are not replaced may still be linked into an executable image
@@ -1929,7 +2213,7 @@ Version choice is about coverage, not admissibility:
 
    **It runs on macOS too, provided the implementation is a two-level build.**
    An earlier version of this section called it a Linux-only oracle, blaming
-   dyld's weak-definition coalescing; `HISTORY.md` §2.18 overturned that — the
+   dyld's weak-definition coalescing; `HISTORY.md` §2.19 overturned that — the
    one refused configuration was a `-flat_namespace` implementation build
    (mpif's gcc/libtool one), a two-level implementation is never captured
    however weak its symbols, and a flat one still gets the refusal, which is
@@ -1950,6 +2234,26 @@ Version choice is about coverage, not admissibility:
    that declares any converter must declare `MPI_Fint` to type it, so the
    guard skips the assertion exactly where there is nothing to name. Making
    the oracle a CI row is what remains.
+
+   **mpif is now a CI row rather than an aspiration**, four of them:
+   `{mpich, openmpi} × {native, wrapper}`, where the native legs run mpif over
+   an implementation's own standard ABI and the wrapper legs run the same mpif
+   over this project wrapping *the same commit* of that implementation, built
+   stock. The comparison is the product: a wrapper-leg failure its native
+   counterpart lacks is a defect here, one they share is not. Neither
+   statement can be had from a single leg.
+
+   It earned its cost immediately. mpif's first run answered 69 of 81 where
+   the native ABI answered 81, and the twelve were three separate defects that
+   all thirteen of this project's own tests had passed over — `HISTORY.md`
+   §2.18's converter bug, and decisions 24 and 25. Two more came from mpif's
+   `check-mpi-install.sh` alone, before any test ran: the Mach-O
+   compatibility version (§9) and the export style (§13.2).
+
+   `ci-scripts/test-mpif.sh` is the runner and takes **two** prefixes, because
+   this project's has no `mpiexec` — the launcher belongs to the wrapped MPI.
+   Only mpif's `ctest` runs; its MPICH Fortran suite is a separate thing and is
+   out of scope.
 
 ### Behavioural tests, in increasing cost
 
@@ -2499,6 +2803,59 @@ not compiled at all (§5.10).
 - **A program that creates unboundedly many ops or keyvals over its lifetime is
   outside what this design serves.** Stated plainly because the table in §6.2
   reads like a corner case and is not.
+- **On macOS, a binary linked against this `libmpi_abi` cannot be re-pointed at
+  another implementation's, because ours exports `MPI_*` as *strong* symbols
+  and the convention is weak.** A Mach-O client linked against a weak-exporting
+  `libmpi_abi` binds `MPI_*` through a weak-def-only lookup that a strong
+  definition does not satisfy, so mixing the two export styles breaks
+  substitution in one direction. Open MPI's ABI branch and MPICH's binding
+  generator both emit weak definitions; mpif emits them too, and its
+  `check-mpi-install.sh` refuses a prefix without them — which is how this was
+  found, and it is Darwin-only, ELF's lookup not distinguishing the two.
+
+  **It is not merely a missing `#pragma weak`, which is why it is recorded here
+  rather than fixed.** §2's macOS isolation rests on our exports being strong,
+  read from the other side: dyld's weak-definition coalescing chooses among the
+  images that *have* weak definitions, and an all-strong `libmpi_abi` never
+  enters that contest, so it cannot capture the wrapper's outward call
+  (§2, `dev/weakdef-probe/`). Making our definitions weak enters us into it —
+  and `libmpi_abi` is loaded first, being what the application links.
+
+  **`dev/macos-weak-symbols/` measures the cost, and it is one cell of four.**
+  A client linked against a weak-exporting `libmpi_abi` will not start against
+  a strong one — `dyld: Symbol not found` — and the other three combinations
+  run, the reverse included: a weak definition satisfies an ordinary lookup, so
+  a binary built against *this* project runs against a vendor's library.
+
+  The failing direction is the one that matters: **build against a vendor's ABI
+  library, run through this wrapper over a site MPI**, which is the case the
+  ABI exists for.
+
+  **The other half — what going weak would cost — is now measured too, by the
+  two probes together.** `dev/macos-weak-symbols/` part 2 holds the
+  implementation two-level and weak and varies *our* export style: strong is
+  isolated, weak is captured. `dev/weakdef-probe/` holds our exports strong and
+  varies the implementation: a two-level implementation is never captured,
+  weak or strong. The two agree and compose into one rule — **coalescing is
+  decided among the weak-exporting images, and the first loaded wins** — with
+  our library loaded first in every configuration.
+
+  That reading also retires the reason part 2 was first recorded as suspect. It
+  looked like it contradicted `HISTORY.md` §2.3, which measured a *strong*
+  `libmpi_abi` being captured against a real ABI-built Open MPI; §2.19 removed
+  the contradiction by finding that capture to be a `-flat_namespace`
+  implementation build rather than a coalescing outcome at all. Three
+  mechanisms, not one: substitution (part 1), coalescing (part 2), and flat
+  lookup (§2.19).
+
+  So the remedy's price is no longer unknown: **exporting `MPI_*` weakly would
+  trade the substitution asymmetry for the loss of macOS isolation** against
+  exactly the two-level ABI-implementing MPI that §10's oracle 5 now wraps
+  there. It stays recorded rather than fixed for that reason, and it is **the
+  open question a 1.0 should state rather than the bug it looks like**. What no
+  measurement covers yet is a weak-exporting `libmpi_abi` in the real
+  configuration rather than the mock; the four mpif rows of §10 are Linux, so
+  CI would not catch a regression here.
 
 - **A wrapped MPI that ships its own `libmpi_abi.so` can capture ours through
   `LD_LIBRARY_PATH`.** `libmpi_abi.so` is what this project builds, and it is
@@ -2683,7 +3040,7 @@ not compiled at all (§5.10).
   two-level build, measured against Open MPI main `--enable-standard-abi`
   (§10's oracle 5) but with no CI row yet; a `-flat_namespace` implementation
   build is refused at load, which is the correct outcome (§2, `HISTORY.md`
-  §2.18). An earlier version of this line said "impossible, not merely
+  §2.19). An earlier version of this line said "impossible, not merely
   unsupported", from measuring only the flat build.
 
 ---
@@ -2700,7 +3057,7 @@ documentation.
 | Open MPI header | `~/src/mpif/build/mpi-src/openmpi-gcc/ompi/ompi/include/mpi.h.in` |
 | MPI-5.0 standard | `doc/mpi50-report.pdf`, read with `pdftotext -layout` |
 | CI and build precedent | `~/src/mpif/ci-scripts/README.md`, `~/src/mpif/CMakeLists.txt` |
-| loader, weak-definition, dispatch, handle-map, request, type and extent behaviour | the seven probes in `dev/`, each with its own README |
+| loader, weak-definition, symbol-versioning, dispatch, handle-map, request, type and extent behaviour | the nine probes in `dev/`, each with its own README |
 
 Standard sections cited: §2.5.2 (opaque object deallocation), §3.2.5 and §3.7.5
 (the status error field), §3.7.6 (`MPI_REQUEST_GET_STATUS`, and that it answers

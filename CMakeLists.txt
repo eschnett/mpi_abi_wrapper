@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(mpi_abi_wrapper
-  VERSION 0.1.0
+  VERSION 1.0.0
   DESCRIPTION "An MPI-5.0 standard-ABI shim over any MPI-3.0+ implementation"
   HOMEPAGE_URL "https://github.com/eschnett/mpi_abi_wrapper"
   LANGUAGES C)
@@ -22,6 +22,64 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 # exist, which ci-scripts/check-install.sh treats as a skip rather than a
 # failure.
 enable_language(CXX OPTIONAL)
+
+# Fortran, for one translation unit and one question: what this platform's
+# Fortran compiler does with LOGICAL, which MPI-5.0 20.4.1 requires
+# MPI_ABI_GET_FORTRAN_BOOLEANS to answer and which C cannot find out
+# (src/mpiwrapper/fortran_probe.f90 has the argument, decision 25 the rule).
+#
+# OPTIONAL, like CXX above: a host with no Fortran compiler still builds
+# everything, and the two Fortran getters then answer "not set" -- which is a
+# legal answer, and was the *only* answer before this. So the degradation is
+# to the previous behaviour rather than to a broken one. It is still a
+# degradation, and a build meant to serve a Fortran consumer wants a Fortran
+# compiler present; the mpif rows of NOTES.md #10 are the ones that notice.
+# **check_language, not enable_language(... OPTIONAL).** OPTIONAL does not mean
+# what the name suggests: with no Fortran compiler on the machine it still
+# reports the language loaded, sets CMAKE_Fortran_COMPILER to the string
+# "CMAKE_Fortran_COMPILER-NOTFOUND", and defers the failure to build time --
+#
+#   -- The Fortran compiler identification is unknown
+#   gmake[2]: CMAKE_Fortran_COMPILER-NOTFOUND: No such file or directory
+#
+# -- which is what CI's sanitize job, the only row without gfortran, reported.
+# CMAKE_Fortran_COMPILER_LOADED is TRUE there too, so it is not the test
+# either. check_language() try-compiles and leaves NOTFOUND when that fails, so
+# it answers for a missing compiler and a broken one alike, and `if()` treats a
+# *-NOTFOUND value as false.
+include(CheckLanguage)
+check_language(Fortran)
+if(CMAKE_Fortran_COMPILER)
+  enable_language(Fortran)
+  set(MPIABI_HAVE_FORTRAN TRUE)
+else()
+  set(MPIABI_HAVE_FORTRAN FALSE)
+endif()
+
+# **The Fortran runtime is deliberately not linked**, and this is the third and
+# last mechanism it took to keep it out (the other two are at the probe's own
+# target, below). CMake adds these to any target holding a Fortran object, so
+# even with an object library and LINKER_LANGUAGE C the link line still carried
+# -lgfortran -lquadmath.
+#
+# Emptying them is safe *because of a property the probe is written to have*:
+# src/mpiwrapper/fortran_probe.f90 uses no I/O, no allocatables and no derived
+# types, and its object's only undefined symbols are malloc, free and memcpy.
+# libmpiwrapper is dlopen'd into a process that already has the application's
+# Fortran runtime -- mpif's, for the consumer this exists to serve -- and a
+# second, differently-versioned copy of one is its own class of failure.
+#
+# If Fortran is ever added here that genuinely needs the runtime, this does not
+# hide it: the link fails with the undefined symbols named, which is the
+# constraint stating itself rather than a silent second libgfortran.
+#
+# MPIABI_HAVE_FORTRAN is set once, above, by check_language -- see there for
+# why neither CMAKE_Fortran_COMPILER nor CMAKE_Fortran_COMPILER_LOADED answers
+# this question on its own.
+if(MPIABI_HAVE_FORTRAN)
+  set(CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "")
+  set(CMAKE_Fortran_IMPLICIT_LINK_DIRECTORIES "")
+endif()
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -74,6 +132,27 @@ else()
   set(MPIABI_WARNINGS -Wall -Werror)
 endif()
 message(STATUS "Warning flags for ${CMAKE_C_COMPILER_ID}: ${MPIABI_WARNINGS}")
+
+# **libmpiwrapper forwards entry points the implementation has deprecated, and
+# that is its job rather than an oversight.** The ABI is the whole of MPI-5.0
+# and deprecated still means provided (NOTES.md #1): MPI_Get_elements_x and
+# MPI_Status_set_elements_x are among the 688, so their bodies must call the
+# implementation's -- which Open MPI's development branch marks
+# __attribute__((deprecated)) per MPI-4.1, turning -Werror into four errors and
+# failing the whole build.
+#
+# So the diagnostic is suppressed for the two targets that forward, and only
+# those: libmpi_abi does not call an implementation at all, and the tests are
+# applications, where the advice is real. Suppressing it *per call site*
+# instead was the alternative, and it is the worse one -- the next entry point
+# any implementation deprecates would break the build again, and the fix would
+# be another pragma, which is a rule nobody stated being rediscovered one
+# instance at a time.
+if(CMAKE_C_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang|IntelLLVM|Intel)$")
+  set(MPIABI_FORWARDS_DEPRECATED -Wno-deprecated-declarations)
+else()
+  set(MPIABI_FORWARDS_DEPRECATED)
+endif()
 
 # NOTES.md #11's S9. A string rather than a bool so the set is the caller's
 # choice -- `address`, `undefined`, `address,undefined`, `thread` -- and empty
@@ -177,6 +256,72 @@ add_library(mpi_abi SHARED
   gen/mpi_abi/entrypoints.c
 )
 set_target_properties(mpi_abi PROPERTIES OUTPUT_NAME mpi_abi)
+
+# The soname, and the one number in this file that is *not* the project's.
+#
+# MPI-5.0 20.2.1 requires the library be named mpi_abi, says implementors "are
+# expected to follow platform-specific conventions for dynamic shared library
+# naming and versioning", and permits an application to depend on "mpi_abi or
+# its versioned variant". The whole promise of the standard ABI is that a
+# binary built against one libmpi_abi runs against another's, and that swap is
+# decided by the *filename* the binary records -- so this has to agree with
+# what the other implementations chose, not merely be self-consistent. Open
+# MPI's ABI branch installs libmpi_abi.so.1 / libmpi_abi.1.dylib, so 1 it is.
+#
+# It tracks MPI_ABI_VERSION and must never be made to follow PROJECT_VERSION:
+# this project's 1.1.0 or 2.0.0 would still implement ABI major 1 and must
+# still answer to the same soname. Read out of the generated header rather
+# than written here twice, so the two cannot drift -- the same discipline
+# CLAUDE.md asks for of every other count.
+file(STRINGS ${MPIABI_GEN_INCLUDE_DIR}/mpi.h MPIABI_ABI_VERSION_LINE
+  REGEX "^#define[ \t]+MPI_ABI_VERSION[ \t]+[0-9]+")
+if(NOT MPIABI_ABI_VERSION_LINE MATCHES "MPI_ABI_VERSION[ \t]+([0-9]+)")
+  message(FATAL_ERROR
+    "Could not read MPI_ABI_VERSION from ${MPIABI_GEN_INCLUDE_DIR}/mpi.h; "
+    "libmpi_abi's soname is derived from it and must not be guessed.")
+endif()
+set(MPIABI_SOVERSION ${CMAKE_MATCH_1})
+message(STATUS "libmpi_abi soname version (MPI_ABI_VERSION): ${MPIABI_SOVERSION}")
+
+# VERSION is the project's and moves with every release; SOVERSION is the ABI's
+# and does not. On ELF that gives libmpi_abi.so.${PROJECT_VERSION} with an
+# soname of libmpi_abi.so.${MPIABI_SOVERSION}; on Mach-O, libmpi_abi.1.dylib
+# with -compatibility_version ${MPIABI_SOVERSION} -- the same layout Open MPI's
+# ABI branch installs. Both leave the unversioned name as a symlink, which is
+# what bin/mpicc's -lmpi_abi resolves through at link time.
+#
+# libmpiwrapper deliberately gets none of this. It is not a linked dependency
+# of anything: libmpi_abi dlopens it by the absolute path baked in below, and
+# MPI-5.0 20.2.1 forbids the application binary naming it at all. A soname on a
+# plugin located by path buys nothing and would only add symlinks.
+set_target_properties(mpi_abi PROPERTIES
+  VERSION ${PROJECT_VERSION}
+  SOVERSION ${MPIABI_SOVERSION})
+
+# **Mach-O gates on a second number, and it is not the one in the file name.**
+# dyld records the compatibility version a client was linked against and
+# refuses at load any library offering a lower one -- so getting the leaf name
+# right and this wrong produces exactly the failure the soname exists to
+# prevent, and produces it only on macOS and only when the swap is actually
+# attempted.
+#
+# The ecosystem's number comes from libtool: every implementation of ABI
+# version 1 is built `-version-info 1:0:0`, which libtool turns into the name
+# libmpi_abi.1.dylib and the compatibility version (current - age + 1) = 2.0.0.
+# Open MPI's ABI branch installs exactly that, and mpif's
+# ci-scripts/check-mpi-install.sh asserts both fields -- it is what caught this
+# here, having found our compatibility version at CMake's default of 1.0.0.
+#
+# CMake derives -compatibility_version from SOVERSION, which has to stay 1 for
+# the file name, so the two are decoupled with MACHO_*_VERSION. Kept as
+# SOVERSION + 1 rather than written as 2, so the arithmetic that ties it to the
+# ABI version survives an ABI 2 that nobody has thought about yet.
+if(APPLE)
+  math(EXPR MPIABI_MACHO_VERSION "${MPIABI_SOVERSION} + 1")
+  set_target_properties(mpi_abi PROPERTIES
+    MACHO_COMPATIBILITY_VERSION ${MPIABI_MACHO_VERSION}.0.0
+    MACHO_CURRENT_VERSION ${MPIABI_MACHO_VERSION}.0.0)
+endif()
 target_include_directories(mpi_abi PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
 target_compile_options(mpi_abi PRIVATE ${MPIABI_WARNINGS})
 # dlopen/dlsym/dlerror live in libdl on glibc older than 2.34 and in libc from
@@ -481,17 +626,74 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
             ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_vtable.h
             ${MPIABI_IMPL_CONFIG})
 
+  # The Fortran probe, when there is a compiler for it (decision 25). Its
+  # object pulls in no Fortran runtime -- see the source -- so the link stays
+  # a C link and the version script, visibility and rpath rules below are
+  # untouched. LINKER_LANGUAGE is pinned to C for the same reason: CMake would
+  # otherwise promote the link to Fortran on account of one .f90, putting
+  # libgfortran on the link line of a library that must not carry one.
+  #
+  # **An OBJECT library, not a source in the target**, and that is not a style
+  # choice: CMake adds CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES to any target that
+  # has a Fortran source, so naming the .f90 directly put libgfortran and
+  # libquadmath into libmpiwrapper's DT_NEEDED -- measured with otool -L, and
+  # exactly the second Fortran runtime in one process that the probe's own
+  # header warns about, since the application's Fortran layer brings its own.
+  # LINKER_LANGUAGE C does not prevent it. An object library is compiled and
+  # its objects handed over, so the wrapper's link line stays a C link.
+  #
+  # Hidden visibility for the same reason the C half has it: bind(C) gives the
+  # subroutine default visibility, and `exported-symbols` caught it beside
+  # mpiwrapper_get_vtable. C_VISIBILITY_PRESET does not reach Fortran, and on
+  # macOS there is no version script to catch it either.
+  if(MPIABI_HAVE_FORTRAN)
+    add_library(mpiwrapper_fortran_probe OBJECT src/mpiwrapper/fortran_probe.f90)
+    set_target_properties(mpiwrapper_fortran_probe PROPERTIES
+      POSITION_INDEPENDENT_CODE ON
+      Fortran_VISIBILITY_PRESET hidden)
+    set(MPIABI_WRAPPER_FORTRAN_SOURCES
+      $<TARGET_OBJECTS:mpiwrapper_fortran_probe>)
+    message(STATUS
+      "Fortran probe: ${CMAKE_Fortran_COMPILER_ID} -- MPI_Abi_get_fortran_* "
+      "will answer from it")
+  else()
+    set(MPIABI_WRAPPER_FORTRAN_SOURCES)
+    message(STATUS
+      "No Fortran compiler: MPI_Abi_get_fortran_booleans/_info will answer "
+      "\"not set\" unless the application registers them (MPI-5.0 20.4.1)")
+  endif()
+
   add_library(mpiwrapper SHARED
     gen/mpiwrapper/constants.c
     ${MPIABI_WRAPPER_RUNTIME_SOURCES}
     ${MPIABI_WRAPPER_BODY_SOURCES}
+    ${MPIABI_WRAPPER_FORTRAN_SOURCES}
     gen/mpiwrapper/wrappers.c
     src/mpiwrapper/getvtable.c
   )
+  # The banner src/mpiwrapper/hw_strings.c puts in front of the wrapped
+  # library's MPI_Get_library_version string. PROJECT_VERSION rather than
+  # MPIABI_SOVERSION: this one names *the wrapper's* release, which is what a
+  # bug report needs and the one number in that banner not derivable from the
+  # ABI header.
+  target_compile_definitions(mpiwrapper PRIVATE
+    "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
+
+  if(MPIABI_HAVE_FORTRAN)
+    # Pinned, because CMake picks the "highest" language among a target's
+    # objects to drive the link -- and with one Fortran object that is
+    # gfortran, which puts its own runtime on the link line. Measured: the
+    # generated link.txt began with gfortran-mp-15 and otool -L then showed
+    # libgfortran and libquadmath. The object library alone does not prevent
+    # this; the objects carry their language with them.
+    set_target_properties(mpiwrapper PROPERTIES LINKER_LANGUAGE C)
+    target_compile_definitions(mpiwrapper PRIVATE MPIWRAPPER_HAVE_FORTRAN)
+  endif()
   target_include_directories(mpiwrapper PRIVATE
     ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
   add_dependencies(mpiwrapper mpiabi_h_for_wrapper)
-  target_compile_options(mpiwrapper PRIVATE ${MPIABI_WARNINGS})
+  target_compile_options(mpiwrapper PRIVATE ${MPIABI_WARNINGS}
+    ${MPIABI_FORWARDS_DEPRECATED})
   target_link_libraries(mpiwrapper PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
   if(MPI_ABI_WRAP_ABI_IMPL)
     target_compile_definitions(mpiwrapper PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
@@ -510,6 +712,14 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       "-Wl,--version-script=${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version")
     set_target_properties(mpiwrapper PROPERTIES
       LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version)
+  else()
+    # There *is* a Mach-O counterpart now, and decision 25's Fortran probe is
+    # why: a bind(C) subroutine is exported whatever -fvisibility=hidden says,
+    # so on macOS nothing but this restricts the set. See the file's comment.
+    target_link_options(mpiwrapper PRIVATE
+      "-Wl,-exported_symbols_list,${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.exported_symbols")
+    set_target_properties(mpiwrapper PROPERTIES
+      LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.exported_symbols)
   endif()
   # This library is never linked, only dlopen'd (MPI-5.0 20.2.1), so nothing
   # ever asks the loader to resolve *it* by rpath -- but it still has to
@@ -538,13 +748,22 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       gen/mpiwrapper/constants.c
       ${MPIABI_WRAPPER_RUNTIME_SOURCES}
       ${MPIABI_WRAPPER_BODY_SOURCES}
+      ${MPIABI_WRAPPER_FORTRAN_SOURCES}
       gen/mpiwrapper/wrappers.c
       src/mpiwrapper/getvtable.c
     )
+    target_compile_definitions(mpiwrapper_unisolated PRIVATE
+      "MPIWRAPPER_VERSION=\"${PROJECT_VERSION}\"")
+    if(MPIABI_HAVE_FORTRAN)
+      set_target_properties(mpiwrapper_unisolated PROPERTIES LINKER_LANGUAGE C)
+      target_compile_definitions(mpiwrapper_unisolated PRIVATE
+        MPIWRAPPER_HAVE_FORTRAN)
+    endif()
     target_include_directories(mpiwrapper_unisolated PRIVATE
       ${MPIABI_WRAPPER_INCLUDE_DIR} src/mpiwrapper)
     add_dependencies(mpiwrapper_unisolated mpiabi_h_for_wrapper)
-    target_compile_options(mpiwrapper_unisolated PRIVATE ${MPIABI_WARNINGS})
+    target_compile_options(mpiwrapper_unisolated PRIVATE ${MPIABI_WARNINGS}
+      ${MPIABI_FORWARDS_DEPRECATED})
     target_link_libraries(mpiwrapper_unisolated PRIVATE MPI::MPI_C ${CMAKE_DL_LIBS})
     if(MPI_ABI_WRAP_ABI_IMPL)
       target_compile_definitions(mpiwrapper_unisolated PRIVATE

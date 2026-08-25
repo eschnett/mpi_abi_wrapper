@@ -9,8 +9,9 @@ Hand-written: bootstrap, `dlopen` isolation, vtable acquisition. NOTES.md §2.
   of its own functions to `mpiwrapper_get_vtable`, which is how the wrapper
   proves at load that its `MPI_*` calls resolved outward — and then makes one
   `MPI_Get_version` call through a decoy vtable, because on macOS the address
-  check can say "outward" while dyld's weak coalescing sends the actual call
-  back into us (`NOTES.md` §2).
+  check can say "outward" while the call itself still lands back in us — a
+  `-flat_namespace` implementation resolves its own internal references by
+  global load order (`NOTES.md` §2, `HISTORY.md` §2.19).
 The entry points themselves are `gen/mpi_abi/entrypoints.c` since S2: one line
 per entry point, no conversion, no cast, no initialization check, 688 of them
 (1376 definitions). S1's 29-entry-point stand-in is frozen in

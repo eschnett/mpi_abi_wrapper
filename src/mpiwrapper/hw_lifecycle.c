@@ -146,6 +146,55 @@ int mpiwrapper_w_MPI_Initialized(int *abi_flag)
 int mpiwrapper_w_PMPI_Initialized(int *abi_flag)
     BODY_MPI_Initialized(PMPI_Initialized)
 
+/* ---------------------------------------------------- MPI_Get_version ---- */
+
+/* **Reports the version of the standard this library presents, which is the
+ * ABI's, not the wrapped implementation's** (decision 24). gen/include/mpi.h
+ * says MPI_VERSION 5 and MPI_SUBVERSION 0, and MPI-5.0 2.7 requires the macros
+ * and this call to agree -- an application that finds them disagreeing has been
+ * told its library is older than the header it compiled against, which for a
+ * wrapper is not merely surprising but unactionable: the surface really is
+ * complete MPI-5.0, and what varies is which parts of it answer
+ * MPI_ERR_UNSUPPORTED_OPERATION. Decision 3 makes that a *run-time* discovery
+ * by error code rather than a version comparison, and forwarding put a second,
+ * contradictory answer in front of it.
+ *
+ * Nothing is lost: MPI_Get_library_version still forwards, and every
+ * implementation's banner names its own version there. mpif's
+ * mpif_check_environment reads exactly these two and aborted the process over a
+ * wrapped MPICH 4.3.1 -- eight of its tests, and the reason this changed.
+ *
+ * **The call to the implementation stays, and must.** It looks like dead code
+ * and is not: src/mpi_abi/bootstrap.c makes this call, through the vtable,
+ * as the behavioural half of the isolation check (NOTES.md #2). That check
+ * works by seeing whether the wrapper's *outward* call comes back into
+ * libmpi_abi, so a body that returned two constants without calling anything
+ * would leave the probe with nothing to detect and silently retire the one
+ * check that catches macOS capture by a -flat_namespace implementation
+ * (HISTORY.md #2.3, whose mechanism #2.19 corrected). The MPI_
+ * slot calls MPI_Get_version and the PMPI_ slot PMPI_Get_version, per decision
+ * 7, because it is the unshifted name that gets captured.
+ *
+ * Its answer is discarded; its error code is not, so an implementation that
+ * somehow fails here still says so.
+ */
+#define BODY_MPI_Get_version(TARGET)                                           \
+  {                                                                            \
+    int impl_version    = 0;                                                   \
+    int impl_subversion = 0;                                                   \
+    const int ierror = TARGET(&impl_version, &impl_subversion);                \
+    if (ierror != MPI_SUCCESS) return mpiwrapper_errorcode_toabi(ierror);      \
+                                                                               \
+    *abi_version    = MPIABI_VERSION;                                          \
+    *abi_subversion = MPIABI_SUBVERSION;                                       \
+    return MPIABI_SUCCESS;                                                     \
+  }
+
+int mpiwrapper_w_MPI_Get_version(int *abi_version, int *abi_subversion)
+    BODY_MPI_Get_version(MPI_Get_version)
+int mpiwrapper_w_PMPI_Get_version(int *abi_version, int *abi_subversion)
+    BODY_MPI_Get_version(PMPI_Get_version)
+
 #define BODY_MPI_Finalized(TARGET)                                             \
   {                                                                            \
     *abi_flag = atomic_load_explicit(&lifecycle_state, memory_order_acquire)   \

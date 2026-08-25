@@ -1034,18 +1034,42 @@ int mpiwrapper_t_event_set_free(MPI_T_event_registration            reg,
                                 MPIABI_T_event_free_cb_function    *abi_fn,
                                 void                               *user_data);
 
-/* `MPI_T_event_cb_function f;` declares a function *of that type*, which is
- * how a trampoline takes its signature from the implementation's own typedef
- * instead of repeating it.
+/* **Written out, rather than taken from the implementation's typedef.** These
+ * used to be declared `MPI_T_event_cb_function mpiwrapper_t_event_cb_tramp;`,
+ * which declares a function *of that type* and so avoids repeating a signature
+ * -- and which is correct only where the typedef names a function type. MPI-5.0
+ * defines these as function types and MPICH spells them that way, but Open MPI's
+ * development branch makes them **function pointers**, where the same line
+ * declares an object and gcc reports the definition below as
+ *
+ *   error: 'mpiwrapper_t_event_cb_tramp' redeclared as different kind of symbol
+ *
+ * -- the whole wrapper failing to compile over that implementation. Found by
+ * NOTES.md #10's mpif rows, the first configuration to build this project over
+ * a current Open MPI at all.
+ *
+ * Repeating the signatures costs a mismatch going unnoticed between here and
+ * src/mpiwrapper/toolevents.c; the compiler catches that, and it is the lesser
+ * exposure than not building.
+ *
+ * The callbacks are still *passed* as the implementation's type, at the
+ * registration sites, where a function designator decays to a pointer either
+ * way and both spellings work.
  */
 #  ifdef MPIWRAPPER_HAVE_MPI_T_event_register_callback
-MPI_T_event_cb_function mpiwrapper_t_event_cb_tramp;
+void mpiwrapper_t_event_cb_tramp(MPI_T_event_instance     event_instance,
+                                 MPI_T_event_registration event_registration,
+                                 MPI_T_cb_safety cb_safety, void *user_data);
 #  endif
 #  ifdef MPIWRAPPER_HAVE_MPI_T_event_set_dropped_handler
-MPI_T_event_dropped_cb_function mpiwrapper_t_event_dropped_tramp;
+void mpiwrapper_t_event_dropped_tramp(MPI_Count                count,
+                                      MPI_T_event_registration event_registration,
+                                      int             source_index,
+                                      MPI_T_cb_safety cb_safety, void *user_data);
 #  endif
 #  ifdef MPIWRAPPER_HAVE_MPI_T_event_handle_free
-MPI_T_event_free_cb_function mpiwrapper_t_event_free_tramp;
+void mpiwrapper_t_event_free_tramp(MPI_T_event_registration event_registration,
+                                   MPI_T_cb_safety cb_safety, void *user_data);
 #  endif
 #endif
 

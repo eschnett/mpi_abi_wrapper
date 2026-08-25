@@ -52,16 +52,7 @@
  * else is identical eleven times over, which is what makes a macro the honest
  * spelling here rather than a copy.
  */
-#define BODY_C2F(TARGET, FROMABI, ABIARG)                                      \
-  {                                                                            \
-    return (MPIABI_Fint)TARGET(FROMABI(ABIARG));                               \
-  }
 
-#define STUB_C2F(ABIARG)                                                       \
-  {                                                                            \
-    (void)(ABIARG);                                                            \
-    return 0;                                                                  \
-  }
 
 /* The collision flag every other object-producing conversion turns into
  * MPIABI_ERR_INTERN has nowhere to go here, so it is cleared rather than left
@@ -69,20 +60,7 @@
  * predefined range converts to the class's null handle instead (S1's note on
  * MPI_Comm_f2c, now the rule for all eleven).
  */
-#define BODY_F2C(TARGET, ABI_T, TOABI, ABIARG)                                 \
-  {                                                                            \
-    const MPI_Fint f = (MPI_Fint)(ABIARG);                                     \
-                                                                               \
-    const ABI_T abi_result = TOABI(TARGET(f));                                 \
-    (void)mpiwrapper_take_handle_error();                                      \
-    return abi_result;                                                         \
-  }
 
-#define STUB_F2C(ABINULL, ABIARG)                                              \
-  {                                                                            \
-    (void)(ABIARG);                                                            \
-    return ABINULL;                                                            \
-  }
 
 /* No TARGET and no guard: serialization is defined against the ABI's own
  * handle values, so there is nothing to ask the implementation and nothing for
@@ -104,20 +82,9 @@
 
 /* -------------------------------- MPI_Comm_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Comm_c2f)
-#  define BODY_MPI_Comm_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_comm_fromabi, abi_comm)
-#else
-#  define BODY_MPI_Comm_c2f(TARGET) STUB_C2F(abi_comm)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Comm_f2c)
-#  define BODY_MPI_Comm_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Comm, \
-              mpiwrapper_comm_toabi, abi_comm)
-#else
-#  define BODY_MPI_Comm_f2c(TARGET) \
-     STUB_F2C(MPIABI_COMM_NULL, abi_comm)
-#endif
+#define BODY_MPI_Comm_c2f(TARGET) BODY_TOINT(abi_comm)
+#define BODY_MPI_Comm_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Comm, MPIABI_COMM_NULL, abi_comm)
 
 MPIABI_Fint mpiwrapper_w_MPI_Comm_c2f(MPIABI_Comm abi_comm)
     BODY_MPI_Comm_c2f(MPI_Comm_c2f)
@@ -141,20 +108,9 @@ MPIABI_Comm mpiwrapper_w_PMPI_Comm_fromint(int abi_comm)
 
 /* -------------------------- MPI_Errhandler_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Errhandler_c2f)
-#  define BODY_MPI_Errhandler_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_errhandler_fromabi, abi_errhandler)
-#else
-#  define BODY_MPI_Errhandler_c2f(TARGET) STUB_C2F(abi_errhandler)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Errhandler_f2c)
-#  define BODY_MPI_Errhandler_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Errhandler, \
-              mpiwrapper_errhandler_toabi, abi_errhandler)
-#else
-#  define BODY_MPI_Errhandler_f2c(TARGET) \
-     STUB_F2C(MPIABI_ERRHANDLER_NULL, abi_errhandler)
-#endif
+#define BODY_MPI_Errhandler_c2f(TARGET) BODY_TOINT(abi_errhandler)
+#define BODY_MPI_Errhandler_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Errhandler, MPIABI_ERRHANDLER_NULL, abi_errhandler)
 
 MPIABI_Fint mpiwrapper_w_MPI_Errhandler_c2f(MPIABI_Errhandler abi_errhandler)
     BODY_MPI_Errhandler_c2f(MPI_Errhandler_c2f)
@@ -178,20 +134,9 @@ MPIABI_Errhandler mpiwrapper_w_PMPI_Errhandler_fromint(int abi_errhandler)
 
 /* -------------------------------- MPI_File_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_File_c2f)
-#  define BODY_MPI_File_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_file_fromabi, abi_file)
-#else
-#  define BODY_MPI_File_c2f(TARGET) STUB_C2F(abi_file)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_File_f2c)
-#  define BODY_MPI_File_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_File, \
-              mpiwrapper_file_toabi, abi_file)
-#else
-#  define BODY_MPI_File_f2c(TARGET) \
-     STUB_F2C(MPIABI_FILE_NULL, abi_file)
-#endif
+#define BODY_MPI_File_c2f(TARGET) BODY_TOINT(abi_file)
+#define BODY_MPI_File_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_File, MPIABI_FILE_NULL, abi_file)
 
 MPIABI_Fint mpiwrapper_w_MPI_File_c2f(MPIABI_File abi_file)
     BODY_MPI_File_c2f(MPI_File_c2f)
@@ -215,20 +160,9 @@ MPIABI_File mpiwrapper_w_PMPI_File_fromint(int abi_file)
 
 /* ------------------------------- MPI_Group_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Group_c2f)
-#  define BODY_MPI_Group_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_group_fromabi, abi_group)
-#else
-#  define BODY_MPI_Group_c2f(TARGET) STUB_C2F(abi_group)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Group_f2c)
-#  define BODY_MPI_Group_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Group, \
-              mpiwrapper_group_toabi, abi_group)
-#else
-#  define BODY_MPI_Group_f2c(TARGET) \
-     STUB_F2C(MPIABI_GROUP_NULL, abi_group)
-#endif
+#define BODY_MPI_Group_c2f(TARGET) BODY_TOINT(abi_group)
+#define BODY_MPI_Group_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Group, MPIABI_GROUP_NULL, abi_group)
 
 MPIABI_Fint mpiwrapper_w_MPI_Group_c2f(MPIABI_Group abi_group)
     BODY_MPI_Group_c2f(MPI_Group_c2f)
@@ -252,20 +186,9 @@ MPIABI_Group mpiwrapper_w_PMPI_Group_fromint(int abi_group)
 
 /* -------------------------------- MPI_Info_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Info_c2f)
-#  define BODY_MPI_Info_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_info_fromabi, abi_info)
-#else
-#  define BODY_MPI_Info_c2f(TARGET) STUB_C2F(abi_info)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Info_f2c)
-#  define BODY_MPI_Info_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Info, \
-              mpiwrapper_info_toabi, abi_info)
-#else
-#  define BODY_MPI_Info_f2c(TARGET) \
-     STUB_F2C(MPIABI_INFO_NULL, abi_info)
-#endif
+#define BODY_MPI_Info_c2f(TARGET) BODY_TOINT(abi_info)
+#define BODY_MPI_Info_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Info, MPIABI_INFO_NULL, abi_info)
 
 MPIABI_Fint mpiwrapper_w_MPI_Info_c2f(MPIABI_Info abi_info)
     BODY_MPI_Info_c2f(MPI_Info_c2f)
@@ -289,20 +212,9 @@ MPIABI_Info mpiwrapper_w_PMPI_Info_fromint(int abi_info)
 
 /* ----------------------------- MPI_Message_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Message_c2f)
-#  define BODY_MPI_Message_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_message_fromabi, abi_message)
-#else
-#  define BODY_MPI_Message_c2f(TARGET) STUB_C2F(abi_message)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Message_f2c)
-#  define BODY_MPI_Message_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Message, \
-              mpiwrapper_message_toabi, abi_message)
-#else
-#  define BODY_MPI_Message_f2c(TARGET) \
-     STUB_F2C(MPIABI_MESSAGE_NULL, abi_message)
-#endif
+#define BODY_MPI_Message_c2f(TARGET) BODY_TOINT(abi_message)
+#define BODY_MPI_Message_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Message, MPIABI_MESSAGE_NULL, abi_message)
 
 MPIABI_Fint mpiwrapper_w_MPI_Message_c2f(MPIABI_Message abi_message)
     BODY_MPI_Message_c2f(MPI_Message_c2f)
@@ -326,20 +238,9 @@ MPIABI_Message mpiwrapper_w_PMPI_Message_fromint(int abi_message)
 
 /* ---------------------------------- MPI_Op_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Op_c2f)
-#  define BODY_MPI_Op_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_op_fromabi, abi_op)
-#else
-#  define BODY_MPI_Op_c2f(TARGET) STUB_C2F(abi_op)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Op_f2c)
-#  define BODY_MPI_Op_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Op, \
-              mpiwrapper_op_toabi, abi_op)
-#else
-#  define BODY_MPI_Op_f2c(TARGET) \
-     STUB_F2C(MPIABI_OP_NULL, abi_op)
-#endif
+#define BODY_MPI_Op_c2f(TARGET) BODY_TOINT(abi_op)
+#define BODY_MPI_Op_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Op, MPIABI_OP_NULL, abi_op)
 
 MPIABI_Fint mpiwrapper_w_MPI_Op_c2f(MPIABI_Op abi_op)
     BODY_MPI_Op_c2f(MPI_Op_c2f)
@@ -363,20 +264,9 @@ MPIABI_Op mpiwrapper_w_PMPI_Op_fromint(int abi_op)
 
 /* ----------------------------- MPI_Request_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Request_c2f)
-#  define BODY_MPI_Request_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_request_fromabi, abi_request)
-#else
-#  define BODY_MPI_Request_c2f(TARGET) STUB_C2F(abi_request)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Request_f2c)
-#  define BODY_MPI_Request_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Request, \
-              mpiwrapper_request_toabi, abi_request)
-#else
-#  define BODY_MPI_Request_f2c(TARGET) \
-     STUB_F2C(MPIABI_REQUEST_NULL, abi_request)
-#endif
+#define BODY_MPI_Request_c2f(TARGET) BODY_TOINT(abi_request)
+#define BODY_MPI_Request_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Request, MPIABI_REQUEST_NULL, abi_request)
 
 MPIABI_Fint mpiwrapper_w_MPI_Request_c2f(MPIABI_Request abi_request)
     BODY_MPI_Request_c2f(MPI_Request_c2f)
@@ -400,22 +290,9 @@ MPIABI_Request mpiwrapper_w_PMPI_Request_fromint(int abi_request)
 
 /* ----------------------------- MPI_Session_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL) && \
-    defined(MPIWRAPPER_HAVE_MPI_Session_c2f)
-#  define BODY_MPI_Session_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_session_fromabi, abi_session)
-#else
-#  define BODY_MPI_Session_c2f(TARGET) STUB_C2F(abi_session)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_SESSION_NULL) && \
-    defined(MPIWRAPPER_HAVE_MPI_Session_f2c)
-#  define BODY_MPI_Session_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Session, \
-              mpiwrapper_session_toabi, abi_session)
-#else
-#  define BODY_MPI_Session_f2c(TARGET) \
-     STUB_F2C(MPIABI_SESSION_NULL, abi_session)
-#endif
+#define BODY_MPI_Session_c2f(TARGET) BODY_TOINT(abi_session)
+#define BODY_MPI_Session_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Session, MPIABI_SESSION_NULL, abi_session)
 
 MPIABI_Fint mpiwrapper_w_MPI_Session_c2f(MPIABI_Session abi_session)
     BODY_MPI_Session_c2f(MPI_Session_c2f)
@@ -439,20 +316,9 @@ MPIABI_Session mpiwrapper_w_PMPI_Session_fromint(int abi_session)
 
 /* -------------------------------- MPI_Type_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Type_c2f)
-#  define BODY_MPI_Type_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_datatype_fromabi, abi_datatype)
-#else
-#  define BODY_MPI_Type_c2f(TARGET) STUB_C2F(abi_datatype)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Type_f2c)
-#  define BODY_MPI_Type_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Datatype, \
-              mpiwrapper_datatype_toabi, abi_datatype)
-#else
-#  define BODY_MPI_Type_f2c(TARGET) \
-     STUB_F2C(MPIABI_DATATYPE_NULL, abi_datatype)
-#endif
+#define BODY_MPI_Type_c2f(TARGET) BODY_TOINT(abi_datatype)
+#define BODY_MPI_Type_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Datatype, MPIABI_DATATYPE_NULL, abi_datatype)
 
 MPIABI_Fint mpiwrapper_w_MPI_Type_c2f(MPIABI_Datatype abi_datatype)
     BODY_MPI_Type_c2f(MPI_Type_c2f)
@@ -476,20 +342,9 @@ MPIABI_Datatype mpiwrapper_w_PMPI_Type_fromint(int abi_datatype)
 
 /* --------------------------------- MPI_Win_c2f / _f2c / _toint / _fromint */
 
-#if defined(MPIWRAPPER_HAVE_MPI_Win_c2f)
-#  define BODY_MPI_Win_c2f(TARGET) \
-     BODY_C2F(TARGET, mpiwrapper_win_fromabi, abi_win)
-#else
-#  define BODY_MPI_Win_c2f(TARGET) STUB_C2F(abi_win)
-#endif
-#if defined(MPIWRAPPER_HAVE_MPI_Win_f2c)
-#  define BODY_MPI_Win_f2c(TARGET) \
-     BODY_F2C(TARGET, MPIABI_Win, \
-              mpiwrapper_win_toabi, abi_win)
-#else
-#  define BODY_MPI_Win_f2c(TARGET) \
-     STUB_F2C(MPIABI_WIN_NULL, abi_win)
-#endif
+#define BODY_MPI_Win_c2f(TARGET) BODY_TOINT(abi_win)
+#define BODY_MPI_Win_f2c(TARGET) \
+    BODY_FROMINT(MPIABI_Win, MPIABI_WIN_NULL, abi_win)
 
 MPIABI_Fint mpiwrapper_w_MPI_Win_c2f(MPIABI_Win abi_win)
     BODY_MPI_Win_c2f(MPI_Win_c2f)

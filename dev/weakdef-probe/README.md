@@ -6,7 +6,7 @@ ours share names: their **weak/strong binding**, or their library's
 build wrapping correctly and another being refused, and left the discriminator
 "not pinned down"; `HISTORY.md` §2.3 attributed the refusal to dyld's
 weak-definition coalescing. This probe pins it down: **the namespace mode is
-the whole story, and weak vs strong is irrelevant.** `HISTORY.md` §2.18.
+the whole story, and weak vs strong is irrelevant.** `HISTORY.md` §2.19.
 
 ```sh
 ./run.sh        # macOS only; dev/dlopen-probe/ owns the ELF side

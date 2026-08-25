@@ -17,7 +17,13 @@
 # No Mach-O counterpart is needed. There the dynamic table carries no such
 # linker-inserted globals, which the macOS rows demonstrate by passing the same
 # check with visibility alone.
-MPIWRAPPER_1 {
+#
+# Anonymous, for the reason cmake/mpi_abi.version gives at length. Nothing
+# links against this library -- libmpi_abi dlopens it -- so no binary could
+# record a version of ours here; it is anonymous so that the two scripts state
+# one rule rather than two, and so that neither emits a node symbol the export
+# check has to know about.
+{
   global:
     mpiwrapper_get_vtable;
   local:

@@ -58,8 +58,8 @@ developer option, which is what the cross test uses.
 | — marked deprecated | 12 | `grep '; /\* deprecated' gen/include/mpi.h` |
 | exported symbols in `libmpi_abi` | **1376** | `nm`; `test/check_exports.cmake`, both directions |
 | **vtable slots** | **1366** | `gen/report.txt`; 683 × 2 — the five of §5 have no slot |
-| generated bodies | **563** | `gen/report.txt` |
-| hand-written (the ledger) | **120**, all with bodies | `gen/report.txt`, `src/mpiwrapper/handwritten.h` |
+| generated bodies | **562** | `gen/report.txt` |
+| hand-written (the ledger) | **121**, all with bodies | `gen/report.txt`, `src/mpiwrapper/handwritten.h` |
 | answered by `libmpi_abi` itself | **5** | `gen/report.txt` |
 | deferred | **0**, frozen | `gen/report.txt` |
 | staged past return | **8** | `gen/report.txt` |
@@ -71,7 +71,7 @@ developer option, which is what the cross test uses.
 | error classes | 80 | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
 | callback registrars | 15 in the ledger, 16 counting `MPI_Keyval_create` | `gen/report.txt`, `NOTES.md` #6.1 |
 
-563 + 120 + 5 = 688. 683 × 2 = 1366 slots, while all 688 × 2 = 1376 names are
+562 + 121 + 5 = 688. 683 × 2 = 1366 slots, while all 688 × 2 = 1376 names are
 still exported, because the five of §5 are implemented on the ABI side rather
 than forwarded.
 
@@ -225,7 +225,7 @@ shifted-name rule survives the substitution.
 
 ## 6. The hand-written ledger, by reason
 
-120 entries, all implemented. `gen/report.txt` names each.
+121 entries, all implemented. `gen/report.txt` names each.
 
 | n | group | file |
 |---|---|---|
@@ -360,8 +360,26 @@ against a released tarball is the whole of what CI needs.
 version script on ELF / `-exported_symbols_list` on Mach-O. The second half is
 not redundant: the handful of symbols the linker inserts into every shared
 object (`_init`, `_fini`, `_edata`, `_end`, `__bss_start`) are reachable by no
-visibility attribute. `MPIABI_1`, the ELF version node, is the one exported name
-outside the `MPI_*`/`PMPI_*` patterns.
+visibility attribute. **Both ELF version scripts use an anonymous node**, so
+they filter the export set and version nothing (decision 22): `libmpi_abi`'s
+dynamic table is exactly the `MPI_*`/`PMPI_*` names with no node symbol beside
+them, which is why `test/check_exports.cmake` carries no exemption list.
+
+**`libmpi_abi` carries a soname and `libmpiwrapper` does not** (decision 21).
+`SOVERSION` is `MPI_ABI_VERSION`, read out of `gen/include/mpi.h` at configure
+time so the two cannot drift, and `VERSION` is `PROJECT_VERSION`:
+
+| | installed | recorded by a client binary |
+|---|---|---|
+| ELF | `libmpi_abi.so.1.0.0`, `.so.1`, `.so` | `libmpi_abi.so.1` |
+| Mach-O | `libmpi_abi.1.0.0.dylib`, `.1.dylib`, `.dylib` | `@rpath/libmpi_abi.1.dylib` |
+
+The leaf name in the right-hand column is the one Open MPI's ABI branch also
+installs (`libmpi_abi.1.dylib`, checked with `otool -D`), which is the point:
+that name is what decides whether a binary built here starts against someone
+else's `libmpi_abi`. All three consumption routes name `-lmpi_abi` or an
+imported target and so resolve through the unversioned symlink;
+`ci-scripts/check-install.sh` runs all five legs against the versioned layout.
 
 ## 10. Tests
 
@@ -512,7 +530,7 @@ their old evidence.
 | macOS 15 arm64, Homebrew Open MPI 5.0.9 | same | **works**, 13/13, two ranks — GitHub Actions, no `host-env.sh`; reports `MPI 3.1` |
 | macOS, wrapper forced `-flat_namespace` | none | **refused at load**, and that refusal is a test |
 | macOS, ABI-implementing MPI, two-level build | `RTLD_LOCAL` + two-level namespace | **works**, one rank, no CI row — Open MPI main `--enable-standard-abi` (`build/mpi/ompi-main-prefix`, 657 weak `MPI_*`): arrays, large-count and selftest clean; every failure in the prototype and converter suites (2 and 14) is a c2f/f2c round trip, decision 6 stubs because the build ships no Fortran interface; `abi_tools_test` segfaults inside the implementation's own `PMPI_T_pvar_reset`. Oracle 5 on macOS, `NOTES.md` #10. No *released* ABI-implementing MPI exists yet, and the MPICH 5.0.1 row above is why that is worth saying: implementing MPI-5.0 and shipping the standard ABI are different things, and that one is the former without the latter |
-| macOS, ABI-implementing MPI built `-flat_namespace` | none | **refused at load**, correctly: the flat build's own `MPI_X → PMPI_X` forwards resolve into our exports by load order — 614 `PMPI_*` bindings under `DYLD_PRINT_BINDINGS`, every wrapper bind clean (mpif's gcc/libtool build; `dev/weakdef-probe/`). An earlier version of this row blamed weak-definition coalescing: `HISTORY.md` §2.18 |
+| macOS, ABI-implementing MPI built `-flat_namespace` | none | **refused at load**, correctly: the flat build's own `MPI_X → PMPI_X` forwards resolve into our exports by load order — 614 `PMPI_*` bindings under `DYLD_PRINT_BINDINGS`, every wrapper bind clean (mpif's gcc/libtool build; `dev/weakdef-probe/`). An earlier version of this row blamed weak-definition coalescing: `HISTORY.md` §2.19 |
 | Linux glibc, MPICH 4.2.1 | `RTLD_LOCAL \| RTLD_DEEPBIND` | **works**, 6/6, two ranks (Debian 13, aarch64, Docker); and 13/13, two ranks on **x86_64** (Debian 13 container, GitHub Actions, `MPI 4.1`) |
 | Linux glibc, MPICH 4.2.0 | same | **cannot run two ranks** (Ubuntu 24.04): PMIx-only `libmpi`, PMI-1 hydra, so `-n 2` is two singletons. `HISTORY.md` §2.14 |
 | Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker); and 13/13, two ranks on **x86_64** (Ubuntu 24.04 container, GitHub Actions, `MPI 3.1`) |
