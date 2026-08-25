@@ -86,12 +86,20 @@ if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null; then
   # to: it reads MPI-5.0's Appendix A.3 out of doc/mpi50-report.pdf. Without it
   # that test fails on a stock container with a FileNotFoundError, which is a
   # missing package reported as a failing gate.
-  # gfortran is for decision 25's probe, and it is what makes this row cover
-  # the Fortran path at all: enable_language(Fortran OPTIONAL) means a
-  # container without one still builds and still passes, with the two Fortran
-  # getters answering "not set". That is a supported configuration and a
-  # silently narrower test, which is the combination worth avoiding on the only
-  # rows that exercise ELF.
+  # gfortran is for decision 25's probe, and it is what makes these rows cover
+  # the Fortran path at all. It is no longer what *decides* whether they do:
+  # Fortran is expected by default, so a container without a Fortran compiler
+  # now stops at configure instead of quietly building a wrapper whose two
+  # Fortran getters answer "not set". It is still installed here rather than
+  # opted out of, because these are the only rows that exercise ELF and the
+  # narrower test is the one worth avoiding on them.
+  #
+  # Note gfortran is not usually the compiler that ends up answering: Debian's
+  # mpich installs mpifort.mpich beside mpicc.mpich (measured, debian:13), and
+  # the build prefers that -- the wrapped MPI's own Fortran, which is what the
+  # probe is being asked about. gfortran is what that wrapper drives, so it is
+  # needed either way, and without it the wrapper fails with "gfortran: command
+  # not found" and the configure stops.
   pkgs="build-essential gfortran cmake python3 patch binutils poppler-utils"
   case ${MPICC:+path}$which in
     mpich)   pkgs="$pkgs libmpich-dev mpich" ;;
@@ -146,9 +154,16 @@ done
 
 step "configure and build"
 rm -rf "$BUILD"
-cmake -S "$SRC" -B "$BUILD" -DMPI_C_COMPILER="$MPICC" > /tmp/cmake-$which.log 2>&1 \
+# MPI_ABI_FORTRAN defaults to the project's own default, which is ON. A caller
+# with no Fortran compiler sets it to OFF in the environment -- the Intel MPI
+# row does, being the one leg here that installs no gfortran.
+cmake -S "$SRC" -B "$BUILD" -DMPI_C_COMPILER="$MPICC" \
+      -DMPI_ABI_FORTRAN="${MPI_ABI_FORTRAN:-ON}" > /tmp/cmake-$which.log 2>&1 \
   || { tail -25 /tmp/cmake-$which.log; fail "configure"; exit $status; }
-grep -E 'Found MPI_C|Launching tests' /tmp/cmake-$which.log || true
+# The Fortran lines say which compiler answers decision 25's probe and what the
+# wrapped MPI's own Fortran interface offers; an unexpected answer there is the
+# configuration mismatch MPI_ABI_FORTRAN exists to surface.
+grep -E 'Found MPI_C|Fortran|Launching tests' /tmp/cmake-$which.log || true
 cmake --build "$BUILD" -j"$(nproc)" > /tmp/build-$which.log 2>&1 \
   || { grep -E 'error|Error' /tmp/build-$which.log | head -25; fail "build"; exit $status; }
 

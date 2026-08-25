@@ -27,6 +27,14 @@
 ! MPICH and Open MPI report the properties of whatever Fortran compiler *they*
 ! were built with. The standard's model is that the application may override
 ! any of it with MPI_ABI_SET_FORTRAN_BOOLEANS, and that setter still wins here.
+!
+! Which compiler that is, the build picks deliberately: the wrapped MPI's own
+! mpifort, when it has one that works, so that "this build's compiler" and "the
+! compiler the wrapped MPI reports for" are the same compiler rather than two
+! that happen to agree (CMakeLists.txt's Fortran block, NOTES.md #9). When they
+! cannot be -- no such wrapper, or one whose backend is missing -- hw_abi.c's
+! run-time comparison against PMPI_Type_size(MPI_LOGICAL) is what keeps a
+! disagreement from being answered confidently.
 
 subroutine mpiwrapper_fortran_probe(logical_size, integer_size, real_size, &
                                     nbytes, true_bytes, false_bytes) &

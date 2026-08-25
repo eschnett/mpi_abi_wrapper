@@ -301,8 +301,11 @@ fi
 if [ -z "$prefix" ]; then
   prefix=$work/prefix
   step "building and installing this project into $prefix"
+  # MPI_ABI_FORTRAN defaults to the project's own default, ON; a caller with no
+  # Fortran compiler sets it to OFF in the environment (see linux-test.sh).
   cmake -S "$repodir" -B "$work/wrapper-build" \
         -DMPI_C_COMPILER="$MPICC" \
+        -DMPI_ABI_FORTRAN="${MPI_ABI_FORTRAN:-ON}" \
         -DCMAKE_INSTALL_PREFIX="$prefix" > "$work/wrapper-cmake.log" 2>&1 \
     || { tail -25 "$work/wrapper-cmake.log"; die "configure of the wrapper"; }
   cmake --build "$work/wrapper-build" -j"$jobs" > "$work/wrapper-build.log" 2>&1 \

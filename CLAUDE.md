@@ -42,10 +42,18 @@ three sibling documents, read by the section a task names:
 - **Do not benchmark MPI progress on this laptop.** `host-env.sh`'s own
   `FI_PROVIDER=tcp` makes every MPICH progress poll three orders of magnitude
   slower than the container rows, which are the numbers (`HISTORY.md` §2.17).
+- **Name the Fortran compiler on this laptop.** MacPorts installs
+  `gfortran-mp-15`, CMake's plain search looks for `gfortran`, and both local
+  MPIs' `mpifort` name a conda `gfortran` that is not installed — so with
+  `MPI_ABI_FORTRAN` at its default `ON` a configure here stops until told
+  `FC=/opt/local/bin/gfortran-mp-15` (or `-DCMAKE_Fortran_COMPILER=`). That is
+  the option working, not misfiring: before it existed this host quietly built
+  no Fortran probe at all (`NOTES.md` §9).
 - One build directory per MPI, selected by `-DMPI_C_COMPILER`:
 
   ```sh
-  cmake -S . -B build/mpich -DMPI_C_COMPILER=/path/to/mpicc
+  cmake -S . -B build/mpich -DMPI_C_COMPILER=/path/to/mpicc \
+      -DCMAKE_Fortran_COMPILER=/opt/local/bin/gfortran-mp-15
   cmake --build build/mpich -j8
   ctest --test-dir build/mpich --output-on-failure
   ```

@@ -89,6 +89,12 @@ static unsigned char fortran_false[MPIWRAPPER_MAX_LOGICAL_SIZE];
  * of both -- so that answers "not set" rather than a confident wrong number. A
  * native ABI implementation is in the same position and simply reports its own
  * builder's compiler; the difference is that we can notice.
+ *
+ * The build narrows this case rather than relying on the check: it compiles the
+ * probe with the wrapped MPI's own mpifort where there is a working one, so the
+ * two compilers are usually the same one (NOTES.md #9). This stays because
+ * "usually" is not "always" -- no such wrapper, a wrapper whose backend is
+ * missing, or an explicit FC all land here.
  */
 /* **Declared whether or not there is a Fortran compiler, and that is not
  * tidiness.** The two getter bodies below reach these unconditionally, behind a

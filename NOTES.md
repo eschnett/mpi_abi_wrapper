@@ -1926,7 +1926,16 @@ the decision rather than working around it.
     beside the application's own, and a second `libgfortran` in one process is
     its own class of failure. An explicit `MPI_Abi_set_fortran_booleans` still
     wins, because the standard makes the application's answer authoritative.
-    §8, §9.
+
+    **Which compiler that is, the build chooses rather than accepts**: the
+    `mpifort` beside `MPI_C_COMPILER`, when the wrapped MPI has one that works,
+    so that the compiler answering is the one that MPI was built with — the
+    answer being asked for. It falls back to an explicit `FC` or a plain search
+    when there is no such wrapper (Open MPI's own ABI mode installs none) or
+    when its backend compiler is missing, and a Fortran compiler is **required**
+    unless `-DMPI_ABI_FORTRAN=OFF` says otherwise. §9 has the chain and its
+    reasons; the run-time comparison against `PMPI_Type_size(MPI_LOGICAL)` is
+    what still catches the residual disagreement. §8, §9.
 
 ---
 
@@ -2113,11 +2122,84 @@ project does not have; §10's oracle 5 wraps an ABI-implementing MPI, which is a
 different question. It is the next thing to build, and it is what would have
 caught both of these choices while they were still implicit.
 
-**A Fortran compiler is an optional build input** (decision 25), and the
-degradation without one is to the previous behaviour rather than to a broken
-one: the two Fortran getters answer "not set", which is legal and was the only
-answer before. A build meant to serve a Fortran consumer wants one present, and
-§10's mpif rows are what notice.
+**A Fortran compiler is an expected build input** (decision 25), and
+`MPI_ABI_FORTRAN`, default `ON`, is what says so: without one the configure
+stops rather than building a wrapper whose two Fortran getters answer "not set".
+That answer is legal and was this project's only answer before S10, so the
+degradation is to the previous behaviour rather than to a broken one — but it is
+a degradation that reaches a Fortran consumer as a missing feature, arriving
+where §10's mpif rows notice it instead of where a build log would have. The
+common way to be without a Fortran compiler is to have forgotten to install one,
+which is an accident worth a message.
+
+`OFF` means **do not look**, not "use one if there is one". Only that makes it a
+deterministic no-Fortran build on any machine, which is what the coverage note
+further down needed.
+
+**Which Fortran compiler**, in order:
+
+1. an explicit `FC` or `-DCMAKE_Fortran_COMPILER`, which is never second-guessed;
+2. otherwise the `mpifort` beside `MPI_C_COMPILER` — `mpifort.mpich` before a
+   bare `mpifort`, and `NO_DEFAULT_PATH`, for the same reason `mpiexec` is found
+   that way: Debian's alternatives put both MPIs' wrappers in one directory, so
+   the bare name can belong to the other implementation. This is the one that
+   makes decision 25's answer *the wrapped MPI's* answer rather than a second
+   opinion that usually agrees;
+3. a plain search, when there is no such wrapper — Open MPI built
+   `--enable-standard-abi` installs none (§10) — or when the wrapper cannot
+   compile, which is a real case and not a hypothetical: conda's `mpifort` names
+   `arm64-apple-darwin20.0.0-gfortran`, and on the laptop that MPI is developed
+   against, that backend is not installed. Falling back is warned about, not
+   silent, because it is the case the run-time gate exists for;
+4. failing all of that, the `FATAL_ERROR` above.
+
+Two mechanics of this are worth writing down, both measured against
+`Modules/CheckLanguage.cmake` rather than assumed:
+
+- **`check_language` is a no-op when `CMAKE_Fortran_COMPILER` is already
+  `DEFINED`.** It does not validate a preset value, it declines to look. So a
+  candidate is offered through `ENV{FC}` — its probe is a nested `cmake` that
+  inherits this process's environment — which is what makes the choice
+  *try-compiled* rather than asserted. `set(CMAKE_Fortran_COMPILER ...)` would
+  accept a wrapper that cannot compile, and `enable_language` would then fail
+  uncatchably.
+- **On failure it leaves `NOTFOUND` behind twice**, as a cache entry and as a
+  normal variable, so both must be unset before a second call — otherwise the
+  fallback silently inherits the first attempt's verdict. Unsetting the cache
+  entry is also what lets a host that installs a compiler re-run `cmake` in the
+  same directory instead of re-reading the failure.
+
+The compiler is settled once and cached, so **changing `MPI_C_COMPILER` in an
+existing build directory does not re-derive it**. One build directory per MPI is
+already the rule (`CODE.md` §8); this is one more reason for it.
+
+**What the wrapped MPI's own Fortran interface offers is reported, not
+consumed.** `find_package(MPI OPTIONAL_COMPONENTS Fortran)` states `mpif.h`,
+`use mpi` and `use mpi_f08` in the configure log and nothing more: no compile
+definition depends on it, because the converters are guarded by the compile
+probe and whether the implementation has Fortran datatypes at all is decided at
+run time, where `MPI_LOGICAL` can be compared and `PMPI_Type_size` asked. Three
+constraints on that call:
+
+- `MPI_Fortran_COMPILER` is preset to the sibling, which pins FindMPI's
+  interrogation instead of letting it search `PATH`. Unpinned it finds whichever
+  MPI is first there — measured, and recorded at `ci-scripts/test-mpif.sh`'s
+  configure step. With no sibling there is nothing to pin, so the call is
+  skipped rather than let loose.
+- The component stays **optional even when `MPI_ABI_FORTRAN` is `ON`**, because
+  the option is about the compiler and not about the bindings. Open MPI's ABI
+  mode has no Fortran interface and does not declare `MPI_Fint` either (§10);
+  that is oracle 5, a configuration this project supports on purpose, and
+  requiring bindings would refuse it.
+- `MPI_DETERMINE_Fortran_CAPABILITIES` is left unset. It is the one part of
+  FindMPI's Fortran component that `try_run`s, and #1 permits no configure-time
+  run test; the `HAVE_*` answers are `try_compile` only, and `mpiver` reads
+  strings out of a binary it never runs.
+
+A `FALSE` for either module has two readings the log cannot separate: the binding
+is absent, or *our* Fortran compiler cannot read that MPI's `.mod` files. Both
+are worth seeing, and the second is a further argument for rung 2 — a sibling
+`mpifort` can read them by construction.
 
 Three separate mechanisms keep its runtime out of `libmpiwrapper`, and all
 three are needed — each was added after the previous one proved insufficient,
@@ -2130,28 +2212,55 @@ measured with `otool -L`:
    `-lgfortran -lquadmath` to any target holding a Fortran object regardless.
 
 Emptying (3) is safe only because the probe is written to need no runtime — no
-I/O, no allocatables, no derived types, and `nm -u` showing `malloc`, `free`
-and `memcpy` as its only undefined symbols. **Check that with `nm -u` if
-anything is ever added to it**; if it does need the runtime, the link fails
-naming the symbols, which is the constraint stating itself rather than a
-silent second `libgfortran`.
+I/O, no allocatables, no derived types, and `nm -u` showing nothing but libc.
+**Which** libc symbols is a fact about the compiler, not about the probe, so do
+not read the exact set as the rule: `malloc`, `free` and `memcpy` with MacPorts
+gfortran 15 on macOS, `memset` alone with Debian's gfortran 14 on Linux, both
+measured. The rule is that no name in that list belongs to a Fortran runtime.
+**Check with `nm -u` if anything is ever added to the probe**; if it does need
+the runtime, the link fails naming the symbols, which is the constraint stating
+itself rather than a silent second `libgfortran`.
+
+One piece of expected noise, so that it is not mistaken for a finding later: on
+a row where the chosen compiler is a wrapper carrying Fortran-only flags —
+Debian's `mpifort.mpich` passes `-fallow-invalid-boz -fallow-argument-mismatch`
+— configure prints two `cc1: warning: command-line option ... is valid for
+Fortran but not for C`. It comes from CMake's own ABI probe, whose source is a
+`.F` that gfortran preprocesses with `cc1`, and not from anything here; the
+probe's own `.f90` is not preprocessed and does not warn.
 
 The probe also forced `cmake/mpiwrapper.exported_symbols` into existence: a
 `bind(C)` subroutine is exported whatever `-fvisibility=hidden` says, ELF's
 version script caught it for free, and macOS had no counterpart until now.
 
 **The no-Fortran configuration broke twice before it ever ran**, which is worth
-recording as a coverage fact rather than as two mistakes. Nothing gates it: the
-laptop has a Fortran compiler, and so does every Docker row, because the commit
-that introduced the probe added `gfortran` to `ci-scripts/linux-test.sh` in the
-same breath. **CI's only coverage is the `sanitize` job, and that is an
-accident** — it happens not to install one. Both failures were of the shape
-where the argument is obviously right and the build was never run: first the
-derived state declared inside the `#if` while the bodies reach it behind a
-run-time test, then `enable_language(... OPTIONAL)` reporting a language it had
-not found. A deliberate second configure in one existing row would make this a
-tested configuration rather than a claimed one; until there is, the claim that
-a C-only build works rests on the `sanitize` row noticing.
+recording as a coverage fact rather than as two mistakes. Both failures were of
+the shape where the argument is obviously right and the build was never run:
+first the derived state declared inside the `#if` while the bodies reach it
+behind a run-time test, then `enable_language(... OPTIONAL)` reporting a
+language it had not found. Nothing gated it — the laptop had a Fortran compiler,
+and so does every Docker row, because the commit that introduced the probe added
+`gfortran` to `ci-scripts/linux-test.sh` in the same breath — so **CI's only
+coverage was the `sanitize` job, and that was an accident**: it happens not to
+install one.
+
+**It is now stated.** `sanitize` and the Intel MPI row pass
+`-DMPI_ABI_FORTRAN=OFF`, which is what that paragraph asked for and is also
+required of them, since both have an `mpifort` beside their `mpicc` and no
+backend compiler for it — left alone, the new default would stop them, correctly.
+So the claim that a C-only build works no longer rests on a package list
+happening to omit something. What is *not* covered is a row that has no Fortran
+compiler and does not say so; that configuration now fails by design, which is
+the point.
+
+One thing the laptop taught while this was being written, and worth repeating
+because the same shape will recur: **before this change, a fresh configure on
+that laptop silently built no probe at all.** MacPorts installs `gfortran-mp-15`
+and CMake's plain search looks for `gfortran`, so `check_language` found nothing,
+`MPIABI_HAVE_FORTRAN` was false, and the status line saying so scrolled past in
+a configure log nobody re-reads. That is exactly the accident `MPI_ABI_FORTRAN`
+exists to convert into a message, and the first thing it caught was this
+project's own development host.
 
 **Shared only in v1.** Static linking would require splitting `entrypoints.c`
 into 688 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI
@@ -2253,8 +2362,11 @@ Version choice is about coverage, not admissibility:
    `MPI_Fint`, so `internal.h`'s `sizeof(MPI_Fint) == sizeof(MPIABI_Fint)`
    assertion is guarded on `MPIWRAPPER_HAVE_MPI_Comm_c2f` — an implementation
    that declares any converter must declare `MPI_Fint` to type it, so the
-   guard skips the assertion exactly where there is nothing to name. Making
-   the oracle a CI row is what remains.
+   guard skips the assertion exactly where there is nothing to name. That
+   prefix installs no `mpifort` either, so it is also what exercises §9's
+   plain-compiler rung: decision 25's probe is answered by some Fortran
+   compiler that is not this MPI's, because this MPI has none. Making the
+   oracle a CI row is what remains.
 
    **mpif is now a CI row rather than an aspiration**, four of them:
    `{mpich, openmpi} × {native, wrapper}`, where the native legs run mpif over

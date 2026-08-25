@@ -106,8 +106,11 @@ run_cleared() {
 # --------------------------------------------------------- leg 0: the build
 
 step "configure, build, install into $prefix"
+# MPI_ABI_FORTRAN defaults to the project's own default, ON; a caller with no
+# Fortran compiler sets it to OFF in the environment (see linux-test.sh).
 cmake -S "$repodir" -B "$work/build" \
       -DMPI_C_COMPILER="$MPICC" \
+      -DMPI_ABI_FORTRAN="${MPI_ABI_FORTRAN:-ON}" \
       -DCMAKE_INSTALL_PREFIX="$prefix" \
       > "$work/cmake.log" 2>&1 \
   || { tail -25 "$work/cmake.log"; fail "configure"; exit $status; }

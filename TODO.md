@@ -15,14 +15,3 @@
 - `sanitize` covers `address,undefined`; S9's other half, the
   `thread` sanitizer over `MPI_THREAD_MULTIPLE`, is still a comment in
   `ci.yaml` rather than a leg.
-
-- use FindMPI to auto-detect the MPI implementation. (do this as well
-  to detect fortran features.) this may or may not supersede which
-  fortran compiler is used.
-
-- fortran bindings and compiler should be expected by default, need to
-  be disabled explicitly. this will catch accidental configuration
-  mismatches.
-
-- do we need an explicit no-fortran ci test? is the sanitize test
-  enough?

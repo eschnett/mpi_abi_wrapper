@@ -23,63 +23,9 @@ set(CMAKE_C_VISIBILITY_PRESET hidden)
 # failure.
 enable_language(CXX OPTIONAL)
 
-# Fortran, for one translation unit and one question: what this platform's
-# Fortran compiler does with LOGICAL, which MPI-5.0 20.4.1 requires
-# MPI_ABI_GET_FORTRAN_BOOLEANS to answer and which C cannot find out
-# (src/mpiwrapper/fortran_probe.f90 has the argument, decision 25 the rule).
-#
-# OPTIONAL, like CXX above: a host with no Fortran compiler still builds
-# everything, and the two Fortran getters then answer "not set" -- which is a
-# legal answer, and was the *only* answer before this. So the degradation is
-# to the previous behaviour rather than to a broken one. It is still a
-# degradation, and a build meant to serve a Fortran consumer wants a Fortran
-# compiler present; the mpif rows of NOTES.md #10 are the ones that notice.
-# **check_language, not enable_language(... OPTIONAL).** OPTIONAL does not mean
-# what the name suggests: with no Fortran compiler on the machine it still
-# reports the language loaded, sets CMAKE_Fortran_COMPILER to the string
-# "CMAKE_Fortran_COMPILER-NOTFOUND", and defers the failure to build time --
-#
-#   -- The Fortran compiler identification is unknown
-#   gmake[2]: CMAKE_Fortran_COMPILER-NOTFOUND: No such file or directory
-#
-# -- which is what CI's sanitize job, the only row without gfortran, reported.
-# CMAKE_Fortran_COMPILER_LOADED is TRUE there too, so it is not the test
-# either. check_language() try-compiles and leaves NOTFOUND when that fails, so
-# it answers for a missing compiler and a broken one alike, and `if()` treats a
-# *-NOTFOUND value as false.
-include(CheckLanguage)
-check_language(Fortran)
-if(CMAKE_Fortran_COMPILER)
-  enable_language(Fortran)
-  set(MPIABI_HAVE_FORTRAN TRUE)
-else()
-  set(MPIABI_HAVE_FORTRAN FALSE)
-endif()
-
-# **The Fortran runtime is deliberately not linked**, and this is the third and
-# last mechanism it took to keep it out (the other two are at the probe's own
-# target, below). CMake adds these to any target holding a Fortran object, so
-# even with an object library and LINKER_LANGUAGE C the link line still carried
-# -lgfortran -lquadmath.
-#
-# Emptying them is safe *because of a property the probe is written to have*:
-# src/mpiwrapper/fortran_probe.f90 uses no I/O, no allocatables and no derived
-# types, and its object's only undefined symbols are malloc, free and memcpy.
-# libmpiwrapper is dlopen'd into a process that already has the application's
-# Fortran runtime -- mpif's, for the consumer this exists to serve -- and a
-# second, differently-versioned copy of one is its own class of failure.
-#
-# If Fortran is ever added here that genuinely needs the runtime, this does not
-# hide it: the link fails with the undefined symbols named, which is the
-# constraint stating itself rather than a silent second libgfortran.
-#
-# MPIABI_HAVE_FORTRAN is set once, above, by check_language -- see there for
-# why neither CMAKE_Fortran_COMPILER nor CMAKE_Fortran_COMPILER_LOADED answers
-# this question on its own.
-if(MPIABI_HAVE_FORTRAN)
-  set(CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "")
-  set(CMAKE_Fortran_IMPLICIT_LINK_DIRECTORIES "")
-endif()
+# Fortran is detected inside the wrapper block below, not here: the compiler it
+# wants is the *wrapped MPI's own* (decision 25), which cannot be derived until
+# find_package(MPI COMPONENTS C) has said where that MPI is.
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
@@ -101,6 +47,25 @@ set(MPIABI_CHECK_OUT_PARAMS_SCRIPT ${CMAKE_SOURCE_DIR}/dev/check_out_params.py)
 # and (from S6) compiler wrapper and package files, without having to know that
 # one half does not need MPI (NOTES.md #9).
 option(MPI_ABI_BUILD_WRAPPER "Build libmpiwrapper (requires an MPI)" ON)
+
+# **Fortran is expected, not optional.** One translation unit of it answers a
+# question C cannot (decision 25, and the Fortran block below), and without one
+# the two Fortran getters answer "not set" -- legal, and the only answer this
+# project gave before S10, but a degradation. The default is ON because the
+# common way to end up without a Fortran compiler is to have forgotten to
+# install one, and a silent "not set" is exactly the accident that reaches a
+# Fortran consumer as a missing feature rather than as a build error.
+#
+# OFF means *do not look*, not "use one if there is one". That is what makes it
+# a deterministic no-Fortran configuration on any machine, which is the thing CI
+# needs: before this, the no-Fortran path's only coverage was the `sanitize` row
+# happening not to install gfortran (NOTES.md #9).
+#
+# Consulted only inside the wrapper block: the probe is compiled into
+# libmpiwrapper alone, so `-DMPI_ABI_BUILD_WRAPPER=OFF` needs no Fortran
+# whatever this says.
+option(MPI_ABI_FORTRAN
+  "Require a Fortran compiler for the wrapper's Fortran probe (decision 25)" ON)
 
 # Needed before the mpi_abi target below, which bakes an absolute path to
 # libmpiwrapper's installed name into itself (decision 5, NOTES.md #9).
@@ -530,6 +495,199 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
       "NOTES.md #5.10 for the rule and #13.2 for what it costs.")
   endif()
 
+  # --------------------------------------------------------------- Fortran
+  #
+  # Fortran, for one translation unit and one question: what LOGICAL looks like,
+  # which MPI-5.0 20.4.1 requires MPI_ABI_GET_FORTRAN_BOOLEANS to answer and
+  # which C cannot find out (src/mpiwrapper/fortran_probe.f90 has the argument,
+  # decision 25 the rule).
+  #
+  # **Whose Fortran compiler answers is the whole point**, and it should be the
+  # one the *wrapped MPI* was built with -- its .TRUE. is the value the getters
+  # are being asked for. So the search prefers the mpifort sitting beside
+  # MPI_C_COMPILER, and this block therefore lives here rather than beside
+  # enable_language(CXX): MPI_C_COMPILER is only known once find_package(MPI
+  # COMPONENTS C) has run, whether the user named it or FindMPI found it.
+  #
+  # **check_language, not enable_language(... OPTIONAL).** OPTIONAL does not
+  # mean what the name suggests: with no Fortran compiler on the machine it
+  # still reports the language loaded, sets CMAKE_Fortran_COMPILER to the string
+  # "CMAKE_Fortran_COMPILER-NOTFOUND", and defers the failure to build time --
+  #
+  #   -- The Fortran compiler identification is unknown
+  #   gmake[2]: CMAKE_Fortran_COMPILER-NOTFOUND: No such file or directory
+  #
+  # -- which is what CI's sanitize job, the only row without gfortran, reported.
+  # CMAKE_Fortran_COMPILER_LOADED is TRUE there too, so it is not the test
+  # either. check_language() try-compiles and leaves NOTFOUND when that fails,
+  # so it answers for a missing compiler and a broken one alike, and `if()`
+  # treats a *-NOTFOUND value as false.
+  #
+  # **ENV{FC}, not set(CMAKE_Fortran_COMPILER).** check_language is a no-op when
+  # CMAKE_Fortran_COMPILER is already DEFINED (Modules/CheckLanguage.cmake) --
+  # it does not validate a preset value, it declines to look. Its probe is a
+  # nested cmake process that inherits this one's environment, so setting FC
+  # around the call is what makes it *try-compile* the candidate. That matters
+  # here because a wrapper that cannot compile is a case this actually meets:
+  # measured, conda's mpifort on the author's laptop names
+  # arm64-apple-darwin20.0.0-gfortran, which is not installed.
+  #
+  # The whole selection is guarded on CMAKE_Fortran_COMPILER being undefined, so
+  # a reconfigure reuses the cache. Changing MPI_C_COMPILER in an existing build
+  # directory therefore does *not* re-derive the Fortran compiler -- one build
+  # directory per MPI is already the rule (CODE.md #8), and this is one more
+  # reason for it.
+  include(CheckLanguage)
+  if(MPI_ABI_FORTRAN)
+    if(MPI_C_COMPILER)
+      get_filename_component(MPIABI_MPI_FORTRAN_BINDIR "${MPI_C_COMPILER}" DIRECTORY)
+      get_filename_component(MPIABI_MPICC_NAME "${MPI_C_COMPILER}" NAME)
+      # mpicc.mpich -> mpifort.mpich, tried before the bare names: Debian's
+      # alternatives put both MPIs' wrappers in /usr/bin, so `mpifort` there can
+      # belong to the other implementation -- the same mistake NO_DEFAULT_PATH
+      # prevents for mpiexec, one directory further in.
+      string(REPLACE "mpicc" "mpifort" MPIABI_MPIFORT_NAME "${MPIABI_MPICC_NAME}")
+      find_program(MPIABI_MPIFORT
+        NAMES ${MPIABI_MPIFORT_NAME} mpifort mpif90 mpifc
+        HINTS ${MPIABI_MPI_FORTRAN_BINDIR} NO_DEFAULT_PATH)
+    endif()
+
+    if(NOT DEFINED CMAKE_Fortran_COMPILER AND NOT DEFINED ENV{FC} AND MPIABI_MPIFORT)
+      set(ENV{FC} "${MPIABI_MPIFORT}")
+      check_language(Fortran)
+      unset(ENV{FC})
+      if(NOT CMAKE_Fortran_COMPILER)
+        # A wrapper whose backend compiler is missing. Not fatal, and not
+        # silent: the wrapper build is otherwise fine, and the risk this leaves
+        # -- our LOGICAL disagreeing with theirs -- is already caught at run
+        # time, where hw_abi.c compares the probe's size against
+        # PMPI_Type_size(MPI_LOGICAL) and answers "not set" on a mismatch.
+        # Unset first, or the fallback is a no-op: check_language declines to
+        # look whenever CMAKE_Fortran_COMPILER is DEFINED, and on failure it
+        # leaves NOTFOUND behind as *both* a cache entry and a normal variable
+        # (Modules/CheckLanguage.cmake), so both have to go.
+        unset(CMAKE_Fortran_COMPILER CACHE)
+        unset(CMAKE_Fortran_COMPILER)
+        message(WARNING
+          "${MPIABI_MPIFORT} cannot compile: the wrapped MPI's own Fortran "
+          "wrapper names a backend compiler that is not installed. Falling "
+          "back to whatever Fortran compiler is on PATH, which need not be the "
+          "one this MPI was built with -- decision 25's run-time gate is what "
+          "catches a disagreement. Set FC to silence this.")
+        check_language(Fortran)
+      endif()
+    else()
+      # An explicit choice (FC or -DCMAKE_Fortran_COMPILER) wins outright, and
+      # is not second-guessed; with neither, and no sibling wrapper, this is a
+      # plain PATH search. The probe includes no MPI header and links against
+      # nothing, so any working Fortran compiler can answer its question -- the
+      # sibling is preferred because it answers it *the wrapped MPI's way*.
+      check_language(Fortran)
+    endif()
+
+    if(CMAKE_Fortran_COMPILER)
+      enable_language(Fortran)
+      set(MPIABI_HAVE_FORTRAN TRUE)
+    else()
+      # Unset the cached NOTFOUND, so that installing a compiler and running
+      # cmake again in this same directory re-probes instead of re-failing.
+      unset(CMAKE_Fortran_COMPILER CACHE)
+      unset(CMAKE_Fortran_COMPILER)
+      message(FATAL_ERROR
+        "No working Fortran compiler, and MPI_ABI_FORTRAN is ON (the default). "
+        "The wrapper's Fortran probe answers MPI_Abi_get_fortran_booleans/_info "
+        "(decision 25), and a build that quietly loses it reaches a Fortran "
+        "consumer as a missing feature rather than as this message. Install "
+        "one, name it with FC, or configure with -DMPI_ABI_FORTRAN=OFF to build "
+        "without it -- the getters then answer \"not set\", which is legal "
+        "(MPI-5.0 20.4.1) and was this project's only answer before S10.")
+    endif()
+
+    # **The Fortran runtime is deliberately not linked**, and this is the third
+    # and last mechanism it took to keep it out (the other two are at the
+    # probe's own target, below). CMake adds these to any target holding a
+    # Fortran object, so even with an object library and LINKER_LANGUAGE C the
+    # link line still carried -lgfortran -lquadmath. With an mpifort as the
+    # compiler this carries more weight than it did: its implicit link libraries
+    # name -lmpifort -lmpi -lpmpi as well.
+    #
+    # Emptying them is safe *because of a property the probe is written to
+    # have*: src/mpiwrapper/fortran_probe.f90 uses no I/O, no allocatables and
+    # no derived types, and its object's only undefined symbols are malloc, free
+    # and memcpy. libmpiwrapper is dlopen'd into a process that already has the
+    # application's Fortran runtime -- mpif's, for the consumer this exists to
+    # serve -- and a second, differently-versioned copy of one is its own class
+    # of failure.
+    #
+    # If Fortran is ever added here that genuinely needs the runtime, this does
+    # not hide it: the link fails with the undefined symbols named, which is the
+    # constraint stating itself rather than a silent second libgfortran.
+    set(CMAKE_Fortran_IMPLICIT_LINK_LIBRARIES "")
+    set(CMAKE_Fortran_IMPLICIT_LINK_DIRECTORIES "")
+
+    # What the wrapped MPI's *own* Fortran interface offers, from FindMPI, and
+    # reported rather than consumed: nothing here becomes a compile definition.
+    # The C-to-Fortran converters are guarded by the compile probe
+    # (MPIWRAPPER_HAVE_MPI_*_c2f), and whether the implementation has Fortran
+    # datatypes at all is decided at run time in hw_abi.c, where MPI_LOGICAL can
+    # be compared and PMPI_Type_size asked. These lines are for the human
+    # reading a configure log: an unexpected answer here is the mismatch that
+    # MPI_ABI_FORTRAN exists to make visible.
+    #
+    # MPI_Fortran_COMPILER is preset, which pins FindMPI's interrogation to it
+    # (MPI_PINNED_COMPILER) instead of searching PATH. Unpinned, FindMPI finds
+    # whichever MPI comes first on PATH -- measured, and recorded at
+    # ci-scripts/test-mpif.sh's configure step. With no sibling wrapper there is
+    # nothing to pin, so the call is skipped entirely rather than let loose.
+    #
+    # Note MPI_DETERMINE_Fortran_CAPABILITIES is deliberately left unset: it is
+    # the one part of FindMPI's Fortran component that try_run()s, and NOTES.md
+    # #1 permits no configure-time run test. The HAVE_* answers below are
+    # try_compile only.
+    if(MPIABI_MPIFORT)
+      set(MPI_Fortran_COMPILER "${MPIABI_MPIFORT}"
+        CACHE FILEPATH "MPI compiler wrapper for Fortran")
+      find_package(MPI OPTIONAL_COMPONENTS Fortran)
+      if(MPI_Fortran_FOUND)
+        # A FALSE for either module can mean two things, and the configure log
+        # cannot tell them apart: the binding is absent, or our Fortran compiler
+        # cannot read that MPI's .mod files. Both are worth seeing; the second
+        # is another reason to prefer the sibling wrapper, which by construction
+        # can read them.
+        message(STATUS
+          "Wrapped MPI's Fortran interface, via ${MPI_Fortran_COMPILER}: "
+          "mpif.h=${MPI_Fortran_HAVE_F77_HEADER} "
+          "'use mpi'=${MPI_Fortran_HAVE_F90_MODULE} "
+          "'use mpi_f08'=${MPI_Fortran_HAVE_F08_MODULE}")
+      else()
+        message(WARNING
+          "${MPIABI_MPIFORT} exists, but FindMPI could not compile an MPI "
+          "Fortran program with it, so the wrapped MPI's Fortran bindings are "
+          "unverified. This does not stop the build: the wrapper's own Fortran "
+          "surface is the C-to-Fortran converters, which the compile probe "
+          "guards, plus decision 25's probe, which needs no MPI at all.")
+      endif()
+    else()
+      # Not an error, and an expected configuration: Open MPI built
+      # --enable-standard-abi installs no Fortran wrapper at all, and its mpi.h
+      # declares no MPI_Fint either (NOTES.md #10). That is oracle 5, and it is
+      # a configuration this project supports on purpose -- which is why the
+      # Fortran *component* is optional even while the Fortran *compiler* is
+      # required.
+      message(STATUS
+        "No Fortran compiler wrapper beside ${MPI_C_COMPILER}, so the wrapped "
+        "MPI appears to have no Fortran interface. Decision 25's probe answers "
+        "from ${CMAKE_Fortran_COMPILER} instead, and the run-time gate in "
+        "hw_abi.c decides whether that answer may be given.")
+    endif()
+  else()
+    set(MPIABI_HAVE_FORTRAN FALSE)
+    message(STATUS
+      "MPI_ABI_FORTRAN is OFF: no Fortran compiler is looked for and no probe "
+      "is built, so MPI_Abi_get_fortran_booleans/_info answer \"not set\" "
+      "unless the application registers values (MPI-5.0 20.4.1)")
+  endif()
+
   # mpiabi.h reaches the wrapper through a directory of its own, containing
   # nothing else. That is not tidiness: gen/include holds the ABI's *mpi.h*
   # beside mpiabi.h, so putting gen/include on this target's include path makes
@@ -654,13 +812,10 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     set(MPIABI_WRAPPER_FORTRAN_SOURCES
       $<TARGET_OBJECTS:mpiwrapper_fortran_probe>)
     message(STATUS
-      "Fortran probe: ${CMAKE_Fortran_COMPILER_ID} -- MPI_Abi_get_fortran_* "
-      "will answer from it")
+      "Fortran probe: ${CMAKE_Fortran_COMPILER_ID} "
+      "(${CMAKE_Fortran_COMPILER}) -- MPI_Abi_get_fortran_* will answer from it")
   else()
     set(MPIABI_WRAPPER_FORTRAN_SOURCES)
-    message(STATUS
-      "No Fortran compiler: MPI_Abi_get_fortran_booleans/_info will answer "
-      "\"not set\" unless the application registers them (MPI-5.0 20.4.1)")
   endif()
 
   add_library(mpiwrapper SHARED

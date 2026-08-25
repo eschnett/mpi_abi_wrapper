@@ -555,9 +555,15 @@ jobs:
       - uses: actions/checkout@v6
 
       # No gfortran: nothing here builds an MPI from source, so the reason the
-      # from-source rows need it does not apply. poppler-utils does, though --
-      # the c-bindings cross-check shells out to pdftotext, and without it that
-      # test fails as a missing package reported as a failing gate.
+      # from-source rows need it does not apply -- and the two steps below
+      # therefore set MPI_ABI_FORTRAN=OFF, Fortran being expected by default.
+      # Installing gfortran instead would make this a *Fortran* row as well as
+      # an Intel MPI one, which is a different subject and a possible future
+      # leg; what it would exercise depends on what Intel MPI's own Fortran
+      # wrapper drives, which is worth measuring before adding the package
+      # rather than after. poppler-utils *is* needed, though -- the c-bindings
+      # cross-check shells out to pdftotext, and without it that test fails as a
+      # missing package reported as a failing gate.
       - name: Install the toolchain
         run: |
           sudo apt-get update -qq
@@ -707,7 +713,14 @@ jobs:
               exit 1
           fi
 
+      # MPI_ABI_FORTRAN=OFF because this row installs no gfortran and Fortran is
+      # expected by default, so the configure would otherwise stop here -- see
+      # the toolchain step above for why the row says so rather than installing
+      # the package. The variable is read by both scripts below; CMake's own
+      # default is ON.
       - name: Build and test
+        env:
+          MPI_ABI_FORTRAN: 'OFF'
         run: ci-scripts/linux-test.sh "${MPICC}"
 
       # `!cancelled()` for the reason the linux-source job's copy of this step
@@ -716,6 +729,8 @@ jobs:
       # when a loader problem takes ctest down.
       - name: Check the installed prefix's consumption routes
         if: ${{ !cancelled() }}
+        env:
+          MPI_ABI_FORTRAN: 'OFF'
         run: ci-scripts/check-install.sh "${MPICC}"
 
       - name: Show CMake's check logs
@@ -978,10 +993,23 @@ jobs:
               build-essential cmake python3 patch binutils poppler-utils \
               libmpich-dev mpich
 
+      # **This is the no-Fortran row, and now on purpose.** It always was the
+      # only one, because it is the only row that installs no gfortran -- but
+      # that was an accident of the package list, and NOTES.md #9 recorded it as
+      # one: the no-Fortran path broke twice before it ever ran, and this row
+      # noticing was luck. -DMPI_ABI_FORTRAN=OFF makes it a stated
+      # configuration, and it is also what keeps this row green now that Fortran
+      # is expected by default. Measured in this exact container: Debian's mpich
+      # installs mpifort.mpich beside mpicc.mpich, and it fails with "gfortran:
+      # command not found" -- so the build finds the wrapped MPI's own Fortran
+      # wrapper, finds it cannot compile, falls back to a PATH search, finds
+      # nothing there either, and stops. That is the new default doing its job,
+      # not a fault here, and this flag is how the row says so.
       - name: Configure and build with -fsanitize=${{ matrix.sanitize }}
         run: |
           cmake -S . -B build \
               -DMPI_C_COMPILER="$(command -v mpicc.mpich || command -v mpicc)" \
+              -DMPI_ABI_FORTRAN=OFF \
               -DMPI_ABI_SANITIZE=${{ matrix.sanitize }}
           cmake --build build -j"$(nproc)"
 

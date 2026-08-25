@@ -279,16 +279,23 @@ cmake --build build/mpich -j8
 ctest --test-dir build/mpich --output-on-failure
 ```
 
-One build directory per MPI; `MPI_C_COMPILER` is what selects it. The launcher
-is taken from beside that compiler rather than from `PATH`, because launching
-one implementation's binaries under another's `mpiexec` silently produces N
-singletons instead of an N-rank job.
+One build directory per MPI; `MPI_C_COMPILER` is what selects it. Two things are
+taken from beside that compiler rather than from `PATH`: the launcher, because
+launching one implementation's binaries under another's `mpiexec` silently
+produces N singletons instead of an N-rank job, and the `mpifort` that compiles
+the Fortran probe, because decision 25 is asking what *that* MPI's Fortran does.
+An explicit `FC` or `-DCMAKE_Fortran_COMPILER` overrides the second; failing
+both, a plain search, warned about when the sibling wrapper exists but cannot
+compile. The choice is cached, so it does not follow a later change of
+`MPI_C_COMPILER` in the same directory — one more reason for one directory per
+MPI. `NOTES.md` §9 has the chain and what each rung is for.
 
 **Options.**
 
 | | default | |
 |---|---|---|
 | `MPI_ABI_BUILD_WRAPPER` | `ON` | `OFF` builds `libmpi_abi` alone, with no MPI present |
+| `MPI_ABI_FORTRAN` | `ON` | a working Fortran compiler is required, preferring the wrapped MPI's own `mpifort`. `OFF` looks for none and builds no probe, so `MPI_Abi_get_fortran_booleans/_info` answer "not set": decision 25, `NOTES.md` §9 |
 | `MPI_ABI_WRAP_ABI_IMPL` | `OFF` | wrap a genuine ABI-implementing MPI (oracle 5); warns |
 | `MPI_ABI_TEST_USE_LAUNCHER` | `ON` | `OFF` runs the behavioural tests as singletons. Either way the build states the rank count it expects (`MPI_ABI_EXPECT_RANKS`) and a test given a different one fails: §11 |
 | `MPI_ABI_TEST_SPAWN` | `OFF` | the spawn case hangs under hydra on macOS 26 |
