@@ -53,6 +53,30 @@ variant instead of `MPI_Count count`; and it gives `MPI_Status` a struct tag
 (§2, "Naming"), which is worth proposing upstream since it costs nothing and
 changes nothing about the ABI.
 
+**Upstream has since made the `Psend`/`Precv` correction itself, and that is a
+trap waiting for whoever re-vendors.** `dev/vendor/mpi-abi-stubs/` is pinned at
+`a1183ce6` (2025-11-24), which still has the old signatures, so the hunk is
+still needed *today*; upstream's tip carries the corrected ones. The moment the
+vendored copy moves past that fix, `patch` finds the hunk already applied and
+reports "Reversed (or previously applied)".
+
+That is not a prediction: it is what happened to mpif, whose
+`install-mpi-header.sh` clones the stubs *unpinned*, and which the mpif rows of
+§10 caught failing on exactly this. There the consequence was severe, because
+`patch` running with no terminal answers its own prompt and reverse-applies —
+mpif's header came out with the Fortran declarations *removed*.
+
+**Here it is only a build failure**, and the difference is worth knowing rather
+than assuming: `dev/generate_headers.py` checks `patch`'s exit code and raises,
+and this project's patch has four hunks where mpif's has three, so the reversal
+does not reach the Fortran block. Measured against a simulated future stub, not
+argued. `--forward` is passed anyway, so the refusal is stated rather than
+inferred from an exit code that happened to be non-zero.
+
+Vendoring is what makes this project's copy a dated artifact rather than a
+moving one, and it is the whole reason this is ours to schedule rather than
+ours to be surprised by. What re-vendoring has to do is drop that hunk.
+
 **Scope, counted from the patched header rather than estimated.** 688 entry
 points, with `MPI_*` and `PMPI_*` exactly symmetric — every one has a twin, no
 exceptions in either direction. `CODE.md` §2 carries the breakdown and the
