@@ -17,9 +17,21 @@
 # reported it as "expected failure that passed", which is that mechanism doing
 # exactly what it is for.
 #
-# A test that fails in one run and passes in the next cannot be expressed here at
-# all: listing it fails the run it passes, and not listing it fails the run it
-# fails. It is left unlisted, so a future run that fails it goes red -- and this
-# paragraph is how whoever reads that failure knows it is the known flap rather
-# than a regression.
+# **And the architecture claim is now measured false rather than merely thin.**
+# Run 32861557171 failed it on x86_64 too (job 97846529127, one unexpected failure
+# in the leg), 4h21m before run 32887203728 failed it on aarch64. Both
+# architectures flap it, so neither delta file is its home: it lives in
+# flaky-ci-openmpi.txt, which the two share, and that entry carries the run table.
+#
+# This paragraph used to end by saying that a test which fails one run and passes
+# the next cannot be expressed here at all -- listing it fails the run it passes,
+# not listing it fails the run it fails -- and that leaving it unlisted was
+# therefore the least bad option, to be read against this note when a run went
+# red. That was true when it was written and is not now: --flaky is the third
+# category, it gates in neither direction, and it prints which way each run went.
+# A flap belongs there.
+#
+# What still holds is the narrower rule this file exists for: an entry here is a
+# claim that the two architectures genuinely differ, and one run is not enough to
+# make it.
 
