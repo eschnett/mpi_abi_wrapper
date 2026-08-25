@@ -208,19 +208,27 @@ int mpiwrapper_w_PMPI_Finalized(int *abi_flag)
 
 /* -------------------------------------------------------------- MPI_Abort -- */
 
-/* Mechanical, and hand-written only because #8 groups it with the lifecycle:
- * a communicator and an error code, both of which have conversion rules
- * already. The error code is an *in*-direction one, so it goes down through
- * the fromabi direction -- including a dynamic code the application obtained
- * from MPI_Add_error_class, which errorcodes.c resolves.
+/* Hand-written because #8 groups it with the lifecycle, and **the error code
+ * passes through unconverted** -- the one in-direction `errorcode` in this
+ * library that does. It is not an MPI error code: MPI-5.0 11.8 calls it the
+ * "error code to return to the invoking environment", and both implementations
+ * do exactly that, so converting it renumbers a value destined for `wait(2)`
+ * against a table that has nothing to do with the shell. #5.6a is the rule and
+ * the measurement; dev/abort-exit-status/ is the probe.
+ *
+ * Every *other* in-direction `errorcode` here does convert, and the list is
+ * short enough to check: the four `MPI_*_call_errhandler`, `MPI_Error_class`
+ * and `MPI_Errhandler_free` in gen/mpiwrapper/wrappers.c, hw_errors.c's
+ * `MPI_Add_error_string`/`_class`/`_code`, and hw_strings.c's
+ * `MPI_Error_string`. Each of those hands the code back to MPI, which must read
+ * it in its own numbering. This one hands it to the operating system.
  */
 #ifdef MPIWRAPPER_HAVE_MPI_Abort
 #  define BODY_MPI_Abort(TARGET)                                               \
     {                                                                          \
-      const MPI_Comm comm      = mpiwrapper_comm_fromabi(abi_comm);            \
-      const int      errorcode = mpiwrapper_errorcode_fromabi(abi_errorcode);  \
+      const MPI_Comm comm = mpiwrapper_comm_fromabi(abi_comm);                 \
                                                                                \
-      const int ierror = TARGET(comm, errorcode);                              \
+      const int ierror = TARGET(comm, abi_errorcode);                          \
       return mpiwrapper_errorcode_toabi(ierror);                               \
     }
 #else

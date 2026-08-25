@@ -235,7 +235,7 @@ shifted-name rule survives the substitution.
 | 12 | buffer attach/detach: `MPI_BUFFER_AUTOMATIC` and ownership | `hw_buffers.c`, `buffers.c` |
 | 10 | consumes a status in the *in* direction | `hw_status.c` |
 | 10 | output string buffer with no length argument | `hw_strings.c` |
-| 8 | lifecycle: initialization state the wrapper itself tracks | `hw_lifecycle.c` |
+| 8 | lifecycle: initialization state the wrapper itself tracks — plus `MPI_Abort`, whose `errorcode` is the one in-direction error code that does *not* convert (`NOTES.md` #5.6a) | `hw_lifecycle.c` |
 | 6 | `MPI_Abi_*` introspection: about this library, not the wrapped MPI | `hw_abi.c` |
 | 6 | dynamic error codes, renumbered into the ABI's range | `hw_errors.c`, `errorcodes.c` |
 | 4 | Fortran status converters: memcpy-shaped, not argument-shaped | `hw_converters.c` |

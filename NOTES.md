@@ -619,6 +619,7 @@ rots.
 | status, array | §5.2, staged |
 | choice buffer with sentinel (`MPI_BOTTOM`, `MPI_IN_PLACE`, `MPI_BUFFER_AUTOMATIC`) | one test |
 | error code, return value | mapping call |
+| error code, argument (in) | mapping call — **except `MPI_Abort`'s, which is not an MPI error code at all** (§5.6a) |
 | error code, array (out) | in-place element mapping |
 | rank | role-specific mapping (§5.4) |
 | tag | role-specific mapping (§5.4) |
@@ -1110,6 +1111,60 @@ treatment. **They do not** — both registrars take an `extra_state` argument th
 MPI hands back to every callback, so the `{user_fn, user_extra}` pair *is* the
 registry (`src/mpiwrapper/extrastate.c`). `MPI_T`'s events are the one family
 that genuinely cannot, and §6.1 says why.
+
+### 5.6a `MPI_Abort`'s error code is not an error code
+
+It is the one in-direction `errorcode` in this library that **passes through
+unconverted**, and the reason is that its destination is not MPI. MPI-5.0 §11.8
+calls it the "error code to return to the invoking environment", and both
+implementations do precisely that: measured over MPICH 4.3.1 and Open MPI 5.0.6,
+`MPI_Abort(comm, N)` leaves the job with exit status `N & 0xff` and nothing along
+the way reads `N` as a class. So the number is destined for `wait(2)`, and
+converting it renumbers it against a table the shell has never heard of.
+
+**The measurement is `dev/abort-exit-status/exit-status.sh`, and it found two
+failures rather than one.** With `mpiwrapper_errorcode_fromabi` in the path:
+
+- **Renumbering**, where `N` happens to be a predefined ABI class and the two
+  headers disagree on its value. `MPI_Abort(comm, 8)` exited 7 over MPICH,
+  because `MPIABI_ERR_ROOT` is 8 where `MPI_ERR_ROOT` is 7; 16 became 15 and 42
+  became 37. This is the one the flap probe stumbled on, and it is the mild case
+  — over Open MPI, whose predefined 1–62 coincide with the ABI's, every one of
+  these rows looked correct.
+- **Collapse to `MPI_ERR_OTHER`**, for every `N` above 62 outside `MPI_T`'s
+  1001–1018 — which is to say for every ordinary exit status an application
+  picks for its own reasons, none of which is a predefined class. 100, 137 and
+  255 all arrived as 15 over MPICH and as 16 over Open MPI, because
+  `errorcodes.c` never issued those ABI values and
+  `mpiwrapper_errorcode_dynamic_fromabi` takes its `return MPI_ERR_OTHER` arm
+  (§5.6). A script testing `[ $? -eq 137 ]` could not work through the wrapper,
+  and no diagnostic said why.
+
+The second is the one that decides it. The first affects codes an application
+had no business using as an exit status anyway; the second breaks the argument's
+documented purpose for essentially every value.
+
+**The argument for converting, and why it loses.** An application may abort with
+`MPI_ERR_OTHER`, or with a class it obtained from `MPI_Add_error_class` — a
+genuine ABI-side error code, which passing through hands the implementation a
+number from the wrong numbering. That is real, and it costs nothing, because
+**nothing reads it**: the implementation uses the value as an exit status, so an
+ABI-side 16384 and an implementation-side one produce the same `16384 & 0xff`.
+There is no observable behaviour for the unconverted value to be wrong about.
+Were some future implementation to interpret `errorcode` as a class — printing
+its class name, say — that is the row that would move, and the trade would want
+re-deciding; §13.1 is where a contradicting measurement would go.
+
+**Every other in-direction `errorcode` still converts**, and the list is short
+enough to check against the artifacts rather than to trust: the four
+`MPI_*_call_errhandler`, `MPI_Error_class` and `MPI_Errhandler_free` in
+`gen/mpiwrapper/wrappers.c`; `MPI_Add_error_string`, `_class` and `_code` in
+`hw_errors.c`; `MPI_Error_string` in `hw_strings.c`; the callback returns in
+`extrastate.c`; and `status.MPI_ERROR` in `status.c`. Every one of those hands
+the code back to *MPI*, which must read it in its own numbering. `MPI_Abort`'s
+hands it to the operating system, and that is the whole distinction — it is not
+a property of the parameter's type, which is why no rule keyed on the type finds
+it, and why `hw_lifecycle.c` carries the exception in prose.
 
 ### 5.7 Arrays: always temporaries, never in place
 
