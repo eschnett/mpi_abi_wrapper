@@ -28,11 +28,23 @@
 # not retyped from memory. What changed is worth stating, because both directions
 # are informative:
 #
-#   * `init/version` is **gone**. It failed because MPI_Get_version forwarded
-#     MPICH 4.3.1's answer of 4.1 while the ABI header is fixed at MPI-5.0;
-#     5.0.1 declares MPI_VERSION 5 / MPI_SUBVERSION 0 and the two now agree.
-#     The old list said this could only pass "over an implementation that is
-#     itself MPI-5.0", and here it does.
+#   * `init/version` is **gone**, and it is now gone from every list rather
+#     than only this one. It failed because MPI_Get_version forwarded the
+#     implementation's answer while the ABI header is fixed at MPI-5.0, and it
+#     passed here first because MPICH 5.0.1 happens to declare MPI_VERSION 5.
+#     Decision 24 makes it pass everywhere: MPI_Get_version now reports the
+#     standard *this library* presents, which MPI-5.0 2.7 requires it to agree
+#     with the macro about.
+#
+#     **The four lists were, between them, arguing the wrong side.** Each said
+#     forwarding was "the honest half" and that the two could agree only over
+#     an implementation that is itself MPI-5.0. This test is MPICH's own
+#     assertion of the standard's requirement, and it was recorded here as an
+#     expected failure with a rationale defending the behaviour it was
+#     reporting. mpif's environment check said the same thing independently
+#     (NOTES.md #10), and it took a consumer aborting to notice. An expected
+#     failure whose reason argues against a conformance test is worth a second
+#     look; that is the shape of this one.
 #   * The three lines the old list groups as **(g) timing, in this environment**
 #     are gone too, and that group was always about one laptop: all three passed
 #     on GitHub's runners, which is what a per-environment list exists to record.

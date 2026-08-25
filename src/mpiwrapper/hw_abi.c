@@ -59,6 +59,127 @@ static int           fortran_logical_size;
 static unsigned char fortran_true[MPIWRAPPER_MAX_LOGICAL_SIZE];
 static unsigned char fortran_false[MPIWRAPPER_MAX_LOGICAL_SIZE];
 
+/* ------------------------------------------- what this build's Fortran is ---- */
+
+/* Decision 25. The application's registration above still wins; this is what
+ * the two getters fall back to, and it is what makes them answer at all over a
+ * wrapped MPI that has Fortran but no MPI_Abi_* of its own.
+ *
+ * src/mpiwrapper/fortran_probe.f90 is the source of the values and has the
+ * argument for why they cannot come from anywhere else. Two conditions have to
+ * hold before they are worth reporting, and they are independent:
+ *
+ *   1. This build had a Fortran compiler (MPIWRAPPER_HAVE_FORTRAN).
+ *   2. The wrapped MPI has Fortran datatypes -- an implementation configured
+ *      --disable-fortran has no MPI_LOGICAL to describe, and a Fortran layer
+ *      could not run over it whatever this call answered.
+ *
+ * Condition 2 is asked in two steps, and the order matters. MPI_LOGICAL
+ * against MPI_DATATYPE_NULL is a value comparison: no MPI call, no error
+ * handler, legal before MPI_Init. Only if that passes, and only once MPI is
+ * initialized, is MPI_Type_size asked -- MPI-5.0 20.4 names exactly this call
+ * as how "MPI applications can discover the size of Fortran types such as
+ * MPI_INTEGER and MPI_REAL", with lack of support "indicated when the type
+ * size returned is MPI_UNDEFINED".
+ *
+ * That second step earns its keep by catching the case this scheme is
+ * genuinely weakest at: **the MPI's Fortran compiler need not be ours.** If
+ * their default LOGICAL is a different width from the one probed here, the two
+ * Fortran ABIs are not the same one and nothing we could report would be true
+ * of both -- so that answers "not set" rather than a confident wrong number. A
+ * native ABI implementation is in the same position and simply reports its own
+ * builder's compiler; the difference is that we can notice.
+ */
+/* **Declared whether or not there is a Fortran compiler, and that is not
+ * tidiness.** The two getter bodies below reach these unconditionally, behind a
+ * *run-time* `if (!fortran_derived_usable())` rather than a `#if` -- so a
+ * no-Fortran build still has to compile those references even though it can
+ * never reach them. Putting the declarations inside the guard is what a first
+ * attempt did, and the result compiled everywhere a Fortran compiler happened
+ * to be installed and nowhere else: the laptop and the Docker rows had one,
+ * CI's sanitize job did not, and it failed there with six "undeclared" errors
+ * on a path this file's own comments called a supported configuration.
+ *
+ * They stay zero in that build, and nothing reads them, because
+ * fortran_derived_usable() is the constant 0.
+ */
+static int           derived_logical_size;
+static int           derived_integer_size;
+static int           derived_real_size;
+static unsigned char derived_true[MPIWRAPPER_MAX_LOGICAL_SIZE];
+static unsigned char derived_false[MPIWRAPPER_MAX_LOGICAL_SIZE];
+
+#if defined(MPIWRAPPER_HAVE_FORTRAN)
+void mpiwrapper_fortran_probe(int *logical_size, int *integer_size,
+                              int *real_size, int nbytes,
+                              signed char *true_bytes, signed char *false_bytes);
+
+/* 0 = not yet determined, 1 = usable, 2 = not usable. "Not yet" is not cached,
+ * because it is what "MPI is not initialized yet" looks like and the answer
+ * changes later.
+ */
+#define FORTRAN_DERIVED_UNKNOWN  0
+#define FORTRAN_DERIVED_USABLE   1
+#define FORTRAN_DERIVED_UNUSABLE 2
+
+static atomic_int derived_state;
+
+static int fortran_derived_usable(void)
+{
+  int state = atomic_load_explicit(&derived_state, memory_order_acquire);
+  if (state != FORTRAN_DERIVED_UNKNOWN) return state == FORTRAN_DERIVED_USABLE;
+
+  /* Step 1 of condition 2, and it costs nothing and cannot fail. */
+  if (MPI_LOGICAL == MPI_DATATYPE_NULL) {
+    atomic_store_explicit(&derived_state, FORTRAN_DERIVED_UNUSABLE,
+                          memory_order_release);
+    return 0;
+  }
+
+  /* Step 2 needs MPI up. Before that, decline *without* caching. */
+  int initialized = 0;
+  if (PMPI_Initialized(&initialized) != MPI_SUCCESS || !initialized) return 0;
+
+  int impl_logical_size = 0;
+  if (PMPI_Type_size(MPI_LOGICAL, &impl_logical_size) != MPI_SUCCESS
+      || impl_logical_size == MPI_UNDEFINED || impl_logical_size <= 0) {
+    atomic_store_explicit(&derived_state, FORTRAN_DERIVED_UNUSABLE,
+                          memory_order_release);
+    return 0;
+  }
+
+  int           logical_size = 0, integer_size = 0, real_size = 0;
+  signed char   t[MPIWRAPPER_MAX_LOGICAL_SIZE];
+  signed char   f[MPIWRAPPER_MAX_LOGICAL_SIZE];
+  mpiwrapper_fortran_probe(&logical_size, &integer_size, &real_size,
+                           MPIWRAPPER_MAX_LOGICAL_SIZE, t, f);
+
+  /* Our compiler against theirs. A disagreement is the honest "not set". */
+  if (logical_size <= 0 || logical_size > MPIWRAPPER_MAX_LOGICAL_SIZE
+      || logical_size != impl_logical_size) {
+    atomic_store_explicit(&derived_state, FORTRAN_DERIVED_UNUSABLE,
+                          memory_order_release);
+    return 0;
+  }
+
+  derived_logical_size = logical_size;
+  derived_integer_size = integer_size;
+  derived_real_size    = real_size;
+  memcpy(derived_true, t, (size_t)logical_size);
+  memcpy(derived_false, f, (size_t)logical_size);
+  /* Release-ordered last, so the fields above are visible to any thread that
+   * sees USABLE -- this runs without a lock and more than one thread may
+   * arrive at once. Both would compute the same answer, so the race is benign
+   * apart from the publication order.
+   */
+  atomic_store_explicit(&derived_state, FORTRAN_DERIVED_USABLE,
+                        memory_order_release);
+  return 1;
+}
+#else
+static int fortran_derived_usable(void) { return 0; }
+#endif
+
 /* --------------------------------------------------- MPI_Abi_get_version ---- */
 
 /* "MPI_ABI_GET_VERSION produces the standard ABI version, if supported.
@@ -208,23 +329,93 @@ int mpiwrapper_w_PMPI_Abi_set_fortran_info(MPIABI_Info abi_info)
  * MPI_Abi_set_fortran_info leaves the claim taken and nothing published, which
  * is the state the standard tells the user to inspect with this call.
  */
-#define BODY_MPI_Abi_get_fortran_info(TARGET)                                  \
+#define BODY_MPI_Abi_get_fortran_info(DERIVE)                                  \
   {                                                                            \
-    if (!atomic_load_explicit(&fortran_info_published,                         \
-                              memory_order_acquire)) {                         \
-      *abi_info = MPIABI_INFO_NULL;                                            \
+    if (atomic_load_explicit(&fortran_info_published,                          \
+                             memory_order_acquire)) {                          \
+      *abi_info = mpiwrapper_info_toabi(fortran_info);                         \
+      if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;            \
       return MPIABI_SUCCESS;                                                   \
     }                                                                          \
                                                                                \
-    *abi_info = mpiwrapper_info_toabi(fortran_info);                           \
+    /* Not MPI_INFO_NULL where the sizes are actually known: the three keys    \
+     * MPI-5.0 20.4.1 predefines for this object are all Fortran type sizes,   \
+     * and decision 25 has them. The object is built here rather than cached,  \
+     * because it is the caller's to free.                                     \
+     */                                                                        \
+    if (!fortran_derived_usable()) {                                           \
+      *abi_info = MPIABI_INFO_NULL;                                            \
+      return MPIABI_SUCCESS;                                                   \
+    }                                                                          \
+    return DERIVE(abi_info);                                                   \
+  }
+
+/* The three keys MPI-5.0 20.4.1 predefines for this object, all of them
+ * Fortran type sizes, from decision 25's probe. Defined twice for the same
+ * reason abi_info_fill is: the MPI_Info_* calls it makes have to carry the
+ * slot's own prefix (decision 7), and a macro parameter is the only way to do
+ * that in a body shared by both slots.
+ *
+ * An info object with no MPI_Info_create to make it is MPI_INFO_NULL, which is
+ * this call's own "not known" answer -- so the guard degrades to the pre-
+ * decision-25 behaviour rather than to an error.
+ */
+#define DEFINE_FORTRAN_INFO_DERIVED(NAME, PREFIX)                              \
+  static int NAME(MPIABI_Info *abi_info)                                       \
+  {                                                                            \
+    static const char *const keys[] = {"mpi_logical_size", "mpi_integer_size", \
+                                       "mpi_real_size"};                       \
+    const int sizes[] = {derived_logical_size, derived_integer_size,           \
+                         derived_real_size};                                   \
+                                                                               \
+    MPI_Info  info;                                                            \
+    const int ierror = PREFIX##Info_create(&info);                             \
+    if (ierror != MPI_SUCCESS) {                                               \
+      *abi_info = MPIABI_INFO_NULL;                                            \
+      return mpiwrapper_errorcode_toabi(ierror);                               \
+    }                                                                          \
+                                                                               \
+    for (size_t i = 0; i < sizeof keys / sizeof keys[0]; ++i) {                \
+      char value[24];                                                          \
+      char digits[24];                                                         \
+      int  n       = sizes[i];                                                 \
+      int  ndigits = 0;                                                        \
+      do {                                                                     \
+        digits[ndigits++] = (char)('0' + n % 10);                              \
+        n /= 10;                                                               \
+      } while (n);                                                             \
+      for (int d = 0; d < ndigits; ++d) value[d] = digits[ndigits - 1 - d];    \
+      value[ndigits] = '\0';                                                   \
+                                                                               \
+      const int set = PREFIX##Info_set(info, keys[i], value);                  \
+      if (set != MPI_SUCCESS) {                                                \
+        (void)PREFIX##Info_free(&info);                                        \
+        *abi_info = MPIABI_INFO_NULL;                                          \
+        return mpiwrapper_errorcode_toabi(set);                                \
+      }                                                                        \
+    }                                                                          \
+                                                                               \
+    *abi_info = mpiwrapper_info_toabi(info);                                   \
     if (mpiwrapper_take_handle_error()) return MPIABI_ERR_INTERN;              \
     return MPIABI_SUCCESS;                                                     \
   }
 
+#ifdef MPIWRAPPER_HAVE_MPI_Info_create
+DEFINE_FORTRAN_INFO_DERIVED(fortran_info_derived, MPI_)
+DEFINE_FORTRAN_INFO_DERIVED(fortran_info_derived_p, PMPI_)
+#else
+static int fortran_info_derived(MPIABI_Info *abi_info)
+{
+  *abi_info = MPIABI_INFO_NULL;
+  return MPIABI_SUCCESS;
+}
+#  define fortran_info_derived_p fortran_info_derived
+#endif
+
 int mpiwrapper_w_MPI_Abi_get_fortran_info(MPIABI_Info *abi_info)
-    BODY_MPI_Abi_get_fortran_info(MPI_Abi_get_fortran_info)
+    BODY_MPI_Abi_get_fortran_info(fortran_info_derived)
 int mpiwrapper_w_PMPI_Abi_get_fortran_info(MPIABI_Info *abi_info)
-    BODY_MPI_Abi_get_fortran_info(PMPI_Abi_get_fortran_info)
+    BODY_MPI_Abi_get_fortran_info(fortran_info_derived_p)
 
 /* ------------------------------------------ MPI_Abi_set_fortran_booleans ---- */
 
@@ -272,13 +463,24 @@ int mpiwrapper_w_PMPI_Abi_set_fortran_booleans(int abi_logical_size,
 #define BODY_MPI_Abi_get_fortran_booleans(TARGET)                              \
   {                                                                            \
     *abi_is_set = 0;                                                           \
-    if (!atomic_load_explicit(&fortran_bool_published, memory_order_acquire))  \
-      return MPIABI_SUCCESS;                                                   \
-    if (abi_logical_size != fortran_logical_size) return MPIABI_SUCCESS;       \
     if (!abi_logical_true || !abi_logical_false) return MPIABI_ERR_ARG;        \
                                                                                \
-    memcpy(abi_logical_true, fortran_true, (size_t)fortran_logical_size);      \
-    memcpy(abi_logical_false, fortran_false, (size_t)fortran_logical_size);    \
+    /* The application's registration first: MPI-5.0 20.4.1 makes its answer   \
+     * authoritative, and it knows its own compiler where we know ours.        \
+     */                                                                        \
+    if (atomic_load_explicit(&fortran_bool_published, memory_order_acquire)) { \
+      if (abi_logical_size != fortran_logical_size) return MPIABI_SUCCESS;     \
+      memcpy(abi_logical_true, fortran_true, (size_t)fortran_logical_size);    \
+      memcpy(abi_logical_false, fortran_false, (size_t)fortran_logical_size);  \
+      *abi_is_set = 1;                                                         \
+      return MPIABI_SUCCESS;                                                   \
+    }                                                                          \
+                                                                               \
+    if (!fortran_derived_usable()) return MPIABI_SUCCESS;                      \
+    if (abi_logical_size != derived_logical_size) return MPIABI_SUCCESS;       \
+                                                                               \
+    memcpy(abi_logical_true, derived_true, (size_t)derived_logical_size);      \
+    memcpy(abi_logical_false, derived_false, (size_t)derived_logical_size);    \
     *abi_is_set = 1;                                                           \
     return MPIABI_SUCCESS;                                                     \
   }

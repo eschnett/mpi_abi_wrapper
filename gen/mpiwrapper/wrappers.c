@@ -9760,33 +9760,6 @@ static int w_MPI_Get_hw_resource_info(MPIABI_Info *abi_hw_info)
 static int w_PMPI_Get_hw_resource_info(MPIABI_Info *abi_hw_info)
     BODY_MPI_Get_hw_resource_info(PMPI_Get_hw_resource_info)
 
-/* -------------------------------------------------------- MPI_Get_version */
-
-#ifdef MPIWRAPPER_HAVE_MPI_Get_version
-#define BODY_MPI_Get_version(TARGET)                                           \
-  {                                                                            \
-    int *const version    = abi_version;                                       \
-    int *const subversion = abi_subversion;                                    \
-                                                                               \
-    const int ierror = TARGET(version, subversion);                            \
-    return mpiwrapper_errorcode_toabi(ierror);                                 \
-  }
-#else
-#define BODY_MPI_Get_version(TARGET)                                           \
-  {                                                                            \
-    (void)abi_version;                                                         \
-    (void)abi_subversion;                                                      \
-    *abi_version = 0;                                                          \
-    *abi_subversion = 0;                                                       \
-    return MPIABI_ERR_UNSUPPORTED_OPERATION;                                   \
-  }
-#endif
-
-static int w_MPI_Get_version(int *abi_version, int *abi_subversion)
-    BODY_MPI_Get_version(MPI_Get_version)
-static int w_PMPI_Get_version(int *abi_version, int *abi_subversion)
-    BODY_MPI_Get_version(PMPI_Get_version)
-
 /* ------------------------------------------------------- MPI_Graph_create */
 
 #ifdef MPIWRAPPER_HAVE_MPI_Graph_create
@@ -30051,8 +30024,8 @@ const struct mpiwrapper_vtable mpiwrapper_vtable_instance = {
     .PMPI_Get_library_version          = mpiwrapper_w_PMPI_Get_library_version,
     .MPI_Get_processor_name            = mpiwrapper_w_MPI_Get_processor_name,
     .PMPI_Get_processor_name           = mpiwrapper_w_PMPI_Get_processor_name,
-    .MPI_Get_version                   = w_MPI_Get_version,
-    .PMPI_Get_version                  = w_PMPI_Get_version,
+    .MPI_Get_version                   = mpiwrapper_w_MPI_Get_version,
+    .PMPI_Get_version                  = mpiwrapper_w_PMPI_Get_version,
     .MPI_Graph_create                  = w_MPI_Graph_create,
     .PMPI_Graph_create                 = w_PMPI_Graph_create,
     .MPI_Graph_get                     = w_MPI_Graph_get,

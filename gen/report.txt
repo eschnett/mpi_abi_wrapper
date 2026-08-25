@@ -13,16 +13,16 @@ Frozen tallies
   handle classes         11
   predefined handles     103
   error classes          80
-  generated              563
-  hand-written           120
-  hand-written bodies    120
+  generated              562
+  hand-written           121
+  hand-written bodies    121
   deferred to S3         0
   ABI-side aliases       5
   staged past return     8
   large-count fallbacks  148
   narrowed staged past return 18
 
-Generated (563)
+Generated (562)
 ----------------------------------------
   MPI_Accumulate
   MPI_Accumulate_c
@@ -222,7 +222,6 @@ Generated (563)
   MPI_Get_address
   MPI_Get_c
   MPI_Get_hw_resource_info
-  MPI_Get_version
   MPI_Graph_create
   MPI_Graph_get
   MPI_Graph_map
@@ -588,7 +587,7 @@ Generated (563)
   MPI_Wtick
   MPI_Wtime
 
-Hand-written (120)
+Hand-written (121)
 ----------------------------------------
   An entry point with a body in src/mpiwrapper/ is marked [done]. All
   of them are: S1 wrote eight, S4a the converter face (the handle and
@@ -754,6 +753,9 @@ Hand-written (120)
     [done] MPI_Open_port
     [done] MPI_Type_get_name
     [done] MPI_Win_get_name
+
+  reports the ABI's own MPI version, and is the isolation probe's call
+    [done] MPI_Get_version
 
   spawn: argv, array_of_argv and array_of_errcodes together
     [done] MPI_Comm_spawn

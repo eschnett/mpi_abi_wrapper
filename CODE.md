@@ -58,8 +58,8 @@ developer option, which is what the cross test uses.
 | — marked deprecated | 12 | `grep '; /\* deprecated' gen/include/mpi.h` |
 | exported symbols in `libmpi_abi` | **1376** | `nm`; `test/check_exports.cmake`, both directions |
 | **vtable slots** | **1366** | `gen/report.txt`; 683 × 2 — the five of §5 have no slot |
-| generated bodies | **563** | `gen/report.txt` |
-| hand-written (the ledger) | **120**, all with bodies | `gen/report.txt`, `src/mpiwrapper/handwritten.h` |
+| generated bodies | **562** | `gen/report.txt` |
+| hand-written (the ledger) | **121**, all with bodies | `gen/report.txt`, `src/mpiwrapper/handwritten.h` |
 | answered by `libmpi_abi` itself | **5** | `gen/report.txt` |
 | deferred | **0**, frozen | `gen/report.txt` |
 | staged past return | **8** | `gen/report.txt` |
@@ -71,7 +71,7 @@ developer option, which is what the cross test uses.
 | error classes | 80 | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
 | callback registrars | 15 in the ledger, 16 counting `MPI_Keyval_create` | `gen/report.txt`, `NOTES.md` #6.1 |
 
-563 + 120 + 5 = 688. 683 × 2 = 1366 slots, while all 688 × 2 = 1376 names are
+562 + 121 + 5 = 688. 683 × 2 = 1366 slots, while all 688 × 2 = 1376 names are
 still exported, because the five of §5 are implemented on the ABI side rather
 than forwarded.
 
@@ -224,7 +224,7 @@ shifted-name rule survives the substitution.
 
 ## 6. The hand-written ledger, by reason
 
-120 entries, all implemented. `gen/report.txt` names each.
+121 entries, all implemented. `gen/report.txt` names each.
 
 | n | group | file |
 |---|---|---|
@@ -359,8 +359,26 @@ against a released tarball is the whole of what CI needs.
 version script on ELF / `-exported_symbols_list` on Mach-O. The second half is
 not redundant: the handful of symbols the linker inserts into every shared
 object (`_init`, `_fini`, `_edata`, `_end`, `__bss_start`) are reachable by no
-visibility attribute. `MPIABI_1`, the ELF version node, is the one exported name
-outside the `MPI_*`/`PMPI_*` patterns.
+visibility attribute. **Both ELF version scripts use an anonymous node**, so
+they filter the export set and version nothing (decision 22): `libmpi_abi`'s
+dynamic table is exactly the `MPI_*`/`PMPI_*` names with no node symbol beside
+them, which is why `test/check_exports.cmake` carries no exemption list.
+
+**`libmpi_abi` carries a soname and `libmpiwrapper` does not** (decision 21).
+`SOVERSION` is `MPI_ABI_VERSION`, read out of `gen/include/mpi.h` at configure
+time so the two cannot drift, and `VERSION` is `PROJECT_VERSION`:
+
+| | installed | recorded by a client binary |
+|---|---|---|
+| ELF | `libmpi_abi.so.1.0.0`, `.so.1`, `.so` | `libmpi_abi.so.1` |
+| Mach-O | `libmpi_abi.1.0.0.dylib`, `.1.dylib`, `.dylib` | `@rpath/libmpi_abi.1.dylib` |
+
+The leaf name in the right-hand column is the one Open MPI's ABI branch also
+installs (`libmpi_abi.1.dylib`, checked with `otool -D`), which is the point:
+that name is what decides whether a binary built here starts against someone
+else's `libmpi_abi`. All three consumption routes name `-lmpi_abi` or an
+imported target and so resolve through the unversioned symlink;
+`ci-scripts/check-install.sh` runs all five legs against the versioned layout.
 
 ## 10. Tests
 

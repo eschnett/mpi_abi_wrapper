@@ -100,7 +100,6 @@
 
 # --- (a) version: the header is MPI-5.0 and this implementation is not ---------
 
-init/version 1 : MPI_Get_version forwards the implementation's answer -- Open MPI 5.0.10 says 3.1 -- while the ABI header is fixed at MPI-5.0, and the test compares the two. Observed: Major version is 3 but is 5 in the mpi.h file. This line left xfail-ci-mpich.txt when MPICH reached 5.0.1 and arrived here in the same run, which is the only way it can go: forwarding the implementation's answer is the honest half, since an application told 5.0 would believe entry points work that a wrapper over an older MPI cannot provide.
 
 # --- (b) fixed-capacity tables, exhausted --------------------------------------
 

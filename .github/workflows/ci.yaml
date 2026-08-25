@@ -1796,3 +1796,267 @@ jobs:
           name: suite-mpich-i386-${{ matrix.shard.name }}
           path: suite-artifact
           retention-days: 30
+
+  # ---------------------------------------------------------------- mpif ----
+  #
+  # NOTES.md #10's fifth oracle, and the only rows that exercise the 26 Fortran
+  # converters, the six MPI_Abi_* entry points and the status f2c/c2f paths
+  # through a consumer rather than through a test of ours. Running mpif for the
+  # first time found three defects in this library that all 13 of our own tests
+  # had passed over -- HISTORY.md #2.18 and decisions 24 and 25 -- which is the
+  # argument for the cost below.
+  #
+  # **Four legs, {mpich, openmpi} x {native, wrapper}, and the comparison is
+  # the product.** The native legs run mpif against an MPI that implements the
+  # standard ABI itself; the wrapper legs run the same mpif against this
+  # project over the *same commit* of the same implementation, built stock. A
+  # wrapper-leg failure that its native counterpart does not have is a defect
+  # here; one they share is mpif's or the implementation's. Neither statement
+  # is available from a single leg, which is why all four run.
+  #
+  # **Why git commits rather than released tarballs**, against the rule in
+  # NOTES.md #9 that every other row follows: MPICH 5.0.1's standard-ABI
+  # implementation does not work, and no released Open MPI has one at all. The
+  # pins are mpif's, read out of its installers by ci-scripts/install-git-mpi.sh
+  # rather than copied, so the two roles cannot drift apart.
+  mpif-mpi:
+    name: mpif-mpi / ${{ matrix.mpi }} / ${{ matrix.role }}
+    runs-on: ubuntu-24.04
+    # An hour is not enough for Open MPI from git with autogen.pl and
+    # submodules; mpif gives its own equivalent job 120 and that is measured
+    # rather than guessed.
+    timeout-minutes: 120
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [mpich, openmpi]
+        # abi   -> the reference, built by mpif's own installer (ABI enabled,
+        #          then pruned down to the ABI).
+        # stock -> the wrap target: same commit, stock configure, unpruned.
+        role: [abi, stock]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # autotools because both MPIs are built from a git checkout rather than a
+      # release tarball, which is what makes autogen necessary here and not in
+      # the linux-source job. gfortran for the same reason that job needs it
+      # (NOTES.md #9 forbids --disable-fortran), and additionally for decision
+      # 25's probe.
+      #
+      # **libhwloc-dev is not optional and does not announce itself.** mpif's
+      # installers configure MPICH --with-hwloc, so a runner without the
+      # headers fails a thousand lines into configure with "--with-hwloc is
+      # given but not found" -- after autogen has run and after every patch
+      # MPICH's autogen reports as failing, none of which is the cause. It is
+      # also wanted in the *test* job below, which never builds an MPI: a
+      # restored prefix links hwloc and has to find it at run time. mpif's
+      # setup-toolchain action says the same in its own comment.
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+              build-essential gfortran cmake python3 git patch binutils \
+              autoconf automake libtool flex libhwloc-dev \
+              poppler-utils curl ca-certificates pkg-config
+
+      - name: Set up paths
+        run: |
+          {
+              echo "PREFIX=${RUNNER_TEMP}/opt/mpif-${{ matrix.mpi }}-${{ matrix.role }}"
+              echo "MPI_SRC_DIR=${RUNNER_TEMP}/mpif-src-${{ matrix.mpi }}"
+              echo "MPIF_SRC_DIR=${RUNNER_TEMP}/mpif-src-${{ matrix.mpi }}/mpif"
+          } >>"${GITHUB_ENV}"
+
+      # The key hashes the scripts that decide the bytes in the prefix *and*
+      # ci-scripts/mpif-version.sh, which carries the pinned mpif tag -- and the
+      # tag is what selects the MPI commits, so a bump to it has to invalidate
+      # these prefixes. That is the same reasoning the linux-source job gives
+      # for putting its matrix `version` in the key: the installer's own default
+      # is hashed, the thing that selects the source is not, unless it is a file.
+      #
+      # `mpif1-` is a manual epoch, for the reason the other key states: caches
+      # restore to the absolute paths recorded at save time.
+      - name: Restore the MPI installation
+        id: cache-mpi
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/opt/mpif-${{ matrix.mpi }}-${{ matrix.role }}
+          key: mpif1-${{ matrix.mpi }}-${{ matrix.role }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-abi-mpi.sh', 'ci-scripts/install-git-mpi.sh', 'ci-scripts/mpif-version.sh') }}
+
+      - name: Show the cache key
+        run: echo "key=${{ steps.cache-mpi.outputs.cache-primary-key }} hit=${{ steps.cache-mpi.outputs.cache-hit }}"
+
+      # The clone and autogen are the slow part and are identical for both
+      # roles, so the two jobs of one implementation share this cache and
+      # whichever runs second starts from a prepared tree.
+      - name: Restore the prepared source tree
+        id: cache-src
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/mpif-src-${{ matrix.mpi }}
+          key: mpif1-src-${{ matrix.mpi }}-${{ runner.arch }}-${{ hashFiles('ci-scripts/install-git-mpi.sh', 'ci-scripts/mpif-version.sh') }}
+
+      - name: Build and install ${{ matrix.mpi }} (${{ matrix.role }})
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        run: |
+          if [ "${{ matrix.role }}" = abi ]; then
+              ci-scripts/install-abi-mpi.sh "${{ matrix.mpi }}" "${PREFIX}"
+          else
+              ci-scripts/install-git-mpi.sh "${{ matrix.mpi }}" "${PREFIX}"
+          fi
+
+      # Saved through cache/save rather than plain cache, whose post step is
+      # post-if: success(): a failure later must not discard an MPI that took
+      # an hour to build. The predicate is exactly "the MPI installed".
+      - name: Save the MPI installation
+        if: steps.cache-mpi.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/opt/mpif-${{ matrix.mpi }}-${{ matrix.role }}
+          key: ${{ steps.cache-mpi.outputs.cache-primary-key }}
+
+      - name: Save the prepared source tree
+        if: steps.cache-mpi.outputs.cache-hit != 'true' && steps.cache-src.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/mpif-src-${{ matrix.mpi }}
+          key: ${{ steps.cache-src.outputs.cache-primary-key }}
+
+      # **Tarred, not handed to upload-artifact as a directory**, and this
+      # project has a particular reason beyond the general one. upload-artifact
+      # *dereferences symbolic links*, and an ABI prefix is a symlink chain by
+      # construction: lib/libmpi_abi.so -> .so.1 -> .so.1.0.0 is decision 21's
+      # whole subject. Uploading the tree would replace that chain with three
+      # identical files, and the restored prefix would then pass every check in
+      # sight while no longer demonstrating the thing these rows exist to
+      # check. mpif's upload-prefix action says the same in its own comment,
+      # which is where this was read from -- after a run whose log had already
+      # warned "Uploads are case insensitive: .../bin/mpicc ... will be
+      # overwritten", the same collision from the other end.
+      #
+      # A tarball also carries the executable bit, which the raw upload drops.
+      - name: Pack the prefix
+        run: |
+          tar -C "${RUNNER_TEMP}" -czf \
+              "${RUNNER_TEMP}/mpif-mpi-${{ matrix.mpi }}-${{ matrix.role }}.tar.gz" \
+              "opt/mpif-${{ matrix.mpi }}-${{ matrix.role }}"
+
+      - name: Upload the prefix
+        uses: actions/upload-artifact@v7
+        with:
+          name: mpif-mpi-${{ matrix.mpi }}-${{ matrix.role }}
+          path: ${{ runner.temp }}/mpif-mpi-${{ matrix.mpi }}-${{ matrix.role }}.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+          # Re-running one stage of a chained run is ordinary recovery, and v4+
+          # artifacts are immutable unless told otherwise.
+          overwrite: true
+
+  mpif:
+    name: mpif / ${{ matrix.mpi }} / ${{ matrix.leg }}
+    runs-on: ubuntu-24.04
+    needs: mpif-mpi
+    if: ${{ !cancelled() }}
+    timeout-minutes: 45
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mpi: [mpich, openmpi]
+        # native  -> mpif over the implementation's own standard ABI
+        # wrapper -> mpif over this project, wrapping the same commit
+        leg: [native, wrapper]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+              build-essential gfortran cmake python3 git patch binutils \
+              libhwloc-dev \
+              poppler-utils curl ca-certificates pkg-config
+
+      - name: Set up paths
+        run: |
+          {
+              echo "ABI_MPI=${RUNNER_TEMP}/opt/mpif-${{ matrix.mpi }}-abi"
+              echo "STOCK_MPI=${RUNNER_TEMP}/opt/mpif-${{ matrix.mpi }}-stock"
+              echo "WRAPPER_PREFIX=${RUNNER_TEMP}/opt/mpi-abi-wrapper"
+          } >>"${GITHUB_ENV}"
+
+      # The native leg needs only the ABI prefix, the wrapper leg only the
+      # stock one. Downloading both would double the transfer for no gain.
+      - name: Restore the ${{ matrix.leg == 'native' && 'ABI' || 'stock' }} prefix
+        uses: actions/download-artifact@v6
+        with:
+          name: mpif-mpi-${{ matrix.mpi }}-${{ matrix.leg == 'native' && 'abi' || 'stock' }}
+          path: ${{ runner.temp }}/artifact
+
+      # Back to the *exact absolute path* it was installed at, which is not a
+      # convenience: bin/mpicc, the RPATHs and the install names all bake
+      # absolute paths in, and libmpiwrapper's rrpath to the wrapped MPI is one
+      # of them. Both jobs derive the path from RUNNER_TEMP for that reason.
+      - name: Unpack the prefix
+        run: |
+          tar -C "${RUNNER_TEMP}" -xzf \
+              "${RUNNER_TEMP}/artifact/mpif-mpi-${{ matrix.mpi }}-${{ matrix.leg == 'native' && 'abi' || 'stock' }}.tar.gz"
+          prefix=${{ matrix.leg == 'native' && '${ABI_MPI}' || '${STOCK_MPI}' }}
+          # The symlink chain decision 21 installs, which is what the tarball is
+          # for; printed so a broken restore is visible here rather than as a
+          # confusing link error later.
+          ls -l "${prefix}/lib" | grep -E 'libmpi_abi|libmpi\.' || true
+
+      # Only the wrapper leg builds this project at all; the native leg is the
+      # control and must not have it anywhere near the prefix it tests.
+      - name: Build and install the wrapper over stock ${{ matrix.mpi }}
+        if: matrix.leg == 'wrapper'
+        run: |
+          cmake -S . -B build \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DMPI_C_COMPILER="${STOCK_MPI}/bin/mpicc" \
+              -DCMAKE_INSTALL_PREFIX="${WRAPPER_PREFIX}"
+          cmake --build build --parallel
+          cmake --install build
+
+      # Open MPI needs both of these on a runner and MPICH needs neither; the
+      # asymmetry is mpif's own (.github/actions/mpiexec-flags there) and the
+      # reason MPIEXEC_PREFLAGS is a guard in test-mpif.sh rather than an
+      # unconditional -D.
+      - name: Work out the launcher flags
+        run: |
+          if [ "${{ matrix.mpi }}" = openmpi ]; then
+              # Copied from mpif's own .github/actions/mpiexec-flags, and it
+              # matters that it is copied rather than invented: --oversubscribe
+              # because the runners have fewer cores than the tests ask
+              # processes for, and btl_tcp_if_include pinning the *interface*
+              # because prte otherwise chooses one on its own. A first attempt
+              # here set `--mca btl self,tcp`, which chooses a transport and
+              # leaves the interface question -- the one this project's
+              # test/README.md documents at length -- untouched.
+              {
+                  echo "MPIEXEC_PREFLAGS=--oversubscribe;--mca;btl_tcp_if_include;lo"
+                  echo "MPIF_TEST_MPI_LIBRARY=Open MPI"
+              } >>"${GITHUB_ENV}"
+          else
+              echo "MPIF_TEST_MPI_LIBRARY=MPICH" >>"${GITHUB_ENV}"
+          fi
+
+      # The wrapper leg passes two prefixes because ours has no mpiexec: the
+      # launcher belongs to the wrapped MPI (NOTES.md #9's exclusive prefix).
+      # MPIF_TEST_MPI_LIBRARY names the *runtime* implementation either way, so
+      # the wrapper leg asserts that MPI_Get_library_version still reaches the
+      # real MPI underneath.
+      - name: Build mpif and run its ctest
+        run: |
+          if [ "${{ matrix.leg }}" = native ]; then
+              ci-scripts/test-mpif.sh "${ABI_MPI}"
+          else
+              ci-scripts/test-mpif.sh "${WRAPPER_PREFIX}" "${STOCK_MPI}"
+          fi
+        env:
+          MPIF_XFAIL: ci-scripts/mpif-xfail/${{ matrix.mpi }}-${{ matrix.leg }}.txt

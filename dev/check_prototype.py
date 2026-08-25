@@ -46,6 +46,14 @@ PAIRS = [
 # (kind, name) -> why the generated form differs from S1's, or why there is
 # none. Three entries, and each is a decision rather than an oversight.
 EXEMPT = {
+    ("wrapper body", "MPI_Get_version"):
+        "No longer generated at all: it moved into the hand-written ledger "
+        "when decision 24 made it report the ABI's own MPI version rather "
+        "than forward the wrapped implementation's. S1 generated a plain "
+        "forwarder, which is what the reference still holds. The body is now "
+        "src/mpiwrapper/hw_lifecycle.c, and it still *makes* S1's forwarding "
+        "call -- src/mpi_abi/bootstrap.c uses that call as the behavioural "
+        "isolation probe -- but discards its answer.",
     ("wrapper body", "MPI_Comm_rank"):
         "S1 passed the out rank through, reasoning per-site that a process's "
         "rank in its own communicator is never a sentinel. That is true here "

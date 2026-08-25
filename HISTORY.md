@@ -243,11 +243,16 @@ indices 2, 3 and 4 where `MPI_F_SOURCE` — an ABI constant fixed at 0 by MPI-5.
 implementation is not involved.
 
 `MPI_Comm_toint`/`_fromint` **must not** be forwarded either, and here the
-reason is the standard rather than a layout: §20.4 puts the C–Fortran converters
-*outside* the ABI, so forwarding `c2f`/`f2c` is free, while §20.4.5 pins
-serialization to the ABI's own predefined values — "for all predefined handles,
-the integer value must be the same as the values listed in Section A". So the 22
-serialization forms never call the implementation, even where it has them.
+reason is the standard rather than a layout: §20.4.5 pins serialization to the
+ABI's own predefined values — "for all predefined handles, the integer value
+must be the same as the values listed in Section A". So the 22 serialization
+forms never call the implementation, even where it has them.
+
+**This entry also carried a third claim, and it was wrong**: that because §20.4
+puts the C–Fortran converters *outside* the ABI, "forwarding `c2f`/`f2c` is
+free". It is not, and §2.18 has the measurement. All 26 converters are now
+answered from the ABI's own values, which makes this one rule instead of the
+two-and-an-exception it reads as above.
 
 ### 1.15 A `_Static_assert` on `MPI_MAX_*`
 
@@ -371,6 +376,41 @@ grows, and two of MPICH's own named `MPIR_REQUEST_COMPLETE_*` macros are stale
 by exactly that drift. `NOTES.md` §13.2's (a) and (b) get the same effect from
 a question the standard answers (`MPI_Request_get_status`) rather than from
 values nobody promises.
+
+### 1.23 Named ELF version nodes on `libmpi_abi`
+
+Both version scripts named their node — `MPIABI_1` and `MPIWRAPPER_1` — from
+the day they were added, and the reason is worth keeping because the mistake is
+the *conventional* choice. Every guide to shared-library hygiene tells you to
+version your symbols; it is the mechanism glibc uses to keep binaries running
+across decades, and nothing about it looks like a hazard.
+
+It is a hazard here, and only because of what this library is. A named node
+puts a version on every definition, so a binary linked against `libmpi_abi`
+records `MPI_Send@MPIABI_1` rather than `MPI_Send`, and a versioned reference
+can be satisfied *only* by a library that defines that version. No other
+implementation of the standard ABI defines `MPIABI_1` and none ever will. The
+whole point of the standard ABI is that a binary built against one
+implementation's `libmpi_abi` runs against another's — so the best-practice
+default would have made every binary built here fail to start against precisely
+the libraries it was built to be portable to.
+
+An anonymous node — the same script with the name deleted — filters the export
+set identically, versions nothing, and emits no node symbol of its own (which
+is what let `test/check_exports.cmake` drop its exemption list). So the fix cost
+one identifier and no capability.
+
+**The general lesson, and the reason this is not merely a linker footnote:** a
+default is safe in proportion to how private the artifact is. Symbol versioning
+protects a library whose ABI *you* own and whose consumers link *your* copy.
+`libmpi_abi` is the opposite of that on both counts, and every convention aimed
+at the ordinary case has to be re-read against it. `NOTES.md` §9's soname rule
+(decision 21) is the same lesson in the other direction: there the ecosystem's
+convention had to be *adopted* rather than declined, because the name a client
+records is likewise not ours to choose. Both were found by a pre-1.0 review
+asking what a binary records, not by any test — the project had none that
+looked at a client binary's dynamic section, which is why the binary-swap test
+is worth building.
 
 ---
 
@@ -748,6 +788,40 @@ Third instance of §2.11's pattern, a benchmark reporting a confidently wrong
 number, and the first where the wrong number came from a *fix*. The rule it
 adds: a host-specific environment workaround is part of what any benchmark on
 that host measures.
+
+### 2.18 "`c2f`/`f2c` are outside the ABI, so forwarding them is free"
+
+§1.14's third claim, and the one defect of the three that mpif found which was
+a *bug* rather than a decision (`NOTES.md` §10's consumer oracle, run for the
+first time). The 22 handle `_c2f`/`_f2c` forms converted the ABI handle to the
+implementation's and asked *it* for a Fortran integer. mpif's `c2f` test
+compares that integer against its own `MPI_COMM_NULL` and stops; over MPICH the
+two are nowhere near each other.
+
+The reasoning that produced it is one step long and looks sound: MPI-5.0 §20.4
+excludes the `MPI_Fint`-dependent converters from the ABI, therefore the ABI
+constrains nothing about them, therefore forwarding is as good as anything else.
+The second step is the error. **Being outside the ABI is exactly why the
+Fortran layer's expectation is the only constraint there is** — an ABI with no
+opinion does not leave the question open, it delegates it. And the answer is not
+in doubt once asked: `MPI_Fint` is not in the ABI, so nothing but a Fortran
+binding *over* the ABI ever calls these, and such a binding holds ABI values in
+its INTEGER handles because §20.4.5 requires `_toint` to produce them. mpif
+implements `MPI_Comm_c2f` as literally `return MPI_Comm_toint(comm)`
+(`fortran/f2c_abi_mpich.c:144`), which is the whole specification.
+
+**The test that existed asserted the wrong property.** `abi_converters_test`'s
+`TEST_C2F` checked `f2c(c2f(h)) == h` — a round trip, which a forwarding pair
+satisfies just as exactly as a correct one, since it is self-consistent about
+an integer that is merely the wrong integer. Five stages of green. The
+assertion it needed was against `_toint`, and it has it now.
+
+The rule this leaves, wider than the bug: **a round-trip test cannot check a
+representation.** It checks that a pair of functions agree with each other,
+which is a weaker claim and often the one that is already safe. Where an
+external party fixes the representation — a file format, a wire protocol, an
+ABI — something has to compare against *that*, and here the only available
+"that" was a second implementation of the same standard.
 
 ---
 
@@ -1234,14 +1308,14 @@ authority column and the generator freezes each tally.
 | predefined handles | 104 | **103** | `PREDEF(...)` rows in `gen/mpiwrapper/constants.c` |
 | error classes | 81 | **80** | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
 | callback registration functions | 16 | **15**, then 16 again | §6.1's table, plus `MPI_T_event_handle_free` found on its own terms |
-| hand-written set | ~50 | ~90, then **120** | §8's own list added up; then the generator's ledger |
+| hand-written set | ~50 | ~90, then 120, then **121** | §8's own list added up; then the generator's ledger; then decision 24 moved `MPI_Get_version` into it |
 | S1 prototype | 28 entry points, 56 slots, 19 generated-shape | **29 / 58 / 20** | `dev/s1-reference/mpiwrapper_vtable.h` |
 | S1 stand-in files | "three" | **four** | they are named on the same line |
 | planned prototype size | fifteen | **sixteen** | the table has sixteen functions in thirteen rows |
-| mechanical entry points | "roughly 600", then 568 | **563** generated + 5 ABI-side | `gen/report.txt` |
+| mechanical entry points | "roughly 600", then 568 | **562** generated + 5 ABI-side | `gen/report.txt` |
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
-| MPICH suite failures | 45, then 43 | **41** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt` |
-| Open MPI suite failures | 171 | **168** | ditto for `xfail-openmpi.txt` |
+| MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
+| Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
 
 The 1376 line is the instructive one. It was right until S3b's follow-up gave
 the five deleted entry points to `libmpi_abi`, and it stayed in eight places
