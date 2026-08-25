@@ -181,6 +181,20 @@ set +m
 # for its whole sleep, so *every* test appears to take exactly the timeout no
 # matter how fast it ran -- measured, three tests at 195 seconds each, all of
 # them passing.
+#
+# The watchdog gets a process group of its own for the same reason the
+# launcher above does, and the kill below names the group rather than the
+# subshell. Signalling the subshell alone leaves the `sleep` it is blocked in
+# running to its full term: bash's default SIGTERM disposition ends the
+# subshell without touching its children, so a test that finishes in a tenth
+# of a second still leaves a `sleep 195` behind. Measured both ways -- five
+# runs of this script against a launcher that exits at once left five of them
+# alive before this line, none after -- and the openmpi/aarch64/rest leg of
+# run 32887203728 ended with the runner reaping 304 orphan `sleep` processes
+# for 323 tests, one per test. Each costs little; the count scales with the
+# shard, and none of them outliving its test is cheaper than reasoning about
+# whether it matters.
+set -m
 (
   sleep "$timeout"
   kill -TERM -"$child" 2>/dev/null || kill -TERM "$child" 2>/dev/null
@@ -188,9 +202,10 @@ set +m
   kill -KILL -"$child" 2>/dev/null || kill -KILL "$child" 2>/dev/null
 ) </dev/null >/dev/null 2>&1 &
 watchdog=$!
+set +m
 
 wait "$child"
 status=$?
-kill "$watchdog" 2>/dev/null
+kill -TERM -"$watchdog" 2>/dev/null || kill -TERM "$watchdog" 2>/dev/null
 wait "$watchdog" 2>/dev/null
 exit $status
