@@ -420,13 +420,17 @@ dynamic table is exactly the `MPI_*`/`PMPI_*` names with no node symbol beside
 them, which is why `test/check_exports.cmake` carries no exemption list.
 
 **`libmpi_abi` carries a soname and `libmpiwrapper` does not** (decision 21).
-`SOVERSION` is `MPI_ABI_VERSION`, read out of `gen/include/mpi.h` at configure
-time so the two cannot drift, and `VERSION` is `PROJECT_VERSION`:
+Both numbers come from the ABI and neither from this project: `SOVERSION` is
+`MPI_ABI_VERSION` and `VERSION` is `MPI_ABI_VERSION.MPI_ABI_SUBVERSION.0`,
+each read out of `gen/include/mpi.h` at configure time so they cannot drift
+from it. Nothing below moves when this project releases — every implementation
+of ABI 1 installs these same names (`NOTES.md` §9 has the measurement against
+Open MPI's ABI branch):
 
 | | installed | recorded by a client binary |
 |---|---|---|
-| ELF | `libmpi_abi.so.1.1.0`, `.so.1`, `.so` | `libmpi_abi.so.1` |
-| Mach-O | `libmpi_abi.1.1.0.dylib`, `.1.dylib`, `.dylib` | `@rpath/libmpi_abi.1.dylib` |
+| ELF | `libmpi_abi.so.1.0.0`, `.so.1`, `.so` | `libmpi_abi.so.1` |
+| Mach-O | `libmpi_abi.1.0.0.dylib`, `.1.dylib`, `.dylib` | `@rpath/libmpi_abi.1.dylib` |
 
 The leaf name in the right-hand column is the one Open MPI's ABI branch also
 installs (`libmpi_abi.1.dylib`, checked with `otool -D`), which is the point:

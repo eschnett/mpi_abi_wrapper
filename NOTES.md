@@ -1943,9 +1943,16 @@ the decision rather than working around it.
     does too. It is read out of `gen/include/mpi.h` at configure time rather
     than written down again, and **must never be made to follow
     `PROJECT_VERSION`**: a 1.1.0 or a 2.0.0 of this project still implements
-    ABI major 1 and must still answer to `libmpi_abi.so.1`. That 1.1.0 has
-    since shipped, so the clause is a measurement rather than a hypothetical —
-    §9 has what was checked. `libmpiwrapper` is
+    ABI major 1 and must still answer to `libmpi_abi.so.1`.
+
+    **The same holds for `VERSION`, the full triple, and it was got wrong
+    once**: `libmpi_abi.so.<VERSION>` is a name a client may depend on, so it
+    is `MPI_ABI_VERSION.MPI_ABI_SUBVERSION.0` and not the project's release
+    either. Every implementation of ABI 1 is built `-version-info 1:0:0` and
+    installs `libmpi_abi.so.1.0.0`; a triple carrying *this project's* number
+    would be one no other implementation could ever install. The rule is
+    therefore not "the soname is the ABI's" but **nothing a client binary can
+    name is the project's to move** — `HISTORY.md` §2.20 and §9. `libmpiwrapper` is
     reached by `dlopen` at an absolute path and MPI-5.0 §20.2.1 forbids the
     application naming it at all, so a soname on it would name nothing. §9.
 22. **Neither ELF version script names its node**, so no symbol this project
@@ -2211,17 +2218,28 @@ choose.** `libmpi_abi.so`'s consumers are compiled elsewhere, possibly against
 someone else's implementation, and MPI-5.0 §20.2.1 both requires the name
 `mpi_abi` and permits an application to depend on "its versioned variant" —
 which makes the version part of the contract rather than packaging trivia. So
-`SOVERSION` is `MPI_ABI_VERSION`, matching what Open MPI's ABI branch installs,
-and it is `file(STRINGS)`-ed out of the generated header so that no edit can
-put the two out of step. `VERSION` is `PROJECT_VERSION` and moves freely; the
-two are deliberately different numbers, and **v1.1.0 is where they stopped
-agreeing** — which is the first time the decoupling was observable rather than
-merely intended. Measured on that release: the installed file became
-`libmpi_abi.1.1.0.dylib`, and `otool -D` on it and `otool -L` on a program
-`bin/mpicc` had just linked both still answer `@rpath/libmpi_abi.1.dylib` at
-compatibility version 2.0.0. A minor release of this project therefore changes
-no name any client binary records, which is the property decision 21 exists to
-hold.
+**Both numbers are the ABI's, and `PROJECT_VERSION` reaches neither.**
+`SOVERSION` is `MPI_ABI_VERSION` and `VERSION` is
+`MPI_ABI_VERSION.MPI_ABI_SUBVERSION.0`, both `file(STRINGS)`-ed out of the
+generated header so that no edit can put them out of step with it.
+
+The reason `VERSION` is not the project's is the same as the soname's, and it
+is measurable against another implementation. Open MPI's ABI branch, built
+from source in `build/mpi/ompi-main-prefix`, records `current=1 age=0
+revision=0` in its `libmpi_abi.la` — `-version-info 1:0:0`, which is what
+*every* implementation of ABI 1 is built with, and which libtool turns into
+the file `libmpi_abi.so.1.0.0` with soname `libmpi_abi.so.1` on ELF and
+`libmpi_abi.1.dylib` on Mach-O. Deriving from the ABI version reproduces
+exactly that. Deriving from `PROJECT_VERSION` would have installed
+`libmpi_abi.so.1.1.0` at this project's next minor release — a file name no
+other implementation of the same ABI would ever install, and one that says
+this project's release number where the whole point of the file is to say
+which ABI it implements. `HISTORY.md` §2.20 is the release that shipped it
+that way.
+
+What may move with `PROJECT_VERSION` is packaging metadata, which no client
+binary records: `mpi_abi.pc`'s `Version:`, `mpi_abiConfigVersion.cmake`, and
+the banner decision 26 puts in front of `MPI_Get_library_version`.
 
 **Mach-O gates on a second number, and it is not the one in the file name.**
 dyld records the compatibility version a client was linked against and refuses

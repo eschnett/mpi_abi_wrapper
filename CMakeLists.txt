@@ -234,10 +234,10 @@ set_target_properties(mpi_abi PROPERTIES OUTPUT_NAME mpi_abi)
 # MPI's ABI branch installs libmpi_abi.so.1 / libmpi_abi.1.dylib, so 1 it is.
 #
 # It tracks MPI_ABI_VERSION and must never be made to follow PROJECT_VERSION:
-# this project's 1.1.0 or 2.0.0 would still implement ABI major 1 and must
-# still answer to the same soname. Read out of the generated header rather
-# than written here twice, so the two cannot drift -- the same discipline
-# CLAUDE.md asks for of every other count.
+# this project's 1.1.0 or 2.0.0 still implements ABI major 1 and must still
+# answer to the same soname. The same is true of the full version triple below,
+# which is why both are read out of the generated header rather than written
+# here twice -- the same discipline CLAUDE.md asks for of every other count.
 file(STRINGS ${MPIABI_GEN_INCLUDE_DIR}/mpi.h MPIABI_ABI_VERSION_LINE
   REGEX "^#define[ \t]+MPI_ABI_VERSION[ \t]+[0-9]+")
 if(NOT MPIABI_ABI_VERSION_LINE MATCHES "MPI_ABI_VERSION[ \t]+([0-9]+)")
@@ -246,21 +246,50 @@ if(NOT MPIABI_ABI_VERSION_LINE MATCHES "MPI_ABI_VERSION[ \t]+([0-9]+)")
     "libmpi_abi's soname is derived from it and must not be guessed.")
 endif()
 set(MPIABI_SOVERSION ${CMAKE_MATCH_1})
-message(STATUS "libmpi_abi soname version (MPI_ABI_VERSION): ${MPIABI_SOVERSION}")
 
-# VERSION is the project's and moves with every release; SOVERSION is the ABI's
-# and does not. On ELF that gives libmpi_abi.so.${PROJECT_VERSION} with an
-# soname of libmpi_abi.so.${MPIABI_SOVERSION}; on Mach-O, libmpi_abi.1.dylib
-# with -compatibility_version ${MPIABI_SOVERSION} -- the same layout Open MPI's
-# ABI branch installs. Both leave the unversioned name as a symlink, which is
-# what bin/mpicc's -lmpi_abi resolves through at link time.
+file(STRINGS ${MPIABI_GEN_INCLUDE_DIR}/mpi.h MPIABI_ABI_SUBVERSION_LINE
+  REGEX "^#define[ \t]+MPI_ABI_SUBVERSION[ \t]+[0-9]+")
+if(NOT MPIABI_ABI_SUBVERSION_LINE MATCHES "MPI_ABI_SUBVERSION[ \t]+([0-9]+)")
+  message(FATAL_ERROR
+    "Could not read MPI_ABI_SUBVERSION from ${MPIABI_GEN_INCLUDE_DIR}/mpi.h; "
+    "libmpi_abi's version is derived from it and must not be guessed.")
+endif()
+set(MPIABI_ABI_SUBVERSION ${CMAKE_MATCH_1})
+
+# **Neither number here is the project's.** VERSION and SOVERSION both come
+# from the ABI, and PROJECT_VERSION must not reach either: a client binary
+# records a name from this library, and MPI-5.0 20.2.1 permits it to depend on
+# "its versioned variant", so the whole triple is part of a cross-implementation
+# contract rather than this project's packaging.
+#
+# Measured rather than reasoned, against Open MPI's ABI branch built from
+# source in build/mpi/ompi-main-prefix: its libmpi_abi.la records
+# `current=1 age=0 revision=0`, i.e. libtool -version-info 1:0:0, which is what
+# every implementation of ABI 1 is built with. On ELF libtool turns that into
+# the file libmpi_abi.so.1.0.0 with an soname of libmpi_abi.so.1; on Mach-O
+# into libmpi_abi.1.dylib. Deriving VERSION from the ABI version reproduces
+# exactly those names, where PROJECT_VERSION would have produced
+# libmpi_abi.so.1.1.0 at the next release of this project -- a file name no
+# other implementation of the same ABI would ever install. HISTORY.md 2.20 is
+# the release that shipped it that way for eleven minutes.
+#
+# ${MPIABI_SOVERSION}.${MPIABI_ABI_SUBVERSION}.0 is 1.0.0 for ABI 1.0, matching
+# the measurement above. The trailing 0 is libtool's `revision`, which no
+# implementation of this ABI has yet had cause to move; an ABI 1.1 or 2.0 is
+# the point to re-read libtool's current:revision:age arithmetic rather than to
+# assume this mapping still holds.
+message(STATUS "libmpi_abi version from the ABI (MPI_ABI_VERSION.SUBVERSION): "
+  "${MPIABI_SOVERSION}.${MPIABI_ABI_SUBVERSION}.0, soname ${MPIABI_SOVERSION}")
+
+# Both leave the unversioned name as a symlink, which is what bin/mpicc's
+# -lmpi_abi resolves through at link time.
 #
 # libmpiwrapper deliberately gets none of this. It is not a linked dependency
 # of anything: libmpi_abi dlopens it by the absolute path baked in below, and
 # MPI-5.0 20.2.1 forbids the application binary naming it at all. A soname on a
 # plugin located by path buys nothing and would only add symlinks.
 set_target_properties(mpi_abi PROPERTIES
-  VERSION ${PROJECT_VERSION}
+  VERSION ${MPIABI_SOVERSION}.${MPIABI_ABI_SUBVERSION}.0
   SOVERSION ${MPIABI_SOVERSION})
 
 # **Mach-O gates on a second number, and it is not the one in the file name.**

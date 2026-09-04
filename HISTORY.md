@@ -940,6 +940,52 @@ and `dev/dlopen-probe/`'s rule that *our* wrapper must never acquire
 be wrapped by anyone who exports its names, and is refused with a diagnostic
 that now says so.
 
+### 2.20 "`VERSION` is the project's and moves freely"
+
+`libmpi_abi` carries two version numbers, and decision 21 had settled only one
+of them. `SOVERSION` is `MPI_ABI_VERSION`, argued at length and read out of the
+generated header so it cannot drift. `VERSION` — the full triple in the
+installed file name — was `PROJECT_VERSION`, and §9 said so in as many words:
+"the two are deliberately different numbers that happen to agree at 1.0.0
+today."
+
+The word doing the damage is *happen*. They agreed because this project had
+released once; nothing held them together, and nothing was watching. v1.1.0
+duly installed `libmpi_abi.so.1.1.0` / `libmpi_abi.1.1.0.dylib`, and the
+release notes explained the new name as decision 21 working correctly — the
+soname unchanged at `libmpi_abi.so.1` while the file moved with the project.
+Erik caught it within minutes of the release: the soname is not the only thing
+the ABI dictates.
+
+**The measurement was available the whole time, in this repository.** Open
+MPI's ABI branch is built from source under `build/mpi/ompi-main-prefix`, and
+its `libmpi_abi.la` records `current=1 age=0 revision=0` — `-version-info
+1:0:0`, which is what every implementation of ABI 1 is built with, and which
+libtool turns into `libmpi_abi.so.1.0.0` on ELF and `libmpi_abi.1.dylib` on
+Mach-O. So `libmpi_abi.so.1.1.0` was a file name that no other implementation
+of the same ABI would ever install, announcing this project's release number
+in the one place whose entire job is to say which ABI the file implements.
+`VERSION` is now `MPI_ABI_VERSION.MPI_ABI_SUBVERSION.0` and v1.1.0 was
+re-cut.
+
+**What made this survivable was also what made it invisible.** No test failed
+and none could have: `test/check_exports.cmake` checks the export set, not the
+file name, and nothing in CI or `ci-scripts/check-install.sh` *asserts* a
+version anywhere — deliberately, so that a release does not have to update
+assertions, which is why the release went out green. The cost of that choice
+is that the only thing standing behind a version-derived name is a sentence in
+a document, and §9's sentence had been true when written.
+
+**The lesson generalises past versions.** §1.23 and decision 21 both concluded
+that a convention aimed at the ordinary library has to be re-read for a library
+whose consumers link someone else's copy. This is the same lesson arriving a
+third time and being applied only to the number that had already been argued
+about. The rule was restated to close that: **nothing a client binary can name
+is the project's to move** — not the soname, not the versioned file it points
+at. A number this project may still move freely is one no client records, and
+`mpi_abi.pc`, `mpi_abiConfigVersion.cmake` and decision 26's banner are the
+list.
+
 ---
 
 ## 3. What each stage settled

@@ -1956,7 +1956,7 @@ jobs:
       # **Tarred, not handed to upload-artifact as a directory**, and this
       # project has a particular reason beyond the general one. upload-artifact
       # *dereferences symbolic links*, and an ABI prefix is a symlink chain by
-      # construction: lib/libmpi_abi.so -> .so.1 -> .so.1.1.0 is decision 21's
+      # construction: lib/libmpi_abi.so -> .so.1 -> .so.1.0.0 is decision 21's
       # whole subject. Uploading the tree would replace that chain with three
       # identical files, and the restored prefix would then pass every check in
       # sight while no longer demonstrating the thing these rows exist to
