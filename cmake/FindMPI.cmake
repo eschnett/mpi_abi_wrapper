@@ -20,12 +20,22 @@
 # exactly where it installed itself, and republish the answer under the
 # classic FindMPI spelling.
 #
-# One thing this shim deliberately does NOT provide: MPIEXEC_EXECUTABLE. A
-# launcher belongs to the *wrapped* MPI, not to mpi_abi -- this package can be
-# pointed at a different one at run time (decision 5), so baking in a build-time
-# mpiexec would name only one of them and mislead about the rest. A consumer
-# that needs to run its own tests should find the wrapped implementation's own
-# mpiexec directly, the way this project's own CMakeLists.txt does.
+# This shim used to refuse to provide MPIEXEC_EXECUTABLE, on the grounds that a
+# launcher belongs to the *wrapped* MPI and that baking in a build-time mpiexec
+# would name only one of them while decision 5 lets the package be pointed at
+# another at run time. Decision 27 answers that objection rather than working
+# around it: what the prefix installs is not a launcher but bin/mpiexec, a
+# forwarder that resolves $MPI_ABI_WRAPPER_MPIEXEC first and the configure-time
+# path second -- the same run-time indirection libmpi_abi already uses for
+# libmpiwrapper. So the name published here stays correct under re-pointing,
+# which is exactly what the old comment wanted and could not have.
+#
+# All six variables, not just the first: a consumer writing
+# `${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2 ./t` with only
+# MPIEXEC_EXECUTABLE set gets `mpiexec 2 ./t`, which is a worse failure than
+# publishing nothing. They are guarded on the file existing, because
+# MPI_ABI_BUILD_WRAPPER=OFF installs no launcher (there is no MPI behind such a
+# prefix to launch) -- the same reason the mpicxx block below is guarded.
 
 # IN_LIST below (CMP0057) needs this: a Find module runs in the *including*
 # project's policy scope, and test/check_exports.cmake (S6) is the reason this
@@ -100,6 +110,32 @@ if("CXX" IN_LIST MPI_FIND_COMPONENTS OR NOT MPI_FIND_COMPONENTS)
         INTERFACE_LINK_LIBRARIES mpi_abi::mpi_abi)
     endif()
   endif()
+endif()
+
+# Decision 27: the launcher's name, resolved at run time. See the top of this
+# file for why this is now published and was not before.
+if(EXISTS "${_mpiabi_prefix}/bin/mpiexec")
+  set(MPIEXEC_EXECUTABLE "${_mpiabi_prefix}/bin/mpiexec")
+  # The classic spelling, still read by older consumer code.
+  set(MPIEXEC "${MPIEXEC_EXECUTABLE}")
+  # -n is what both launcher families this project wraps accept, and what
+  # bin/mpiexec passes through untouched.
+  set(MPIEXEC_NUMPROC_FLAG "-n")
+  if(NOT MPIEXEC_MAX_NUMPROCS)
+    include(ProcessorCount)
+    ProcessorCount(_mpiabi_nproc)
+    if(_mpiabi_nproc EQUAL 0)
+      set(_mpiabi_nproc 2)
+    endif()
+    set(MPIEXEC_MAX_NUMPROCS "${_mpiabi_nproc}")
+    unset(_mpiabi_nproc)
+  endif()
+  # Empty rather than unset, so a consumer expanding them gets nothing rather
+  # than an undefined variable. Any flags a particular machine needs are that
+  # machine's business, not this package's -- see scripts/host-env.sh for the
+  # shape that takes.
+  set(MPIEXEC_PREFLAGS "")
+  set(MPIEXEC_POSTFLAGS "")
 endif()
 
 unset(_mpiabi_prefix)

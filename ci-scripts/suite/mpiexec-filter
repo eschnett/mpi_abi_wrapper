@@ -2,13 +2,20 @@
 
 # The `mpiexec` the MPICH test suite sees (HISTORY.md S7, NOTES.md #10).
 #
-# This project ships no launcher and never will: the MPI ABI is a library
-# ABI, so a program built against `libmpi_abi` is started by the *wrapped*
-# implementation's own launcher, which lives in a different prefix from the
-# `mpicc` the suite was configured with. The suite has one name for that
-# program -- `mpiexec`, taken from the prefix it configured against -- so
-# something has to stand in that place and forward. That is this script, and
-# once it exists there are four more jobs it is the only place to do:
+# The MPI ABI is a library ABI, so a program built against `libmpi_abi` is
+# started by the *wrapped* implementation's own launcher, which lives in a
+# different prefix from the `mpicc` the suite was configured with. The suite
+# has one name for that program -- `mpiexec`, taken from the prefix it
+# configured against -- so something has to stand in that place and forward.
+#
+# An installed prefix now answers that name itself: `bin/mpiexec` (decision
+# 27) resolves the wrapped launcher and execs it with the arguments untouched.
+# This script is *not* that, and pointing MPIEXEC_FILTER_LAUNCHER at
+# `bin/mpiexec` would be harmless but pointless -- an extra exec to reach the
+# same launcher. What keeps this file necessary is that beyond job 1, which is
+# all a forwarder does, there are three more that a forwarder must *refuse* to
+# do: each rewrites what the caller asked for, and only runtests' calling
+# convention justifies that.
 #
 #   1. Route to the real launcher.  MPIEXEC_FILTER_LAUNCHER names it. The
 #      suite's own configure runs `$MPIEXEC --version | grep -i hydra`, so
@@ -27,10 +34,18 @@
 #   3. Forward the environment.  runtests communicates a testlist's `env=`
 #      settings, and its per-test timeout, by putting them in *this*
 #      process's environment and trusting the launcher to pass them on.
-#      Hydra does. Open MPI's launcher forwards almost nothing without being
-#      told, so the variables that matter are re-stated as `-x` arguments.
-#      MPI_ABI_WRAPPER_LIB is in that set, which is what lets one test binary
-#      be run against a different wrapper (NOTES.md #10's cross test).
+#      Those variables are re-stated as `-x` arguments for prte, where the
+#      suite's own runs are the evidence that it is needed.
+#
+#      MPI_ABI_WRAPPER_* used to be in that set and is not any more. It was
+#      dead by two independent measures: nothing reaching this script sets such
+#      a variable -- MPI_ABI_WRAPPER_LIB is set only by CMakeLists.txt's
+#      MPIABI_TEST_ENV, which is ctest's own environment and never passes
+#      through here, and by test/check_isolation.cmake, which runs no launcher
+#      -- and dev/launcher-env-forwarding/ measures both launcher families
+#      forwarding a plain environment variable to single-node ranks unasked.
+#      The cross test the old comment claimed this enabled was never run this
+#      way.
 #
 #   4. Enforce the timeout itself.  runtests sets MPIEXEC_TIMEOUT and expects
 #      the launcher to honour it; hydra does, prterun does not, and a launcher
@@ -133,9 +148,12 @@ case $kind in
     launcher_args=(-n "$np" --oversubscribe
                    "${launcher_args[@]+"${launcher_args[@]}"}")
     [ "$(id -u)" = 0 ] && launcher_args+=(--allow-run-as-root)
-    # Job 3: state the environment explicitly, since prterun forwards none of
-    # it. The default pattern covers what this project and the testlists set.
-    env_re=${MPIEXEC_FILTER_ENV_RE:-^(MPI_ABI_[A-Z_]*|MPIABI_[A-Z_]*|MPIR_CVAR_[A-Z_0-9]*|MPIEXEC_TIMEOUT|FI_[A-Z_]*)=}
+    # Job 3: state the environment explicitly for prterun. The default pattern
+    # covers what the testlists and this project's CI actually set -- see the
+    # header for why MPI_ABI_WRAPPER_* is not among them, and note that `-x` is
+    # in the prte arm alone because hydra rejects the flag outright
+    # (dev/launcher-env-forwarding/).
+    env_re=${MPIEXEC_FILTER_ENV_RE:-^(MPIR_CVAR_[A-Z_0-9]*|MPIEXEC_TIMEOUT|FI_[A-Z_]*)=}
     while IFS= read -r assignment; do
       launcher_args+=(-x "${assignment%%=*}")
     done < <(env | grep -E "$env_re" || true)

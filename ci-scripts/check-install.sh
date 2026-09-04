@@ -10,7 +10,7 @@
 #
 #   ci-scripts/check-install.sh mpich|openmpi|/path/to/mpicc
 #
-# Six legs against a fresh install:
+# Eight legs against a fresh install:
 #
 #   0. configure, build, install     -- into a prefix of its own, never the
 #                                        wrapped MPI's (see leg 1)
@@ -29,6 +29,12 @@
 #                                        PETSc actually ask
 #   5. route 3: pkg-config           -- `pkg-config --cflags --libs mpi_abi`,
 #                                        compiled and linked by hand
+#   6. the prefix's inventory        -- every program decision 27 says a prefix
+#                                        holds is there, the aliases agree with
+#                                        what they alias, and no two of them are
+#                                        the same file by accident
+#   7. route 4: bin/mpiexec          -- a real two-rank job through this
+#                                        prefix's own launcher (decision 27)
 #
 # Every route that runs is also checked with otool/objdump for the
 # 20.2.1 property oracles 1 and 2 already check in the build tree
@@ -253,6 +259,145 @@ else
       fail "route 3: pkg-config's own flags did not build test-consume/hello.c"
     fi
   fi
+fi
+
+# ------------------------------------------------- leg 6: the inventory
+
+# What decision 27 says an installed prefix holds. This leg needs no launcher
+# and no MPI to start, so unlike leg 7 it always runs.
+step "the prefix's inventory (decision 27)"
+
+for prog in mpicc mpiexec mpirun mpi_abi_wrapper_info; do
+  if [ ! -x "$prefix/bin/$prog" ]; then
+    fail "bin/$prog was not installed, or is not executable"
+  fi
+done
+
+# mpicxx and mpic++ exist precisely when the build had a C++ compiler
+# (CMakeLists.txt's enable_language(CXX OPTIONAL)), so their absence is a
+# skip with a reason rather than a failure -- the same distinction
+# cmake/FindMPI.cmake makes when it decides whether to publish MPI::MPI_CXX.
+if [ -x "$prefix/bin/mpicxx" ]; then
+  [ -x "$prefix/bin/mpic++" ] || fail "bin/mpicxx was installed but bin/mpic++ was not"
+else
+  echo "  no bin/mpicxx, so this build had no C++ compiler and mpic++ is not expected"
+fi
+
+# The oracle for the failure that made mpiCC unshippable: on a
+# case-insensitive filesystem two names differing only in case are one
+# directory entry, so an alias can silently *replace* what it was meant to sit
+# beside. test-consume/hello.c compiles as C++ too, so leg 2 would still pass
+# with bin/mpicc secretly a C++ wrapper -- this is what would not.
+if [ -x "$prefix/bin/mpicxx" ]; then
+  cc_cmd=$("$prefix/bin/mpicc" -showme:command 2>/dev/null)
+  cxx_cmd=$("$prefix/bin/mpicxx" -showme:command 2>/dev/null)
+  if [ -z "$cc_cmd" ]; then
+    fail "leg 6: bin/mpicc -showme:command answered nothing"
+  elif [ "$cc_cmd" = "$cxx_cmd" ]; then
+    fail "leg 6: bin/mpicc and bin/mpicxx name the same compiler ($cc_cmd) --" \
+         "one has clobbered the other"
+  else
+    echo "  mpicc -> $cc_cmd, mpicxx -> $cxx_cmd"
+  fi
+  # An alias must agree with what it aliases, or it is a stale copy.
+  if [ "$("$prefix/bin/mpic++" -showme:link 2>/dev/null)" != \
+       "$("$prefix/bin/mpicxx" -showme:link 2>/dev/null)" ]; then
+    fail "leg 6: bin/mpic++ and bin/mpicxx disagree about their link line"
+  fi
+fi
+if [ "$("$prefix/bin/mpirun" -showme:launcher 2>/dev/null)" != \
+     "$("$prefix/bin/mpiexec" -showme:launcher 2>/dev/null)" ]; then
+  fail "leg 6: bin/mpirun and bin/mpiexec resolve different launchers"
+fi
+
+# The info tool is an installed binary of ours, so 20.2.1's property applies to
+# it exactly as to a consumer's: libmpi_abi and nothing else.
+if run_cleared "$prefix/bin/mpi_abi_wrapper_info" > "$work/info.log" 2>&1; then
+  check_only_mpi_abi_dependency "$prefix/bin/mpi_abi_wrapper_info"
+  grep -q "^wrapper:" "$work/info.log" ||
+    fail "leg 6: mpi_abi_wrapper_info reported no wrapper"
+  grep -q "^launcher:" "$work/info.log" ||
+    fail "leg 6: mpi_abi_wrapper_info reported no launcher"
+  # "present NO" beside either path is the whole reason the tool prints that
+  # column: a prefix whose wrapper or launcher has moved is broken now, not
+  # later.
+  if grep -q "present *NO" "$work/info.log"; then
+    cat "$work/info.log"
+    fail "leg 6: mpi_abi_wrapper_info says a resolved path is not present"
+  fi
+  # MPI_Get_library_version is answered by the wrapped implementation through
+  # the wrapper that was actually loaded, so a non-empty second line here is
+  # the end-to-end proof for this leg. When the caller named an
+  # implementation, say whether it is the one that answered.
+  impl=$(sed -n '/^library version:/,$p' "$work/info.log" | tail -n +2 | tr -d ' \t' | grep -c .)
+  if [ "${impl:-0}" -lt 2 ]; then
+    cat "$work/info.log"
+    fail "leg 6: mpi_abi_wrapper_info printed no wrapped-implementation string"
+  else
+    echo "  mpi_abi_wrapper_info ran, and its resolved wrapper and launcher are present"
+  fi
+  case $which in
+    mpich)   grep -qi "MPICH"    "$work/info.log" && echo "  wrapped implementation reports MPICH, as asked" ||
+               echo "  NOTE: asked for mpich, but the library version string does not say MPICH" ;;
+    openmpi) grep -qi "Open MPI" "$work/info.log" && echo "  wrapped implementation reports Open MPI, as asked" ||
+               echo "  NOTE: asked for openmpi, but the library version string does not say Open MPI" ;;
+  esac
+else
+  cat "$work/info.log"
+  fail "leg 6: $prefix/bin/mpi_abi_wrapper_info did not run cleanly"
+fi
+
+# ------------------------------------------------ leg 7: bin/mpiexec
+
+# Two ranks through the prefix's own launcher. Asking for two and being handed
+# two *singletons* is the trap this project has already been caught by
+# (HISTORY.md #2.14): each singleton simply passes, so the exit status says
+# nothing at all. What says something is the output -- rank 0 of 2 *and* rank 1
+# of 2, both ranks and the size.
+#
+# The comparison is one binary under two launchers: leg 2's hello, run first
+# under the wrapped MPI's own mpiexec and then under this prefix's. That is
+# what separates "bin/mpiexec is broken" from "this host cannot start a
+# two-rank job", and it is a tighter comparison than compiling a second
+# program would be, since the only thing differing between the two runs is the
+# launcher. If the native launcher cannot do it -- Open MPI 5.0.x on macOS 26
+# cannot, for reasons test/README.md and HISTORY.md #2.13 attribute to the
+# machine's firewall, and neither can a wrapped MPI whose own mpicc does not
+# work on this host -- the leg has nothing to say and says so. The skip is
+# *derived* from that measurement rather than declared by a flag, so there is
+# no opt-out here to fall out of date. ci.yaml runs the wrapper-free version of
+# the same gate before this script, which is where a launcher and a library
+# that disagree get separated.
+step "route 4: bin/mpiexec, two ranks (decision 27)"
+
+two_ranks() {   # <launcher> <binary> -- true when both distinct ranks answered
+  local out
+  out=$(run_cleared "$1" -n 2 "$2" 2>&1)
+  echo "$out" | grep -q "rank 0 of 2" && echo "$out" | grep -q "rank 1 of 2"
+}
+
+native_mpiexec=$(dirname "$MPICC")/mpiexec
+if [ ! -x "$work/route1/hello" ]; then
+  fail "leg 7: leg 2 produced no hello to launch"
+elif [ ! -x "$native_mpiexec" ]; then
+  echo "  SKIPPED: no mpiexec beside $MPICC, so there is no launcher to compare"
+  echo "  against. bin/mpiexec was built with none baked in, and leg 6 has"
+  echo "  already checked that it says so rather than forwarding somewhere wrong."
+elif ! two_ranks "$native_mpiexec" "$work/route1/hello"; then
+  echo "  SKIPPED: $native_mpiexec cannot start a two-rank job on this host, so"
+  echo "  it cannot say anything about bin/mpiexec forwarding to it. See"
+  echo "  test/README.md and HISTORY.md #2.13."
+else
+  echo "  $native_mpiexec: two ranks, so this host can launch"
+  for launcher in mpiexec mpirun; do
+    if two_ranks "$prefix/bin/$launcher" "$work/route1/hello"; then
+      echo "  bin/$launcher: two ranks, both distinct"
+    else
+      run_cleared "$prefix/bin/$launcher" -n 2 "$work/route1/hello" 2>&1 | sed 's/^/    /'
+      fail "leg 7: bin/$launcher did not produce rank 0 of 2 and rank 1 of 2" \
+           "where $native_mpiexec did, on the same binary"
+    fi
+  done
 fi
 
 printf '\n=== %s\n' \

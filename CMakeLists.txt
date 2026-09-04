@@ -350,13 +350,19 @@ install(FILES
   cmake/mpiwrapper_marker.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-# ------------------------------------------------------------ mpicc / mpicxx
+# ------------------------------------------ the programs this prefix installs
 
 # The first of the three consumption routes (NOTES.md #9, decision 19):
 # compiler wrappers naming this prefix's mpi.h and libmpi_abi, with the rpath
 # set so a program they produce starts with no help. Generated once, at this
 # project's own configure time, not per-MPI -- see bin/mpicc.in's comment for
 # why there is exactly one.
+#
+# bin/mpiexec and bin/mpirun are not here but further down, after
+# find_package(MPI): the launcher they forward to is only known once the
+# wrapped MPI has been found (decision 27). These, by contrast, are installed
+# unconditionally -- MPI_ABI_BUILD_WRAPPER=OFF is a prefix with no MPI behind
+# it, and a compiler wrapper is still meaningful there while a launcher is not.
 if(APPLE AND CMAKE_OSX_SYSROOT)
   set(MPIABI_MPICC_SYSROOT_FLAG "-isysroot ${CMAKE_OSX_SYSROOT}")
 else()
@@ -370,7 +376,50 @@ if(CMAKE_CXX_COMPILER)
   configure_file(bin/mpicxx.in ${CMAKE_CURRENT_BINARY_DIR}/bin/mpicxx @ONLY)
   install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/bin/mpicxx
     DESTINATION ${CMAKE_INSTALL_BINDIR})
+  # The spelling autotools' AX_MPI and several build systems probe first. A
+  # second copy rather than a symlink: install(PROGRAMS ... RENAME) is given
+  # DESTDIR and --prefix for free, where install(CODE file(CREATE_LINK ...))
+  # is given neither and additionally fails on a second install into a prefix
+  # that already has the link. Nothing in these scripts reads $0, so a copy
+  # behaves identically.
+  #
+  # mpiCC is deliberately NOT installed: on a case-insensitive filesystem --
+  # macOS's default, measured on the development host -- mpiCC and mpicc are
+  # the same directory entry, so shipping both means one silently clobbers the
+  # other. MPICH itself ships mpic++ and no mpiCC. check-install.sh's
+  # inventory leg carries the oracle that would catch a regression here.
+  install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/bin/mpicxx
+    DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME mpic++)
 endif()
+
+# The ompi_info / mpichversion analogue: what this prefix was configured to do
+# and what it resolves to now (decision 27). It links libmpi_abi like any
+# consumer, so the library-version line it prints is answered by the wrapped
+# implementation through the wrapper that was actually loaded -- see
+# src/tools/mpi_abi_wrapper_info.c for why it reports decision 5's resolution
+# from the outside rather than asking the library for it.
+add_executable(mpi_abi_wrapper_info src/tools/mpi_abi_wrapper_info.c)
+target_include_directories(mpi_abi_wrapper_info PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
+target_compile_options(mpi_abi_wrapper_info PRIVATE ${MPIABI_WARNINGS})
+target_link_libraries(mpi_abi_wrapper_info PRIVATE mpi_abi)
+# Every value comes from the variable the artifact it describes also uses, so
+# the tool cannot report an inventory the prefix does not have. The two
+# defaults it needs that are not known yet -- the launcher, and whether a
+# Fortran probe was built -- are appended further down, once the wrapped MPI
+# has been found.
+target_compile_definitions(mpi_abi_wrapper_info PRIVATE
+  "MPI_ABI_WRAPPER_INFO_VERSION=\"${PROJECT_VERSION}\""
+  "MPI_ABI_WRAPPER_INFO_PREFIX=\"${CMAKE_INSTALL_PREFIX}\""
+  "MPI_ABI_WRAPPER_INFO_INCLUDEDIR=\"${CMAKE_INSTALL_FULL_INCLUDEDIR}\""
+  "MPI_ABI_WRAPPER_INFO_LIBDIR=\"${CMAKE_INSTALL_FULL_LIBDIR}\""
+  "MPI_ABI_WRAPPER_INFO_LIB_DEFAULT=\"${CMAKE_INSTALL_FULL_LIBDIR}/libmpiwrapper${MPIABI_WRAPPER_SUFFIX}\""
+  "MPI_ABI_WRAPPER_INFO_CXX=\"${CMAKE_CXX_COMPILER}\"")
+# So it starts with LD_LIBRARY_PATH/DYLD_LIBRARY_PATH cleared, the same
+# property bin/mpicc gives the programs it links (NOTES.md #9).
+set_target_properties(mpi_abi_wrapper_info PROPERTIES
+  INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}")
+install(TARGETS mpi_abi_wrapper_info
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # ------------------------------------------------------- CMake package files
 
@@ -933,18 +982,50 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     set(MPIABI_CAPTURE_MODE -DCAPTURE_MODE=1)
   endif()
 
+  # ------------------------------------------------- bin/mpiexec, bin/mpirun
+
   # FindMPI takes mpiexec from PATH, which is wrong the moment a second MPI is
   # installed: launching an Open MPI binary under MPICH's hydra produces two
   # *singletons* rather than a two-rank job, and the test then reports "needs
   # exactly 2 ranks, got 1" instead of anything about MPI. The launcher beside
   # the compiler wrapper we were pointed at is the one that matches it.
+  #
+  # This answer has two consumers now, not one: the tests below, and the
+  # bin/mpiexec this prefix installs (decision 27). MPIEXEC_EXECUTABLE is
+  # deliberately not what gets baked into that script -- find_package(MPI)
+  # always fills it, from PATH when it must, which is the very hazard the
+  # paragraph above describes. What is baked is this find_program's own
+  # answer, empty when there is none, so a prefix built against an MPI whose
+  # launcher does not live beside its mpicc (Intel MPI's, MVAPICH's
+  # mpirun_rsh) installs a bin/mpiexec that says so and names
+  # MPI_ABI_WRAPPER_MPIEXEC rather than one that forwards somewhere wrong.
   get_filename_component(MPIABI_MPI_BINDIR ${MPI_C_COMPILER} DIRECTORY)
-  find_program(MPIABI_MPIEXEC NAMES mpiexec mpirun
+  find_program(MPI_ABI_WRAPPER_MPIEXEC NAMES mpiexec mpirun
     HINTS ${MPIABI_MPI_BINDIR} NO_DEFAULT_PATH)
-  if(MPIABI_MPIEXEC)
-    set(MPIEXEC_EXECUTABLE ${MPIABI_MPIEXEC})
+  if(MPI_ABI_WRAPPER_MPIEXEC)
+    set(MPIEXEC_EXECUTABLE ${MPI_ABI_WRAPPER_MPIEXEC})
   endif()
+  # ci-scripts/linux-test.sh greps the literal "Launching tests", so that
+  # prefix stays put.
   message(STATUS "Launching tests with ${MPIEXEC_EXECUTABLE}")
+  message(STATUS "bin/mpiexec forwards to ${MPI_ABI_WRAPPER_MPIEXEC}")
+
+  configure_file(bin/mpiexec.in ${CMAKE_CURRENT_BINARY_DIR}/bin/mpiexec @ONLY)
+  install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/bin/mpiexec
+    DESTINATION ${CMAKE_INSTALL_BINDIR})
+  # Both names, as every MPI installs both. A second copy rather than a
+  # symlink, for the reason bin/mpic++ gives; bin/mpiexec.in's self-reference
+  # guard compares physical paths, so it catches this name too.
+  install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/bin/mpiexec
+    DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME mpirun)
+
+  # The two the tool could not be told earlier (see its block above).
+  target_compile_definitions(mpi_abi_wrapper_info PRIVATE
+    "MPI_ABI_WRAPPER_INFO_MPIEXEC_DEFAULT=\"${MPI_ABI_WRAPPER_MPIEXEC}\"")
+  if(MPIABI_HAVE_FORTRAN)
+    target_compile_definitions(mpi_abi_wrapper_info PRIVATE
+      "MPI_ABI_WRAPPER_INFO_FORTRAN=\"${CMAKE_Fortran_COMPILER}\"")
+  endif()
 
   # ------------------------------------------------------------------ tests
 

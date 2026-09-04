@@ -1,0 +1,81 @@
+#!/bin/sh
+
+# mpi_abi_wrapper's launcher, and it is a *forwarder* rather than a launcher:
+# it resolves the wrapped implementation's own mpiexec and execs it with the
+# arguments untouched (NOTES.md #9, decision 27).
+#
+# Why a forwarder is the right thing rather than no launcher at all. The MPI
+# ABI is a library ABI, so the program that starts a job belongs to the
+# implementation, not here -- which is why this file used to be deliberately
+# absent. But an installed prefix that names itself an MPI and has no mpiexec
+# is half an installation: a Spack recipe, a module file, AX_MPI or a
+# consumer's own ctest all treat an MPI as a *prefix*. The way out is the same
+# one decision 5 already took for libmpiwrapper: name the thing, and resolve
+# it at run time. So $MPI_ABI_WRAPPER_MPIEXEC first, and absent that the
+# absolute path CMake found beside MPI_C_COMPILER at configure time -- the
+# exact shape of src/mpi_abi/bootstrap.c's vt_load(), and for the same reason
+# ("run and it works", CMakeLists.txt's comment on
+# MPI_ABI_WRAPPER_LIB_DEFAULT).
+#
+# **No argument parsing, deliberately.** ci-scripts/suite/mpiexec-filter has
+# to split argv, because runtests hands it hydra spellings that prterun would
+# reject; this script has no such caller, and every launcher option it does
+# not parse is one that keeps working -- `--`, `-genv A B`, a `:` multi-app
+# command line, paths with spaces, `--version` and `--help`. Two literal $1
+# cases are the only exception, and they are matched exactly rather than by a
+# `-show*` glob the way bin/mpicc.in can afford to, since a launcher may have
+# a -show... flag of its own.
+#
+# **No environment rewriting either, and that is measured rather than
+# assumed.** The tempting feature is re-stating MPI_ABI_WRAPPER_* as `-x NAME`
+# for launchers that do not forward their own environment to the ranks.
+# dev/launcher-env-forwarding/ asked: both MPICH 4.3.1's hydra and Open MPI
+# 5.0.10's mpiexec forward a plain variable to single-node ranks unasked, so
+# there is nothing to fix -- and hydra *rejects* `-x` outright, so a shim that
+# emitted it unconditionally would fail to launch on the implementation that
+# needed no help. Across nodes the answer may differ, which README.md says
+# rather than promising otherwise; there the launcher's own flag (`-x` for
+# prte, `-genv` for hydra) is the answer, and this script passes it through.
+
+MPI_ABI_WRAPPER_MPIEXEC=${MPI_ABI_WRAPPER_MPIEXEC:-@MPI_ABI_WRAPPER_MPIEXEC@}
+
+# There is no way to report this through a launcher's own exit conventions, and
+# a wrong answer is worse than no answer, so this says what to set and stops --
+# bootstrap.c:vt_fail's shape, for the same failure one layer down.
+if [ -z "$MPI_ABI_WRAPPER_MPIEXEC" ]; then
+    echo "$(basename "$0"): no launcher was found beside this prefix's wrapped MPI" >&2
+    echo "$(basename "$0"): set MPI_ABI_WRAPPER_MPIEXEC to the mpiexec of the MPI you are running against" >&2
+    exit 1
+fi
+if [ ! -x "$MPI_ABI_WRAPPER_MPIEXEC" ]; then
+    echo "$(basename "$0"): $MPI_ABI_WRAPPER_MPIEXEC is not executable" >&2
+    echo "$(basename "$0"): set MPI_ABI_WRAPPER_MPIEXEC to the mpiexec of the MPI you are running against" >&2
+    exit 1
+fi
+
+# Naming ourselves -- MPI_ABI_WRAPPER_MPIEXEC=$(command -v mpiexec) with this
+# prefix's bin first on PATH is the easy way to do it -- would exec this file
+# forever: one process, no output, no fork bomb, just a hang that looks like
+# the launcher wedging. Physical paths, so a symlink or a second name for this
+# same file (mpirun) is caught too.
+mpiabi_self_dir=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P) || mpiabi_self_dir=
+mpiabi_target_dir=$(cd "$(dirname "$MPI_ABI_WRAPPER_MPIEXEC")" 2>/dev/null && pwd -P) || mpiabi_target_dir=
+if [ -n "$mpiabi_self_dir" ] &&
+   [ "$mpiabi_self_dir/$(basename "$0")" = "$mpiabi_target_dir/$(basename "$MPI_ABI_WRAPPER_MPIEXEC")" ]; then
+    echo "$(basename "$0"): MPI_ABI_WRAPPER_MPIEXEC names this script itself, which would loop" >&2
+    echo "$(basename "$0"): set it to the wrapped MPI's own mpiexec, not to this prefix's" >&2
+    exit 1
+fi
+
+case "$1" in
+    -showme:launcher)
+        echo "$MPI_ABI_WRAPPER_MPIEXEC"
+        exit 0
+        ;;
+    -showme:version)
+        echo "@PROJECT_NAME@ @PROJECT_VERSION@"
+        exit 0
+        ;;
+esac
+
+exec "$MPI_ABI_WRAPPER_MPIEXEC" "$@"
