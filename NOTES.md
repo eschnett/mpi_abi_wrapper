@@ -1924,7 +1924,13 @@ the decision rather than working around it.
     initialization, failing loudly there rather than degrading to a probe loop.
     §5.1.
 19. **Ship `mpicc`, CMake package files (including a `FindMPI` shim) and
-    pkg-config**, each exercised by CI rather than merely parsed. §9.
+    pkg-config**, each exercised by CI rather than merely parsed. §9. The
+    programs are now the whole inventory a prefix calling itself an MPI is
+    expected to have — `mpicc`, `mpicxx`, `mpic++`, `mpiexec`, `mpirun` and
+    `mpi_abi_wrapper_info` — and "exercised by CI" means eight legs of
+    `ci-scripts/check-install.sh`, two of which are about the programs rather
+    than the three routes. Decision 27 has the launcher, and what is
+    deliberately still absent.
 20. **The five entry points MPI-3.0 deleted are answered by `libmpi_abi`
     itself**, in terms of their replacements, with no slot and no wrapper body.
     §3.
@@ -1991,6 +1997,56 @@ the decision rather than working around it.
     unless `-DMPI_ABI_FORTRAN=OFF` says otherwise. §9 has the chain and its
     reasons; the run-time comparison against `PMPI_Type_size(MPI_LOGICAL)` is
     what still catches the residual disagreement. §8, §9.
+27. **The prefix ships the launcher's *name*, and resolves it to the wrapped
+    MPI's launcher at run time.** `bin/mpiexec` (and `bin/mpirun`, the same
+    file) takes `$MPI_ABI_WRAPPER_MPIEXEC`, and absent that the absolute path
+    `find_program` located beside `MPI_C_COMPILER` at configure time. That is
+    decision 5's mechanism applied a second time, for decision 5's reason.
+
+    **This reverses a previous position**, which was that the project ships no
+    launcher and never will, on the grounds that a launcher belongs to the
+    wrapped MPI and that a build-time one would name only one of them while
+    decision 5 permits re-pointing. The argument was sound and the conclusion
+    was not: decision 5 had *already* answered it for `libmpiwrapper` — name
+    the thing, resolve it at run time — and a prefix that calls itself an MPI
+    while having no `mpiexec` is half an installation to every tool that treats
+    an MPI as a prefix, which is Spack, module files, `AX_MPI` and a consumer's
+    own `ctest`. `HISTORY.md` §1.24 has what the old position cost and what it
+    was reasoning from. Consequently `cmake/FindMPI.cmake` now publishes
+    `MPIEXEC_EXECUTABLE`, which it used to refuse — and all five variables
+    beside it, since a consumer expanding `${MPIEXEC_EXECUTABLE}
+    ${MPIEXEC_NUMPROC_FLAG}` with only the first set gets `mpiexec 2 ./t`.
+
+    **Verbatim passthrough: no argument parsing and no environment
+    rewriting.** Every launcher option the script does not parse is one that
+    keeps working, so only a literal `-showme:launcher` or `-showme:version`
+    as the first argument is intercepted, matched exactly rather than by the
+    `-show*` glob `bin/mpicc.in` can afford. The environment half is
+    *measured*, not assumed: `dev/launcher-env-forwarding/` finds both MPICH's
+    hydra and Open MPI 5.0.10's `mpiexec` forwarding a plain variable to
+    single-node ranks unasked, **and hydra rejecting `-x` outright**, so
+    re-stating `MPI_ABI_WRAPPER_*` as `-x NAME` would have broken the
+    implementation that needed no help. Across nodes the answer may differ and
+    `README.md` says so. The corollary was to delete the same forwarding from
+    `ci-scripts/suite/mpiexec-filter`, where it was dead twice over — nothing
+    reaching that script sets such a variable either.
+
+    **A self-reference guard, not a niceness.** Naming this script as its own
+    `MPI_ABI_WRAPPER_MPIEXEC` — trivially done with `$(command -v mpiexec)` and
+    this prefix's `bin` first on `PATH` — would `exec` it forever: one process,
+    no output, a hang indistinguishable from a wedged launcher. Physical paths
+    are compared, so `mpirun` naming `mpiexec` is caught on the next hop.
+
+    **What is still deliberately absent**: no `mpifort`/`mpif90`, because this
+    project has no Fortran bindings at all (they are mpif's) and a stub that
+    errored would let a probe testing for the file conclude Fortran works; and
+    no `mpiCC`, because on a case-insensitive filesystem — macOS's default,
+    measured — it and `mpicc` are one directory entry, so shipping both means
+    one clobbers the other. MPICH ships `mpic++` and no `mpiCC` for the same
+    reason. A prefix built with `MPI_ABI_BUILD_WRAPPER=OFF` installs no
+    launcher either: there is no MPI behind it, and an `mpiexec` that always
+    errored would still answer a probe asking whether the prefix can launch.
+    §9, `bin/README.md`.
 
 ---
 
@@ -2119,6 +2175,15 @@ a program rather than merely check that they parse — `--libs` is worthless if
 the executable it produces cannot start. `mpicc` must **not** name
 `libmpiwrapper`: MPI-5.0 §20.2.1 requires `mpi_abi` to be the sole direct MPI
 dependency of the application binary, and the wrapper is reached by `dlopen`.
+
+**And ship the programs a prefix is expected to have**, which is a separate
+claim from the routes and was got wrong for longer: a consumer *compiles*
+through one of the three routes, but a great many tools *locate* an MPI by
+looking at a prefix and expecting `bin/mpiexec` beside `bin/mpicc`. Decision 27
+has the inventory and the two omissions; `bin/README.md` is the per-file
+account. The launcher is not a fourth route — nothing is consumed through it —
+which is why `ci-scripts/check-install.sh` counts it as a leg of its own rather
+than adding a route.
 
 **Symbol visibility** is `-fvisibility=hidden` plus an explicit export macro,
 *and* a version script on ELF / `-exported_symbols_list` on macOS. Both halves
@@ -2439,9 +2504,12 @@ Version choice is about coverage, not admissibility:
    compatibility version (§9) and the export style (§13.2).
 
    `ci-scripts/test-mpif.sh` is the runner and takes **two** prefixes, because
-   this project's has no `mpiexec` — the launcher belongs to the wrapped MPI.
-   Only mpif's `ctest` runs; its MPICH Fortran suite is a separate thing and is
-   out of scope.
+   the launcher belongs to the wrapped MPI and the second argument is where it
+   comes from. Since decision 27 a wrapper prefix answers `bin/mpiexec`
+   itself, so leaving the second argument off now resolves rather than naming
+   a file that is not there; both CI legs still pass it explicitly, so nothing
+   about them changed. Only mpif's `ctest` runs; its MPICH Fortran suite is a
+   separate thing and is out of scope.
 
 ### Behavioural tests, in increasing cost
 

@@ -412,6 +412,62 @@ asking what a binary records, not by any test — the project had none that
 looked at a client binary's dynamic section, which is why the binary-swap test
 is worth building.
 
+### 1.24 Shipping no launcher at all
+
+The position, stated in five places and most bluntly in
+`ci-scripts/suite/mpiexec-filter`: "This project ships no launcher and never
+will: the MPI ABI is a library ABI." An installed prefix therefore held `mpi.h`,
+`libmpi_abi`, `libmpiwrapper`, `mpicc`, `mpicxx` and the package files, and no
+`mpiexec`.
+
+The reasoning was not careless, which is why it survived so long. A launcher is
+the *implementation's* program: it speaks a PMI dialect to a library it was
+built beside, and `HISTORY.md` §2.14 is what happens when the two are mismatched
+— `mpiexec -n 2` yields two singletons and a green run that never crossed a rank
+boundary. And decision 5 lets one `libmpi_abi` be pointed at any wrapper at run
+time, so a launcher fixed at build time would name one MPI while claiming to
+describe a prefix that can be re-pointed at others. `cmake/FindMPI.cmake` spelt
+that out as its reason for refusing to publish `MPIEXEC_EXECUTABLE`.
+
+**What it missed is that decision 5 had already solved the same problem, one
+file over.** `libmpiwrapper` is also the implementation's, also fixed per MPI,
+and also re-pointable — and the answer there was not to omit it but to *name it
+and resolve it at run time*: `$MPI_ABI_WRAPPER_LIB`, else an absolute path baked
+in at configure time, with `CMakeLists.txt`'s own comment giving the reason as
+"a program built the ordinary way would only start with `MPI_ABI_WRAPPER_LIB`
+set by hand, which is not 'run and it works'". Every word of that applies to
+the launcher. The refusal was reasoning about a *baked-in* launcher and
+concluding against launchers in general.
+
+**And the cost was not hypothetical.** A prefix that calls itself an MPI while
+having no `mpiexec` is half an installation to everything that locates an MPI by
+looking at a prefix — Spack, module files, `AX_MPI`, and a consumer's own
+`ctest`, which is why `find_package(MPI)` publishing nothing for
+`MPIEXEC_EXECUTABLE` was itself a symptom. `README.md` told users to "choose
+`$HOME/openmpi-4.1.5-mpi-abi` as your MPI library" and then, on the question of
+how to run anything, said nothing at all — in the whole repository the rule that
+a launcher must match the library appeared only in developer-facing comments.
+`ci-scripts/test-mpif.sh` grew a second prefix argument to work around it.
+
+Decision 27 is the reversal: `bin/mpiexec` and `bin/mpirun` forward to
+`$MPI_ABI_WRAPPER_MPIEXEC`, else the configure-time path, and pass every
+argument through untouched. Two things fell out of doing it that the old
+position had also hidden. `dev/launcher-env-forwarding/` measured that *both*
+launcher families forward a plain environment variable to single-node ranks
+unasked and that hydra rejects `-x` outright — so the `MPI_ABI_*` arm of the
+filter's own environment forwarding, which nothing had ever set, was deleted
+rather than copied into the new script. And `mpiCC` turned out to be
+unshippable on macOS for a reason nothing in the project had had cause to
+notice: a case-insensitive filesystem makes it the same directory entry as
+`mpicc`.
+
+**The lesson is the same one §1.23 draws from the other side:** a rule derived
+from what an artifact *is* ("the ABI is a library ABI") can be sound and still
+license the wrong conclusion, when the project has already built a mechanism
+that dissolves the objection. Before declining to ship something because it
+belongs to the wrapped MPI, check what was done for the last thing that
+belonged to the wrapped MPI.
+
 ---
 
 ## 2. Beliefs a measurement overturned

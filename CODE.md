@@ -98,9 +98,11 @@ check.
                      two MVAPICH legs are report-only for one upstream hang;
                      the Intel MPI job gates (NOTES.md #9's third and fourth
                      implementations)
-bin/               mpicc.in, mpicxx.in -- the compiler wrappers, configured at install
+bin/               mpicc.in, mpicxx.in, mpiexec.in -- the wrappers and the
+                     launcher forwarder, configured at install; README.md has
+                     the inventory, the env vars and the two omissions
 ci-scripts/        MPI install and build-shape checks
-  check-install.sh   the six-leg installed-prefix consumption test
+  check-install.sh   the eight-leg installed-prefix consumption test
   install-mpich.sh, install-openmpi.sh, install-mvapich.sh
   linux-test.sh, run-linux-docker.sh
   linux-floor.sh     the MPI-3.0 floor row: builds MPICH 3.1.4, then hands over
@@ -122,8 +124,9 @@ dev/               the Python generator and the dev-time cross-checks
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
   abort-exit-status/ dispatch-bench/ dlopen-probe/ get-contents-extent/
-  handle-map-bench/ request-identity/ type-identity/ weakdef-probe/
-                       the eight probe directories NOTES.md and the suite's
+  handle-map-bench/ launcher-env-forwarding/ request-identity/
+  type-identity/ weakdef-probe/
+                       the nine probe directories NOTES.md and the suite's
                        lists cite
   third-implementations/  what the MVAPICH and Intel MPI rows assume, checked
                        in a container rather than asserted (§11)
@@ -131,6 +134,7 @@ doc/               mpi.h.patch, mpi50-report.pdf
 examples/          narrated excerpts of each shape; src/ is the reference
 gen/               committed generated output, never hand-edited
 src/mpi_abi/       hand-written: bootstrap, dlopen, vtable acquisition
+src/tools/         mpi_abi_wrapper_info.c -- the installed info program (§9)
 src/mpiwrapper/    hand-written: the ledger's bodies, trampolines, maps, conversion
 scripts/           the CI recipes, runnable locally, plus host-env.sh
   host-env.sh        the four variables this development machine needs; §12
@@ -285,6 +289,10 @@ taken from beside that compiler rather than from `PATH`: the launcher, because
 launching one implementation's binaries under another's `mpiexec` silently
 produces N singletons instead of an N-rank job, and the `mpifort` that compiles
 the Fortran probe, because decision 25 is asking what *that* MPI's Fortran does.
+The launcher answer has two consumers, not one — the tests, and the
+`bin/mpiexec` this prefix installs (decision 27) — and what is baked into that
+script is `find_program`'s own answer rather than `MPIEXEC_EXECUTABLE`, which
+`find_package(MPI)` will fill from `PATH` and which is the hazard just named.
 An explicit `FC` or `-DCMAKE_Fortran_COMPILER` overrides the second; failing
 both, a plain search, warned about when the sibling wrapper exists but cannot
 compile. The choice is cached, so it does not follow a later change of
@@ -346,17 +354,55 @@ Three routes, all generated from one source of truth for flags:
   installed package files, so nothing here tests it.
 - **pkg-config** — `mpi_abi.pc`.
 
+Beside the three routes, the prefix installs the programs a tool that locates an
+MPI *by prefix* expects to find (decision 27, `bin/README.md`): `mpicc`,
+`mpicxx`, `mpic++`, `mpiexec`, `mpirun` and `mpi_abi_wrapper_info`. `mpiexec`
+and `mpirun` are one script, a forwarder rather than a launcher — the wrapped
+MPI's own `mpiexec` from `$MPI_ABI_WRAPPER_MPIEXEC`, else the absolute path
+found beside `MPI_C_COMPILER` at configure time, with every argument passed
+through untouched. It is not a fourth consumption route, since nothing is
+consumed through it. `mpi_abi_wrapper_info` prints both halves of that
+resolution and of `MPI_ABI_WRAPPER_LIB`'s, whether each resolved path is
+present, and — from `MPI_Get_library_version` before `MPI_Init` — the wrapped
+implementation that actually answered. Deliberately absent: `mpifort` (no
+Fortran bindings here; they are mpif's) and `mpiCC` (one directory entry with
+`mpicc` on a case-insensitive filesystem).
+
 `ci-scripts/check-install.sh` takes any `mpicc` as its one argument and runs
-**six** legs (`grep -c '^step "' ci-scripts/check-install.sh`): the configure,
+**eight** legs (`grep -c '^step "' ci-scripts/check-install.sh`): the configure,
 build and install into a prefix of its own, the prefix-exclusivity assertion,
-and then four route legs over the three consumption routes of `NOTES.md` #9 —
+then four route legs over the three consumption routes of `NOTES.md` #9 —
 `bin/mpicc`, `find_package(mpi_abi)`, `find_package(MPI)` via the shim, and
 `pkg-config` — each *building and running* a program from the installed prefix
-with `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared. `find_package` is two legs
-because this project ships two answers to it; the pkg-config leg reports itself
-skipped on a host with no pkg-config. All six pass on macOS against a distro
-Open MPI and on Linux against MPICH 5.0.1 and Open MPI 5.0.10 built from source
-by `ci-scripts/install-mpich.sh` / `install-openmpi.sh`.
+with `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH` cleared, and then two legs about the
+programs rather than the routes. `find_package` is two legs because this
+project ships two answers to it; the pkg-config leg reports itself skipped on a
+host with no pkg-config.
+
+The last two are decision 27's. **The inventory leg** asserts every program is
+there and that the aliases agree with what they alias, and it carries the
+oracle for the failure that made `mpiCC` unshippable: `mpicc -showme:command`
+and `mpicxx -showme:command` must not name the same compiler, since
+`test-consume/hello.c` compiles as C++ too and the `bin/mpicc` leg would pass
+with `mpicc` secretly a C++ wrapper. It also runs `mpi_abi_wrapper_info` under
+the same `check_only_mpi_abi_dependency` the route legs use, and fails on a
+`present NO` beside either resolved path. **The launcher leg** runs *one*
+binary — the `bin/mpicc` leg's `hello` — under two launchers, the wrapped MPI's
+own and then this prefix's `bin/mpiexec` and `bin/mpirun`, and requires `rank 0
+of 2` *and* `rank 1 of 2` rather than a zero exit, because two singletons are
+two passing one-rank runs (`HISTORY.md` #2.14). When the native launcher cannot
+start two ranks the leg **skips with that evidence** rather than blaming the
+forwarder — a skip derived from a measurement, so there is no opt-out flag to
+fall out of date, and it is what a host like macOS 26 under Open MPI 5.0.x
+(`HISTORY.md` #2.13) produces.
+
+The first six pass on macOS against a distro Open MPI and on Linux against
+MPICH 5.0.1 and Open MPI 5.0.10 built from source by
+`ci-scripts/install-mpich.sh` / `install-openmpi.sh`. The two new ones are so
+far measured only on macOS against conda MPICH 4.3.1, where all eight pass and
+the launcher leg reports two distinct ranks through `bin/mpiexec` and
+`bin/mpirun`; the four CI rows that call this script (`ci.yaml`) are what will
+establish them against Open MPI, MVAPICH and Intel MPI.
 
 Those installers are far shorter than mpif's equivalents on purpose: mpif needs
 an MPI that already implements the standard ABI, hence its pinned MPICH `main`
@@ -387,7 +433,7 @@ installs (`libmpi_abi.1.dylib`, checked with `otool -D`), which is the point:
 that name is what decides whether a binary built here starts against someone
 else's `libmpi_abi`. All three consumption routes name `-lmpi_abi` or an
 imported target and so resolve through the unversioned symlink;
-`ci-scripts/check-install.sh` runs all five legs against the versioned layout.
+`ci-scripts/check-install.sh` runs every leg against the versioned layout.
 
 ## 10. Tests
 

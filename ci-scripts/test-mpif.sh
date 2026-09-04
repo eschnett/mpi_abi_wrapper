@@ -21,13 +21,19 @@
 #   MPIEXEC_PREFLAGS        extra mpiexec flags (Open MPI needs them on a
 #                           runner; MPICH wants none rather than an empty list)
 #
-# **Two prefixes, because ours has no mpiexec.** NOTES.md #9 makes this
-# project's prefix exclusive -- it holds mpi.h, libmpi_abi, libmpiwrapper and
-# the compiler wrappers, and deliberately not a second MPI. The launcher
-# belongs to the *wrapped* implementation, which cmake/FindMPI.cmake says in as
-# many words. For a native ABI prefix the two are the same directory and the
-# second argument can be left off; for a wrapper prefix they differ, and that
-# difference is the whole reason this takes two.
+# **Two prefixes, because the launcher belongs to the wrapped MPI.** NOTES.md
+# #9 makes this project's prefix exclusive -- it holds mpi.h, libmpi_abi,
+# libmpiwrapper and the compiler wrappers, and deliberately not a second MPI.
+# The launcher is the wrapped implementation's, and the second argument is
+# where it comes from. For a native ABI prefix the two are the same directory
+# and it can be left off.
+#
+# What changed with decision 27 is what happens when it is left off for a
+# *wrapper* prefix: that prefix now installs a bin/mpiexec of its own, which
+# forwards to the wrapped launcher, so the default below resolves instead of
+# naming a file that is not there. Both CI legs still pass both prefixes
+# explicitly, so nothing here behaves differently -- but the failure mode the
+# second argument existed to avoid is gone.
 #
 # **ctest only.** mpif's MPICH Fortran suite (its ci-scripts/suite/) is a much
 # larger, separately-triaged thing and is deliberately not run here.

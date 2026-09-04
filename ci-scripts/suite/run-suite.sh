@@ -27,9 +27,11 @@
 #      points and MPICH internals, which are *build* failures here rather
 #      than wrong answers (HISTORY.md says to expect them).
 #
-#   3. MPIEXEC is ci-scripts/suite/mpiexec-filter, since a wrapper prefix has
-#      no launcher of its own. That file's header explains the other three
-#      jobs the filter has to do.
+#   3. MPIEXEC is ci-scripts/suite/mpiexec-filter. A wrapper prefix does ship
+#      a bin/mpiexec of its own now (decision 27), but that one forwards its
+#      arguments verbatim, which is exactly what the suite cannot be given:
+#      testlists carry hydra-only flags and a timeout convention that have to
+#      be translated. That file's header explains the three jobs.
 #
 #   4. `make -k` before runtests. The suite's tests are noinst_PROGRAMS, so
 #      one parallel build makes runtests' own per-test `make` a no-op check;

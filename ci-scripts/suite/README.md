@@ -11,7 +11,7 @@ README): editing a reason here must not invalidate the MPI-install cache.
 | file | what it is |
 |---|---|
 | `run-suite.sh` | the runner: build and install this project, fetch and configure the suite against it, build the tests, run them, gate the result |
-| `mpiexec-filter` | the `mpiexec` the suite sees, since a wrapper prefix has no launcher of its own |
+| `mpiexec-filter` | the `mpiexec` the suite sees. A wrapper prefix does ship one of its own now (decision 27), but it forwards arguments verbatim, and the suite hands the launcher hydra spellings and a timeout convention that have to be *translated* — that file's header has the three jobs |
 | `check-tap.py` | the gate: runtests' TAP output against this variant's expected-failure list, in both directions |
 | `xfail-mpich.txt`, `xfail-openmpi.txt` | the **local** expected failures, one reason per line |
 | `xfail-ci-<mpi>.txt`, `xfail-ci-<mpi>-<arch>.txt` | the **CI** expected failures: what every architecture of an implementation sees, plus a per-architecture delta beside it |
