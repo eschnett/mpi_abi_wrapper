@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(mpi_abi_wrapper
-  VERSION 1.0.0
+  VERSION 1.1.0
   DESCRIPTION "An MPI-5.0 standard-ABI shim over any MPI-3.0+ implementation"
   HOMEPAGE_URL "https://github.com/eschnett/mpi_abi_wrapper"
   LANGUAGES C)

@@ -425,8 +425,8 @@ time so the two cannot drift, and `VERSION` is `PROJECT_VERSION`:
 
 | | installed | recorded by a client binary |
 |---|---|---|
-| ELF | `libmpi_abi.so.1.0.0`, `.so.1`, `.so` | `libmpi_abi.so.1` |
-| Mach-O | `libmpi_abi.1.0.0.dylib`, `.1.dylib`, `.dylib` | `@rpath/libmpi_abi.1.dylib` |
+| ELF | `libmpi_abi.so.1.1.0`, `.so.1`, `.so` | `libmpi_abi.so.1` |
+| Mach-O | `libmpi_abi.1.1.0.dylib`, `.1.dylib`, `.dylib` | `@rpath/libmpi_abi.1.dylib` |
 
 The leaf name in the right-hand column is the one Open MPI's ABI branch also
 installs (`libmpi_abi.1.dylib`, checked with `otool -D`), which is the point:

@@ -1348,7 +1348,7 @@ thing separating the safe class from the dangerous one. It is `MPI_Info_get`'s
 26). It puts a two-line banner in front of the wrapped library's own string:
 
 ```
-mpi_abi_wrapper 1.0.0 (MPI 5.0 standard ABI, MPI_ABI_VERSION 1.0)
+mpi_abi_wrapper 1.1.0 (MPI 5.0 standard ABI, MPI_ABI_VERSION 1.0)
 wrapping:
 MPICH Version:      4.3.1
 ...
@@ -1943,7 +1943,9 @@ the decision rather than working around it.
     does too. It is read out of `gen/include/mpi.h` at configure time rather
     than written down again, and **must never be made to follow
     `PROJECT_VERSION`**: a 1.1.0 or a 2.0.0 of this project still implements
-    ABI major 1 and must still answer to `libmpi_abi.so.1`. `libmpiwrapper` is
+    ABI major 1 and must still answer to `libmpi_abi.so.1`. That 1.1.0 has
+    since shipped, so the clause is a measurement rather than a hypothetical —
+    §9 has what was checked. `libmpiwrapper` is
     reached by `dlopen` at an absolute path and MPI-5.0 §20.2.1 forbids the
     application naming it at all, so a soname on it would name nothing. §9.
 22. **Neither ELF version script names its node**, so no symbol this project
@@ -2212,7 +2214,14 @@ which makes the version part of the contract rather than packaging trivia. So
 `SOVERSION` is `MPI_ABI_VERSION`, matching what Open MPI's ABI branch installs,
 and it is `file(STRINGS)`-ed out of the generated header so that no edit can
 put the two out of step. `VERSION` is `PROJECT_VERSION` and moves freely; the
-two are deliberately different numbers that happen to agree at 1.0.0 today.
+two are deliberately different numbers, and **v1.1.0 is where they stopped
+agreeing** — which is the first time the decoupling was observable rather than
+merely intended. Measured on that release: the installed file became
+`libmpi_abi.1.1.0.dylib`, and `otool -D` on it and `otool -L` on a program
+`bin/mpicc` had just linked both still answer `@rpath/libmpi_abi.1.dylib` at
+compatibility version 2.0.0. A minor release of this project therefore changes
+no name any client binary records, which is the property decision 21 exists to
+hold.
 
 **Mach-O gates on a second number, and it is not the one in the file name.**
 dyld records the compatibility version a client was linked against and refuses
