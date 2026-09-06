@@ -60,9 +60,16 @@ INCLUDE_GUARD = "MPIABI_H"
 
 # One identifier per entry point, e.g. "MPI_Send" -- the "688 entry points"
 # tally of NOTES.md #1. Populated by extract_entrypoints().
+#
+# MPIX_ is in the pattern because the header declares non-standard entry points
+# beside the standard ones (NOTES.md #7 decision 28). It has to be: dropping
+# prototypes from mpiabi.h is what this regex decides, and an MPIX_ prototype
+# it did not match would be copied into mpiabi.h unrenamed and then collide
+# with the implementation's own declaration of the same name in every wrapper
+# translation unit.
 _ENTRYPOINT_RE = re.compile(
     r"^\s*[A-Za-z_][\w ]*?\**\s*"
-    r"(?P<name>P?MPI_[A-Za-z0-9_]+)"
+    r"(?P<name>P?MPIX?_[A-Za-z0-9_]+)"
     r"\s*\([^;{]*\)\s*;\s*(/\*.*\*/)?\s*$"
 )
 
@@ -111,7 +118,15 @@ def is_prototype_line(line: str) -> bool:
 
 
 def extract_entrypoints(mpi_h_text: str):
-    """Return (mpi_names, pmpi_names), each a sorted list of base names."""
+    """Return (mpi_names, pmpi_names), each a sorted list of *full* names.
+
+    Full names rather than bases, because a base no longer identifies an entry
+    point: MPI_Query_cuda_support does not exist and MPIX_Query_cuda_support
+    does, so "Query_cuda_support" alone says nothing about which prefix to put
+    back. dev/entrypoints.txt is this list, and its two consumers --
+    test/check_exports.cmake and dev/probe_impl.py -- read the names as they
+    are spelled instead of reassembling them.
+    """
     mpi_names = set()
     pmpi_names = set()
     for line in mpi_h_text.splitlines():
@@ -119,10 +134,10 @@ def extract_entrypoints(mpi_h_text: str):
             continue
         m = _ENTRYPOINT_RE.match(line)
         name = m.group("name")
-        if name.startswith("PMPI_"):
-            pmpi_names.add(name[len("PMPI_"):])
+        if name.startswith("PMPI"):
+            pmpi_names.add(name[1:])
         else:
-            mpi_names.add(name[len("MPI_"):])
+            mpi_names.add(name)
     return sorted(mpi_names), sorted(pmpi_names)
 
 
@@ -133,9 +148,9 @@ def check_symmetry(mpi_names, pmpi_names):
     if only_mpi or only_pmpi:
         msg = ["MPI_*/PMPI_* asymmetry:"]
         for n in sorted(only_mpi):
-            msg.append(f"  MPI_{n} has no PMPI_{n}")
+            msg.append(f"  {n} has no P{n}")
         for n in sorted(only_pmpi):
-            msg.append(f"  PMPI_{n} has no MPI_{n}")
+            msg.append(f"  P{n} has no {n}")
         raise SystemExit("\n".join(msg))
     if len(mpi_set) != 688:
         raise SystemExit(
@@ -145,7 +160,12 @@ def check_symmetry(mpi_names, pmpi_names):
 
 # --- mpiabi.h derivation -----------------------------------------------
 
-_DEFINE_RE = re.compile(r"^#define\s+(MPI_[A-Za-z0-9_]+)")
+# MPIX_ macros rename too, and that is a build requirement rather than tidiness:
+# an unrenamed MPIX_GPU_SUPPORT_CUDA in mpiabi.h sits beside MPICH's own
+# `#define MPIX_GPU_SUPPORT_CUDA (0)` in every wrapper translation unit, which
+# is a macro redefinition under -Werror. rename() already knows the MPIABIX_
+# spelling (NOTES.md #2).
+_DEFINE_RE = re.compile(r"^#define\s+(MPIX?_[A-Za-z0-9_]+)")
 # Function-pointer typedefs: `typedef RET (NAME)(args...);`
 _TYPEDEF_FUNPTR_RE = re.compile(r"^typedef\b.*\(\s*(MPI_[A-Za-z0-9_]+)\s*\)\s*\(")
 # `typedef enum [TAG] { ... } NAME;` on one line, or the closing `} NAME;` of

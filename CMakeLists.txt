@@ -323,14 +323,14 @@ target_compile_options(mpi_abi PRIVATE ${MPIABI_WARNINGS})
 # which is how the omission stayed invisible until an MPI-3.0 implementation
 # forced an older container. CMAKE_DL_LIBS is the portable spelling.
 target_link_libraries(mpi_abi PRIVATE ${CMAKE_DL_LIBS})
-# Every MPI_*/PMPI_* entry point is exported and nothing else is: the ABI
-# functions carry default visibility from the ABI header, and the one internal
-# global is marked hidden in bootstrap.c. Visibility attributes stop there,
-# though -- they cannot touch the handful of symbols the linker itself inserts
-# into every shared object (_init, _fini, _edata, _end, __bss_start on ELF),
-# which is what the version script / exported-symbols list below is for
-# (NOTES.md #9; test/check_exports.cmake used to carry an explicit exemption
-# for exactly these names).
+# Every MPI_*/PMPI_*/MPIX_*/PMPIX_* entry point is exported and nothing else
+# is: the ABI functions carry default visibility from the ABI header, and the
+# one internal global is marked hidden in bootstrap.c. Visibility attributes
+# stop there, though -- they cannot touch the handful of symbols the linker
+# itself inserts into every shared object (_init, _fini, _edata, _end,
+# __bss_start on ELF), which is what the version script / exported-symbols
+# list below is for (NOTES.md #9; test/check_exports.cmake used to carry an
+# explicit exemption for exactly these names).
 set_target_properties(mpi_abi PROPERTIES C_VISIBILITY_PRESET default)
 if(APPLE)
   target_link_options(mpi_abi PRIVATE

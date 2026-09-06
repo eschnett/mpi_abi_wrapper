@@ -43,9 +43,21 @@ END_HEADING = "A.4 Fortran 2008 Bindings with the mpi_f08 Module"
 # on) rather than the usual int/void/double, so this is not a fixed set.
 DECL = re.compile(
     r"^(?P<ret>[A-Za-z_][A-Za-z0-9_]*)\s+"
-    r"(?P<name>(?:MPI|PMPI)_[A-Za-z0-9_]+)"
+    r"(?P<name>P?MPIX?_[A-Za-z0-9_]+)"
     r"\((?P<args>.*)\)\s*;?\s*$"
 )
+
+
+# The twin relation, spelled once. `startswith("PMPI_")` is not it any more:
+# PMPIX_Query_cuda_support is the shifted half of MPIX_Query_cuda_support and
+# begins with neither "MPI_" nor "PMPI_" (NOTES.md #7 decision 7).
+def is_pmpi(name):
+    return name.startswith("PMPI")
+
+
+def unshifted(name):
+    return name[1:] if is_pmpi(name) else name
+
 
 # The same signature start, for scanning a whole blob of joined appendix
 # lines rather than one declaration per line -- ^/$ above anchor to the
@@ -426,8 +438,8 @@ def main():
     # bindings at all -- "the same declarations as their twin" is the only
     # thing there is to check about the PMPI half, and it is the thing
     # MPI-5.0 §20.2.1 depends on.
-    mpi_header = {n: v for n, v in header.items() if n.startswith("MPI_")}
-    pmpi_header = {n[1:]: v for n, v in header.items() if n.startswith("PMPI_")}
+    mpi_header = {n: v for n, v in header.items() if not is_pmpi(n)}
+    pmpi_header = {unshifted(n): v for n, v in header.items() if is_pmpi(n)}
 
     passed_over = {}
     for where, ours, what in [

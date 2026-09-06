@@ -887,13 +887,45 @@ def guard_reason(name):
         return "an optional sized Fortran type"
     return "MPI_T is optional in full"
 
+
+# ---------------------------------------------------------------------------
+# Names: the twin relation, in one place
+# ---------------------------------------------------------------------------
+
+# Every entry point is declared twice, once shifted (MPI-5.0 20.2.1), and the
+# generator asks three questions about that pair: which half is this, what is
+# the unshifted spelling, what is the shifted one. Spelling them by hand as
+# `startswith("PMPI_")` and `"MPI_" + ep.base` was exact while every name began
+# `MPI_`; it stops being exact the moment one begins `MPIX_`, because `PMPIX_`
+# starts with neither `PMPI_`-then-uppercase nor anything `split("MPI_", 1)`
+# can take apart usefully. These three are the whole of the relation, so a
+# future prefix is one regex here rather than a hunt (NOTES.md #7 decision 7).
+_NAME_PREFIX_RE = re.compile(r"^P?MPIX?_")
+
+
+def is_pmpi(name):
+    """True for the shifted half of the pair, MPIX_ names included."""
+    return name.startswith("PMPI")
+
+
+def unshifted(name):
+    """The MPI_/MPIX_ spelling of `name`, whichever half it is."""
+    return name[1:] if is_pmpi(name) else name
+
+
+def shifted(name):
+    """The PMPI_/PMPIX_ spelling of `name`, which must be unshifted."""
+    assert not is_pmpi(name), name
+    return "P" + name
+
+
 # ---------------------------------------------------------------------------
 # Parsing the ABI header
 # ---------------------------------------------------------------------------
 
 _PROTO_RE = re.compile(
     r"^(?P<ret>[A-Za-z_][\w ]*?\s*\**)\s*"
-    r"(?P<name>P?MPI_[A-Za-z0-9_]+)\s*"
+    r"(?P<name>P?MPIX?_[A-Za-z0-9_]+)\s*"
     r"\((?P<args>[^;{]*)\)\s*;\s*(?P<comment>/\*.*\*/)?\s*$"
 )
 _HANDLE_TYPEDEF_RE = re.compile(
@@ -975,8 +1007,13 @@ class EntryPoint:
 
     @property
     def base(self):
-        """The name without its MPI_/PMPI_ prefix."""
-        return self.name.split("MPI_", 1)[1]
+        """The name without its MPI_/PMPI_/MPIX_/PMPIX_ prefix.
+
+        Read only where a *label* is wanted -- a generated identifier, a
+        report line. The twin relation is `is_pmpi`/`unshifted`/`shifted`
+        above, never this: two different prefixes can share a base.
+        """
+        return _NAME_PREFIX_RE.sub("", self.name)
 
 
 def parse_params(text):
@@ -2933,7 +2970,7 @@ VTABLE_PREAMBLE = '''\
 
 /* One slot per *forwarded* ABI entry point, so {nslots} of them: MPI_X and
  * PMPI_X get their own, and each leads to a wrapper body that calls the
- * implementation's correspondingly-shifted name. That is fewer than the 1376
+ * implementation's correspondingly-shifted name. That is fewer than the {nnames}
  * names libmpi_abi exports, because the entry points MPI-3.0 deleted are
  * answered on the ABI side in terms of their replacements and reach no slot at
  * all (NOTES.md #3); gen/report.txt freezes both counts.
@@ -3028,13 +3065,15 @@ def emit_vtable_h(entrypoints):
     # exported forwarders. Getting this wrong is invisible -- it only mis-states
     # a comment sitting directly above the struct it miscounts, which is how it
     # survived from the commit that introduced the aliases until a review.
-    text = (VTABLE_PREAMBLE.format(hash=0, nslots=nslots) + body +
+    text = (VTABLE_PREAMBLE.format(hash=0, nslots=nslots,
+                                   nnames=len(entrypoints)) + body +
             VTABLE_EPILOGUE)
     # The hash is over the emitted slot list itself, by dev/layout_hash.py's
     # definition, so it is computed from the text and substituted back. The
     # comment above is not part of that text, so nslots does not affect it.
     value = lh.fnv1a32(lh.slot_list_text(text).encode())
-    return (VTABLE_PREAMBLE.format(hash=value, nslots=nslots) + body +
+    return (VTABLE_PREAMBLE.format(hash=value, nslots=nslots,
+                                   nnames=len(entrypoints)) + body +
             VTABLE_EPILOGUE)
 
 
@@ -3982,7 +4021,7 @@ def load(mpi_h_text):
     apis = json.load(open(APIS_JSON))
 
     for name, ep in protos.items():
-        base = ep.name if not name.startswith("PMPI_") else "MPI_" + ep.base
+        base = unshifted(name)
         key = base.lower()
         large = False
         if key not in apis:
@@ -4033,14 +4072,14 @@ def assign_status(protos, handwritten_bodies):
                          "ledger does not name: " + ", ".join(sorted(stray)))
 
     for name, ep in protos.items():
-        if name.startswith("PMPI_"):
+        if is_pmpi(name):
             continue
         if name in ABI_ALIAS:
             # No slot, no wrapper body: libmpi_abi answers this one itself, by
             # calling the slot of the entry point that replaced it.
             ep.status = "abi-alias"
             ep.detail = ABI_ALIAS[name]
-            twin = protos["P" + name]
+            twin = protos[shifted(name)]
             twin.status, twin.detail = ep.status, ep.detail
             continue
         if name in HAND_WRITTEN:
@@ -4077,7 +4116,7 @@ def assign_status(protos, handwritten_bodies):
             ep.status = "generated"
             ep.detail = None
         # The PMPI_ twin shares the classification, since it shares the body.
-        twin = protos["P" + name]
+        twin = protos[shifted(name)]
         twin.status, twin.detail = ep.status, ep.detail
         twin.unguarded = ep.unguarded
         for p, tp in zip(ep.params, twin.params):
@@ -4308,7 +4347,7 @@ def assign_fallbacks(protos):
         if any(q is None for q in params):
             continue
         ep.fallback, ep.fallback_params = alt.name, params
-        twin = protos["P" + name]
+        twin = protos[shifted(name)]
         twin.fallback, twin.fallback_params = "P" + alt.name, params
 
     named = set(LARGE_COUNT_ALT)
@@ -4321,10 +4360,15 @@ def assign_fallbacks(protos):
 
 
 def parse_handwritten_h():
-    """The set of MPI_ names src/mpiwrapper/handwritten.h has a body for."""
+    """The set of unshifted names src/mpiwrapper/handwritten.h has a body for.
+
+    MPIX_ counts: a body this file does not match is not an error here, it is
+    a ledger entry the generator quietly emits a stub for, which only the
+    frozen `hand-written bodies` tally would catch.
+    """
     text = HANDWRITTEN_H.read_text()
-    names = set(re.findall(r"\bmpiwrapper_w_(MPI_[A-Za-z0-9_]+)\s*\(", text))
-    pnames = set(re.findall(r"\bmpiwrapper_w_P(MPI_[A-Za-z0-9_]+)\s*\(", text))
+    names = set(re.findall(r"\bmpiwrapper_w_(MPIX?_[A-Za-z0-9_]+)\s*\(", text))
+    pnames = set(re.findall(r"\bmpiwrapper_w_P(MPIX?_[A-Za-z0-9_]+)\s*\(", text))
     if names != pnames:
         raise SystemExit(
             "handwritten.h declares an MPI_/PMPI_ body without its twin: "
@@ -4363,15 +4407,13 @@ def assert_slots_complete(vtable_text, wrappers_text, names):
     """One slot per entry point, in header order -- less the ABI-side aliases,
     which libmpi_abi answers itself and which therefore have nothing on the
     other side of the vtable to point at."""
-    slots = re.findall(r"\(\*(P?MPI_[A-Za-z0-9_]+)\)", vtable_text)
-    expected = [n for n in names
-                if n.split("MPI_", 1)[1] not in
-                {a.split("MPI_", 1)[1] for a in ABI_ALIAS}]
+    slots = re.findall(r"\(\*(P?MPIX?_[A-Za-z0-9_]+)\)", vtable_text)
+    expected = [n for n in names if unshifted(n) not in ABI_ALIAS]
     if slots != expected:
         raise SystemExit("the vtable slot list is not the entry-point list "
                          "less the ABI-side aliases")
     names = expected
-    filled = re.findall(r"^\s*\.(P?MPI_[A-Za-z0-9_]+)\s*=", wrappers_text,
+    filled = re.findall(r"^\s*\.(P?MPIX?_[A-Za-z0-9_]+)\s*=", wrappers_text,
                         re.MULTILINE)
     if sorted(filled) != sorted(names):
         missing = set(names) - set(filled)
@@ -4384,7 +4426,7 @@ def assert_slots_complete(vtable_text, wrappers_text, names):
 # ---------------------------------------------------------------------------
 
 def emit_report(protos, tallies, handwritten_bodies):
-    mpi = [ep for n, ep in protos.items() if not n.startswith("PMPI_")]
+    mpi = [ep for n, ep in protos.items() if not is_pmpi(n)]
     out = []
     w = out.append
     w("The generator's ledger -- GENERATED FILE, do not edit by hand.")
@@ -4543,7 +4585,7 @@ def main():
     # The deleted-in-MPI-3.0 set, taken from the header's own marker rather
     # than from a list here, so a sixth cannot appear unnoticed.
     deprecated_mpi2 = {n for n, ep in protos.items()
-                       if not n.startswith("PMPI_")
+                       if not is_pmpi(n)
                        and ep.deprecated_in == "MPI-2.0"}
     check_aliases(protos, parse_typedefs(patched), deprecated_mpi2)
 
@@ -4553,8 +4595,8 @@ def main():
     assign_fallbacks(protos)
 
     names = list(protos)
-    mpi_eps = [ep for n, ep in protos.items() if not n.startswith("PMPI_")]
-    pairs = [(ep, protos["P" + ep.name]) for ep in mpi_eps]
+    mpi_eps = [ep for n, ep in protos.items() if not is_pmpi(n)]
+    pairs = [(ep, protos[shifted(ep.name)]) for ep in mpi_eps]
 
     vtable_h = emit_vtable_h(list(protos.values()))
     entrypoints_c = emit_entrypoints_c(list(protos.values()))

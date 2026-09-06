@@ -50,7 +50,7 @@ def main() -> int:
     text = header.read_text()
 
     value = fnv1a32(slot_list_text(text).encode())
-    nslots = len(re.findall(r"\(\*P?MPI_", text[text.index(STRUCT_START):]))
+    nslots = len(re.findall(r"\(\*P?MPIX?_", text[text.index(STRUCT_START):]))
 
     if not check:
         print(f"{value:#010x}u  ({nslots} slots in {header})")

@@ -239,16 +239,19 @@ HEADER = """\
 def wanted(sources, entrypoints):
     """guard name -> the (spelling, kind) pairs that must all be declared.
 
-    An entry point needs both its MPI_ and PMPI_ names, because the body macro
-    is instantiated once against each (decision 7). Everything else is a
-    constant, and is probed as a value rather than as a function.
+    A *standard* entry point needs both its MPI_ and PMPI_ names, because the
+    body macro is instantiated once against each (decision 7). Everything else
+    is a constant, and is probed as a value rather than as a function.
+
+    dev/entrypoints.txt holds full names, so a guard is matched against the
+    spelling it names rather than reassembled from a base.
     """
-    bases = {ln.strip() for ln in entrypoints.read_text().split() if ln.strip()}
+    names = {ln.strip() for ln in entrypoints.read_text().split() if ln.strip()}
     out = {}
     for src in sources:
         for name in re.findall(r"MPIWRAPPER_HAVE_([A-Za-z_]\w*)",
                                src.read_text()):
-            if name.startswith("MPI_") and name[len("MPI_"):] in bases:
+            if name.startswith("MPI_") and name in names:
                 out[name] = ((name, "function"), ("P" + name, "function"))
             else:
                 out[name] = ((name, "value"),)
