@@ -605,6 +605,30 @@ extern const MPIABI_Fint mpif_f08_statuses_ignore_[];
 #define MPIABI_F08_STATUS_IGNORE   ((MPIABI_F08_Status*)mpif_f08_status_ignore_)
 #define MPIABI_F08_STATUSES_IGNORE ((MPIABI_F08_Status*)mpif_f08_statuses_ignore_)
 
+/* GPU-support queries. Not part of MPI-5.0: applications ask their MPI
+   whether it is GPU-aware through vendor extensions rather than through the
+   standard, and this header carries the union of the two spellings that
+   exist (NOTES.md #7 decision 28). Open MPI declares the cuda and rocm forms
+   in its <mpi-ext.h>; MPICH declares all four single forms, the enum form and
+   the three kind constants in its own mpi.h, with PMPIX_ twins.
+
+   Absent means 0, not an error: an implementation with no such query is an
+   implementation that is not GPU-aware, so the wrapper answers 0 rather than
+   MPIABI_ERR_UNSUPPORTED_OPERATION. rocm and hip are one question under two
+   names and always answer alike.
+
+   The two *_AWARE_SUPPORT macros are defined to 1, meaning "the run-time
+   query exists and is authoritative". Both consumer idioms then reach the
+   call: the one that tests only whether the macro is defined, and the one
+   that tests its value too. */
+
+#define MPIABIX_GPU_SUPPORT_CUDA 0
+#define MPIABIX_GPU_SUPPORT_ZE   1
+#define MPIABIX_GPU_SUPPORT_HIP  2
+
+#define MPIABIX_CUDA_AWARE_SUPPORT 1
+#define MPIABIX_ROCM_AWARE_SUPPORT 1
+
 #if defined(__cplusplus)
 }
 #endif

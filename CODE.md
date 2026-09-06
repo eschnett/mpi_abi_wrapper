@@ -28,9 +28,9 @@ stable.
 application
     |  MPI_Send(...)                        ABI types only
     v
-libmpi_abi.so          exports MPI_* and PMPI_* (1376 symbols)
+libmpi_abi.so          exports MPI_*/PMPI_* and MPIX_*/PMPIX_* (1386 symbols)
     |                  includes the ABI mpi.h and nothing else
-    |  vt->MPI_Send(...)                    ABI types only, 1366 slots
+    |  vt->MPI_Send(...)                    ABI types only, 1376 slots
     v
 libmpiwrapper.so       exports mpiwrapper_get_vtable and nothing else
     |                  includes the implementation's mpi.h + generated mpiabi.h
@@ -53,13 +53,14 @@ developer option, which is what the cross test uses.
 
 | | | authority |
 |---|---|---|
-| entry points | **688** | `gen/report.txt`; the ABI header's prototypes |
+| entry points | **693** | `gen/report.txt`; the ABI header's prototypes |
 | — core / `MPI_T_*` / Fortran converters | 611 / 51 / 26 | the header |
+| — non-standard extensions | **5** | `grep -c '^int MPIX_' gen/include/mpi.h` |
 | — marked deprecated | 12 | `grep '; /\* deprecated' gen/include/mpi.h` |
-| exported symbols in `libmpi_abi` | **1376** | `nm`; `test/check_exports.cmake`, both directions |
-| **vtable slots** | **1366** | `gen/report.txt`; 683 × 2 — the five of §5 have no slot |
+| exported symbols in `libmpi_abi` | **1386** | `nm`; `test/check_exports.cmake`, both directions |
+| **vtable slots** | **1376** | `gen/report.txt`; 688 × 2 — the five of §5 have no slot |
 | generated bodies | **562** | `gen/report.txt` |
-| hand-written (the ledger) | **121**, all with bodies | `gen/report.txt`, `src/mpiwrapper/handwritten.h` |
+| hand-written (the ledger) | **126**, all with bodies | `gen/report.txt`, `src/mpiwrapper/handwritten.h` |
 | answered by `libmpi_abi` itself | **5** | `gen/report.txt` |
 | deferred | **0**, frozen | `gen/report.txt` |
 | staged past return | **8** | `gen/report.txt` |
@@ -71,9 +72,12 @@ developer option, which is what the cross test uses.
 | error classes | 80 | 62 `MPI_ERR_*` + 18 `MPI_T_ERR_*`; `MPI_ERR_LASTCODE` is a bound |
 | callback registrars | 15 in the ledger, 16 counting `MPI_Keyval_create` | `gen/report.txt`, `NOTES.md` #6.1 |
 
-562 + 121 + 5 = 688. 683 × 2 = 1366 slots, while all 688 × 2 = 1376 names are
+562 + 126 + 5 = 693. 688 × 2 = 1376 slots, while all 693 × 2 = 1386 names are
 still exported, because the five of §5 are implemented on the ABI side rather
-than forwarded.
+than forwarded. The three fives are three different sets: the five with no slot
+are the ones MPI-3.0 deleted (§5), the five non-standard ones are the GPU
+queries (`NOTES.md` #7 decision 28), which do have slots, and the row above
+counts each independently.
 
 The two large-count rows are the ones that move with the implementation rather
 than with the ABI. All 159 `_c` entry points exist in every build; over MPICH
@@ -124,10 +128,15 @@ dev/               the Python generator and the dev-time cross-checks
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
   abort-exit-status/ dispatch-bench/ dlopen-probe/ get-contents-extent/
-  handle-map-bench/ launcher-env-forwarding/ request-identity/
-  type-identity/ weakdef-probe/
-                       the nine probe directories NOTES.md and the suite's
-                       lists cite
+  gpu-query/ handle-map-bench/ large-count-envelope/
+  launcher-env-forwarding/ macos-weak-symbols/ request-identity/
+  suite-timings/ symbol-versioning/ type-identity/ watchdog-orphans/
+  weakdef-probe/
+                       the fifteen probe and measurement directories NOTES.md,
+                       HISTORY.md and the suite's lists cite -- authority
+                       `ls -d dev/*/` less s1-reference, third-implementations
+                       and vendor. This list said "nine" and named nine while
+                       there were fourteen
   third-implementations/  what the MVAPICH and Intel MPI rows assume, checked
                        in a container rather than asserted (§11)
 doc/               mpi.h.patch, mpi50-report.pdf
@@ -173,7 +182,7 @@ The first two are the S0 step, in `dev/generate_headers.py`, which
 `dev/generate.py` imports rather than duplicates, so one `--check` covers all
 seven.
 
-**`gen/report.txt` is the authority for "what is where".** It names all 688
+**`gen/report.txt` is the authority for "what is where".** It names all 693
 entry points exactly once — generated, hand-written, ABI-side, or deferred —
 groups the ledger by reason, marks each `[done]`, and carries the one limitation
 that is this library's rather than an implementation's.
@@ -195,10 +204,42 @@ hand-written sources tests one of those and nothing else.
 - When the compile fails it reads the diagnostics' **line numbers** — never
   their wording — drops those probes and compiles again, so every answer is
   confirmed by a compile that succeeded.
-- Measured: **0.3–0.6 s for 521 names.** MPICH 4.3.1 reports 7 constants absent
-  (the five sized Fortran logicals, `MPI_ERR_ABI`, `MPIX_TYPECLASS_LOGICAL`)
-  plus the 28 entry points it lacks; Open MPI 5.0.10 reports 166 absent, mostly
-  the `_c` forms. Both agree exactly with `nm` where `nm` can answer.
+- **An optional *header* is asked separately, before the names.**
+  `OPTIONAL_HEADERS` is `{"mpi-ext.h": "MPI_EXT_H"}`: a two-line translation
+  unit is compiled first, and on success the header is included in the real
+  probe and `MPIWRAPPER_HAVE_MPI_EXT_H` is written. Open MPI declares
+  `MPIX_Query_cuda_support` and `MPIX_Query_rocm_support` there rather than in
+  `<mpi.h>` (`NOTES.md` #7 decision 28), so without this both read as absent on
+  an implementation that has them. Separate rather than folded into the loop
+  because a missing header is reported at the `#include`'s own line, which is
+  not a probe line, and the loop treats a diagnostic it cannot place as a real
+  build problem.
+- Measured on this laptop, re-derived from each build tree's own
+  `mpiwrapper_impl_config.h` rather than carried forward: **732 names asked**
+  (`dev/probe_impl.py`'s own "probed N names" line), 0.3–0.6 s.
+
+  | row | available | absent | `mpi-ext.h` |
+  |---|---|---|---|
+  | MPICH 4.3.1 (conda) | 722 | **10** | no |
+  | Open MPI 5.0.6 (native) | 488 | **244** | yes |
+  | Open MPI main `--enable-standard-abi` | 717 | **15** | no |
+
+  MPICH's ten are the five sized Fortran logicals, `MPI_ERR_ABI`,
+  `MPIX_TYPECLASS_LOGICAL`, `FORTRAN` (see below) and the two `rocm` spellings
+  of the GPU family, which it calls `hip`; it lacks no entry point of the
+  standard. Open MPI 5.0.6's 244 are mostly the `_c` forms, with `MPI_T`'s
+  events, the MPI-4.1 buffer forms and eight of the GPU family beside them. The
+  ABI-implementing row's fifteen are `MPIX_TYPECLASS_LOGICAL`, `FORTRAN` and
+  all thirteen names of the GPU family — nothing of the standard, which is what
+  makes it the identity configuration. All agree with `nm` where `nm` can
+  answer.
+- **`FORTRAN` is asked and can never be answered, and that is harmless rather
+  than a defect.** `MPIWRAPPER_HAVE_FORTRAN` is set by `CMakeLists.txt` on the
+  targets that have a Fortran probe object (decision 25); the probe reads every
+  `MPIWRAPPER_HAVE_*` the sources mention, so it also asks the implementation
+  for a constant named `FORTRAN`, which nothing has. It appears in every row's
+  absent list. The probe only ever *adds* defines, so a name it reports absent
+  and CMake defines anyway is still defined.
 - It reads **both** `gen/` and `src/mpiwrapper/`; `CMakeLists.txt` names the two
   source lists once so the probe's dependencies cannot drift from the library's.
 - `internal.h` `#error`s if that file did not come from the probe, because a
@@ -230,7 +271,10 @@ shifted-name rule survives the substitution.
 
 ## 6. The hand-written ledger, by reason
 
-121 entries, all implemented. `gen/report.txt` names each.
+126 entries, all implemented. `gen/report.txt` names each under the same reason
+and is the authority; the rows below sum to it. They did not before — this
+table omitted `MPI_Get_version`'s group of one, so it summed to 120 under a
+heading that said 121.
 
 | n | group | file |
 |---|---|---|
@@ -247,6 +291,8 @@ shifted-name rule survives the substitution.
 | 2 | spawn: `argv`, `array_of_argv`, `array_of_errcodes` together | `hw_spawn.c` |
 | 1 | `MPI_T_event_handle_free`: a callback on the way back into user code | `hw_callbacks.c` |
 | 1 | genuinely variadic (`MPI_Pcontrol`) | `hw_pcontrol.c` |
+| 1 | `MPI_Get_version`: reports the ABI's own version, and its retained forwarding call is the isolation probe | `hw_lifecycle.c` |
+| 5 | GPU-support queries: non-standard, and absent means 0 rather than an error (`NOTES.md` #7 decision 28) | `hw_gpu.c` |
 
 ## 7. The conversion runtime
 
@@ -404,6 +450,39 @@ the launcher leg reports two distinct ranks through `bin/mpiexec` and
 `bin/mpirun`; the four CI rows that call this script (`ci.yaml`) are what will
 establish them against Open MPI, MVAPICH and Intel MPI.
 
+**GPU support.** The installed `mpi.h` declares five queries the standard does
+not have, because that is how an application asks whether it may hand a device
+pointer to MPI (`NOTES.md` #7 decision 28):
+
+```c
+int MPIX_Query_cuda_support(void);          /* and PMPIX_ */
+int MPIX_Query_hip_support(void);
+int MPIX_Query_rocm_support(void);          /* the same question as hip */
+int MPIX_Query_ze_support(void);
+int MPIX_GPU_query_support(int gpu_type, int *is_supported);
+```
+
+with `MPIX_GPU_SUPPORT_CUDA`/`_ZE`/`_HIP` = 0/1/2 and
+`MPIX_CUDA_AWARE_SUPPORT` = `MPIX_ROCM_AWARE_SUPPORT` = 1. No `mpi-ext.h` is
+installed; the declarations are in `mpi.h`, MPICH-style, so both consumer
+idioms (`#if defined(X)` and `#if defined(X) && X`) reach the run-time call.
+
+**0 means either "not GPU-aware" or "cannot be asked", and the two are the same
+answer to a caller.** The wrapper forwards to whichever spelling the wrapped
+MPI has and answers 0 where it has none — never
+`MPI_ERR_UNSUPPORTED_OPERATION`, which is 55 and would read as yes. An
+unrecognised `gpu_type` is `MPI_ERR_ARG` with `*is_supported` set to 0.
+
+Two things a consumer might expect to need here and does not. **Device buffers
+need nothing from the wrapper**: `buf` is passed through untouched and only
+host-side arrays are staged (`NOTES.md` #5.7). And **MPI-4.1's standard
+`mpi_memory_alloc_kinds` info key is forwarded as any info string is** — there
+is no wrapper code specific to it. `abi_tools_test` reads both and prints what
+it found, so what each row reports is read off a test log rather than asserted
+here: on this laptop, conda MPICH 4.3.1 answers `cuda 0, rocm/hip 0, ze 0` with
+`mpi_memory_alloc_kinds: mpi,system`, and native Open MPI 5.0.6 answers
+`cuda 0, rocm/hip 0, ze 0` and does not set the key.
+
 Those installers are far shorter than mpif's equivalents on purpose: mpif needs
 an MPI that already implements the standard ABI, hence its pinned MPICH `main`
 commit and header substitution. This project wraps any MPI-3.0+ implementation
@@ -448,17 +527,17 @@ in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 | test | needs an MPI? | what it establishes |
 |---|---|---|
 | `headers-up-to-date`, `compile_mpi_h`, `compile_mpiabi_h`, `compile_both_headers` | no | both generated headers compile standalone and *together* in one TU, with no tag/typedef/macro/enumerator collision |
-| `generated-up-to-date` | no | a fresh generation reproduces `gen/` byte for byte, the frozen tallies hold, and all 688 are accounted for |
+| `generated-up-to-date` | no | a fresh generation reproduces `gen/` byte for byte, the frozen tallies hold, and all 693 are accounted for |
 | `prototype-reproduced` | no | the generator still reproduces `dev/s1-reference/`: **194 items, 190 exactly, 4 exempted with a reason** that fails when it stops firing |
 | `out-params-defined` | no | no early return in a generated body leaves an out handle or out scalar undefined — **415 of the 705 generated arms own one**, and the rule closed 71 such returns across 26 entry points, 22 of them in narrowing arms an earlier revision of the check could not see (`NOTES.md` #7 decision 6) |
 | `layout-hash` | no | `MPIWRAPPER_LAYOUT_HASH` still matches the slot list it summarizes |
-| `c-bindings-cross-check` | no | all 688 signatures match MPI-5.0 Appendix A.3, or are one of 8 named exemptions |
-| `exported-symbols` | no | `libmpi_abi`'s exports are exactly the header's 1376, both directions — the leg that needs no MPI, and the reason this test is registered outside the wrapper block. Given a wrapper it adds two more: `libmpiwrapper` exports exactly one symbol, and the application's only MPI dependency is `libmpi_abi`. Its summary names the legs it ran, so a no-MPI pass cannot be read as all three |
+| `c-bindings-cross-check` | no | all 693 signatures match MPI-5.0 Appendix A.3, or are one of 9 named exemptions — the ninth being the five `MPIX_` entry points A.3 does not document and never will |
+| `exported-symbols` | no | `libmpi_abi`'s exports are exactly the header's 1386, both directions — the leg that needs no MPI, and the reason this test is registered outside the wrapper block. Given a wrapper it adds two more: `libmpiwrapper` exports exactly one symbol, and the application's only MPI dependency is `libmpi_abi`. Its summary names the legs it ran, so a no-MPI pass cannot be read as all three |
 | `isolation-check` | yes | an unisolated wrapper is refused at load, or crashes; a *successful* run of one is the failure |
 | `mpiwrapper_selftest` | one rank | white box: all 103 predefined handles both ways, every constant map, the status blob, staging, the staged-request table **and the policy over it**, the dynamic-handle collision probe, and the capacity behaviour of the maps that have no error channel |
 | `abi_prototype_test` | **two ranks required** for the staged-request round | S1's 29 entry points as an ordinary application over the ABI header. At one rank the nonblocking `MPI_Ialltoallw` is complete on return, so #13.2's (b) frees its block and the table is never exercised |
 | `abi_arrays_test` | two ranks preferred | S3a's classes, and the **lifetime** no generator assertion can see: a persistent `MPI_Alltoallw` started three times, 1200 create/free cycles against a 1024-entry table |
-| `abi_tools_test` | two ranks preferred | S3b's classes, the five ABI-side entry points and their sentinels, and **`MPI_T`'s null OUT pointers** — every query called twice, once for everything and once for one field |
+| `abi_tools_test` | two ranks preferred | S3b's classes, the five ABI-side entry points and their sentinels, **`MPI_T`'s null OUT pointers** — every query called twice, once for everything and once for one field — and the five GPU-support queries: each answers 0 or 1 rather than an error class, rocm equals hip, each `PMPIX_` equals its `MPIX_`, the enum form agrees with the single form for all three kinds, an unknown kind is `MPI_ERR_ARG` with the flag written, and rank 0 prints what this row saw beside the standard `mpi_memory_alloc_kinds` info key |
 | `abi_converters_test` | two ranks preferred | S4a's 70. Two checks are not round trips: `_toint` against the header's own constant, and a status through Fortran and back asked `MPI_Get_count` |
 | `abi_state_test` | two ranks preferred | S4b's state, each check written against what a plausible-but-wrong body gets wrong |
 | `abi_large_count_test` | **two ranks required** for the vector rounds | the ABI's 159 `_c` entry points, over an implementation that has them and over one where they are the narrowing fallback — the same assertions either way, since the `_c` form and its small twin must agree. Its sharpest cases are a vector collective at a non-root rank passing a genuine `NULL`, a nonblocking one whose caller overwrites its own count arrays the instant it is posted, and a refused call's out handle |
@@ -527,9 +606,10 @@ line 85). Plain `wc -l` is *not* the number — these files are mostly reasons,
 119 and 230 lines of them — and an earlier version of this table said it was.
 
 The Open MPI row is dominated by MPI-4.0: that release provides 466 of the ABI's
-688 entry points, so sessions, partitioned communication, persistent collectives
-and the `_c` forms are stubs answering `MPI_ERR_UNSUPPORTED_OPERATION`. It runs
-in the container `ci-scripts/suite/linux-suite.sh` starts. That was once a
+688 *standard* entry points, so sessions, partitioned communication, persistent
+collectives and the `_c` forms are stubs answering
+`MPI_ERR_UNSUPPORTED_OPERATION`. It runs in the container
+`ci-scripts/suite/linux-suite.sh` starts. That was once a
 necessity — no Open MPI 5.0.x launcher would run a job on the development
 laptop — and is now a choice: `scripts/host-env.sh` makes both local 5.0.x
 prefixes launch (`HISTORY.md` §2.13), so a macOS Open MPI row of this suite has

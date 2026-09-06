@@ -38,6 +38,8 @@ The bodies — the `HAND_WRITTEN` ledger, one file per family, each declared in
 | `hw_status.c` | the ten functions that consume a status in the *in* direction | S4a |
 | `hw_strings.c` | the ten output-string buffers with no length argument | S4a |
 | `hw_abi.c` | the six `MPI_Abi_*` calls, which answer about this library | S4a |
+| `hw_attr.c` | `MPI_Comm_get_attr` and `MPI_Win_get_attr`, whose returned `void *` means whatever the keyval says (§5.6) | S7 |
+| `hw_gpu.c` | the five GPU-support queries, the one group that is not in MPI-5.0 at all: no `apis.json` row could classify them, and absence is answered 0 rather than reported (`NOTES.md` #7 decision 28) | — |
 
 `handwritten.h` is the list of bodies that *exist*; the ledger itself is
 `HAND_WRITTEN` in `dev/generate.py`, and the generator fails if the two
@@ -64,7 +66,9 @@ the last 40 and did the same for the rest, so `handwritten.c` is gone: each of
 its eight bodies belongs to a family that has a file now, and a file named
 after the stage that wrote it was never going to survive the stage after that.
 
-**The ledger is 118 and every one of them has a body.** What still answers
+**The ledger is 126 and every one of them has a body** — the authority is
+`grep '^  hand-written ' gen/report.txt`, a frozen tally; the count written
+here stood at 118 through two additions before this one. What still answers
 `MPI_ERR_UNSUPPORTED_OPERATION` is decided per build by `dev/probe_impl.py`,
 for hand-written and generated entry points alike (decision 6), and
 `gen/report.txt` explains the one limitation that is this library's rather than

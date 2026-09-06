@@ -4,16 +4,20 @@ Generated (never hand-edited): `wrappers.c` (the per-function conversion
 bodies) and `constants.c` (the ABI-to-implementation constant tables).
 NOTES.md §3.
 
-Written by `dev/generate.py`. As of S3's first half, of the 688 entry points:
+Written by `dev/generate.py`, from the 693 entry points of the ABI header.
+The counts here are the frozen tallies of `gen/report.txt`, which is the
+authority; this table stood at S3's numbers (518/118/52) for several stages
+after they stopped being true.
 
 | | |
 |---|---|
-| 518 | generated: S2's mechanical classes plus S3a's arrays, statuses and lifetimes |
-| 118 | named in the `HAND_WRITTEN` ledger — eight written, the rest S4's |
-| 52 | deferred to S3's second half, each with the argument class that blocks it |
+| 562 | generated: S2's mechanical classes, S3's arrays, statuses and lifetimes, and §5.10's narrowing arms |
+| 126 | named in the `HAND_WRITTEN` ledger, every one with a body in `src/mpiwrapper/` |
+| 5 | answered by `libmpi_abi` itself and reaching no body here: the entry points MPI-3.0 deleted |
+| 0 | deferred, frozen at zero so that a class the generator cannot place fails generation |
 
 `gen/report.txt` names every one of them, and the generator fails if an entry
-point is in none of the three.
+point is in none of the four.
 
 Every generated body is guarded on `MPIWRAPPER_HAVE_<name>`, and so is every
 optional constant in `constants.c`. `dev/probe_impl.py` writes those at

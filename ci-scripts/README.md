@@ -59,8 +59,9 @@ default is the one it is. In short: MPICH runs on `debian:13`, because Ubuntu
 24.04's MPICH links `libpmix` and imports `PMIx_Init` while shipping a PMI-1
 hydra, so `mpiexec -n 2` there returns two singletons and exit 0 rather than a
 two-rank job; Open MPI stays on `ubuntu:24.04` for what its 4.1.6 covers and
-nothing else does — that release provides 466 of the ABI's 688 entry points, so
-it is the broadest exercise of decision 6's unsupported-operation paths, and the
+nothing else does — that release provides 466 of the ABI's 688 *standard*
+entry points, so it is the broadest exercise of decision 6's
+unsupported-operation paths, and the
 local `suite/xfail-openmpi.txt` is calibrated against it (CI's Open MPI suite
 legs build 5.0.10 from source and no longer share this pin); and `floor` runs on
 `ubuntu:20.04`, because gcc 9's gfortran

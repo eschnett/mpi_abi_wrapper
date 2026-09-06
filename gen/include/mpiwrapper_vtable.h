@@ -34,11 +34,11 @@
  * that changes the struct changes this value, and `ctest -R layout-hash` fails
  * until a regeneration updates it.
  */
-#define MPIWRAPPER_LAYOUT_HASH 0x2bef627fu
+#define MPIWRAPPER_LAYOUT_HASH 0x2e2f1167u
 
-/* One slot per *forwarded* ABI entry point, so 1366 of them: MPI_X and
+/* One slot per *forwarded* ABI entry point, so 1376 of them: MPI_X and
  * PMPI_X get their own, and each leads to a wrapper body that calls the
- * implementation's correspondingly-shifted name. That is fewer than the 1376
+ * implementation's correspondingly-shifted name. That is fewer than the 1386
  * names libmpi_abi exports, because the entry points MPI-3.0 deleted are
  * answered on the ABI side in terms of their replacements and reach no slot at
  * all (NOTES.md #3); gen/report.txt freezes both counts.
@@ -2488,6 +2488,16 @@ struct mpiwrapper_vtable {
   MPIABI_Fint (*MPI_Type_c2f)(MPIABI_Datatype);
   MPIABI_Win (*MPI_Win_f2c)(MPIABI_Fint);
   MPIABI_Fint (*MPI_Win_c2f)(MPIABI_Win);
+  int (*PMPIX_GPU_query_support)(int, int *);
+  int (*PMPIX_Query_cuda_support)(void);
+  int (*PMPIX_Query_hip_support)(void);
+  int (*PMPIX_Query_rocm_support)(void);
+  int (*PMPIX_Query_ze_support)(void);
+  int (*MPIX_GPU_query_support)(int, int *);
+  int (*MPIX_Query_cuda_support)(void);
+  int (*MPIX_Query_hip_support)(void);
+  int (*MPIX_Query_rocm_support)(void);
+  int (*MPIX_Query_ze_support)(void);
 };
 
 /* The only symbol libmpiwrapper exports.

@@ -1,6 +1,6 @@
 /* The hand-written entry-point bodies, for the vtable to point at.
  *
- * The generated wrappers.c holds one vtable initializer covering all 1366
+ * The generated wrappers.c holds one vtable initializer covering all 1376
  * slots, so it has to name the bodies the generator did *not* write. This is
  * that list: exactly the members of the HAND_WRITTEN ledger that have a body,
  * one declaration each, MPI_ and PMPI_ separately. If the two sets ever
@@ -19,7 +19,10 @@
  * error-code forms (hw_errors.c), the two spawn forms (hw_spawn.c) and
  * MPI_Pcontrol (hw_pcontrol.c). S7 added the two attribute getters whose
  * *value* is a converted class (hw_attr.c), found by the MPICH suite rather
- * than by any assertion here. All 120 ledger entries have a body, which
+ * than by any assertion here, and the five GPU-support queries (hw_gpu.c) are
+ * the one group that is not in MPI-5.0 at all -- the ABI header declares them
+ * and no standard binding describes them, so nothing could classify them
+ * (NOTES.md #7 decision 28). All 126 ledger entries have a body, which
  * dev/generate.py freezes as a tally of its own (NOTES.md #8).
  *
  * S1's handwritten.c is gone: each of its eight bodies belongs to a family
@@ -592,5 +595,30 @@ int mpiwrapper_w_MPI_Win_get_attr(MPIABI_Win abi_win, int abi_win_keyval,
                                   void *abi_attribute_val, int *abi_flag);
 int mpiwrapper_w_PMPI_Win_get_attr(MPIABI_Win abi_win, int abi_win_keyval,
                                    void *abi_attribute_val, int *abi_flag);
+
+/* --------------------- GPU-support queries (hw_gpu.c) -------------------- */
+
+/* The five entry points that are not in MPI-5.0 at all (NOTES.md #7 decision
+ * 28). An `int` return that is not an error code appears nowhere else here,
+ * and that is the point: 0 means "this MPI is not GPU-aware", including where
+ * it has no such query to ask.
+ */
+
+int mpiwrapper_w_MPIX_Query_cuda_support(void);
+int mpiwrapper_w_PMPIX_Query_cuda_support(void);
+
+int mpiwrapper_w_MPIX_Query_hip_support(void);
+int mpiwrapper_w_PMPIX_Query_hip_support(void);
+
+int mpiwrapper_w_MPIX_Query_rocm_support(void);
+int mpiwrapper_w_PMPIX_Query_rocm_support(void);
+
+int mpiwrapper_w_MPIX_Query_ze_support(void);
+int mpiwrapper_w_PMPIX_Query_ze_support(void);
+
+int mpiwrapper_w_MPIX_GPU_query_support(int abi_gpu_type,
+                                        int *abi_is_supported);
+int mpiwrapper_w_PMPIX_GPU_query_support(int abi_gpu_type,
+                                         int *abi_is_supported);
 
 #endif /* MPIWRAPPER_HANDWRITTEN_H */

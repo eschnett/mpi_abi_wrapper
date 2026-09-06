@@ -71,7 +71,7 @@ SIG_START = re.compile(
 # A.3 documents each predefined callback constant (MPI_COMM_NULL_COPY_FN and
 # so on) with the same "prototype" syntax as a real entry point, since a user
 # supplies a function matching that shape -- but the constant itself is a
-# value, not a callable ABI entry point, and none of them are in the 688.
+# value, not a callable ABI entry point, and none of them are in the 693.
 # Every real entry point is MPI_Mixed_case; a name that is all caps after the
 # prefix cannot be one, so the rule catches the whole family without having
 # to name each one.
@@ -276,13 +276,23 @@ EXPECTED = {
         A.3 documents each predefined callback constant (MPI_COMM_NULL_COPY_FN,
         MPI_DUP_FN, MPI_CONVERSION_FN_NULL and so on) with a prototype, since a
         user-supplied function must match that shape -- but the constant itself
-        is a value, not one of the 688 entry points, and gen/include/mpi.h has
+        is a value, not one of the 693 entry points, and gen/include/mpi.h has
         no business declaring it as a callable symbol.""",
     "missing entirely from A.3": """
         MPI_Wtime, MPI_Wtick, MPI_Aint_add and MPI_Aint_diff each have a C
         binding earlier in the standard body but no occurrence anywhere in
         Appendix A.3's text -- a gap in the standard's own summary, not in
         gen/include/mpi.h.""",
+    "non-standard GPU-support queries (NOTES.md #7 decision 28)": """
+        MPIX_Query_cuda_support, MPIX_Query_hip_support,
+        MPIX_Query_rocm_support, MPIX_Query_ze_support and
+        MPIX_GPU_query_support are vendor extensions rather than MPI-5.0 entry
+        points, added to the ABI header by doc/mpi.h.patch because that is how
+        an application asks whether its MPI is GPU-aware. A.3 does not
+        document them and never will; the MPIX_ prefix is what says so. Their
+        PMPIX_ twins are compared against them by the TWIN check below, which
+        is the only symmetry there is to check for a name the appendix has
+        no binding for.""",
     "MPI_Status_f082f / MPI_Status_f2f08 not part of this ABI": """
         A.3 gives six status converters; doc/mpi.h.patch's vendored ABI
         (NOTES.md #1) exposes four -- c2f, f2c, c2f08, f082c -- and leaves out
@@ -386,6 +396,8 @@ def compare(std, ours, where, what):
     for name in only_ours:
         if name in ("MPI_Wtime", "MPI_Wtick", "MPI_Aint_add", "MPI_Aint_diff"):
             over("missing entirely from A.3")
+        elif name.startswith("MPIX_"):
+            over("non-standard GPU-support queries (NOTES.md #7 decision 28)")
         else:
             problems += 1
             print(f"EXTRA   {name}: {what}, not in {where}")

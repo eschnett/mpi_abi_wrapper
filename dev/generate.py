@@ -35,7 +35,7 @@ line between them is a matter of judgement rather than of effort: a callback
 installed on the way back into user code, a lifetime the wrapper has to track,
 a conversion that is per-function rather than per-argument.
 
-**The ledger.** Every one of the 688 entry points is generated, named in
+**The ledger.** Every one of the 693 entry points is generated, named in
 HAND_WRITTEN, or deferred with a reason. The generator fails if one is in none
 of the three, and fails if HAND_WRITTEN names something the header does not
 have -- which is what makes "nothing was silently dropped" a checked property
@@ -69,23 +69,28 @@ OUT_REPORT = ROOT / "gen" / "report.txt"
 # loudly rather than silently (NOTES.md #3). Each is counted from the artifact
 # it describes, never copied from prose.
 FROZEN = {
-    "entry points": 688,
-    "vtable slots": 1366,
+    "entry points": 693,
+    "vtable slots": 1376,
     "handle classes": 11,
     "predefined handles": 103,
     "error classes": 80,
     "generated": 562,
-    "hand-written": 121,
+    "hand-written": 126,
     # S4b's exit check as a tally rather than an assertion: every ledger entry
     # has a body in src/mpiwrapper/, counted from handwritten.h. A body that
     # disappears -- or a new ledger entry nobody wrote -- fails here rather
     # than becoming one more run-time-reporting stub.
-    "hand-written bodies": 121,
+    "hand-written bodies": 126,
+    # The non-standard entry points doc/mpi.h.patch declares beside the
+    # standard ones (decision 28). They have no apis.json entry, so nothing
+    # could classify them and every one is hand-written; frozen because the
+    # set is a decision rather than a consequence of the header.
+    "extensions": 5,
     # The five MPI-3.0 deleted from the standard, answered by libmpi_abi in
     # terms of their replacements rather than forwarded to an implementation
     # that need not have them. Frozen, because a sixth is a decision.
     "ABI-side aliases": 5,
-    # S3b closed this out: every one of the 688 is now generated or in the
+    # S3b closed this out: every one of the 693 is now generated or in the
     # ledger. The tally stays, so that a future apis.json or ABI header
     # introducing a class the generator cannot place fails here instead of
     # quietly emitting one more stub.
@@ -134,6 +139,28 @@ FROZEN = {
 #  - MPI_Remove_error_class/_code/_string are here beside MPI_Add_error_*:
 #    they are the other half of the dynamic error-code registry of #5.6.
 HAND_WRITTEN = {}
+
+# The non-standard entry points doc/mpi.h.patch declares beside MPI-5.0's
+# (decision 28): the GPU-support queries applications actually use to ask
+# whether their MPI is GPU-aware. They are here rather than in apis.json
+# because they are not in the standard at all -- dev/apis.json is the MPI
+# Forum's own machine-readable binding description and has no `mpix*` key --
+# so **every one of them must be hand-written**: nothing could classify a
+# signature the join has no row for, and `load()` would otherwise stop with
+# "no apis.json entry".
+#
+# That is not merely a mechanical consequence. NOTES.md #8's reason 1 applies
+# on its own terms: what to answer when the implementation has no such query
+# is a judgement (0, not decision 6's MPI_ERR_UNSUPPORTED_OPERATION), and an
+# `int` return that is not an error code is exactly the case the generator
+# assumes away.
+EXTENSIONS = {
+    "MPIX_GPU_query_support": "the enum form, composed from the four below",
+    "MPIX_Query_cuda_support": "CUDA",
+    "MPIX_Query_hip_support": "HIP; the same question as rocm",
+    "MPIX_Query_rocm_support": "ROCm; the same question as hip",
+    "MPIX_Query_ze_support": "Level Zero",
+}
 
 
 def _ledger(reason, *names):
@@ -254,6 +281,16 @@ _ledger(
     "MPI_Info_get_nthkey", "MPI_Open_port", "MPI_Lookup_name",
     "MPI_File_get_view",
 )
+_ledger(
+    "GPU-support query: non-standard; one question under several spellings, "
+    "and absent means 0 rather than an error (NOTES.md #7 decision 28)",
+    *EXTENSIONS,
+)
+# Every extension is hand-written, and the ledger call above is the only thing
+# that makes it so. Asserted rather than trusted, because the failure it would
+# otherwise produce is a stub for an entry point nothing can classify.
+assert set(EXTENSIONS) <= set(HAND_WRITTEN)
+
 # MPI_Waitall and MPI_Ialltoallw were here until S3, as S1's stand-ins for the
 # two classes it could not yet generate -- an inout request array whose staged
 # temporaries are released at completion, and temporaries that outlive their
@@ -268,7 +305,8 @@ _ledger(
 # still declares them -- an ABI is a promise about symbols, and removing one
 # would break a binary that was linked years ago -- but an implementation is
 # under no obligation to define them any more, and Open MPI main's `libmpi_abi`
-# does not: it declares all 688 and defines 683, and these are the five.
+# does not: it declares all 688 standard names and defines 683, and these are
+# the five.
 #
 # Forwarding them through a vtable slot is therefore the wrong shape. The slot
 # would resolve against a name the implementation need not have, which is not a
@@ -286,7 +324,7 @@ _ledger(
 # that kept the MPI-1 spelling.
 #
 # There is no slot and no wrapper body, so nothing here reaches
-# `libmpiwrapper` at all. `libmpi_abi` still exports all 1376 names, which is
+# `libmpiwrapper` at all. `libmpi_abi` still exports all 1386 names, which is
 # what the ABI actually promises.
 #
 # The set is closed, and it is closed by the header rather than by memory: it
@@ -1037,7 +1075,7 @@ def parse_params(text):
 
 
 def parse_prototypes(text):
-    """name -> EntryPoint, for all 1376 (MPI_ and PMPI_ alike)."""
+    """name -> EntryPoint, for all 1386 (MPI_ and PMPI_ alike)."""
     protos = {}
     for line in text.splitlines():
         stripped = line.strip()
@@ -3127,7 +3165,7 @@ extern const struct mpiwrapper_vtable *mpi_abi_vt;
 # The two ABI enum *tags* the renaming does touch, and the callback typedefs
 # that embed them. Rule 2 of the renaming leaves struct and enum tags alone
 # precisely so that the ABI header's MPI_Comm and mpiabi.h's MPIABI_Comm are
-# one type and 1376 forwarders need no cast -- but MPI_T_cb_safety and
+# one type and 1386 forwarders need no cast -- but MPI_T_cb_safety and
 # MPI_T_source_order spell their tag exactly like their typedef, and a
 # conforming implementation's own <mpi.h> declares the same tag with the same
 # enumerators, so leaving them alone would redeclare them in libmpiwrapper's
@@ -4016,12 +4054,20 @@ int *mpiwrapper_weights_out_fromabi(int *abi_weights)
 # ---------------------------------------------------------------------------
 
 def load(mpi_h_text):
-    """The 1376 prototypes, joined with apis.json and classified."""
+    """The 1386 prototypes, joined with apis.json and classified."""
     protos = parse_prototypes(mpi_h_text)
     apis = json.load(open(APIS_JSON))
 
     for name, ep in protos.items():
         base = unshifted(name)
+        # An extension has no apis.json row to join against, and there is
+        # nothing to look for: the standard does not describe it. Its
+        # parameters keep kind=None, which is safe because every extension is
+        # hand-written (EXTENSIONS <= HAND_WRITTEN, asserted above) and so no
+        # generated body ever reads one.
+        if base in EXTENSIONS:
+            ep.ret_kind = "EXTENSION"
+            continue
         key = base.lower()
         large = False
         if key not in apis:
@@ -4458,9 +4504,12 @@ def emit_report(protos, tallies, handwritten_bodies):
     w("  buffers and MPI_Abi_*), S4b the 40 that need state the wrapper owns")
     w("  -- the lifecycle, the thirteen callback registrars S1 had not")
     w("  already written, the buffer attach and detach forms, the dynamic")
-    w("  error-code registry, spawn and MPI_Pcontrol -- and S7 the two")
-    w("  attribute getters, whose class no signature carries. The count of")
-    w("  bodies is a frozen tally above, so one going missing fails")
+    w("  error-code registry, spawn and MPI_Pcontrol -- S7 the two")
+    w("  attribute getters, whose class no signature carries, and the five")
+    w("  GPU-support queries, which are hand-written for a reason of their")
+    w("  own: the ABI header declares them, no standard binding describes")
+    w("  them, and so nothing could classify them (decision 28). The count")
+    w("  of bodies is a frozen tally above, so one going missing fails")
     w("  generation rather than becoming a stub.")
     w("")
     w("  What still answers MPI_ERR_UNSUPPORTED_OPERATION is decided per")
@@ -4618,6 +4667,7 @@ def main():
         "generated": sum(1 for e in mpi_eps if e.status == "generated"),
         "hand-written": sum(1 for e in mpi_eps if e.status == "hand-written"),
         "hand-written bodies": len(handwritten_bodies),
+        "extensions": sum(1 for e in mpi_eps if e.ret_kind == "EXTENSION"),
         "deferred to S3": sum(1 for e in mpi_eps if e.status == "deferred"),
         "ABI-side aliases": sum(1 for e in mpi_eps if e.status == "abi-alias"),
         "staged past return": sum(1 for e in mpi_eps if stages_past_return(e)),

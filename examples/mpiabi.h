@@ -14,7 +14,7 @@
  *
  *  2. Struct *tags* are left alone. `MPIABI_Comm` stays `struct MPI_ABI_Comm *`,
  *     which is the same type as the ABI header's own `MPI_Comm`. Renaming the tag
- *     would make them incompatible and force a cast in all 1376 forwarders on the
+ *     would make them incompatible and force a cast in all 1386 forwarders on the
  *     ABI side -- casts that would then silently absorb a genuine type error.
  *
  *  3. Struct *member* names are left alone. Members live in a per-struct

@@ -7,9 +7,9 @@ to be the thing S2's generator is measured against.
 
 | file | what the generator emits instead |
 |---|---|
-| `mpiwrapper_vtable.h` | `gen/include/mpiwrapper_vtable.h` (58 slots -> 1366) |
-| `entrypoints.c` | `gen/mpi_abi/entrypoints.c` (29 entry points -> 688) |
-| `wrappers.c` | `gen/mpiwrapper/wrappers.c` (20 bodies -> 563 generated, the rest hand-written) |
+| `mpiwrapper_vtable.h` | `gen/include/mpiwrapper_vtable.h` (58 slots -> 1376) |
+| `entrypoints.c` | `gen/mpi_abi/entrypoints.c` (29 entry points -> 693) |
+| `wrappers.c` | `gen/mpiwrapper/wrappers.c` (20 bodies -> 562 generated, the rest hand-written) |
 | `constants.c` | `gen/mpiwrapper/constants.c` |
 
 **Every number inside these four files is S1's and is not maintained.** Frozen

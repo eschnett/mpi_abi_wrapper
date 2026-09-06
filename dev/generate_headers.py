@@ -12,6 +12,12 @@ Without --check, (re)writes gen/include/mpi.h, gen/include/mpiabi.h and
 dev/entrypoints.txt. With --check, regenerates in memory and compares against
 the committed files without writing anything, exiting non-zero on any
 difference -- the "empty diff on regeneration" discipline of NOTES.md #3.
+
+dev/entrypoints.txt holds one *full* name per entry point (MPI_Send,
+MPIX_Query_cuda_support), unshifted, 693 lines. Bases would be shorter and are
+not enough: the header declares non-standard MPIX_ entry points beside the
+standard ones (NOTES.md #7 decision 28), so a base no longer decides its own
+prefix. test/check_exports.cmake and dev/probe_impl.py read it.
 """
 
 import re
@@ -58,7 +64,7 @@ GENERATED_NOTICE_MPIABI_H = """\
 
 INCLUDE_GUARD = "MPIABI_H"
 
-# One identifier per entry point, e.g. "MPI_Send" -- the "688 entry points"
+# One identifier per entry point, e.g. "MPI_Send" -- the "693 entry points"
 # tally of NOTES.md #1. Populated by extract_entrypoints().
 #
 # MPIX_ is in the pattern because the header declares non-standard entry points
@@ -152,9 +158,9 @@ def check_symmetry(mpi_names, pmpi_names):
         for n in sorted(only_pmpi):
             msg.append(f"  P{n} has no {n}")
         raise SystemExit("\n".join(msg))
-    if len(mpi_set) != 688:
+    if len(mpi_set) != 693:
         raise SystemExit(
-            f"expected exactly 688 entry points, got {len(mpi_set)}"
+            f"expected exactly 693 entry points, got {len(mpi_set)}"
         )
 
 

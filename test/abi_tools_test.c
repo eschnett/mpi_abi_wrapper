@@ -30,11 +30,18 @@
  *    buffer is what catches a body that forwarded the caller's length but
  *    reported the implementation's.
  *
+ *  - **an error class read as a boolean.** The five GPU-support queries return
+ *    0 or 1 rather than an error code (NOTES.md #7 decision 28), so a body
+ *    that took decision 6's default would answer 55 -- which
+ *    `if (MPIX_Query_cuda_support())` reads as yes. That is one of six checks
+ *    in test_gpu_support_queries, each aimed at a different wrong body.
+ *
  * The MPI_T interface is optional in full and unevenly implemented -- Open MPI
- * 5.0.6 has cvars, pvars and enums but no events at all -- so every test here
- * skips rather than fails when the entry point reports
+ * 5.0.6 has cvars, pvars and enums but no events at all -- so every MPI_T test
+ * here skips rather than fails when the entry point reports
  * MPI_ERR_UNSUPPORTED_OPERATION, which is decision 6's promise that the slot
- * exists either way.
+ * exists either way. The GPU queries are the one family with nothing to skip,
+ * because for them absence is an answer rather than a refusal.
  */
 
 #include <mpi.h>
@@ -245,7 +252,8 @@ static void test_predefined_keyvals(void)
  * MPI_Keyval_free are the entry points MPI-3.0 deleted from the standard. The
  * ABI header still declares them and libmpi_abi still exports them, but no
  * implementation is obliged to define them any more -- Open MPI main's
- * libmpi_abi declares 688 and defines 683, and these are the five. So
+ * libmpi_abi declares the standard's 688 and defines 683, and these are the
+ * five. So
  * libmpi_abi answers them itself, calling the slot of the MPI-2 entry point
  * that replaced each; there is no wrapper body and no vtable slot.
  *
@@ -345,6 +353,146 @@ static void test_deleted_mpi1(void)
   CHECK_MPI(MPI_Keyval_free(&keyval));
   CHECK(keyval == MPI_KEYVAL_INVALID,
         "MPI_Keyval_free left the keyval set to %d", keyval);
+}
+
+/* ------------------------------------------------- GPU-support queries --- */
+
+/* The five entry points that are not in MPI-5.0 at all (NOTES.md #7 decision
+ * 28), checked here beside test_deleted_mpi1 because both are about the ABI
+ * surface *beyond* the standard the wrapper implements.
+ *
+ * Each check is written against a plausible-but-wrong body:
+ *
+ *  - **the answer is a boolean, not an error code.** A body that took
+ *    decision 6's default would answer MPI_ERR_UNSUPPORTED_OPERATION (55),
+ *    which a caller reads as "yes, GPU-aware". Every single query must return
+ *    0 or 1 and nothing else.
+ *  - **rocm and hip are one question.** MPICH spells it hip and Open MPI
+ *    spells it rocm; a body that forwarded each ABI name to its own literal
+ *    spelling answers 1 and 0 on an implementation that has only one.
+ *  - **the PMPIX_ twin agrees.** Open MPI has no PMPIX_ name at all, so the
+ *    P body falls back to the unshifted one; a body that answered 0 instead
+ *    would make PMPIX_ a different question from MPIX_.
+ *  - **the enum form is composed, not forwarded.** MPIX_GPU_query_support(k)
+ *    must agree with the single query for k, for each of the three kinds. A
+ *    body that passed the ABI's kind value to the implementation would be
+ *    right only where the two numberings happen to coincide.
+ *  - **an unknown kind is MPI_ERR_ARG with the flag left 0**, which is
+ *    MPICH's own answer, and the flag is *defined* rather than untouched.
+ *
+ * There is nothing to skip here and no `unsupported()` call, which is the
+ * point: absence is an answer rather than a refusal.
+ */
+static void test_gpu_support_queries(void)
+{
+  int flag, ierror;
+
+  /* Compile-time facts of the ABI header, asserted once. The two
+   * *_AWARE_SUPPORT macros are 1 rather than absent so that both consumer
+   * idioms reach the run-time call.
+   */
+#if !defined(MPIX_CUDA_AWARE_SUPPORT) || MPIX_CUDA_AWARE_SUPPORT != 1
+#  error "the ABI header must define MPIX_CUDA_AWARE_SUPPORT to 1"
+#endif
+#if !defined(MPIX_ROCM_AWARE_SUPPORT) || MPIX_ROCM_AWARE_SUPPORT != 1
+#  error "the ABI header must define MPIX_ROCM_AWARE_SUPPORT to 1"
+#endif
+  _Static_assert(MPIX_GPU_SUPPORT_CUDA == 0, "MPIX_GPU_SUPPORT_CUDA");
+  _Static_assert(MPIX_GPU_SUPPORT_ZE == 1, "MPIX_GPU_SUPPORT_ZE");
+  _Static_assert(MPIX_GPU_SUPPORT_HIP == 2, "MPIX_GPU_SUPPORT_HIP");
+
+  const int cuda = MPIX_Query_cuda_support();
+  const int hip  = MPIX_Query_hip_support();
+  const int rocm = MPIX_Query_rocm_support();
+  const int ze   = MPIX_Query_ze_support();
+
+  if (rank == 0) {
+    printf("test_gpu_support_queries\n");
+    printf("  gpu-aware: cuda %d, rocm/hip %d, ze %d\n", cuda, rocm, ze);
+  }
+
+  CHECK(cuda == 0 || cuda == 1, "MPIX_Query_cuda_support returned %d", cuda);
+  CHECK(hip == 0 || hip == 1, "MPIX_Query_hip_support returned %d", hip);
+  CHECK(rocm == 0 || rocm == 1, "MPIX_Query_rocm_support returned %d", rocm);
+  CHECK(ze == 0 || ze == 1, "MPIX_Query_ze_support returned %d", ze);
+
+  CHECK(rocm == hip, "rocm says %d and hip says %d; they are one question",
+        rocm, hip);
+
+  CHECK(PMPIX_Query_cuda_support() == cuda, "PMPIX_ cuda disagrees");
+  CHECK(PMPIX_Query_hip_support() == hip, "PMPIX_ hip disagrees");
+  CHECK(PMPIX_Query_rocm_support() == rocm, "PMPIX_ rocm disagrees");
+  CHECK(PMPIX_Query_ze_support() == ze, "PMPIX_ ze disagrees");
+
+  /* The enum form against each single form, which mirrors MPICH's own
+   * test/mpi/impls/mpich/misc/gpu_query.c.
+   */
+  const struct {
+    int         kind;
+    int         expected;
+    const char *what;
+  } kinds[] = {
+      {MPIX_GPU_SUPPORT_CUDA, cuda, "CUDA"},
+      {MPIX_GPU_SUPPORT_ZE, ze, "ZE"},
+      {MPIX_GPU_SUPPORT_HIP, hip, "HIP"},
+  };
+  for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; ++i) {
+    flag   = -1;
+    ierror = MPIX_GPU_query_support(kinds[i].kind, &flag);
+    CHECK(ierror == MPI_SUCCESS, "MPIX_GPU_query_support(%s) returned %d",
+          kinds[i].what, ierror);
+    CHECK(flag == kinds[i].expected,
+          "MPIX_GPU_query_support(%s) says %d, the single query says %d",
+          kinds[i].what, flag, kinds[i].expected);
+
+    flag   = -1;
+    ierror = PMPIX_GPU_query_support(kinds[i].kind, &flag);
+    CHECK(ierror == MPI_SUCCESS, "PMPIX_GPU_query_support(%s) returned %d",
+          kinds[i].what, ierror);
+    CHECK(flag == kinds[i].expected, "PMPIX_GPU_query_support(%s) disagrees",
+          kinds[i].what);
+  }
+
+  /* An unknown kind: MPI_ERR_ARG, and the flag written rather than left. 3 is
+   * one past the last of the three the ABI names.
+   */
+  flag   = -1;
+  ierror = MPIX_GPU_query_support(3, &flag);
+  CHECK(ierror == MPI_ERR_ARG, "MPIX_GPU_query_support(3) returned %d, "
+                               "expected MPI_ERR_ARG",
+        ierror);
+  CHECK(flag == 0, "MPIX_GPU_query_support(3) left is_supported at %d", flag);
+
+  /* The standard path, checked alongside, because it is the mechanism a
+   * GPU-aware program actually uses and the wrapper has *nothing* specific to
+   * it: MPI-4.1's "mpi_memory_alloc_kinds" info key is string traffic through
+   * forwarded entry points, so this records that it works rather than that it
+   * was implemented. MPICH 4.3.1 reports a value; Open MPI 5.x does not set
+   * the key; MPICH 3.1.4 predates MPI_Info_get_string entirely and takes the
+   * skip.
+   */
+  {
+    MPI_Info info;
+    char     value[256];
+    int      buflen = (int)sizeof value;
+    int      present = 0;
+
+    CHECK_MPI(MPI_Comm_get_info(MPI_COMM_WORLD, &info));
+    ierror = MPI_Info_get_string(info, "mpi_memory_alloc_kinds", &buflen,
+                                 value, &present);
+    if (unsupported(ierror, "MPI_Info_get_string")) {
+      CHECK_MPI(MPI_Info_free(&info));
+      return;
+    }
+    CHECK(ierror == MPI_SUCCESS, "MPI_Info_get_string returned %d", ierror);
+    if (rank == 0) {
+      if (present)
+        printf("  mpi_memory_alloc_kinds: %s\n", value);
+      else
+        printf("  mpi_memory_alloc_kinds: not set by this implementation\n");
+    }
+    CHECK_MPI(MPI_Info_free(&info));
+  }
 }
 
 /* --------------------------------- output string buffers with a length */
@@ -853,6 +1001,7 @@ int main(int argc, char **argv)
 
   test_predefined_keyvals();
   test_deleted_mpi1();
+  test_gpu_support_queries();
   test_info_strings();
 
   test_tools_init();

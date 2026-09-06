@@ -18,8 +18,8 @@
 # not recorded here, for the reason ci-scripts/suite/README.md gives.
 #
 # **The list is version-specific and most of it is not about this project.**
-# Open MPI 4.1.6 provides 466 of the ABI's 688 entry points, so everything
-# MPI-4.0 added -- sessions, partitioned communication, persistent
+# Open MPI 4.1.6 provides 466 of the ABI's 688 standard entry points, so
+# everything MPI-4.0 added -- sessions, partitioned communication, persistent
 # collectives, the large-count `_c` forms, MPI_Isendrecv, MPI_Info_get_string
 # -- is a stub answering MPI_ERR_UNSUPPORTED_OPERATION, which is what
 # decision 6 requires and what an application over this wrapper will see. A

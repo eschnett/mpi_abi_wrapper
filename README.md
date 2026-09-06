@@ -100,6 +100,22 @@ Fortran side of the MPI ABI is the separate
 [mpif](https://github.com/eschnett/mpif) project, which builds against a
 prefix like this one.
 
+**Asking whether the MPI is GPU-aware.** MPI-5.0 has no such query, so the
+installed `mpi.h` carries the vendor extensions applications actually use:
+`MPIX_Query_cuda_support()`, `MPIX_Query_hip_support()`,
+`MPIX_Query_rocm_support()`, `MPIX_Query_ze_support()` and
+`MPIX_GPU_query_support(gpu_type, &is_supported)`, with `PMPIX_` twins, the
+constants `MPIX_GPU_SUPPORT_CUDA`/`_ZE`/`_HIP` and
+`MPIX_CUDA_AWARE_SUPPORT` = `MPIX_ROCM_AWARE_SUPPORT` = 1. There is no
+`mpi-ext.h` to include — the declarations are in `mpi.h`, as MPICH does it.
+
+Each forwards to whichever spelling the wrapped MPI has (`rocm` and `hip` are
+one question) and answers **0** where it has none, so 0 means "not GPU-aware"
+and "cannot be asked" alike — which is the same answer to a program deciding
+whether to pass a device pointer. Nothing else is needed for GPU buffers: they
+are passed through untouched, and MPI-4.1's `mpi_memory_alloc_kinds` info key
+is forwarded like any other info string.
+
 ## Testing
 
 Tested agains MPICH 5.0.1, Open MPI 5.0.10, and MVAPICH 4.1.

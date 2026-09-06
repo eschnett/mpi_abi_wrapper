@@ -2000,6 +2000,42 @@ MPI_Fint MPI_Type_c2f(MPI_Datatype datatype);
 MPI_Win MPI_Win_f2c(MPI_Fint win);
 MPI_Fint MPI_Win_c2f(MPI_Win win);
 
+/* GPU-support queries. Not part of MPI-5.0: applications ask their MPI
+   whether it is GPU-aware through vendor extensions rather than through the
+   standard, and this header carries the union of the two spellings that
+   exist (NOTES.md #7 decision 28). Open MPI declares the cuda and rocm forms
+   in its <mpi-ext.h>; MPICH declares all four single forms, the enum form and
+   the three kind constants in its own mpi.h, with PMPIX_ twins.
+
+   Absent means 0, not an error: an implementation with no such query is an
+   implementation that is not GPU-aware, so the wrapper answers 0 rather than
+   MPI_ERR_UNSUPPORTED_OPERATION. rocm and hip are one question under two
+   names and always answer alike.
+
+   The two *_AWARE_SUPPORT macros are defined to 1, meaning "the run-time
+   query exists and is authoritative". Both consumer idioms then reach the
+   call: the one that tests only whether the macro is defined, and the one
+   that tests its value too. */
+
+#define MPIX_GPU_SUPPORT_CUDA 0
+#define MPIX_GPU_SUPPORT_ZE   1
+#define MPIX_GPU_SUPPORT_HIP  2
+
+#define MPIX_CUDA_AWARE_SUPPORT 1
+#define MPIX_ROCM_AWARE_SUPPORT 1
+
+int PMPIX_GPU_query_support(int gpu_type, int *is_supported);
+int PMPIX_Query_cuda_support(void);
+int PMPIX_Query_hip_support(void);
+int PMPIX_Query_rocm_support(void);
+int PMPIX_Query_ze_support(void);
+
+int MPIX_GPU_query_support(int gpu_type, int *is_supported);
+int MPIX_Query_cuda_support(void);
+int MPIX_Query_hip_support(void);
+int MPIX_Query_rocm_support(void);
+int MPIX_Query_ze_support(void);
+
 #if defined(__cplusplus)
 }
 #endif

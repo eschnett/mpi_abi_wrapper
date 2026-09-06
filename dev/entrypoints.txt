@@ -1,3 +1,8 @@
+MPIX_GPU_query_support
+MPIX_Query_cuda_support
+MPIX_Query_hip_support
+MPIX_Query_rocm_support
+MPIX_Query_ze_support
 MPI_Abi_get_fortran_booleans
 MPI_Abi_get_fortran_info
 MPI_Abi_get_info

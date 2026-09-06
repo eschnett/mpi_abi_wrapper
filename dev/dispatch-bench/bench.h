@@ -4,8 +4,8 @@
 struct vtable {
   int (*cheap)(int);
   int (*real)(int);
-  /* In the real thing this is 688 slots; only the offset of the one being called
-   * matters to the cost, and these are at the front either way.
+  /* In the real thing this is 1376 slots; only the offset of the one being
+   * called matters to the cost, and these are at the front either way.
    */
 };
 

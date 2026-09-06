@@ -5,8 +5,8 @@ project(mpi_abi_wrapper
   HOMEPAGE_URL "https://github.com/eschnett/mpi_abi_wrapper"
   LANGUAGES C)
 
-# All 688 entry points, exported under both names (1376 symbols) and reaching
-# 1366 vtable slots -- the five entry points MPI-3.0 deleted are answered by
+# All 693 entry points, exported under both names (1386 symbols) and reaching
+# 1376 vtable slots -- the five entry points MPI-3.0 deleted are answered by
 # libmpi_abi itself and have no slot (NOTES.md #3). CODE.md has the layout,
 # the options and the authority behind each count.
 
@@ -101,7 +101,7 @@ message(STATUS "Warning flags for ${CMAKE_C_COMPILER_ID}: ${MPIABI_WARNINGS}")
 # **libmpiwrapper forwards entry points the implementation has deprecated, and
 # that is its job rather than an oversight.** The ABI is the whole of MPI-5.0
 # and deprecated still means provided (NOTES.md #1): MPI_Get_elements_x and
-# MPI_Status_set_elements_x are among the 688, so their bodies must call the
+# MPI_Status_set_elements_x are among the 693, so their bodies must call the
 # implementation's -- which Open MPI's development branch marks
 # __attribute__((deprecated)) per MPI-4.1, turning -Werror into four errors and
 # failing the whole build.
@@ -186,7 +186,7 @@ add_test(NAME layout-hash
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
-# S5's exit check, oracle 4 of NOTES.md #10: every one of the 688 C bindings
+# S5's exit check, oracle 4 of NOTES.md #10: every one of the 693 C bindings
 # in gen/include/mpi.h either matches MPI-5.0 Appendix A.3 or is a named,
 # self-firing exemption. Independent of apis.json and the generator -- it
 # reads only doc/mpi50-report.pdf and the committed header.
@@ -830,6 +830,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     src/mpiwrapper/hw_strings.c
     src/mpiwrapper/hw_abi.c
     src/mpiwrapper/hw_attr.c
+    src/mpiwrapper/hw_gpu.c
   )
 
   set(MPIABI_IMPL_CONFIG ${MPIABI_WRAPPER_INCLUDE_DIR}/mpiwrapper_impl_config.h)
@@ -1246,7 +1247,7 @@ endif()
 
 # NOTES.md #10 calls oracle 1 "a total completeness check as the cheapest job in
 # CI", and it is only cheap if it needs no MPI. Its subject is libmpi_abi, which
-# is built unconditionally and whose 1376 exports are a property of the ABI
+# is built unconditionally and whose 1386 exports are a property of the ABI
 # header alone -- so this test is registered here rather than inside the block
 # above, and runs in the -DMPI_ABI_BUILD_WRAPPER=OFF developer build too. The
 # two legs that do need a wrapper are passed only when there is one, and

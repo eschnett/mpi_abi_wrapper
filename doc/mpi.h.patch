@@ -24,7 +24,7 @@
  
  typedef struct MPI_ABI_Op* MPI_Op;
  #define MPI_OP_NULL                    ((MPI_Op)0x00000020)
-@@ -941,11 +941,9 @@
+@@ -941,11 +950,9 @@
  int MPI_Pready(int partition, MPI_Request request);
  int MPI_Pready_list(int length, const int array_of_partitions[], MPI_Request request);
  int MPI_Pready_range(int partition_low, int partition_high, MPI_Request request);
@@ -38,7 +38,7 @@
  int MPI_Publish_name(const char *service_name, MPI_Info info, const char *port_name);
  int MPI_Put(const void *origin_addr, int origin_count, MPI_Datatype origin_datatype, int target_rank, MPI_Aint target_disp, int target_count, MPI_Datatype target_datatype, MPI_Win win);
  int MPI_Put_c(const void *origin_addr, MPI_Count origin_count, MPI_Datatype origin_datatype, int target_rank, MPI_Aint target_disp, MPI_Count target_count, MPI_Datatype target_datatype, MPI_Win win);
-@@ -1609,11 +1607,9 @@
+@@ -1611,11 +1618,9 @@
  int PMPI_Pready(int partition, MPI_Request request);
  int PMPI_Pready_list(int length, const int array_of_partitions[], MPI_Request request);
  int PMPI_Pready_range(int partition_low, int partition_high, MPI_Request request);
@@ -52,10 +52,11 @@
  int PMPI_Publish_name(const char *service_name, MPI_Info info, const char *port_name);
  int PMPI_Put(const void *origin_addr, int origin_count, MPI_Datatype origin_datatype, int target_rank, MPI_Aint target_disp, int target_count, MPI_Datatype target_datatype, MPI_Win win);
  int PMPI_Put_c(const void *origin_addr, MPI_Count origin_count, MPI_Datatype origin_datatype, int target_rank, MPI_Aint target_disp, MPI_Count target_count, MPI_Datatype target_datatype, MPI_Win win);
-@@ -1896,6 +1892,93 @@
+@@ -1899,7 +1904,130 @@
+ int PMPI_T_source_get_info(int source_index, char *name, int *name_len, char *desc, int *desc_len, MPI_T_source_order *ordering, MPI_Count *ticks_per_second, MPI_Count *max_ticks, MPI_Info *info);
  int PMPI_T_source_get_num(int *num_sources);
  int PMPI_T_source_get_timestamp(int source_index, MPI_Count *timestamp);
- 
++
 +/* Fortran declarations */
 +
 +typedef int MPI_Fint;
@@ -119,7 +120,7 @@
 +MPI_Fint PMPI_Type_c2f(MPI_Datatype datatype);
 +MPI_Win PMPI_Win_f2c(MPI_Fint win);
 +MPI_Fint PMPI_Win_c2f(MPI_Win win);
-+
+ 
 +MPI_Comm MPI_Comm_f2c(MPI_Fint comm);
 +MPI_Fint MPI_Comm_c2f(MPI_Comm comm);
 +MPI_Errhandler MPI_Errhandler_f2c(MPI_Fint errhandler);
@@ -142,6 +143,42 @@
 +MPI_Fint MPI_Type_c2f(MPI_Datatype datatype);
 +MPI_Win MPI_Win_f2c(MPI_Fint win);
 +MPI_Fint MPI_Win_c2f(MPI_Win win);
++
++/* GPU-support queries. Not part of MPI-5.0: applications ask their MPI
++   whether it is GPU-aware through vendor extensions rather than through the
++   standard, and this header carries the union of the two spellings that
++   exist (NOTES.md #7 decision 28). Open MPI declares the cuda and rocm forms
++   in its <mpi-ext.h>; MPICH declares all four single forms, the enum form and
++   the three kind constants in its own mpi.h, with PMPIX_ twins.
++
++   Absent means 0, not an error: an implementation with no such query is an
++   implementation that is not GPU-aware, so the wrapper answers 0 rather than
++   MPI_ERR_UNSUPPORTED_OPERATION. rocm and hip are one question under two
++   names and always answer alike.
++
++   The two *_AWARE_SUPPORT macros are defined to 1, meaning "the run-time
++   query exists and is authoritative". Both consumer idioms then reach the
++   call: the one that tests only whether the macro is defined, and the one
++   that tests its value too. */
++
++#define MPIX_GPU_SUPPORT_CUDA 0
++#define MPIX_GPU_SUPPORT_ZE   1
++#define MPIX_GPU_SUPPORT_HIP  2
++
++#define MPIX_CUDA_AWARE_SUPPORT 1
++#define MPIX_ROCM_AWARE_SUPPORT 1
++
++int PMPIX_GPU_query_support(int gpu_type, int *is_supported);
++int PMPIX_Query_cuda_support(void);
++int PMPIX_Query_hip_support(void);
++int PMPIX_Query_rocm_support(void);
++int PMPIX_Query_ze_support(void);
++
++int MPIX_GPU_query_support(int gpu_type, int *is_supported);
++int MPIX_Query_cuda_support(void);
++int MPIX_Query_hip_support(void);
++int MPIX_Query_rocm_support(void);
++int MPIX_Query_ze_support(void);
 +
  #if defined(__cplusplus)
  }
