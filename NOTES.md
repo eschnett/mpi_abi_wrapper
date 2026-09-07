@@ -44,14 +44,15 @@ not itself provide the ABI. Each ABI call is forwarded to that implementation
 | `libmpiwrapper` | once per MPI installation | yes |
 
 `mpi.h` comes from [mpi-forum/mpi-abi-stubs](https://github.com/mpi-forum/mpi-abi-stubs)
-with `doc/mpi.h.patch` applied. That patch does three things: it adds the
+with `doc/mpi.h.patch` applied. That patch does four things: it adds the
 Fortran-support declarations (`MPI_Fint`, `MPI_F08_Status`, the four
 `MPI_F*_STATUS(ES)_IGNORE` macros with real storage behind them, and the 26
-handle/status converters); it corrects an error in the stub header where
-`MPI_Psend_init`/`MPI_Precv_init` were given `int count` with a separate `_c`
-variant instead of `MPI_Count count`; and it gives `MPI_Status` a struct tag
-(§2, "Naming"), which is worth proposing upstream since it costs nothing and
-changes nothing about the ABI.
+handle/status converters); it adds the five non-standard GPU-support queries
+and their five macros (decision 28); it corrects an error in the stub header
+where `MPI_Psend_init`/`MPI_Precv_init` were given `int count` with a separate
+`_c` variant instead of `MPI_Count count`; and it gives `MPI_Status` a struct
+tag (§2, "Naming"), which is worth proposing upstream since it costs nothing
+and changes nothing about the ABI.
 
 **Upstream has since made the `Psend`/`Precv` correction itself, and that is a
 trap waiting for whoever re-vendors.** `dev/vendor/mpi-abi-stubs/` is pinned at
@@ -106,15 +107,23 @@ failure:
 |---|---|---|
 | `@@ -37` | gives `MPI_Status` a struct tag | **still needed** — upstream still writes `typedef struct { … } MPI_Status;` |
 | `@@ -941` | `MPI_Psend_init`/`MPI_Precv_init` | **adopted upstream**, drop it |
-| `@@ -1609` | the `PMPI_` twins of the same | **adopted upstream**, drop it |
-| `@@ -1896` | the Fortran block | **needed permanently** — see below |
+| `@@ -1611` | the `PMPI_` twins of the same | **adopted upstream**, drop it |
+| `@@ -1899` | the Fortran block and the GPU-query block | **both needed permanently** — see below |
+
+The line numbers are the patch's own, and they moved when the fourth hunk grew:
+regenerating the patch (apply it, edit the result, `diff -u` back — the recipe
+decision 28's own work used) writes exact ones, where the ones before it were
+off by two and `patch` was silently absorbing the offset.
 
 So the patch does not become unnecessary; **half of it does**. And the Fortran
 half is not waiting on upstream at all: MPI-5.0 §20.4 puts `MPI_Fint` and
 everything depending on it *outside* the ABI on purpose, so the stub header
 will never carry it. That block is this project's extension, shared with mpif
 by agreement rather than by standard, and `HISTORY.md` §2.18 is what it cost to
-learn that being outside the ABI does not mean being unconstrained.
+learn that being outside the ABI does not mean being unconstrained. The
+GPU-query block beside it is permanent for a related but different reason: it
+is not the standard's to adopt at all, since the names are vendor extensions
+and carry the `MPIX_` prefix that says so (decision 28).
 
 **Upstream changed more than that hunk**, and the rest is re-vendoring work
 rather than patch work: the `MPI_T` handle tags were renamed
@@ -126,16 +135,20 @@ which is the first thing in the stub header to acknowledge Windows (§13.4); and
 hex to decimal at the same values, which changes nothing and will still show up
 in a diff.
 
-**Scope, counted from the patched header rather than estimated.** 688 entry
-points, with `MPI_*` and `PMPI_*` exactly symmetric — every one has a twin, no
-exceptions in either direction. `CODE.md` §2 carries the breakdown and the
-authority for each number. Two of them are worth stating here because they are
-*different numbers* and the difference is a design property:
+**Scope, counted from the patched header rather than estimated.** 693 entry
+points — 688 of MPI-5.0 and 5 non-standard (decision 28) — with `MPI_*`/`MPIX_*`
+and `PMPI_*`/`PMPIX_*` exactly symmetric: every one has a twin, no exceptions in
+either direction. `CODE.md` §2 carries the breakdown and the authority for each
+number. Two of them are worth stating here because they are *different numbers*
+and the difference is a design property:
 
-- **1376 exported symbols** in `libmpi_abi`. All 688 entry points are always
+- **1386 exported symbols** in `libmpi_abi`. All 693 entry points are always
   exported, under both names, on every build.
-- **1366 vtable slots.** Five entry points are answered by `libmpi_abi` itself
-  and never reach the wrapper (§3), so 683 × 2 slots carry the rest.
+- **1376 vtable slots.** Five entry points are answered by `libmpi_abi` itself
+  and never reach the wrapper (§3), so 688 × 2 slots carry the rest. That the
+  two fives are the same number is a coincidence: the five with no slot are the
+  ones MPI-3.0 deleted, and the five that are not in the standard are the GPU
+  queries, which do have slots.
 
 Deprecated still means provided: the 12 entry points the header marks
 deprecated are implemented like any other.
@@ -175,12 +188,14 @@ rather than as a list.
   implementation's own internal calls resolve into our exports by load order
   (`HISTORY.md` §2.19) — and it is checked at load rather than at configure
   time (§2).
-- **The ABI surface is complete and is MPI-5.0** (plus the Fortran extension of
-  `doc/mpi.h.patch`). A function the implementation lacks is **reported at run
-  time**, never omitted from the ABI: the slot returns
-  `MPI_ERR_UNSUPPORTED_OPERATION` and the generator lists it in
-  `gen/report.txt`. An application must be able to link and start against any
-  wrapper and discover at run time what is missing.
+- **The ABI surface is complete and is MPI-5.0** (plus the two extension blocks
+  of `doc/mpi.h.patch`: the Fortran declarations and the GPU-support queries).
+  A function the implementation lacks is **reported at run time**, never
+  omitted from the ABI: the slot returns `MPI_ERR_UNSUPPORTED_OPERATION` and
+  the generator lists it in `gen/report.txt`. An application must be able to
+  link and start against any wrapper and discover at run time what is missing.
+  The GPU queries are the one place where absence is answered rather than
+  reported, because there absence *is* the answer (decision 28).
 - **The implementation is expected to provide the MPI-4.0 API.** That is what
   makes the common case a 1:1 mapping, since the `_c` variants exist there. It
   is an expectation, not a hard floor.
@@ -466,7 +481,7 @@ reusing it as a typedef name is legal but confusing. Three rules:
    ABI's on the same line.
 2. **Struct tags are left alone.** `MPIABI_Comm` stays `struct MPI_ABI_Comm *`,
    which is *the same type* as the ABI header's own `MPI_Comm`. Renaming the tag
-   would make them incompatible and force a cast in all 1376 forwarders on the
+   would make them incompatible and force a cast in all 1386 forwarders on the
    ABI side — casts that would then silently absorb a genuine type error.
 3. **Struct member names are left alone.** Members live in a per-struct
    namespace, so `MPIABI_Status.MPI_SOURCE` and the implementation's
@@ -484,10 +499,19 @@ failing.
   `MPIABI_VERSION`/`MPIABI_SUBVERSION` — but the two source names differ, so the
   renamed spellings differ too and nothing collides. The tempting special case
   collides; `HISTORY.md` §1.21.
-- **`MPIX_TYPECLASS_LOGICAL`** is the one enumerator in the stub not spelled
-  `MPI_*` — a legacy alias in the same anonymous enum as the `MPI_TYPECLASS_*`
-  family. Left unrenamed it collides with `mpi.h`'s own definition the moment
-  both headers are included together. Renamed to `MPIABIX_TYPECLASS_LOGICAL`.
+- **`MPIX_`-prefixed names get `MPIABIX_`.** `MPIX_TYPECLASS_LOGICAL` was the
+  first — the one enumerator in the vendored stub not spelled `MPI_*`, a legacy
+  alias in the same anonymous enum as the `MPI_TYPECLASS_*` family — and the
+  rule now also covers the five macros of decision 28's GPU block
+  (`MPIX_GPU_SUPPORT_CUDA/ZE/HIP`, `MPIX_CUDA_AWARE_SUPPORT`,
+  `MPIX_ROCM_AWARE_SUPPORT`). The reason is the same in every case and it is a
+  collision rather than tidiness: left unrenamed, each would sit in the wrapper's
+  translation unit beside the *implementation's* definition of the identical
+  name — MPICH spells `MPIX_GPU_SUPPORT_CUDA` as `(0)` and Open MPI spells
+  `MPIX_CUDA_AWARE_SUPPORT` as `0` — which is a macro redefinition under
+  `-Werror`. `MPIABIX_` keeps the two views apart, and `hw_gpu.c` reads the
+  `MPIABIX_` value for the ABI's side and the bare one for the
+  implementation's.
 - **`MPI_T_cb_safety`/`MPI_T_source_order`** are declared `typedef enum
   MPI_T_cb_safety { ... } MPI_T_cb_safety;` — tag and typedef spelled
   identically, unlike every handle type. Rule 2 protects tags because
@@ -546,10 +570,10 @@ with `MPIWRAPPER_WRAP_ABI_IMPL` as the escape hatch that oracle 5 needs.
 
 ## 3. The generator
 
-**All 688 entry points are accounted for by a generator, in Python, with a named
+**All 693 entry points are accounted for by a generator, in Python, with a named
 set written by hand.** The generator fails if an entry point is in neither set,
 which is what makes "nothing was silently dropped" a checked property rather
-than a hope. `gen/report.txt` names all 688 with the reason for each, and
+than a hope. `gen/report.txt` names all 693 with the reason for each, and
 `CODE.md` §2 carries the split.
 
 ### Why a generator
@@ -559,25 +583,25 @@ releases being a year apart is the wrong clock. The clock that matters ticks
 daily for the first months: how a handle is represented, how a status crosses
 the boundary, whether error codes are mapped eagerly or lazily, how a request
 array is staged. Each such decision must land identically at 600–1400 sites. As
-a generator edit that is one line and a regeneration; as 688 explicit functions
-it is 688 edits, repeatedly, and the sites a sweep misses are silently wrong.
+a generator edit that is one line and a regeneration; as 693 explicit functions
+it is 693 edits, repeatedly, and the sites a sweep misses are silently wrong.
 mpif records exactly this at far smaller scale: a prefix change threaded through
 its generator still missed `MPI_Cart_sub`, because a mechanical sweep is not a
 proof.
 
 **Uniformity is the correctness property, and only generated code makes it
-checkable.** The claim to establish is not "`MPI_Send` is right" 688 times. It
+checkable.** The claim to establish is not "`MPI_Send` is right" 693 times. It
 is: *every ABI handle argument is converted exactly once on the way in, every
 out-handle exactly once on the way out, every sentinel is translated, and no
 untranslated ABI value reaches the implementation.* Over generated text that is
-an assertion the generator runs on its own output. Over 688 independently
+an assertion the generator runs on its own output. Over 693 independently
 written functions there is no such assertion, and the symptom of an omission is
 a wrong answer at 4096 ranks, not a crash. `HISTORY.md` §1.20 has the
 alternatives and why each fails this test.
 
 **Both inputs are machine-readable.** The ABI `mpi.h` is parseable by
 construction — the Forum's own `update.py` parses it with one regex — and gives
-all 688 signatures one per line, the predefined handle constants in
+all 693 signatures one per line, the predefined handle constants in
 `((MPI_Datatype)0x00000219)` form (which encodes class *and* value), the
 sentinels, the integer constants as one-per-line anonymous enums, and the status
 layout. **`apis.json`** (vendored, ~2 MB, as mpif already does) gives the
@@ -749,6 +773,41 @@ survives, since `PMPI_Attr_get` reaches `PMPI_Comm_get_attr`; and the slots
 really are *gone* rather than kept and left unfilled, so an old `libmpi_abi`
 paired with a new `libmpiwrapper` fails the handshake instead of reaching a slot
 that no longer means what it did.
+
+**The other case: declared by us, optional everywhere, answered 0.** Decision
+28's five GPU-support queries are the mirror image of the five above and are
+solved differently again. They are not entry points the standard removed; they
+are entry points the standard never had, which this project's header declares
+because applications ask for them. No implementation is obliged to have any of
+them, and a build must not fail when it does not — so they keep their slots,
+and `src/mpiwrapper/hw_gpu.c` picks per name from whatever spellings the probe
+found, falling through to a constant `0`. Nothing about them can reach the
+link, because nothing is ever named unconditionally.
+
+The probe grew one capability for them, and it is a general one: **an optional
+*header*.** Open MPI declares its two in `<mpi-ext.h>` rather than in
+`<mpi.h>`, so a probe translation unit that included only `<mpi.h>` would
+report both absent on an implementation that has them. `dev/probe_impl.py` now
+compiles `#include <mpi.h>` / `#include <mpi-ext.h>` as a separate, prior
+translation unit — separate because the main loop drops a failing probe by the
+line number its diagnostic points at, and `'mpi-ext.h' file not found` is
+reported at the `#include`'s line, which is not a probe line and would trip the
+"failed for a reason that is not a missing name" hard error. On success it
+writes `MPIWRAPPER_HAVE_MPI_EXT_H` and includes the header in the real probe;
+`hw_gpu.c` tests the same guard before including it.
+
+That is also why this is a compile and not `__has_include` (`HISTORY.md`
+§1.26): a stray `mpi-ext.h` belonging to a *different* MPI earlier on the
+include path exists without compiling against this one, and existence is not
+the question.
+
+**And the ABI-implementing Open MPI is the case that shows the arrangement is
+right rather than lucky.** Its `mpicc_abi -show` puts only
+`include/standard_abi` on the path, so `mpi-ext.h` is not reachable there at
+all; the probe reports no optional header and no `MPIX_` name; and that build's
+own `libmpi_abi` does in fact not define the `MPIX_` symbols (checked with
+`nm`). Seeing nothing there is the correct outcome, and it is §13.3's
+declared-not-defined hazard avoided rather than dodged.
 
 ---
 
@@ -1762,8 +1821,10 @@ the decision rather than working around it.
 
 1. **Conversions live in `mpiwrapper`, behind an ABI-typed vtable.** §2.
 2. **Status: blob only** — no validity marker, no synthesis fallback. §5.2.
-3. **The ABI surface is complete MPI-5.0**; functions the implementation lacks
-   are reported at run time, never omitted. The implementation is *expected* to
+3. **The ABI surface is complete MPI-5.0 plus the two extension blocks of
+   `doc/mpi.h.patch`** — the Fortran declarations (§1) and the five
+   GPU-support queries (decision 28); functions the implementation lacks are
+   reported at run time, never omitted. The implementation is *expected* to
    provide the MPI-4.0 API, which is what makes the mapping 1:1 — an
    expectation, warned about at configure time and not enforced, since no
    released Open MPI meets it. The enforced floor is **MPI-3.0**, verified with
@@ -1788,11 +1849,12 @@ the decision rather than working around it.
    wrapped MPI's own prefix, since we install `mpi.h`, `mpicc` and `libmpi_abi`
    under names it already uses. §9.
 6. **Functions the implementation lacks return `MPI_ERR_UNSUPPORTED_OPERATION`**
-   from generated `#ifdef` stubs, and the generator reports them. What the
-   `#ifdef` tests is `MPIWRAPPER_HAVE_<name>`, written at configure time by
-   `dev/probe_impl.py` from the implementation's own header — not a version
-   test, not `nm`, and not `#ifdef` on the implementation's own name for a
-   constant. §3, `HISTORY.md` §1.19.
+   from generated `#ifdef` stubs, and the generator reports them — except where
+   absence *is* the answer, which is decision 28's five GPU-support queries and
+   nothing else. What the `#ifdef` tests is `MPIWRAPPER_HAVE_<name>`, written at
+   configure time by `dev/probe_impl.py` from the implementation's own header —
+   not a version test, not `nm`, and not `#ifdef` on the implementation's own
+   name for a constant. §3, `HISTORY.md` §1.19.
 
    **The stub is the last arm, not the only alternative.** A large-count entry
    point whose `_c` name is absent but whose small twin is present gets a
@@ -1893,12 +1955,20 @@ the decision rather than working around it.
    length. That is a §13.2 limitation, not a decision 6 defect — the caller who
    ignores the return code learns nothing about how much of an array was
    written either way.
-7. **PMPI gets its own vtable slots** — two per entry point, 1366 in all,
+7. **PMPI gets its own vtable slots** — two per entry point, 1376 in all,
    calling the implementation's shifted names directly. No probe and no
    fallback, since both names always exist and reach the same code when nothing
    is interposed; which of the two is the strong definition varies by
    implementation and platform and does not matter to us. The wrapper's internal
    MPI calls use `PMPI_*` unconditionally. §2.
+
+   **"Both names always exist" is a property of the standard's entry points and
+   does not extend to an extension.** Open MPI declares
+   `MPIX_Query_cuda_support` and no `PMPIX_` twin of it. So for decision 28's
+   five the probe asks each spelling singly instead of requiring the pair, and
+   the `P` body falls back to the unshifted name where the shifted one is
+   absent. The ABI side is unaffected: all five have both names and both slots,
+   as everything here does.
 8. **Bootstrap by constructor into a plain pointer** — no atomic, no lazy-init
    branch, no NULL check outside debug builds. The wrapper is loaded
    `RTLD_LOCAL` and *isolated* — `RTLD_DEEPBIND` on Linux (`dlmopen` selectable
@@ -2056,6 +2126,99 @@ the decision rather than working around it.
     launcher either: there is no MPI behind it, and an `mpiexec` that always
     errored would still answer a probe asking whether the prefix can launch.
     §9, `bin/README.md`.
+28. **The ABI carries the five non-standard GPU-support queries, and answers
+    0 where the implementation has none.** `MPIX_Query_cuda_support`,
+    `MPIX_Query_hip_support`, `MPIX_Query_rocm_support`,
+    `MPIX_Query_ze_support` (all `int (void)`) and
+    `int MPIX_GPU_query_support(int gpu_type, int *is_supported)`, with
+    `PMPIX_` twins, plus `MPIX_GPU_SUPPORT_CUDA`/`_ZE`/`_HIP` = 0/1/2 and
+    `MPIX_CUDA_AWARE_SUPPORT` = `MPIX_ROCM_AWARE_SUPPORT` = 1. They are added
+    by `doc/mpi.h.patch` (§1), get vtable slots and forwarders like any entry
+    point, are exported, and are answered by hand-written bodies in
+    `src/mpiwrapper/hw_gpu.c` (§8's reason 1).
+
+    **Why carry them at all.** This is how an application asks whether it may
+    hand a device pointer to `MPI_Send`, and it is not a question the standard
+    answers: MPI-5.0 has no such query. A program built against this wrapper's
+    `mpi.h` had none of these names, so it could not ask, and a `dlsym`-style
+    consumer (MPI.jl) found no symbol. Carrying the *union* of the two
+    implementations' spellings costs five slots and makes the ABI answer the
+    question over any MPI.
+
+    **Why 0 and not `MPI_ERR_UNSUPPORTED_OPERATION`.** Decision 6's stub is the
+    right answer where the caller asked for work to be done and the
+    implementation cannot do it. It is the wrong answer to a *boolean* query:
+    "is this MPI CUDA-aware?" has a true answer for an MPI that cannot be
+    asked, and the answer is no. Worse, the stub's value is 55, and a caller
+    writing `if (MPIX_Query_cuda_support())` reads 55 as yes. So this is the
+    one place in the surface where absence is answered rather than reported,
+    and decision 6 says so.
+
+    **rocm ≡ hip.** AMD's ROCm stack is what HIP runs on; MPICH spells the
+    query hip, Open MPI spells it rocm, and no implementation has been seen to
+    distinguish them. Both ABI names call one helper, whose chain is rocm →
+    hip → the enum form → 0. `test/abi_tools_test.c` asserts the two agree,
+    because a body that forwarded each name to its own literal spelling would
+    answer 1 and 0 on an implementation that has only one of them.
+
+    **The enum form is composed, never forwarded.** `MPIX_GPU_query_support`
+    switches on the *ABI's* `MPIABIX_GPU_SUPPORT_*` value and calls the kind's
+    helper, so the ABI's enum value never crosses to the implementation. Two
+    things follow, and both are the reason rather than a side effect. There is
+    no constant family for this in `gen/mpiwrapper/constants.c` — nothing to
+    keep in step, and no default arm that could pass an unmapped value through
+    (§5.6). And an implementation that has only the enum form, or only the
+    single forms, is served identically, because composition runs in the
+    direction the guards already answer. An unrecognised `gpu_type` is
+    `MPI_ERR_ARG` with `*is_supported` set to 0, which is MPICH's own answer
+    (`src/mpi/misc/gpu_query.c`, `**badgputype`) rather than an invention here.
+
+    **The two macros are 1, not absent.** `MPIX_CUDA_AWARE_SUPPORT` and
+    `MPIX_ROCM_AWARE_SUPPORT` mean "the run-time query exists and is
+    authoritative", which is exactly true of this header: the value is not a
+    build-time claim about GPU support, it is a claim that asking works. Both
+    consumer idioms then reach the run-time call — `#if defined(X)` and
+    `#if defined(X) && X` — where defining neither would silently route a
+    consumer down its no-GPU path and defining them to 0 would do the same to
+    the second idiom.
+
+    **`PMPIX_` twins exist on the ABI side and may not on the
+    implementation's**, which is where decision 7's premise stops holding:
+    Open MPI has no `PMPIX_` name at all. The probe therefore asks each
+    extension spelling *singly* rather than requiring the pair, and the `P`
+    body uses the `PMPIX_` spelling where it exists and the `MPIX_` one
+    otherwise. That is decision 7 applied where it can be: the question is a
+    query with no side effects and nothing interposes on it, so calling the
+    unshifted name from the `PMPI` side is worse than calling the shifted one
+    and much better than answering 0.
+
+    **No `mpi-ext.h` is installed.** The declarations go in `mpi.h`,
+    MPICH-style. Shipping a second header would mean deciding what else
+    belongs in it and would give a consumer a file to test for; one header
+    with the names in it is what both idioms above already reach. The
+    *probe* does learn about `mpi-ext.h`, because Open MPI declares its two
+    there — §3 has that mechanism and why it is a separate compile — and the
+    ABI-implementing Open MPI, whose include path does not reach that header,
+    is the case that shows §13.3's declared-not-defined hazard stays avoided.
+
+    Pre-initialization behaviour is the implementation's and is not
+    normalized here: Open MPI's answer reads the accelerator component
+    selected at `MPI_Init`, so before init it answers 0. The wrapper forwards
+    what the implementation says rather than second-guessing when it may be
+    asked.
+
+    **What is deliberately absent.** Device buffers already cross untouched —
+    the bodies pass `buf` through and stage only host-side arrays (§5.7) — so
+    nothing here is needed to *send* from device memory. MPI-4.1's standard
+    `mpi_memory_alloc_kinds` info key needs nothing from the wrapper either:
+    it is string traffic through forwarded entry points, and
+    `test/abi_tools_test.c` prints what each row reports rather than asserting
+    a value. **MPICH's stream extension is not carried**: `MPIX_Stream` would
+    be a twelfth handle class with roughly 26 hand-written entry points,
+    `MPIX_Info_set_hex` and `MPIX_ERR_STREAM` beside it, it has no Open MPI
+    counterpart, and it is a decision of its own if a consumer asks for it.
+    The other `MPIX_` families both implementations have (fault tolerance) are
+    not GPU-related and are outside this decision entirely.
 
 ---
 
@@ -2063,7 +2226,7 @@ the decision rather than working around it.
 
 Functions where per-function judgement is needed. The generator's
 `HAND_WRITTEN` ledger names them and fails if the two sets do not together cover
-all 688; `CODE.md` §6 has the current grouping and `gen/report.txt` the reason
+all 693; `CODE.md` §6 has the current grouping and `gen/report.txt` the reason
 on every line. **This section is about what the set is *for*, not how big it
 is** — the count has been wrong in prose three times (`HISTORY.md` §4) and the
 ledger is the authority.
@@ -2076,6 +2239,15 @@ output string (§5.8); what the ABI reports for Fortran `LOGICAL`; whether a
 sentinel is legal at a given parameter; which of `_toint`/`_fromint` and
 `_c2f`/`_f2c` may forward and which may not (§4.4). These have signatures a
 generator could match and answers it could not choose.
+
+The GPU-support queries are this reason at its sharpest, and against no
+standard at all (decision 28). What to answer when the implementation has no
+such query is a judgement — **0, not decision 6's
+`MPI_ERR_UNSUPPORTED_OPERATION`** — because the return is a boolean and 55 reads
+as yes. They are also the only entry points here whose `int` return is not an
+error code, which is precisely the assumption the generator is built on; and
+they have no `apis.json` row to be classified from, since the Forum's binding
+description does not describe them. Any one of the three would put them here.
 
 **2. State the wrapper owns.** An initialization state machine, because
 `MPI_Initialized` and `MPI_Finalized` are true statements about *us* rather than
@@ -2410,7 +2582,7 @@ exists to convert into a message, and the first thing it caught was this
 project's own development host.
 
 **Shared only in v1.** Static linking would require splitting `entrypoints.c`
-into 688 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI
+into 693 translation units, because MPI-5.0 §15.2.1(2) requires that "those MPI
 functions that are not replaced may still be linked into an executable image
 without causing name clashes" — for an archive that means one entry point per
 member (mpif's `split-wrappers.sh` is the precedent; for a shared library
@@ -2442,7 +2614,7 @@ Version choice is about coverage, not admissibility:
 ### Five oracles
 
 1. **The ABI header, by compilation — no MPI, no launcher, seconds.** Wrong
-   signatures are build errors; `nm` on `libmpi_abi` against the 1376-symbol
+   signatures are build errors; `nm` on `libmpi_abi` against the 1386-symbol
    list extracted from the header, **in both directions**; and nothing else
    exported. A total completeness check as the cheapest job in CI.
 2. **The implementation's header, by compilation**, plus `nm` asserting
@@ -2461,7 +2633,7 @@ Version choice is about coverage, not admissibility:
    parameters are folded to their pointer-decay form before comparison.
    Exemptions are named, explained, and fail the run when they stop firing.
 
-   **Eight named exemptions**, all about *names* rather than semantics, since C
+   **Nine named exemptions**, all about *names* rather than semantics, since C
    bindings have no `INTENT` to disagree over: fourteen predefined callback
    constants (`MPI_COMM_NULL_COPY_FN` and the rest) that A.3 documents with
    prototype syntax but that are values, not entry points;
@@ -2472,9 +2644,15 @@ Version choice is about coverage, not admissibility:
    headers use, in seven functions; MPI_T's `pe_session`/`session`;
    `MPI_Status_get/set_error`'s `err`/`error`; `MPI_Precv_init`'s `dest`, held
    over from `MPI_Psend_init`'s template in the vendored stub header rather than
-   corrected to `source`; and `MPI_F08_Status`'s capital S, which owes A.3's
+   corrected to `source`; `MPI_F08_Status`'s capital S, which owes A.3's
    lowercase `mpi_f08_status` nothing since §20.4 states that `MPI_F08_Status`
-   is not part of the C ABI at all — the name is this project's own coinage.
+   is not part of the C ABI at all — the name is this project's own coinage;
+   and the five GPU-support queries of decision 28, which A.3 does not document
+   and never will, the `MPIX_` prefix being what says so. That last one is the
+   only exemption that covers *entry points the header has and the standard does
+   not*, which is why it is keyed on the prefix rather than on a list: a sixth
+   extension would be covered without an edit here, and the count in the
+   exemption's own output would say five became six.
 5. **The identity configuration: wrap an MPI that already implements the ABI.**
    Every conversion becomes an identity — predefined handle values, error codes,
    sentinels, `MPI_MAX_*`, ranks and tags all match — so the conversion tables
@@ -2762,7 +2940,7 @@ what decides.
 Two things the completed stages taught about applying it:
 
 - **The fencing works where it can see the property.** The ledger accounts for
-  all 688, the frozen tallies fail on any reclassification, the "no ABI-typed
+  all 693, the frozen tallies fail on any reclassification, the "no ABI-typed
   parameter reaches the call" assertion runs over the emitted text, and
   `prototype-reproduced` catches a regression in any shape S1 tested. Mechanical
   work behind those fences is cheap-model work.
@@ -3254,6 +3432,19 @@ not compiled at all (§5.10).
   compile-time, so cross-compilation forbids only *running*, and done by
   bisection it needs no parsing of linker diagnostics at all, only their exit
   status. It is the right answer for any future instance and is not implemented.
+
+  **Decision 28's GPU queries are the case this would have bitten next, and it
+  does not**, which is worth recording because the reason is an accident of
+  someone else's packaging rather than anything this project arranged. Open MPI
+  declares them in `<mpi-ext.h>`, and an ABI-implementing Open MPI's
+  `mpicc_abi -show` puts only `include/standard_abi` on the include path — so
+  the header is not reachable, the probe reports it absent, no `MPIX_` name is
+  probed, and the wrapper names none of the symbols that build's `libmpi_abi`
+  declares and does not define (1341 exported `T` symbols, none matching
+  `MPIX`, `nm` on `build/mpi/ompi-main-prefix`). Had that header been on the
+  path, every one of the five would have been a link failure of the whole
+  wrapper. The link stage is what would make that a run-time answer instead of
+  a build failure, and it is still not implemented.
 - **Capacity defaults for the fixed-size tables**, and whether they should be
   configure options rather than compile-time constants. Related to §13.2's first
   bullet: a configure option does not remove the wall, and it does move the

@@ -145,10 +145,11 @@ jobs:
             os: ubuntu-24.04-arm
             arch: aarch64
           # Open MPI stays on Ubuntu 24.04 for what its 4.1.6 covers and
-          # nothing else does: that release provides 466 of the ABI's 688 entry
-          # points, so it is where decision 6's MPI_ERR_UNSUPPORTED_OPERATION
-          # paths are exercised most broadly. The suite rows no longer share this
-          # pin -- they build Open MPI 5.0.10 from source -- so moving this image
+          # nothing else does: that release provides 466 of the ABI's 688
+          # *standard* entry points, so it is where decision 6's
+          # MPI_ERR_UNSUPPORTED_OPERATION paths are exercised most broadly. The
+          # suite rows no longer share this pin -- they build Open MPI 5.0.10
+          # from source -- so moving this image
           # now costs only what this row measures, where before it would have
           # invalidated a 168-line expected-failure list.
           - mpi: openmpi
@@ -790,7 +791,7 @@ jobs:
   # The wrapper is built, not just libmpi_abi. -DMPI_ABI_BUILD_WRAPPER=OFF would
   # be the easy row -- no MPI needed -- and close to worthless for this purpose:
   # it compiles bootstrap.c and one generated file, while the whole conversion
-  # layer, the 1366 slots and every hand-written body sit on the other side of
+  # layer, the 1376 slots and every hand-written body sit on the other side of
   # that switch. Those are what a third compiler has an opinion about.
   #
   # -Werror is on for every target here, so any diagnostic these compilers have

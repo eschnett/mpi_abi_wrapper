@@ -19,10 +19,18 @@
 # exactly as a named one does and versions nothing, which is all this file was
 # ever for. It also stops emitting the absolute symbol for the node itself,
 # which test/check_exports.cmake used to have to exempt by name.
+#
+# MPIX_/PMPIX_ are here for the same reason the other two are, and they are not
+# covered by them: the glob MPI_* requires `_` as the fourth character, so
+# MPIX_Query_cuda_support matches neither pattern and would be filtered into
+# `local` -- exported by nothing, and reported missing by
+# test/check_exports.cmake (NOTES.md #7 decision 28).
 {
   global:
     MPI_*;
     PMPI_*;
+    MPIX_*;
+    PMPIX_*;
   local:
     *;
 };

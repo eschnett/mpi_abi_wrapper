@@ -5,11 +5,11 @@
  *
  * It reports decision 5's resolution *from the outside*. The obvious design --
  * ask libmpi_abi which wrapper it loaded -- is ruled out: that library exports
- * exactly the 1376 MPI_ and PMPI_ names of the ABI and nothing else, a tally
- * test/check_exports.cmake checks in both directions, so there is no accessor
- * to add. So the two paths below come from the same CMake variables the
- * library and bin/mpiexec bake in, with the environment variable that
- * overrides each shown beside it.
+ * exactly the 1386 MPI_/PMPI_ and MPIX_/PMPIX_ names of the ABI and nothing
+ * else, a tally test/check_exports.cmake checks in both directions, so there
+ * is no accessor to add. So the two paths below come from the same CMake
+ * variables the library and bin/mpiexec bake in, with the environment
+ * variable that overrides each shown beside it.
  *
  * One limitation, stated rather than papered over: libmpi_abi resolves and
  * dlopens the wrapper from a *constructor*, so when that fails the process
@@ -199,6 +199,17 @@ int main(int argc, char **argv)
                                      &is_set) == MPI_SUCCESS)
       printf("%-24s %s\n", "fortran booleans:", is_set ? "set" : "not set");
   }
+
+  /* What the wrapped MPI answers about accelerator memory (NOTES.md #7
+   * decision 28). Printed after MPI_Init because that is where both
+   * implementations settle it -- Open MPI reads the accelerator component
+   * selected there -- and 0 means either "not GPU-aware" or "has no such
+   * query", which are the same fact to a program deciding whether to hand a
+   * device pointer to MPI_Send.
+   */
+  printf("%-24s cuda %d, rocm/hip %d, ze %d\n", "gpu-aware:",
+         MPIX_Query_cuda_support(), MPIX_Query_rocm_support(),
+         MPIX_Query_ze_support());
 
   MPI_Finalize();
   return 0;

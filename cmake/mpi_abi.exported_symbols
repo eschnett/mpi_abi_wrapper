@@ -3,5 +3,11 @@
 # cmake/mpi_abi.version for the ELF side and why this restricts rather than
 # merely documents the export set. Mach-O C symbols carry a leading
 # underscore that the ABI header's own names do not.
+#
+# The MPIX_/PMPIX_ pair is not covered by the two above -- `_MPI_*` needs `_`
+# as its fifth character -- and without them the non-standard entry points
+# (NOTES.md #7 decision 28) are simply not exported.
 _MPI_*
 _PMPI_*
+_MPIX_*
+_PMPIX_*

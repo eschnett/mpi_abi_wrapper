@@ -468,6 +468,65 @@ that dissolves the objection. Before declining to ship something because it
 belongs to the wrapped MPI, check what was done for the last thing that
 belonged to the wrapped MPI.
 
+### 1.25 Forwarding `MPIX_GPU_query_support` through a constants map
+
+The obvious shape for decision 28's enum form, and the one every other
+enumerated family in this project has: give `gen/mpiwrapper/constants.c` a
+`MPIX_GPU_SUPPORT_*` case list, convert the ABI's `gpu_type` to the
+implementation's, and forward the call. It is what `MPI_COMBINER_*`,
+`MPI_THREAD_*` and `MPI_COMM_TYPE_*` all do, and doing it differently needed a
+reason.
+
+The reason is that the values are not the interesting part. Composition —
+switch on the ABI's value here, call the kind's own helper, never send an enum
+across — is strictly better on three counts, and each of them is a thing a map
+would have made worse rather than merely not better:
+
+- **It serves an implementation that has only the *single* forms.** Open MPI
+  has `MPIX_Query_cuda_support` and no enum form at all, so a forwarded
+  `MPIX_GPU_query_support` would have had nothing to forward *to* and would
+  have answered 0 for CUDA on an implementation that can say yes.
+- **It serves one that has only the enum form** equally, since the per-kind
+  helper falls through to it. A map serves neither case without a second
+  mechanism beside it.
+- **There is no case list to keep in step.** A constants map's failure mode is
+  the one `NOTES.md` #5.6 records: a value that falls to the default arm and is
+  passed through unmapped, which is not an error and not a crash, just a
+  different question asked of the implementation.
+
+So the map was never written, and the three ABI constants exist only as
+`case` labels in `src/mpiwrapper/hw_gpu.c`. The general form of the lesson: an
+enumerated argument needs a map when the *implementation* consumes it, and
+needs none when the wrapper can answer from it directly.
+
+### 1.26 `__has_include(<mpi-ext.h>)` for the optional header
+
+Decision 28's probe needs to know whether the implementation has `mpi-ext.h`,
+and C has a preprocessor operator for exactly that question — no extra
+translation unit, no extra compiler invocation, one line in
+`dev/probe_impl.py`'s generated source.
+
+It answers the wrong question. `__has_include` reports whether a file of that
+name is *findable* on the include path, and this project's include paths
+routinely have more than one MPI on them — a conda prefix, a MacPorts one, a
+container's system MPI. A stray `mpi-ext.h` belonging to a different Open MPI
+than the one being wrapped exists and is found, and then `#include`ing it into
+a translation unit that included *this* MPI's `<mpi.h>` does not compile, which
+is the failure `__has_include` was supposed to prevent.
+
+The rule §1.19 already settled is what applies: **the compiler is the oracle**,
+and the question is always "does this compile against this implementation's
+headers", never "is this name/file present". So the pre-check compiles
+`#include <mpi.h>` / `#include <mpi-ext.h>` and reads the exit status.
+
+**What that costs, measured rather than waved at**
+(`dev/gpu-query/timeprobe.py`, native Open MPI 5.0.6 on the development
+laptop): the pre-check is **34 ms**, one `-fsyntax-only` of a two-line
+translation unit, against **316 ms** for the whole probe over its 1350
+spellings — about a ninth, once per build tree. That is more than "free" and
+it is what asking the question that matters costs; `__has_include` would have
+been free and wrong.
+
 ---
 
 ## 2. Beliefs a measurement overturned

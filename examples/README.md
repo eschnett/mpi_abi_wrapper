@@ -23,9 +23,10 @@ about agreement (`HISTORY.md` §5 keeps the same list as a standing warning):
    cleanly, because both macros exist;
 5. `mpi_abi_side.c` still *defaulted* to `dlmopen` on Linux, which `src/` never
    did and which is now known not to work with a real MPI at all;
-6. the slot count said 1376 where the real vtable has 1366 — the five entry
-   points MPI-3.0 deleted are answered by `libmpi_abi` itself and have no slot,
-   while all 1376 names are still exported (`NOTES.md` #1, #3).
+6. the slot count equalled the export count, where the real vtable has ten
+   fewer slots than `libmpi_abi` has exports — the five entry points MPI-3.0
+   deleted are answered by `libmpi_abi` itself and have no slot, so today that
+   is 1376 slots against 1386 exports (`NOTES.md` #1, #3).
 
 All six are corrected. What is still deliberately absent here is the
 behavioural probe (`src/mpi_abi/bootstrap.c`'s decoy vtable): the `dladdr` check
@@ -39,7 +40,7 @@ narrated below is necessary and not sufficient, and `NOTES.md` §2 explains why.
 | `mpiwrapper_wrappers.c` | `gen/mpiwrapper/wrappers.c` | generator |
 | `mpiwrapper_convert.c` | `src/mpiwrapper/*.c` | hand |
 
-The headers are excerpts: nine vtable slots of 1366, and only the types and constants
+The headers are excerpts: nine vtable slots of 1376, and only the types and constants
 the examples reference.
 
 ## Checking them

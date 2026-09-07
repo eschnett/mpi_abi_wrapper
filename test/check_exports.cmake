@@ -86,11 +86,16 @@ exported_symbols(abi_syms ${ABI_LIB})
 # than being tolerated by a list this test has to keep in sync with whichever
 # ones a given libc/binutils happens to emit.
 
-file(STRINGS ${ENTRYPOINTS} bases)
+# dev/entrypoints.txt holds *full* names (MPI_Send, MPIX_Query_cuda_support),
+# not bases: a base no longer decides its own prefix, since the header declares
+# non-standard MPIX_ entry points beside the standard ones (NOTES.md #7
+# decision 28). The shifted name is still this file's to form, because P is
+# the whole of the difference.
+file(STRINGS ${ENTRYPOINTS} names)
 set(expected)
-foreach(base ${bases})
-  if(base)
-    list(APPEND expected MPI_${base} PMPI_${base})
+foreach(name ${names})
+  if(name)
+    list(APPEND expected ${name} P${name})
   endif()
 endforeach()
 list(SORT expected)
@@ -99,7 +104,7 @@ list(LENGTH expected nexpected)
 set(bad)
 set(exported)
 foreach(sym ${abi_syms})
-  if(sym MATCHES "^P?MPI_")
+  if(sym MATCHES "^P?MPIX?_")
     list(APPEND exported ${sym})
   else()
     list(APPEND bad ${sym})

@@ -1,13 +1,13 @@
 /* GENERATED FILE -- do not edit by hand.
  *
  * Produced by dev/generate.py. libmpi_abi -- the exported entry points, all
- * 1376 of them.
+ * 1386 of them.
  *
  * Note what is *not* here: no conversion, no temporary, no knowledge of any
  * implementation type, and no initialization check. The arguments pass through
  * untouched, and need no cast because the ABI header's MPI_Comm and mpiabi.h's
  * MPIABI_Comm are the same type -- both `struct MPI_ABI_Comm *`. That identity
- * is rule 2 of the renaming (NOTES.md #2) and it is what keeps 1376
+ * is rule 2 of the renaming (NOTES.md #2) and it is what keeps 1386
  * forwarders cast-free; a cast here would silently absorb a genuine type
  * error.
  *
@@ -8927,3 +8927,29 @@ MPI_Fint MPI_Type_c2f(MPI_Datatype datatype)
 MPI_Win MPI_Win_f2c(MPI_Fint win) { return VT()->MPI_Win_f2c(win); }
 
 MPI_Fint MPI_Win_c2f(MPI_Win win) { return VT()->MPI_Win_c2f(win); }
+
+int PMPIX_GPU_query_support(int gpu_type, int *is_supported)
+{
+  return VT()->PMPIX_GPU_query_support(gpu_type, is_supported);
+}
+
+int PMPIX_Query_cuda_support(void) { return VT()->PMPIX_Query_cuda_support(); }
+
+int PMPIX_Query_hip_support(void) { return VT()->PMPIX_Query_hip_support(); }
+
+int PMPIX_Query_rocm_support(void) { return VT()->PMPIX_Query_rocm_support(); }
+
+int PMPIX_Query_ze_support(void) { return VT()->PMPIX_Query_ze_support(); }
+
+int MPIX_GPU_query_support(int gpu_type, int *is_supported)
+{
+  return VT()->MPIX_GPU_query_support(gpu_type, is_supported);
+}
+
+int MPIX_Query_cuda_support(void) { return VT()->MPIX_Query_cuda_support(); }
+
+int MPIX_Query_hip_support(void) { return VT()->MPIX_Query_hip_support(); }
+
+int MPIX_Query_rocm_support(void) { return VT()->MPIX_Query_rocm_support(); }
+
+int MPIX_Query_ze_support(void) { return VT()->MPIX_Query_ze_support(); }

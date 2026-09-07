@@ -7,7 +7,7 @@
  *
  * Two parts:
  *   - the bootstrap, hand-written, in src/mpi_abi/
- *   - 1376 forwarders, generated, in gen/mpi_abi/entrypoints.c: 1366 of them
+ *   - 1386 forwarders, generated, in gen/mpi_abi/entrypoints.c: 1376 of them
  *     one per vtable slot, and ten answering the five entry points MPI-3.0
  *     deleted in terms of their replacements (NOTES.md #3)
  *

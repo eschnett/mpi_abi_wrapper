@@ -13,8 +13,8 @@ Hand-written: bootstrap, `dlopen` isolation, vtable acquisition. NOTES.md §2.
   `-flat_namespace` implementation resolves its own internal references by
   global load order (`NOTES.md` §2, `HISTORY.md` §2.19).
 The entry points themselves are `gen/mpi_abi/entrypoints.c` since S2: one line
-per entry point, no conversion, no cast, no initialization check, 688 of them
-(1376 definitions). S1's 29-entry-point stand-in is frozen in
+per entry point, no conversion, no cast, no initialization check, 693 of them
+(1386 definitions). S1's 29-entry-point stand-in is frozen in
 `dev/s1-reference/` as what the generator has to reproduce.
 
 **Five of them do not forward to their own slot**, and they are the only place
@@ -34,7 +34,7 @@ instead, each calling the slot of the MPI-2 entry point that replaced it —
 rename. The generator checks that each pair really is the same call: return
 type, arity and every parameter type, with the two MPI-1 callback typedefs
 compared by the function type they name. They have no slot and no wrapper body,
-so `libmpiwrapper` never mentions them; `libmpi_abi` still exports all 1376
+so `libmpiwrapper` never mentions them; `libmpi_abi` still exports all 1386
 names, which is what the ABI actually promises. `gen/report.txt` lists them.
 
 Environment variables it reads:
