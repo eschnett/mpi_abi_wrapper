@@ -167,7 +167,7 @@ three rows came off it for three different reasons worth keeping straight:
   failed, the 41 identical on both architectures and matched in both directions
   by `suite/xfail-ci-mpich.txt`.
 * **The Open MPI suite legs** stayed on probation past their evidence. Their
-  lists have carried 110 shared lines plus per-architecture deltas since run
+  lists have carried 102 shared lines plus per-architecture deltas since run
   32182485327, and what actually kept them red was two *incomplete families* —
   one unlisted member of the `mt_*` bsend family and one of the `subcomm_abort`
   pair, each of which took a leg red on its own. Completing the families in

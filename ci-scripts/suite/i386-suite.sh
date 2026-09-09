@@ -88,9 +88,25 @@ fi
 # this row differ from the 64-bit ones in two variables instead of the one it
 # exists to isolate. Drop the flag when a libfabric that compiles here lands.
 #
-# -g -O2 is restated because setting CFLAGS at all replaces autoconf's default,
-# and an unoptimised MPI would make an already long row much longer.
-export CFLAGS="${CFLAGS:--g -O2} -Wno-error=incompatible-pointer-types"
+# **The flag rides in CC, not CFLAGS, and 5.0.2 is why.** Through 5.0.1 CFLAGS
+# was enough: PAC_PREFIX_ALL_FLAGS(USER) saved it into USER_CFLAGS, and
+# PAC_RESET_ALL_FLAGS restored CFLAGS="$USER_CFLAGS" before each embedded
+# module's configure, so libfabric got it. Upstream b99300bad changed
+# PAC_PREFIX_FLAG from `$1_$2=$$2` to `$1_$2=""` -- meaning to stop build flags
+# leaking into mpicc's WRAPPER_* flags, which it does -- but the macro is shared,
+# so USER_CFLAGS is now always empty and every embedded module is configured with
+# the user's CFLAGS stripped. Run 34371453201 shows it: src/mpl, src/pmi, romio
+# and hydra were handed `CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types`
+# while modules/libfabric got `CFLAGS= -fvisibility=hidden`, and all four ILP32
+# legs died at ofi_cma.h:67. CC survives because PAC_RESET_ALL_FLAGS resets only
+# CFLAGS, CPPFLAGS, CXXFLAGS, FFLAGS, FCFLAGS, LDFLAGS and LIBS. dev/mpich-user-cflags/
+# has the reproducer and the upstream report. **Move the flag back to CFLAGS when
+# that regression is fixed** -- it is the narrower place for it, for the reason
+# the next paragraph gives.
+#
+# CFLAGS is left alone so autoconf's own -g -O2 default still applies; an
+# unoptimised MPI would make an already long row much longer.
+export CC="${CC:-gcc} -Wno-error=incompatible-pointer-types"
 
 if [ -x "$prefix/bin/mpicc" ]; then
   step "MPICH $version is already installed at $prefix"
@@ -100,6 +116,40 @@ else
     || { echo "MPICH build failed" >&2; exit 1; }
 fi
 command -v ccache >/dev/null && ccache --show-stats 2>/dev/null | head -5
+
+# **And take the flag straight back out of the compiler wrappers.** MPICH bakes
+# $CC into mpicc/mpicxx/mpifort, so the workaround above would otherwise follow
+# this row into the wrapper's own build and the suite's -- where
+# -Wincompatible-pointer-types is a diagnostic about *our* generated conversion
+# code and must stay an error, and where its interaction with the -Werror
+# CMakeLists.txt adds is a precedence question nobody should have to reason about.
+# Stripping it here means the flag reaches MPICH's build, which needs it, and
+# nothing else.
+#
+# Asserted, not assumed: if the substitution ever stops matching -- a different
+# wrapper layout, a renamed variable -- this row fails here rather than quietly
+# compiling the wrapper with a warning demoted.
+step "removing the libfabric workaround from the compiler wrappers"
+grep -rl -- '-Wno-error=incompatible-pointer-types' "$prefix/bin" "$prefix/lib" \
+     "$prefix/share" 2>/dev/null | while read -r f; do
+  case $(file -b "$f" 2>/dev/null) in *text*) sed -i 's/ -Wno-error=incompatible-pointer-types//g' "$f" ;; esac
+done
+
+# `mpicc -show` is the assertion, not a grep: it prints the command line the
+# wrapper would actually run, so it answers the question wherever MPICH chose to
+# keep the value. A wrapper that cannot even -show is itself a failure here.
+for w in mpicc mpicxx mpifort; do
+  [ -x "$prefix/bin/$w" ] || continue
+  shown=$("$prefix/bin/$w" -show 2>&1) \
+    || { echo "$0: $prefix/bin/$w -show failed:" >&2; echo "$shown" >&2; exit 1; }
+  case $shown in
+    *Wno-error=incompatible-pointer-types*)
+      echo "$0: $w still passes the libfabric workaround flag to user code:" >&2
+      echo "  $shown" >&2
+      exit 1 ;;
+  esac
+done
+echo "  no wrapper passes -Wno-error=incompatible-pointer-types to user code"
 
 # 32 bits is the claim this row exists to make, so it is checked rather than
 # assumed: a 64-bit MPICH restored from a mislabelled cache would otherwise run

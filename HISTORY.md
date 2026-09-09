@@ -1060,6 +1060,49 @@ what else that release moves before it ships.
 
 ---
 
+### 2.21 "`CFLAGS` is how a flag reaches MPICH's embedded libfabric"
+
+It was, for as long as the ILP32 row had existed. `ci-scripts/suite/i386-suite.sh`
+exported `CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types` because MPICH's
+vendored libfabric does not compile on 32-bit — `ofi_cma.h`'s `cma_copy` passes
+`unsigned long *` where `ofi_consume_iov` takes `size_t *`, distinct types where
+`size_t` is `unsigned int` — and gcc 14 makes that an error. One flag, one row,
+documented, and it worked.
+
+**It stopped working in MPICH 5.0.2rc1, and the pin that found it is the point.**
+All four ILP32 legs of run 34371453201 died in `src/fabric.c`. The flag was still
+on MPICH's configure line; it was no longer on libfabric's. `src/mpl`, `src/pmi`,
+`romio` and `hydra` were handed
+`CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types` while `modules/libfabric`
+got `CFLAGS= -fvisibility=hidden`.
+
+The cause is two lines of m4. Embedded modules are configured inside a
+`PAC_PUSH_ALL_FLAGS` / `PAC_RESET_ALL_FLAGS` / `PAC_POP_ALL_FLAGS` bracket whose
+own comment says why — a module should see *the user's* flags, not MPICH's
+accumulated ones — and `PAC_RESET_ALL_FLAGS` restores them from a `USER_*`
+snapshot. Upstream `b99300bad` changed `PAC_PREFIX_FLAG` from `$1_$2=$$2` to
+`$1_$2=""` to stop build flags leaking into `mpicc`'s `WRAPPER_*` flags, which it
+does correctly. But `configure.ac` calls `PAC_PREFIX_ALL_FLAGS` twice, for
+`WRAPPER` at line 270 and for `USER` at line 331, so emptying the shared macro
+emptied the snapshot too. `PAC_RESET_ALL_FLAGS` still does what it always did;
+what stopped happening is the saving.
+
+**Two things this is worth keeping for.** The first is that a documented
+workaround is a claim about someone else's build system, and it expires without
+notice — this one expired loudly, in a compile error, which is the lucky case; a
+packager passing `-march=` gets no diagnostic at all, just half a library built
+as asked. The second is what the fix had to avoid. The flag moved to `CC`, which
+survives the bracket, and `CC` is what MPICH bakes into `mpicc` — so the
+workaround would have followed the row into the wrapper's own build, where
+`-Wincompatible-pointer-types` is a diagnostic about *our* generated conversion
+code and must stay an error. `i386-suite.sh` therefore strips it back out of the
+installed prefix and asserts with `mpicc -show` that no wrapper passes it to user
+code, because the alternative was reasoning about how `-Wno-error=` and the
+`-Werror` in `CMakeLists.txt` compose. `dev/mpich-user-cflags/` has the
+reproducer, the evidence table and the report drafted for upstream.
+
+---
+
 ## 3. What each stage settled
 
 Eight stages ran, and S6 gained a second half long after its first: S6 wrote the
@@ -1552,17 +1595,25 @@ authority column and the generator freezes each tally.
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
 | MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
 | Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
-| CI Open MPI suite failures | 105, and 110 elsewhere | **104** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
-| CI ILP32 deltas | "eleven" | **6** | ditto for `xfail-ci-mpich-i386.txt` |
+| CI Open MPI suite failures | 105, and 110 elsewhere | **102** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
 
-**The last four rows are the same failure twice over, and the second half is
+**The last three rows are the same failure twice over, and the second half is
 the one `CLAUDE.md` warns about.** The local-list corrections to 40 and 167 were
 recorded *here* and left out of `CODE.md` §10's variant table, which is the
 table a reader consults — so the wrong numbers survived in the place they get
-read while the right ones sat in the history. The CI counts were wrong in three
-documents at once (a list's own header, `CODE.md`, and
-`ci-scripts/suite/README.md`) and agreed with each other rather than with
-`grep`, which is what an authority column is for.
+read while the right ones sat in the history. The CI Open MPI count was wrong in
+three documents at once (the list's own header at 105, `CODE.md` at 104, and
+`ci-scripts/suite/README.md` at 110) and the three agreed with each other rather
+than with `grep`, which is what an authority column is for.
+
+**A near-miss worth recording, because it is the same mistake pointed the other
+way.** The i386 delta was almost added to this table as "eleven → 6". It is not a
+wrong count: the list genuinely held eleven lines through the ILP32 SIGBUS
+investigation and dropped to six when the tmpfs cause was fixed, and
+`ci-scripts/suite/README.md` already recorded that transition. A number that
+changed reads exactly like a number that was wrong, and the way to tell them
+apart is to find out whether some document already explains the change — not to
+diff the sentence against the artifact and assume the sentence lost.
 
 The 1376 line is the instructive one. It was right until S3b's follow-up gave
 the five deleted entry points to `libmpi_abi`, and it stayed in eight places

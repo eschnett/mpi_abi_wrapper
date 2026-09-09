@@ -1197,7 +1197,7 @@ jobs:
   # produced 842 tests, 789 passed and 41 failed identically on both architectures,
   # and xfail-ci-mpich.txt matched them in both directions. The Open MPI legs stayed
   # behind for longer than their evidence justified, which is the failure this commit
-  # is about: their lists have carried 110 shared lines plus per-architecture deltas
+  # is about: their lists have carried 102 shared lines plus per-architecture deltas
   # since run 32182485327, five of the six legs passed their gates in run
   # 32655819244, and the header here still said the lists were empty.
   #

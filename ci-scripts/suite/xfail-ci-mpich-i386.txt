@@ -1,7 +1,16 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over MPICH 5.0.1 on **i386 only**. This is the delta beside
-# xfail-ci-mpich.txt, which holds what every architecture sees; check-tap.py
-# reads the two as one and rejects a test listed in both.
+# over MPICH on **i386 only**. This is the delta beside xfail-ci-mpich.txt, which
+# holds what every architecture sees; check-tap.py reads the two as one and
+# rejects a test listed in both.
+#
+# **These six lines were measured against the 5.0.1 suite and have not been
+# confirmed at 5.0.2rc1**, which is the pin the row now builds. Run 34371453201's
+# four ILP32 legs produced no TAP at all: MPICH 5.0.2rc1 would not compile on
+# ILP32 until the CFLAGS regression in dev/mpich-user-cflags/ was worked around,
+# so they died in the embedded libfabric before the suite ran. The first green
+# i386 run after that workaround is what re-establishes this file; until then the
+# six lines are carried, not verified, and the two directions check-tap.py
+# enforces are what will say so.
 #
 # 32-bit x86, in the linux/386 container ci-scripts/suite/i386-suite.sh drives.
 # This is the only row where an ABI handle is 4 bytes rather than 8 (NOTES.md

@@ -2609,6 +2609,16 @@ the installers are: the mpif rows build from mpif's own pinned git commits, and
 out what MPICH 5.0.2's three ABI-layer fixes do to this project before it ships
 rather than after. That pin moves to `5.0.2` final when it is released.
 
+**One row carries a compiler flag, and it is the ILP32 one.** MPICH's vendored
+libfabric does not compile on 32-bit, so `ci-scripts/suite/i386-suite.sh` passes
+`-Wno-error=incompatible-pointer-types` for MPICH's own build and strips it back
+out of the installed compiler wrappers, asserting with `mpicc -show` that the
+suite and the wrapper never see it. It rides in `CC` rather than `CFLAGS` because
+MPICH 5.0.2 stopped passing a user's `CFLAGS` to its embedded modules at all
+(`dev/mpich-user-cflags/`, `HISTORY.md` §2.21); move it back to `CFLAGS` when
+that is fixed. This is the only deviation from "stock configure" anywhere in the
+provisioning, and it is scoped to the one row that cannot build without it.
+
 Do not add `--disable-fortran` to save build time — it silently drops the
 *implementations* of `MPI_Type_create_f90_{real,complex,integer}`, plain C entry
 points MPI-5.0 requires, so the compile-only probe reports them available and

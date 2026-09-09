@@ -99,10 +99,10 @@ so the list can be compared with an unwrapped run by eye.
 than unfinished-looking.** (Both describe the development laptop against the older
 pair of MPIs. The CI lists are further down, are written from real runs, and are
 not these.)
-`xfail-mpich.txt` is fully triaged: **41** failures, each
+`xfail-mpich.txt` is fully triaged: **40** failures, each
 with a cause. The three bugs of ours that this suite found are not in it,
 because all three were fixed -- the last of them, `MPI_DISPLACEMENT_CURRENT`,
-emptied a whole group out of the file. `xfail-openmpi.txt` is **168**, of
+emptied a whole group out of the file. `xfail-openmpi.txt` is **167**, of
 which the entry points Open MPI 4.1.6 simply does not have are attributed
 mechanically -- from the probe header that records what the implementation
 provides -- and about half are honest placeholders saying what was observed
@@ -277,8 +277,8 @@ expected-failure list:
 |---|---|---|---|
 | `suite` × x86_64 | MPICH 5.0.2rc1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
 | `suite` × aarch64 | MPICH 5.0.2rc1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
-| `suite` × x86_64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
-| `suite` × aarch64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
+| `suite` × x86_64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
+| `suite` × aarch64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
 | `suite-i386` | MPICH 5.0.2rc1, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
 
 **Each of those five runs as four jobs**, one per shard of the suite — **eighteen
@@ -334,8 +334,19 @@ nothing duplicated, and no two shards sharing a test — which also settles that
 `testlist.dtp` follows the directory filter rather than escaping it, the one way
 sharding could have quietly run tests twice or not at all. The 41-line MPICH list
 has reproduced across three runs and all three architectures, i386 included, where
-it held unchanged and ILP32 only *added* eleven lines. The 110-line Open MPI list
-reproduced in full. Two entries filed as architecture differences turned out to be
+it held unchanged and ILP32 only *added* eleven lines — eleven then; the delta is
+six now, and the paragraph beginning "So the 'empty because their legs cannot
+finish here'" below is where it dropped. The Open MPI list reproduced in full at
+the 110 it was then thought to hold; the file holds 102.
+
+**At the 5.0.2rc1 suite the partition sums to 843 distinct tests and 1247
+invocations** (run 34371453201, the four aarch64 MPICH shards added up with
+`check-tap.py`'s own parser and its across-duplicates rule). The two extra
+invocations and the one extra test are the same arrival: `datatype/testlist.in`
+gained `createf90types 1` and `createf90types 1 arg=1000`, and runtests names
+both `datatype/createf90types 1`. The unsharded cross-check above was made at the
+older version and has not been repeated; what has been checked at 5.0.2rc1 is
+that the shards still sum to the whole. Two entries filed as architecture differences turned out to be
 intermittent tests and were removed when the second run passed them; a test that
 flaps cannot be listed at all, since listing it fails the run it passes and not
 listing it fails the run it fails.

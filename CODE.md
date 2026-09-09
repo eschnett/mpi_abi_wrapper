@@ -569,6 +569,15 @@ used to make a red run green.
 | MPICH 4.3.1 | **40** in `xfail-mpich.txt` | fully triaged, every line with a cause |
 | Open MPI 4.1.6, on Linux | **167** in `xfail-openmpi.txt` | about half attributed, the rest honest placeholders |
 
+Every count in this section is `grep -cvE '^\s*(#|$)'` on the file named, which
+is how `check-tap.py` reads it. The CI lists, at run 34371453201: **41** in
+`xfail-ci-mpich.txt` with **0**, **0** and **6** in its x86_64, aarch64 and i386
+deltas, and **102** in `xfail-ci-openmpi.txt` with **1** and **0** in its two.
+The empty ones are measurements, not placeholders. The whole suite at the
+5.0.2rc1 pin is **843** tests over MPICH — 790 passed, 41 failed, 12 skipped by
+the suite — where 5.0.1's was 842/789/41/12; the extra test is
+`datatype/createf90types`, which passes.
+
 The two lists above are the **local** rows and are pinned to the pair of MPIs
 named in them. **CI runs five environments of its own**, each with its own list:
 `suite` over MPICH 5.0.2rc1 and Open MPI 5.0.10 built from the pinned tarballs, on
@@ -578,10 +587,11 @@ per-architecture `xfail-ci-<mpi>-<arch>.txt`, which `check-tap.py` reads as one
 file while rejecting a test listed in both — the split exists because three runs
 showed one file cannot describe two machines, timing moving in both directions at
 once on a four-vCPU runner and one architecture returning wrong 8-bit reductions
-that the other did not. **The three MPICH environments gate**
-(`continue-on-error: false`, which is TODO.md's "do not ignore mpich failures");
-the two Open MPI legs are still report-only, and about half of
-`xfail-ci-openmpi.txt` still says "not yet attributed". Each leg keeps
+that the other did not. **All five environments gate** — there is no
+`continue-on-error: true` left in `ci.yaml`, which is TODO.md's "do not ignore
+failures" and `ci-scripts/README.md`'s stated property to preserve. The Open MPI
+legs were the last off probation and about half of `xfail-ci-openmpi.txt` still
+says "not yet attributed", which is a gap in *attribution*, not in gating. Each leg keeps
 `summary.tap` and the run's logs as an artifact whether it passed or not, which
 is what `--gate-only` writes a list from.
 
@@ -595,7 +605,7 @@ before it can report. The counts, by
 | list | lines |
 |---|---|
 | `xfail-ci-mpich.txt` + `-i386` delta | **41** + **6** (x86_64 and aarch64 deltas are empty) |
-| `xfail-ci-openmpi.txt` + `-x86_64` delta | **104** + **1** |
+| `xfail-ci-openmpi.txt` + `-x86_64` delta | **102** + **1** |
 | `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **3**, **7** |
 | `timelimit-ci-openmpi.txt` | **16** patterns over 41 lines, 18 of them seen to hang |
 | `exclude-ci-openmpi.txt` | **2**, both inert while `rma` is off the Open MPI legs |
