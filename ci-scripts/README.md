@@ -183,6 +183,19 @@ excuse, so it costs a re-run. That is the trade being made deliberately: while t
 Open MPI legs were report-only, exactly such a death (run 32655819244, exit 143)
 was reported as a green workflow and went unexamined.
 
+**It has now cost a re-run twice, and the second one is worth reading for how to
+tell it apart from a real failure.** `suite / openmpi 5.0.10 / x86_64 / rest` in
+run 34379533295 died with the same exit 143 and the same "the runner has received
+a shutdown signal", **21 seconds** into the test run — `=== running the suite` at
+16:56:45, dead at 16:57:07, in `comm` at `cmsplit_type`. Three things say
+infrastructure rather than this project: the documented Open MPI resource death
+takes about six minutes and lives in `rma`, which `exclude:` does not run on
+these legs at all; the same leg on the previous run gated green against the same
+lists, whose TAP is still downloadable; and the job's "collect the TAP file" step
+is *skipped* rather than failed, so there is no TAP to interpret — a real
+failure leaves one. A leg that dies before producing a TAP has not made a
+statement about the wrapper; re-run it.
+
 ## Gating a row that has a known failure: `check-ctest.py`
 
 `ci-scripts/check-ctest.py` is to this project's own `ctest` suite what
