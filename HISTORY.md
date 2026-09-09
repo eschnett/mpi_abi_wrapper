@@ -1596,15 +1596,44 @@ authority column and the generator freezes each tally.
 | MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
 | Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
 | CI Open MPI suite failures | 105, and 110 elsewhere | **102** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
+| this project's own `ctest` suite | 13, then "fourteen" | **15** on a default build | `ctest -N`; 16 `add_test` lines, one of them behind `MPI_ABI_SANITIZE` and eight behind `MPI_ABI_BUILD_WRAPPER` |
+| CI jobs, and legs | "ten" jobs, "thirty-eight" legs | **12** and **44** | the `jobs:` keys of `ci.yaml`, and its matrices expanded with `exclude:` applied |
+| legs that are the MPICH suite | "twenty" | **18** | `suite`'s 14 + `suite-i386`'s 4; twenty is five environments x four shards *before* `exclude:` drops `rma` on the two Open MPI legs |
 
-**The last three rows are the same failure twice over, and the second half is
-the one `CLAUDE.md` warns about.** The local-list corrections to 40 and 167 were
+**The three expected-failure-list rows are the same failure twice over, and the
+second half is the one `CLAUDE.md` warns about.** (Named rather than pointed at:
+"the last three rows" was what this sentence said until a fourth row was appended
+below them, which is the fragility this whole section is about.) The local-list
+corrections to 40 and 167 were
 recorded *here* and left out of `CODE.md` §10's variant table, which is the
 table a reader consults — so the wrong numbers survived in the place they get
 read while the right ones sat in the history. The CI Open MPI count was wrong in
 three documents at once (the list's own header at 105, `CODE.md` at 104, and
 `ci-scripts/suite/README.md` at 110) and the three agreed with each other rather
 than with `grep`, which is what an authority column is for.
+
+**The three CI-shape rows came for free with the report-only fix, which is the
+argument for looking at a whole sentence rather than the clause you came to
+change.** Correcting "the two MVAPICH legs are report-only" meant editing
+`CODE.md` §3's `ci.yaml` entry, and the same two lines also claimed ten jobs and
+thirty-eight legs. Both had been true; the file has since grown `linux-i386` and
+`suite-i386` and the mpif pair. The "twenty" is a different error and the more
+interesting one: it is the *nominal* five-environments-by-four-shards, and the
+`exclude:` block that drops `rma` on the two Open MPI legs — a block whose own
+comment warns it is easy to leave out of step — was left out of the arithmetic.
+
+**The `ctest` row is the one that had a rule protecting it and still went
+stale.** `CODE.md` §12's table says in as many words that older figures are left
+as they were measured rather than rewritten — exactly right, and it is why the
+13/13 and 6/6 rows are untouched. But the paragraph stating that rule also stated
+the *current* size, "fourteen tests since `abi_large_count_test` joined it", and
+that half is not a measurement of a past run; it is a claim about now, and it
+aged. The size is also three different numbers depending on two build options, so
+the fix was to write down the derivation rather than a fourth number.
+`ci.yaml:265-267` had already reached the same conclusion from the other end, for
+the MVAPICH row: an expected count "is deliberately not written down here",
+because the "12/13 to expect" it once carried was 14/15 two commits later.
+`CODE.md` was still carrying that 12/13 as an expectation.
 
 **A near-miss worth recording, because it is the same mistake pointed the other
 way.** The i386 delta was almost added to this table as "eleven → 6". It is not a
