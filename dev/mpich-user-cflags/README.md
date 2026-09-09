@@ -106,12 +106,27 @@ restores from is what stopped being taken.
 | `v5.0.1` | `$1_$2=$$2` | the user's `CFLAGS` |
 | `v5.0.2rc1` | `$1_$2=""` | always empty |
 
-**The 5.0.1 control was reproduced on the development laptop** — macOS, clang,
-64-bit — where `run.sh` finds the flag on all six sub-configures it checks,
-libfabric included. That is the point of the probe being configure-only: the
-dropped flag has nothing to do with the architecture or the compiler, and ILP32 is
-only where the consequence is fatal. The 5.0.2rc1 column of the table above is
-read out of run 34371453201's own configure output.
+**Both halves reproduce on the development laptop** — macOS, clang, 64-bit —
+which is the point of the probe being configure-only: the dropped flag has
+nothing to do with the architecture, the compiler or the operating system, and
+ILP32 is only where the consequence is fatal. `run.sh` there:
+
+| sub-configure | bracket | 5.0.1 | 5.0.2rc1 |
+|---|---|---|---|
+| `src/mpl` | plain | has the flag | has the flag |
+| `src/pmi` | plain | has the flag | has the flag |
+| `src/mpi/romio` | plain | has the flag | has the flag |
+| `src/pm/hydra` | plain | has the flag | has the flag |
+| `modules/libfabric` | reset | has the flag | **dropped** |
+| `modules/hwloc` | reset | has the flag | **dropped** |
+| `modules/json-c` | reset | has the flag | **dropped** |
+| `src/mpi/datatype/typerep/yaksa` | reset | has the flag | **dropped** |
+
+The `bracket` column is written into `run.sh` from reading the m4, *before* the
+run — so the split falling exactly along it, eight for eight, is a prediction
+that held rather than a pattern read out afterwards. The table further up is the
+same result from run 34371453201's own configure output, with the flag values
+quoted in full.
 
 ## What it costs beyond this project
 

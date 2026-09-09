@@ -32,6 +32,11 @@ running .../src/mpi/datatype/typerep/yaksa/configure ... 'CFLAGS='              
 
 On `v5.0.1` all eight carry the flag.
 
+Nothing about this is platform-specific — it reproduces on macOS/clang and on
+Linux/gcc alike, and needs no build, only `configure`. The four that lose the
+flag are exactly the four configured inside a `PAC_PUSH_ALL_FLAGS` /
+`PAC_RESET_ALL_FLAGS` bracket.
+
 ### Cause
 
 `b99300bad` ("configure: don't pass compile flags through WRAPPER") changed
