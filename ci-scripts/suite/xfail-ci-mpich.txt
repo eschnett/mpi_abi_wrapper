@@ -34,10 +34,12 @@
 # outright (ba620649d). Both of those *did* move xfail-ci-openmpi.txt, which is
 # where the asymmetry is recorded.
 #
-# **The i386 legs produced no evidence in that run** and this file is unchanged
-# for them too: MPICH 5.0.2rc1 would not build on ILP32 until the CFLAGS
-# regression in dev/mpich-user-cflags/ was worked around, so the four legs died
-# before the suite ran. xfail-ci-mpich-i386.txt says what that leaves open.
+# **The i386 legs produced no evidence in that run** -- MPICH 5.0.2rc1 would not
+# build on ILP32 until the CFLAGS regression in dev/mpich-user-cflags/ was worked
+# around, so the four legs died before the suite ran. Run 34375629126, the first
+# with that workaround, had all four finish and left this file unchanged too. What
+# it did change is the ILP32 delta beside it, which went from six lines to three;
+# xfail-ci-mpich-i386.txt's header has that.
 #
 # **Flaps go in flaky-ci-mpich.txt now, not in a paragraph here.** This file briefly
 # carried `errors/comm/subcomm_abort 4` as prose, because a test that fails in one run

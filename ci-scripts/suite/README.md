@@ -335,8 +335,9 @@ nothing duplicated, and no two shards sharing a test — which also settles that
 sharding could have quietly run tests twice or not at all. The 41-line MPICH list
 has reproduced across three runs and all three architectures, i386 included, where
 it held unchanged and ILP32 only *added* eleven lines — eleven then; the delta is
-six now, and the paragraph beginning "So the 'empty because their legs cannot
-finish here'" below is where it dropped. The Open MPI list reproduced in full at
+six at 5.0.1, and three at 5.0.2rc1 -- the paragraph beginning "So the 'empty
+because their legs cannot finish here'" below is where eleven became six, and
+`xfail-ci-mpich-i386.txt`'s own header is where six became three. The Open MPI list reproduced in full at
 the 110 it was then thought to hold; the file holds 102.
 
 **At the 5.0.2rc1 suite the partition sums to 843 distinct tests and 1247
@@ -357,7 +358,7 @@ seen pass cannot tell a regression from the thing it was added to find, so it
 reports until it can, and then it gates. The lists were empty when that sentence
 was first written — MPICH 5.0.1 answers `init/version` correctly and fills in the
 entry points the older lists' largest group was about, so nothing could be carried
-over — and they are now 41 MPICH lines, 104 shared Open MPI lines, six ILP32
+over — and they are now 41 MPICH lines, 102 shared Open MPI lines, three ILP32
 deltas and a handful of flaky entries. Each leg keeps `summary.tap` and its logs as
 an artifact whether it passed or not, because `--gate-only` writes a list from a
 TAP file in hand rather than from a fresh 40-minute run. Deleting
@@ -1035,7 +1036,7 @@ container.
 
 **So the "empty because their legs cannot finish here" of this section's title no longer
 describes the i386 row.** It finishes, it gates, and its delta is six lines rather than
-eleven — and none of the ~140 SIGBUS failures that were about to be called ILP32
+eleven (three at the 5.0.2rc1 pin) — and none of the ~140 SIGBUS failures that were about to be called ILP32
 properties is one.
 
 **What this does not settle, stated so the green leg is not over-read.**
