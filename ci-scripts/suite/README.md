@@ -247,6 +247,40 @@ grep -aoE '^(not )?ok [0-9]+ - \./[^ ]+ [0-9]+ # time=[0-9.]+' /tmp/p2p/summary.
   sed -E 's/.* \.\/([^ ]+) ([0-9]+) # time=([0-9.]+)/\3 \1/' | sort -rn | head -20
 ```
 
+**The `-a` in that `grep` is load-bearing, and leaving it off fails silently.** A
+`summary.tap` from a CI leg carries a handful of NUL bytes — 15 in the Open MPI
+`rest` artifact of run 34371453201, written by the tests' own output — so `file`
+reports `data` rather than text and grep treats the whole file as binary.
+Measured on the development laptop, whose `grep` is ugrep 7.8.4: both
+`grep pattern` and `grep -c pattern` print **nothing** and exit 1, for a pattern
+that is present. Not an error, not a diagnostic, not a zero — no output, which
+reads exactly like "that test was not in this run" when checking a list against a
+downloaded TAP. Other greps report a "binary file matches" line instead; none of
+them give you the matches. A locally produced TAP is plain ASCII and greps
+normally, so this only bites on artifacts — which is the only time anyone greps
+one.
+
+`check-tap.py` read those artifacts correctly, and the reason is narrower than it
+looks. `parse_tap` uses a plain `open(path)` in text mode; NUL is valid UTF-8
+(U+0000), so the bytes decode rather than raising, and the `ok`/`not ok` lines
+parse. But a NUL is not *removed* — feed the parser a hand-made
+`ok 1 - ./a/b 2\0` and it returns the test name `'a/b 2\x00'`, which matches no
+xfail entry and would be reported as an unlisted failure or a listed-but-not-run,
+both of them wrong and neither obviously so.
+
+**What makes it safe today is where the NULs happen to fall, which is not a
+property anything enforces.** Counted across three artifacts of runs 34371453201
+and 34375629126: 15 NULs, 14 and 0, and **none of them on a result line** — they
+are in the surrounding test output, which `parse_tap` skips. So the gates those
+runs produced are sound. A NUL landing inside a result line instead would corrupt
+one test's name silently, and hardening `parse_tap` against it is one
+`line.replace("\x00", "")`. Not done here: it changes the gate every suite leg
+runs, so it wants its own commit and its own run rather than riding along with a
+paragraph.
+
+Meanwhile: prefer `check-tap.py` over grepping a downloaded TAP, and use
+`grep -a` when you do grep one.
+
 ## Two things about the environment
 
 **`FI_PROVIDER`.** MPICH's `ch4:ofi` picks a VPN interface when one is up and
