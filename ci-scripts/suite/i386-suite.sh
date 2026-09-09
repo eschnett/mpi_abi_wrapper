@@ -43,7 +43,7 @@ SRC=${SRC:-/src}
 OUT=/out
 [ -d "$OUT" ] || { echo "$0: /out is not mounted; MPIABI_LINUX_OUT is required" >&2; exit 2; }
 
-version=${MPIABI_I386_MPICH_VERSION:-5.0.1}
+version=${MPIABI_I386_MPICH_VERSION:-5.0.2rc1}
 prefix=$OUT/opt/mpich-$version
 
 step() { printf '\n=== %s\n' "$*"; }
@@ -77,7 +77,7 @@ fi
 # `mpicc` existing is the test, and the two-rank check below is what says the
 # restored copy actually works -- mpif's check-mpi-install.sh makes the same
 # point, that a cache hit is exactly when nothing has verified the installation.
-# **MPICH 5.0.1's embedded libfabric does not compile on ILP32**, and this is
+# **MPICH 5.0.x's embedded libfabric does not compile on ILP32**, and this is
 # what it costs to have the row at all. `ofi_cma.h`'s cma_copy passes
 # `unsigned long *` where `ofi_consume_iov` takes `size_t *`; on LP64 those are
 # the same type, and on 32-bit `size_t` is `unsigned int` -- same width, same

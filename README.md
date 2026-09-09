@@ -118,4 +118,4 @@ is forwarded like any other info string.
 
 ## Testing
 
-Tested agains MPICH 5.0.1, Open MPI 5.0.10, and MVAPICH 4.1.
+Tested against MPICH 5.0.2rc1, Open MPI 5.0.10, and MVAPICH 4.1.

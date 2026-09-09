@@ -1045,6 +1045,19 @@ at. A number this project may still move freely is one no client records, and
 `mpi_abi.pc`, `mpi_abiConfigVersion.cmake` and decision 26's banner are the
 list.
 
+**A second witness arrived later, and it had been broken the whole time.** The
+argument above rests on one measurement: Open MPI's ABI branch recording
+`1:0:0`. MPICH's `maint/version.m4` defines the same `1:0:0` for
+`libmpi_abi_so_version_m4` — and until upstream `537078668`, landing in 5.0.2,
+that definition never reached libtool: `configure.ac` referenced it as
+`libmpi_abi_so_verion_m4` (no `s`) and never `AC_SUBST`ed the resulting flag, so
+MPICH shipped `libmpi_abi.so.0`. Two things follow. The derivation was right and
+is now confirmed by two implementations rather than one. And the reason this
+project had for treating MPICH's released ABI as unusable — recorded in
+`ci-scripts/README.md` and the two mpif installers — was a build bug upstream
+has fixed, which is why the MPICH rows are pinned to `5.0.2rc1`: to find out
+what else that release moves before it ships.
+
 ---
 
 ## 3. What each stage settled
@@ -1539,6 +1552,17 @@ authority column and the generator freezes each tally.
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
 | MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
 | Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
+| CI Open MPI suite failures | 105, and 110 elsewhere | **104** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
+| CI ILP32 deltas | "eleven" | **6** | ditto for `xfail-ci-mpich-i386.txt` |
+
+**The last four rows are the same failure twice over, and the second half is
+the one `CLAUDE.md` warns about.** The local-list corrections to 40 and 167 were
+recorded *here* and left out of `CODE.md` §10's variant table, which is the
+table a reader consults — so the wrong numbers survived in the place they get
+read while the right ones sat in the history. The CI counts were wrong in three
+documents at once (a list's own header, `CODE.md`, and
+`ci-scripts/suite/README.md`) and agreed with each other rather than with
+`grep`, which is what an authority column is for.
 
 The 1376 line is the instructive one. It was right until S3b's follow-up gave
 the five deleted entry points to `libmpi_abi`, and it stayed in eight places

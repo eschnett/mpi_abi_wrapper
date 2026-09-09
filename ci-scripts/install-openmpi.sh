@@ -19,7 +19,7 @@
 # current component architecture). Note what it does *not* bring: 5.0.10 still
 # declares MPI_VERSION 3 / MPI_SUBVERSION 1 and still has no `_c` entry point at
 # all, so the large-count half of the ABI is decision 6's stubs here in a way it
-# is not over MPICH 5.0.1 (NOTES.md #1 records this as load-bearing rather than
+# is not over MPICH 5.0.x (NOTES.md #1 records this as load-bearing rather than
 # exotic). Pass 4.1.x for the secondary row -- wrappable, and one of the
 # platforms S1 ran on Linux.
 

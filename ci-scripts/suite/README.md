@@ -55,9 +55,12 @@ Everything in the suite's own top-level testlist except two directories, each
 excluded in one place with its reason printed at the start of every run:
 
 - **`impls`** — MPICH's own PMI, hydra and `MPIX_` tests. Not standard MPI, so
-  not this project's to pass. MPICH 5.0.1's own testlist no longer carries that
-  directory at all, so against the current pin this exclusion is a no-op that
-  costs nothing and still covers 4.3.x.
+  not this project's to pass. `impls/testlist.in` is `@impldir@` and
+  `@pmidir@`, and `test/mpi/configure.ac` leaves both empty unless it detects
+  MPICH and PMI — which, configured against the *wrapper's* prefix, it does not.
+  So the directory contributes no tests and this exclusion is a no-op that costs
+  nothing and still covers 4.3.x. Checked against 5.0.2rc1 and 5.0.1: the
+  directory and both substitutions are unchanged between them.
 - **`spawn`** — off by default, `--with-spawn` to include, and with it the
   `spawn` subdirectories of `errors/` and `threads/`, which the top-level
   exclusion does not reach. `MPI_Comm_spawn` hangs under hydra on macOS with
@@ -272,11 +275,11 @@ expected-failure list:
 
 | environment | MPI | gates? | list(s) it gates against |
 |---|---|---|---|
-| `suite` × x86_64 | MPICH 5.0.1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
-| `suite` × aarch64 | MPICH 5.0.1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
+| `suite` × x86_64 | MPICH 5.0.2rc1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
+| `suite` × aarch64 | MPICH 5.0.2rc1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
 | `suite` × x86_64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
 | `suite` × aarch64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
-| `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
+| `suite-i386` | MPICH 5.0.2rc1, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
 
 **Each of those five runs as four jobs**, one per shard of the suite — **eighteen
 legs**, not twenty: `rma` is excluded on the two Open MPI legs, for the measured and
@@ -285,7 +288,7 @@ shards are `coll`, `rma`, `threads+pt2pt+part`, and the complement of those thre
 they exist so that the slow legs can finish at all rather than for parallelism.
 Measured per-directory cost is what picked them:
 
-| shard | MPICH 5.0.1 | Open MPI (4.1.6, for shape) |
+| shard | MPICH 5.0.1, as measured | Open MPI (4.1.6, for shape) |
 |---|---|---|
 | `coll` | 9.8 min | 4.6 min |
 | `rma` | 3.8 min | **37.1 min** |
@@ -313,11 +316,12 @@ are and describe that machine, pinned to the older pair of MPIs and to the 4.3.1
 suite.
 
 The two implementations are not symmetric and the lists should not be expected to
-look alike. MPICH 5.0.1 is the first release that is a complete MPI-5.0 — its own
-header says `MPI_VERSION 5` / `MPI_SUBVERSION 0` — so it provides the ABI's whole
+look alike. MPICH's 5.0.x series is a complete MPI-5.0 — 5.0.1 was the first
+release that was, and 5.0.2rc1 is the pin — and its own header says
+`MPI_VERSION 5` / `MPI_SUBVERSION 0`, so it provides the ABI's whole
 surface including the `_c` large-count forms. Open MPI 5.0.10 still declares
 `MPI_VERSION 3` / `MPI_SUBVERSION 1` and still has no `_c` entry point at all, so
-that half of the ABI is decision 6's stubs on its legs. MPICH 5.0.1 can implement
+that half of the ABI is decision 6's stubs on its legs. MPICH 5.0.x can implement
 the standard ABI itself, and these legs deliberately do not ask it to: that is
 behind `--enable-mpi-abi` and a separate `mpicc_abi`, and wrapping a library that
 already exports the ABI is a *different* oracle, the one that refuses at load on
@@ -342,7 +346,7 @@ seen pass cannot tell a regression from the thing it was added to find, so it
 reports until it can, and then it gates. The lists were empty when that sentence
 was first written — MPICH 5.0.1 answers `init/version` correctly and fills in the
 entry points the older lists' largest group was about, so nothing could be carried
-over — and they are now 41 MPICH lines, 110 shared Open MPI lines, eleven ILP32
+over — and they are now 41 MPICH lines, 104 shared Open MPI lines, six ILP32
 deltas and a handful of flaky entries. Each leg keeps `summary.tap` and its logs as
 an artifact whether it passed or not, because `--gate-only` writes a list from a
 TAP file in hand rather than from a fresh 40-minute run. Deleting
