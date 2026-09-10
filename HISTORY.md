@@ -1098,8 +1098,18 @@ workaround would have followed the row into the wrapper's own build, where
 code and must stay an error. `i386-suite.sh` therefore strips it back out of the
 installed prefix and asserts with `mpicc -show` that no wrapper passes it to user
 code, because the alternative was reasoning about how `-Wno-error=` and the
-`-Werror` in `CMakeLists.txt` compose. `dev/mpich-user-cflags/` has the
-reproducer, the evidence table and the report drafted for upstream.
+`-Werror` in `CMakeLists.txt` compose.
+
+**Reported, and fixed upstream within hours.** Erik filed pmodels/mpich#7959 from
+the drafted report; hzhou opened pmodels/mpich#7960 the same day, and it is the
+two-macro split the report proposed — `PAC_PREFIX_FLAG` copying again, a new
+`PAC_INIT_FLAG` for the `WRAPPER` case. Tested here by mirroring 5.0.1's eight
+`USER_*` assignments into 5.0.2rc1's *generated* `configure`, which is the whole
+of the PR's effect on that script and needs no autoconf: the flag reaches all
+eight sub-configures and `mpicc CFLAGS:` stays empty, so it is the first of the
+three trees to have neither bug. What that does not settle is the release —
+#7960 targets `main`, and `5.0.x`, the branch 5.0.2 is cut from, still carried
+`$1_$2=""`. `dev/mpich-user-cflags/` has all of it.
 
 ---
 

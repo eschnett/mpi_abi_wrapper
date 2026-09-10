@@ -100,9 +100,13 @@ fi
 # while modules/libfabric got `CFLAGS= -fvisibility=hidden`, and all four ILP32
 # legs died at ofi_cma.h:67. CC survives because PAC_RESET_ALL_FLAGS resets only
 # CFLAGS, CPPFLAGS, CXXFLAGS, FFLAGS, FCFLAGS, LDFLAGS and LIBS. dev/mpich-user-cflags/
-# has the reproducer and the upstream report. **Move the flag back to CFLAGS when
-# that regression is fixed** -- it is the narrower place for it, for the reason
-# the next paragraph gives.
+# has the reproducer, the upstream report and a way to test the fix without
+# autoconf. **Move the flag back to CFLAGS -- the narrower place for it, for the
+# reason the next paragraph gives -- once a pinned MPICH carries the fix.** That
+# is pmodels/mpich#7960, verified there to repair this without reintroducing the
+# WRAPPER leak; the condition to check is not "is it merged" but whether the
+# version install-mpich.sh pins has it, since #7960 targets main and 5.0.x still
+# carried the bug when this was written.
 #
 # CFLAGS is left alone so autoconf's own -g -O2 default still applies; an
 # unoptimised MPI would make an already long row much longer.

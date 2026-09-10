@@ -2,8 +2,25 @@
 
 **MPICH 5.0.2rc1 drops a user's `CFLAGS` for every embedded module.** Found by
 pinning the prerelease (`ci-scripts/README.md`'s second named exception to the
-released-tarball rule), which is what that pin is for. Upstream report drafted in
-`upstream-issue.md`; not filed from here.
+released-tarball rule), which is what that pin is for.
+
+**Reported and fixed upstream, and the fix is verified here but not yet
+released.** Erik filed pmodels/mpich#7959 from `upstream-issue.md`; hzhou opened
+pmodels/mpich#7960 the same day, which is the two-macro split that report
+suggested: `PAC_PREFIX_FLAG` goes back to `$1_$2=$$2`, a new `PAC_INIT_FLAG` /
+`PAC_INIT_ALL_FLAGS` takes the empty case, and only the `WRAPPER` call site
+switches to it, so `PAC_PREFIX_ALL_FLAGS(USER)` snapshots again. **Measured, both
+halves at once** (see "Verifying the fix" below): the flag reaches all eight
+sub-configures *and* `mpicc CFLAGS:` stays empty — so it repairs the regression
+without reintroducing the `WRAPPER` leak that PR7921 existed to stop.
+
+**What is not done is the part that decides whether 5.0.2 ships with the bug.**
+As of 2026-09-10, #7960 targets `main`, is behind it, awaits review, and is
+unmerged; `confdb/aclocal_util.m4` still reads `$1_$2=""` on `main` **and on
+`5.0.x`**, which is byte-identical to `v5.0.2rc1` (0 ahead, 0 behind, its
+`version.m4` says `5.0.2rc1`) and is therefore the branch 5.0.2 final is cut
+from. Merging to `main` alone does not reach it: the fix needs a backport to
+`5.0.x`. Until then `ci-scripts/suite/i386-suite.sh` keeps the flag in `CC`.
 
 ```sh
 dev/mpich-user-cflags/run.sh              # both tags, side by side
@@ -141,6 +158,39 @@ MPICH's *own* accumulated flags do, which still reach the unbracketed modules
 untouched. And it is not a sanitizer bug: `--enable-asan` appends to `CFLAGS`
 rather than to `USER_CFLAGS`, so its flags never reached the bracketed modules on
 either tag, and that predates this commit.
+
+## Verifying the fix, without autoconf
+
+The PR changes `configure.ac` and an m4 macro, so testing it in a release tarball
+would ordinarily mean regenerating `configure`. It does not have to: the whole
+effect of the PR on the generated script is the eight `USER_*` assignments, and
+5.0.1's generated `configure` already shows the shape the PR restores. So mirror
+that block into a copy of 5.0.2rc1's generated `configure` and leave the eight
+`WRAPPER_*` ones alone —
+
+```sh
+cp -r mpich-5.0.2rc1 mpich-5.0.2rc1-pr7960
+perl -i -pe 's/^\tUSER_([A-Z_]+)=""$/\tUSER_$1=\$$1/' mpich-5.0.2rc1-pr7960/configure
+diff <(grep -E '^\tUSER_[A-Z_]+=' mpich-5.0.2rc1-pr7960/configure) \
+     <(grep -E '^\tUSER_[A-Z_]+=' mpich-5.0.1/configure)      # must be identical
+grep -c '^\tWRAPPER_[A-Z_]*=""$' mpich-5.0.2rc1-pr7960/configure   # must still be 8
+```
+
+— then configure it the way `run.sh` does. Both assertions are in the recipe on
+purpose: the first says the patch reproduces the PR rather than something like
+it, the second says it did not also undo PR7921.
+
+Result on the development laptop, `CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types`:
+
+| | `modules/libfabric` gets | `mpicc CFLAGS:` |
+|---|---|---|
+| 5.0.1 | the flag | **the flag** — the leak PR7921 fixed |
+| 5.0.2rc1 | **dropped** — this bug | empty |
+| 5.0.2rc1 + #7960's effect | the flag | empty |
+
+The middle column is the regression and the right column is what PR7921 was for;
+#7960 is the first of the three trees to get both right. hwloc, json-c and yaksa
+move with libfabric, and the four unbracketed modules never lost the flag.
 
 ## How this project works around it
 
