@@ -45,7 +45,7 @@
 #   MPIABI_SUITE_WORK    build and run directory (default: build/suite-<variant>)
 #   MPITEST_RUN_INDIVIDUAL
 #                        exported below, not read: one MPI job per test rather
-#                        than the 5.0.1 suite's batched default. See the export
+#                        than the 5.0.x suite's batched default. See the export
 #                        for the three reasons, of which the per-process capacity
 #                        limits of NOTES.md #6.2 is the one that matters.
 #   MPITEST_TIMEOUT_MULTIPLIER
@@ -71,7 +71,7 @@ set -uo pipefail
 repodir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 suitedir=$repodir/ci-scripts/suite
 
-suite_version=5.0.1          # the pinned MPICH release the suite comes from
+suite_version=5.0.2rc2       # the pinned MPICH release the suite comes from
 variant=""
 prefix=""
 dirs=""
@@ -339,7 +339,7 @@ fi
 export MPIEXEC_FILTER_LAUNCHER=$launcher
 export MPIEXEC_FILTER_KIND=$kind
 
-# **One MPI job per test, which is not what the 5.0.1 suite does by default.**
+# **One MPI job per test, which is not what the 5.0.x suite does by default.**
 # MPICH 5.0's runtests gained a `run_mpitests` driver that executes a whole
 # directory's tests "inside a single MPI_Init/Finalize" -- 17 at a time in the
 # run that found this -- and MPITEST_RUN_INDIVIDUAL is its off switch. Three

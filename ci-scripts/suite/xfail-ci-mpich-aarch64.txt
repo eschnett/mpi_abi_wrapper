@@ -1,5 +1,5 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over MPICH 5.0.1 on **aarch64 only**. This is the delta beside
+# over MPICH 5.0.2rc2 on **aarch64 only**. This is the delta beside
 # xfail-ci-mpich.txt, which holds what every architecture sees; check-tap.py
 # reads the two as one and rejects a test listed in both.
 #

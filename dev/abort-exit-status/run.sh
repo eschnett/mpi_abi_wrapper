@@ -18,7 +18,7 @@ impl_cc=${2:?usage: run.sh WRAPPER_MPICC IMPL_MPICC [iterations]}
 iters=${3:-30}
 
 repodir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-suite_version=${MPIABI_SUITE_VERSION:-5.0.1}
+suite_version=${MPIABI_SUITE_VERSION:-5.0.2rc2}
 src=${MPIABI_SUITE_SRC:-$repodir/build/suite-src}/mpich-$suite_version/test/mpi
 prog=$src/errors/comm/intercomm_abort.c
 [ -r "$prog" ] || { echo "no $prog -- run ci-scripts/suite/run-suite.sh first" >&2; exit 2; }

@@ -95,13 +95,19 @@ check.
 ## 3. Repository layout
 
 ```
-.github/workflows/ ci.yaml -- ten CI jobs over thirty-eight legs, each calling a
+.github/workflows/ ci.yaml -- 12 CI jobs over 44 legs, each calling a
                      ci-scripts entry point rather than repeating its recipe.
-                     Twenty of those legs are the MPICH C suite: five
-                     environments x four shards, the MPICH ones gating. The
-                     two MVAPICH legs are report-only for one upstream hang;
-                     the Intel MPI job gates (NOTES.md #9's third and fourth
-                     implementations)
+                     18 of those legs are the MPICH C suite: five environments
+                     x four shards is twenty, less the rma shard on the two
+                     Open MPI legs, which exclude: drops because it takes a
+                     runner down. Every leg in this file gates -- no
+                     continue-on-error: true remains in it, and the two rows
+                     with a known upstream failure gate against an
+                     expected-failure list checked in both directions rather
+                     than being switched off (MVAPICH via
+                     ci-scripts/check-ctest.py, the suite legs via
+                     suite/check-tap.py). ci-scripts/README.md keeps that rule
+                     (NOTES.md #9's third and fourth implementations)
 bin/               mpicc.in, mpicxx.in, mpiexec.in -- the wrappers and the
                      launcher forwarder, configured at install; README.md has
                      the inventory, the env vars and the two omissions
@@ -443,7 +449,7 @@ fall out of date, and it is what a host like macOS 26 under Open MPI 5.0.x
 (`HISTORY.md` #2.13) produces.
 
 The first six pass on macOS against a distro Open MPI and on Linux against
-MPICH 5.0.1 and Open MPI 5.0.10 built from source by
+MPICH 5.0.2rc2 and Open MPI 5.0.10 built from source by
 `ci-scripts/install-mpich.sh` / `install-openmpi.sh`. The two new ones are so
 far measured only on macOS against conda MPICH 4.3.1, where all eight pass and
 the launcher leg reports two distinct ranks through `bin/mpiexec` and
@@ -555,7 +561,7 @@ crosses the boundary twice.
 ### MPICH's C test suite
 
 `ci-scripts/suite/run-suite.sh` builds and installs this project, configures
-MPICH 5.0.1's `test/mpi` **against the wrapper's prefix** rather than an MPI's,
+MPICH 5.0.2rc2's `test/mpi` **against the wrapper's prefix** rather than an MPI's,
 runs the tests through `ci-scripts/suite/mpiexec-filter`, and gates the TAP
 output against `xfail-<variant>.txt` with `check-tap.py`.
 
@@ -566,22 +572,33 @@ used to make a red run green.
 
 | variant | expected failures | state |
 |---|---|---|
-| MPICH 4.3.1 | **41** in `xfail-mpich.txt` | fully triaged, every line with a cause |
-| Open MPI 4.1.6, on Linux | **168** in `xfail-openmpi.txt` | about half attributed, the rest honest placeholders |
+| MPICH 4.3.1 | **40** in `xfail-mpich.txt` | fully triaged, every line with a cause |
+| Open MPI 4.1.6, on Linux | **167** in `xfail-openmpi.txt` | about half attributed, the rest honest placeholders |
+
+Every count in this section is `grep -cvE '^\s*(#|$)'` on the file named, which
+is how `check-tap.py` reads it. The CI lists, at run 34855861925: **41** in
+`xfail-ci-mpich.txt` with **0**, **0** and **3** in its x86_64, aarch64 and i386
+deltas, and **104** in `xfail-ci-openmpi.txt` with **1** and **0** in its two.
+The empty ones are measurements, not placeholders. The whole suite at the
+5.0.2rc2 pin is **846** tests over MPICH — 793 passed, 41 failed, 12 skipped by
+the suite — where 5.0.2rc1's was 843/790/41/12 and 5.0.1's 842/789/41/12. Each
+step added tests and no failures: `datatype/createf90types` at rc1, and
+`coll/neighb_dup_edges` at three rank counts at rc2. All pass over MPICH.
 
 The two lists above are the **local** rows and are pinned to the pair of MPIs
 named in them. **CI runs five environments of its own**, each with its own list:
-`suite` over MPICH 5.0.1 and Open MPI 5.0.10 built from the pinned tarballs, on
-x86_64 and aarch64, and `suite-i386` over a MPICH 5.0.1 built inside a
+`suite` over MPICH 5.0.2rc2 and Open MPI 5.0.10 built from the pinned tarballs, on
+x86_64 and aarch64, and `suite-i386` over a MPICH 5.0.2rc2 built inside a
 `linux/386` container. Each gates against a shared `xfail-ci-<mpi>.txt` plus a
 per-architecture `xfail-ci-<mpi>-<arch>.txt`, which `check-tap.py` reads as one
 file while rejecting a test listed in both — the split exists because three runs
 showed one file cannot describe two machines, timing moving in both directions at
 once on a four-vCPU runner and one architecture returning wrong 8-bit reductions
-that the other did not. **The three MPICH environments gate**
-(`continue-on-error: false`, which is TODO.md's "do not ignore mpich failures");
-the two Open MPI legs are still report-only, and about half of
-`xfail-ci-openmpi.txt` still says "not yet attributed". Each leg keeps
+that the other did not. **All five environments gate** — there is no
+`continue-on-error: true` left in `ci.yaml`, which is TODO.md's "do not ignore
+failures" and `ci-scripts/README.md`'s stated property to preserve. The Open MPI
+legs were the last off probation and about half of `xfail-ci-openmpi.txt` still
+says "not yet attributed", which is a gap in *attribution*, not in gating. Each leg keeps
 `summary.tap` and the run's logs as an artifact whether it passed or not, which
 is what `--gate-only` writes a list from.
 
@@ -594,9 +611,9 @@ before it can report. The counts, by
 
 | list | lines |
 |---|---|
-| `xfail-ci-mpich.txt` + `-i386` delta | **41** + **6** (x86_64 and aarch64 deltas are empty) |
+| `xfail-ci-mpich.txt` + `-i386` delta | **41** + **3** (x86_64 and aarch64 deltas are empty) |
 | `xfail-ci-openmpi.txt` + `-x86_64` delta | **104** + **1** |
-| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **3**, **7** |
+| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **4**, **9** |
 | `timelimit-ci-openmpi.txt` | **16** patterns over 41 lines, 18 of them seen to hang |
 | `exclude-ci-openmpi.txt` | **2**, both inert while `rma` is off the Open MPI legs |
 
@@ -643,9 +660,17 @@ rather than argued from one.
 
 **Rows quoting 13/13 ran the whole of `ctest` as it stood then** under
 `.github/workflows/ci.yaml`; the 6/6 rows quote only the tests that need an MPI.
-Both are green runs, counted differently. The suite is **fourteen** tests since
-`abi_large_count_test` joined it, so a row recorded after that reads 14/14 --
-the older figures are left as they were measured rather than rewritten.
+Both are green runs, counted differently, and **the older figures are left as
+they were measured rather than rewritten** -- which is why this paragraph carries
+the current size instead of editing the rows.
+
+**That size is a build option away from being three different numbers, so it is
+derived rather than stated once.** `grep -c 'add_test' CMakeLists.txt` finds 16,
+and `ctest -N` on a default build lists **15**: seven are registered
+unconditionally, eight more under `if(MPI_ABI_BUILD_WRAPPER)` (default `ON`), and
+`sanitizer-instrumented` only under `if(MPI_ABI_SANITIZE)`. So a default build is
+15, the `sanitize` job's is 16, and `-DMPI_ABI_BUILD_WRAPPER=OFF` is 7. A row
+recorded on a default build now reads 15/15.
 
 **"two ranks" in this table is now checked rather than asserted.** It used to be
 neither: the tests accept one rank as well as two, so a launcher that answered
@@ -674,7 +699,7 @@ their old evidence.
 | Linux glibc, Open MPI 4.1.6 | same | **works**, 6/6, two ranks (Ubuntu 24.04, aarch64, Docker); and 13/13, two ranks on **x86_64** (Ubuntu 24.04 container, GitHub Actions, `MPI 3.1`) |
 | Linux glibc x86_64, MPICH 4.3.1 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-mpich.sh`, GitHub Actions. The primary MPICH row of `NOTES.md` #9's version table. Was "the only one providing the `_c` surface"; the MVAPICH and Intel MPI rows below both provide it too |
 | Linux glibc x86_64, Open MPI 5.0.6 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-openmpi.sh`, GitHub Actions. The only Open MPI 5.x row on Linux |
-| Linux glibc x86_64 and aarch64, MVAPICH 4.1 | same | **works, 12/13**, two ranks — built from the pinned tarball by `install-mvapich.sh`, in a container (`dev/third-implementations/run.sh mvapich`). `abi_arrays_test` is the one failure and it is upstream: `MPI_Dist_graph_create` does not return over MVAPICH's ch4:ofi device, reproduced with two ranks and no wrapper loaded, unaffected by `FI_PROVIDER`. `check-install.sh` passes. Needs `libibverbs-dev`/`librdmacm-dev` to build at all. Confirmed on **GitHub Actions, both arches**, run 32611538158: identical 12/13 with `abi_arrays_test` timing out at the 45 s cap. The two `linux-source` legs stay report-only while that hang is upstream; 12/13 is the state to expect from them |
+| Linux glibc x86_64 and aarch64, MVAPICH 4.1 | same | **works, 12/13**, two ranks — built from the pinned tarball by `install-mvapich.sh`, in a container (`dev/third-implementations/run.sh mvapich`). `abi_arrays_test` is the one failure and it is upstream: `MPI_Dist_graph_create` does not return over MVAPICH's ch4:ofi device, reproduced with two ranks and no wrapper loaded, unaffected by `FI_PROVIDER`. `check-install.sh` passes. Needs `libibverbs-dev`/`librdmacm-dev` to build at all. Confirmed on **GitHub Actions, both arches**, run 32611538158: identical 12/13 with `abi_arrays_test` timing out at the 45 s cap. **The two `linux-source` legs gate**, against `ci-scripts/xfail-ctest-mvapich.txt`'s single line, checked in both directions -- so this row goes red both if another test regresses and if MVAPICH fixes the hang, which is strictly more than the `continue-on-error` it replaced reported. No expected pass count is stated here on purpose: `ci.yaml` records that the "12/13 to expect" this sentence used to end with was already 14/15 two commits later, because the suite grew rather than the failures. The list names the test; the count is whatever `ctest -N` says minus it |
 | Linux glibc x86_64, Intel MPI 2021.15 | same | **works**, 13/13 and all `check-install.sh` legs, two ranks — `apt install intel-oneapi-mpi-devel=2021.15.0-493`, in a container under qemu (`dev/third-implementations/run.sh intelmpi`). Declares `MPI 3.1` and yet links `MPI_Type_size_c`, so the declared level understates the surface. **Pinned below 2021.17**, where Intel began shipping its own `libmpi_abi.so` — wrapping such a release is redundant, and its library also captures ours through `LD_LIBRARY_PATH` (`NOTES.md` #13.2). Not 2021.16 either: `NOTES.md` #13.4. `linux-oneapi` gates, and is green at the pin on GitHub Actions — run 32655424315, all steps including the install step's guard, which fails the job if the release turns out to ship an ABI library after all |
 | Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6, two ranks — the configure floor, verified. `run-linux-docker.sh floor`, built from source on Ubuntu 20.04 / gcc 9, the newest gfortran its configure accepts |
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |

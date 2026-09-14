@@ -1,0 +1,122 @@
+# `dev/neighbor-dup-edges/`
+
+**Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the wrong block
+matching when a neighbour list repeats a process; its blocking ones get it
+right.** Measured with Open MPI's own `mpicc` and no wrapper anywhere, which is
+what makes the three `coll/neighb_dup_edges` lines in
+`ci-scripts/suite/xfail-ci-openmpi.txt` an attributed failure rather than a
+placeholder.
+
+**Reported upstream as open-mpi/ompi#14430** (2026-09-14, open). That issue is
+what would retire those three lines: an Open MPI release carrying its fix turns
+them into `EXPECTED FAILURE THAT PASSED` and the gate will say so.
+
+```sh
+source scripts/host-env.sh
+OMPI_CC=clang build/mpi/openmpi/bin/mpicc -o /tmp/nd dev/neighbor-dup-edges/neighb_dup.c
+build/mpi/openmpi/bin/mpiexec -n 4 /tmp/nd
+```
+
+`OMPI_CC` is not optional on the development laptop: the conda Open MPI names a
+compiler that is not installed, the same quirk `CLAUDE.md` records for `mpifort`
+and `dev/abort-exit-status/run.sh` handles with `MPIABI_PROBE_CC`.
+
+`nbrs_show.c` beside it prints the neighbour list the topology actually produces,
+which is how the table below was obtained rather than reasoned out:
+
+```sh
+OMPI_CC=clang build/mpi/openmpi/bin/mpicc -o /tmp/ns dev/neighbor-dup-edges/nbrs_show.c
+build/mpi/openmpi/bin/mpiexec -n 4 /tmp/ns
+```
+
+## The topology, and what a slot is
+
+A Cartesian neighbourhood has `2 * ndims` neighbours in a fixed order: for each
+dimension `d`, **slot `2d` is the negative-direction neighbour and slot `2d+1`
+the positive-direction one** — the pair `MPI_Cart_shift` returns for that
+dimension. "Slot" below means that index, and it indexes the blocks of the
+send and receive buffers too.
+
+The probe builds a 3-D grid, `dims = {1, 1, size}`, all three dimensions
+periodic. Shifting along a periodic dimension of extent 1 lands on *yourself*, so
+slots 0-3 are self and only dimension 2 has real neighbours. Rank 0's list:
+
+| ranks | slot 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| 4 | 0 | 0 | 0 | 0 | 3 | 1 |
+| 2 | 0 | 0 | 0 | 0 | 1 | 1 |
+| 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**The repetition is the whole point.** Four slots name the same process, so an
+implementation that decides where an arriving block goes by *which rank sent it*
+cannot tell those four apart; only the slot index can.
+
+## What the standard says
+
+What I send in the negative direction of dimension `d` reaches that neighbour as
+having come from *its* positive direction, so my slot `2d` block lands in its
+slot `2d+1`, and vice versa. The pairing is always "the other slot of the same
+dimension" — 0 with 1, 2 with 3, 4 with 5 — which is `slot ^ 1`, since `2d` and
+`2d+1` differ only in the low bit. MPI-4.1 Example 8.10 states the rule. **None
+of this is special to the topology above**; the topology only supplies the
+duplicate edges that make a mismatch observable.
+
+With `sendbuf[slot] = rank * NSLOT + slot` the expected receive buffer is known
+in closed form, `nbrs[slot] * NSLOT + (slot ^ 1)` — for rank 0 at four ranks,
+`[1, 0, 3, 2, 23, 10]`.
+
+## The measurement
+
+Open MPI 5.0.10, four ranks, no wrapper:
+
+| call | result |
+|---|---|
+| `MPI_Neighbor_alltoall` | **passes** |
+| `MPI_Ineighbor_alltoall` | **fails**, 16 mismatched blocks |
+
+**It is not specific to 5.0.10, and it is not fixed on `main`.** The same probe,
+same four ranks, against every Open MPI on the development laptop:
+
+| build | version | `MPI_Neighbor_alltoall` | `MPI_Ineighbor_alltoall` |
+|---|---|---|---|
+| `build/mpi/openmpi-native` | 5.0.6 | passes | **fails** |
+| `build/mpi/openmpi` | 5.0.10 — the version CI wraps | passes | **fails** |
+| `build/mpi/ompi-main-prefix` | 6.1.0a1 (`main`) | passes | **fails** |
+
+Every mismatch is the identity matching — the block arrives in the slot it was
+sent from — where the standard asks for `slot ^ 1`. Rank 0's slot 0 holds `0`,
+which is rank 0's own slot-0 value, where it should hold `1`, its slot-1 value:
+
+```
+MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+MPI_Ineighbor_alltoall: rank 0 block 1 is 1, expected 0
+MPI_Ineighbor_alltoall: rank 0 block 2 is 2, expected 3
+MPI_Ineighbor_alltoall: rank 0 block 3 is 3, expected 2
+```
+
+So Open MPI delivers block `s` into block `s`, not `s^1` — but only on the
+nonblocking path. **The two halves of one implementation disagree with each
+other**, which is why this is worth a probe rather than a shrug: an
+implementation-wide misreading of Example 8.10 would be a defensible
+interpretation, and blocking-versus-nonblocking disagreement inside one library
+is not.
+
+## Why this project cares
+
+MPICH `6d7c89b05` ("coll: fix block matching of duplicate neighbor edges") fixed
+exactly this in 5.0.2rc2 and added `test/mpi/coll/neighb_dup_edges.c` with it.
+The suite is MPICH's, so bumping the pin to 5.0.2rc2 put three new tests —
+`neighb_dup_edges` at 4, 2 and 1 ranks — in front of *both* implementations'
+legs. They pass over MPICH and fail over Open MPI, at the `MPI_Ineighbor_*`
+checks only, on both architectures (run 34855861925).
+
+**The wrapper is not involved.** That was worth establishing rather than
+assuming: the failure is a block *permutation*, and a conversion layer that
+reordered buffers would be a serious bug. It does not — the three calls are
+generated forwarders — and this probe shows the same permutation with the
+implementation's own `mpicc`, which is the method `ci-scripts/suite/README.md`
+prescribes for exactly this question.
+
+The probe covers the `alltoall` form; the suite also fails the `alltoallv` and
+`alltoallw` forms of the same call, which are not reproduced here because the
+attribution does not need them.

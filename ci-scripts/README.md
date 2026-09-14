@@ -28,16 +28,35 @@ and the two platforms do not fail the same way.
 | `test-mpif.sh <abi-prefix> [<launcher-prefix>]` | anywhere | builds mpif at the pinned tag against an ABI prefix and runs **mpif's `ctest`** (not its MPICH Fortran suite) |
 | `mpif-version.sh` | sourced | the pinned mpif tag, in one place, for all three above |
 
-**The released-tarball rule has exactly one exception, and it is named.**
-`install-abi-mpi.sh` and `install-git-mpi.sh` build from pinned *git commits*,
-because the mpif rows need an MPI whose standard-ABI implementation works and
-no release of either has one: MPICH 5.0.1 shipped without it (its
-`-version-info` never reached libtool, fixed upstream in `bb167f1c`) and no
-released Open MPI implements the ABI at all. The pins are mpif's own, read out
-of its installers by name rather than copied, so the reference and the wrap
-target cannot come to be different commits without anyone noticing. Everything
-else here — every row that wraps an ordinary MPI — stays on released tarballs,
-which is what an ordinary user has.
+**The released-tarball rule has exactly two exceptions, and both are named.**
+
+**One: the mpif rows build from pinned *git commits*.** `install-abi-mpi.sh` and
+`install-git-mpi.sh` do, because those rows need an MPI whose standard-ABI
+implementation works and no *release* of either has one. Half of that used to be
+MPICH's: 5.0.1 shipped its `libmpi_abi` as `.so.0`, because `-version-info`
+never reached libtool. MPICH 5.0.2 fixes that (upstream `537078668`), and the
+MPICH rows here were then pinned to `5.0.2rc1` — so for the first time a tarball
+with the intended `libmpi_abi.so.1` exists. What is not established is that the
+soname was the *only* thing missing: these rows also need mpif's header
+substitution and its pruning of everything the ABI does not define, and no
+released Open MPI implements the ABI at all, so the exception still has work to
+do. The pins are mpif's own, read out of its installers by name rather than
+copied, so the reference and the wrap target cannot come to be different commits
+without anyone noticing — which also means re-pointing them at a tarball is
+mpif's pin to move, not this directory's.
+
+**Two: the MPICH rows are on a release candidate, `5.0.2rc2`, on purpose.** It
+carries three fixes to MPICH's own ABI layer — the soname above,
+`MPI_Type_get_contents`' output datatype conversion (`8cac6e49b`) and
+`MPI_File_c2f`/`_f2c`'s exclusion from `libmpi_abi` (`2c5428fb5`) — and the
+point of the pin is to find out what 5.0.2 does to this project *before* it
+ships rather than after. It moves to `5.0.2` final when that is released; that
+is the whole of the exception's lifetime, and it is why the version literal is
+restated in `install-mpich.sh`, `suite/run-suite.sh` and `suite/i386-suite.sh`
+rather than derived.
+
+Everything else here — every row that wraps an ordinary MPI — stays on released
+tarballs, which is what an ordinary user has.
 
 Unlike mpif's `install-mpich.sh`/`install-openmpi.sh`, all three of these are a
 stock `configure && make && make install` with nothing carried: mpif needs an MPI
@@ -135,8 +154,8 @@ here, next to the code they are about, and stay runnable by hand.
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
-| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Fourteen legs**: two implementations × x86_64/aarch64 × four shards, less the `rma` shard on the two Open MPI legs, which `exclude` drops because it takes a runner down |
-| `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.1, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
+| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.2rc2 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Fourteen legs**: two implementations × x86_64/aarch64 × four shards, less the `rma` shard on the two Open MPI legs, which `exclude` drops because it takes a runner down |
+| `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.2rc2, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
 
 **Every job in this workflow gates. There is no `continue-on-error` left in
 `ci.yaml`, and that is the property to preserve.** Report-only was always meant
@@ -148,7 +167,7 @@ three rows came off it for three different reasons worth keeping straight:
   failed, the 41 identical on both architectures and matched in both directions
   by `suite/xfail-ci-mpich.txt`.
 * **The Open MPI suite legs** stayed on probation past their evidence. Their
-  lists have carried 110 shared lines plus per-architecture deltas since run
+  lists have carried 102 shared lines plus per-architecture deltas since run
   32182485327, and what actually kept them red was two *incomplete families* —
   one unlisted member of the `mt_*` bsend family and one of the `subcomm_abort`
   pair, each of which took a leg red on its own. Completing the families in
@@ -163,6 +182,40 @@ instead of vanishing — a runner lost mid-shard leaves no TAP line for any list
 excuse, so it costs a re-run. That is the trade being made deliberately: while the
 Open MPI legs were report-only, exactly such a death (run 32655819244, exit 143)
 was reported as a green workflow and went unexamined.
+
+**It has now cost a re-run twice, and the second one is worth reading for how to
+tell it apart from a real failure.** `suite / openmpi 5.0.10 / x86_64 / rest` in
+run 34379533295 died with the same exit 143 and the same "the runner has received
+a shutdown signal", **21 seconds** into the test run — `=== running the suite` at
+16:56:45, dead at 16:57:07, in `comm` at `cmsplit_type`. Three things say
+infrastructure rather than this project: the documented Open MPI resource death
+takes about six minutes and lives in `rma`, which `exclude:` does not run on
+these legs at all; the same leg on the previous run gated green against the same
+lists, whose TAP is still downloadable; and the job's "collect the TAP file" step
+is *skipped* rather than failed, so there is no TAP to interpret — a real
+failure leaves one. A leg that dies before producing a TAP has not made a
+statement about the wrapper; re-run it.
+
+**A third instance, with a different signature: `(403) Forbidden` from
+`ListArtifacts`.** In run 34855861925 both `mpif / <mpi> / native` legs failed at
+"Restore the ABI prefix" — `actions/download-artifact` reporting
+`Failed to ListArtifacts: Received non-retryable error: Failed request: (403)`.
+It looks like a permissions bug and is not one, and the way to tell is to check
+three things before touching `permissions:` in `ci.yaml`:
+
+* **Did a sibling job download an artifact successfully in the same run?** Both
+  `mpif / <mpi> / wrapper` legs did, with the same token, the same action and the
+  same workflow-level `contents: read`. A token that works for one job works for
+  its neighbour.
+* **Do the artifacts exist?**
+  `gh api repos/<owner>/<repo>/actions/runs/<id>/artifacts` listed all four,
+  `expired=false`. A 403 on *listing* is not a missing artifact, and not a 404.
+* **Did the failures cluster in time?** Both landed within ten seconds of each
+  other, while the legs that ran a minute later were fine.
+
+Three yeses mean the API had a bad moment, and the remedy is the one above: re-run
+the leg. Adding `actions: read` would be cargo-culting a fix for a problem the
+sibling jobs disprove.
 
 ## Gating a row that has a known failure: `check-ctest.py`
 

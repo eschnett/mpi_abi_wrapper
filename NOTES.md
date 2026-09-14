@@ -2409,6 +2409,16 @@ this project's release number where the whole point of the file is to say
 which ABI it implements. `HISTORY.md` §2.20 is the release that shipped it
 that way.
 
+**A second implementation now says the same number, and independently.** MPICH's
+`maint/version.m4` defines `libmpi_abi_so_version_m4` as `1:0:0`, read out of
+the `v5.0.2rc2` tag this project's MPICH rows are pinned to. That value had been
+there and been *inert*: until upstream `537078668`, `configure.ac` misspelled the
+macro and never `AC_SUBST`ed the flag, so libtool fell back to its `0:0:0`
+default and MPICH installed `libmpi_abi.so.0`. Two implementations of ABI 1
+intending `1:0:0`, one of which had to fix a build bug to deliver it, is a
+stronger footing for this derivation than the single witness the decision was
+argued from.
+
 What may move with `PROJECT_VERSION` is packaging metadata, which no client
 binary records: `mpi_abi.pc`'s `Version:`, `mpi_abiConfigVersion.cmake`, and
 the banner decision 26 puts in front of `MPI_Get_library_version`.
@@ -2592,11 +2602,38 @@ step rather than a generator output, so decision 12 survives if this is
 revisited.
 
 **Provisioning MPI in CI** is pinned released tarballs, built from source and
-cached: stock configure, no pruning, no header substitution. Do not add
-`--disable-fortran` to save build time — it silently drops the *implementations*
-of `MPI_Type_create_f90_{real,complex,integer}`, plain C entry points MPI-5.0
-requires, so the compile-only probe reports them available and only the
-wrapper's link step fails.
+cached: stock configure, no pruning, no header substitution. The rule has two
+named exceptions and `ci-scripts/README.md` carries both, because that is where
+the installers are: the mpif rows build from mpif's own pinned git commits, and
+**the MPICH rows are deliberately on a release candidate, `5.0.2rc2`**, to find
+out what MPICH 5.0.2's three ABI-layer fixes do to this project before it ships
+rather than after. That pin moves to `5.0.2` final when it is released.
+
+**One row carries a compiler flag, and it is the ILP32 one.** MPICH's vendored
+libfabric does not compile on 32-bit, so `ci-scripts/suite/i386-suite.sh` passes
+`-Wno-error=incompatible-pointer-types` for MPICH's own build and strips it back
+out of the installed compiler wrappers, asserting with `mpicc -show` that the
+suite and the wrapper never see it. It rides in `CC` rather than `CFLAGS` because
+MPICH 5.0.2 stopped passing a user's `CFLAGS` to its embedded modules at all
+(`dev/mpich-user-cflags/`, `HISTORY.md` §2.21); move it back to `CFLAGS` when
+that is fixed. This is the only deviation from "stock configure" anywhere in the
+provisioning, and it is scoped to the one row that cannot build without it.
+
+Do not add `--disable-fortran` to save build time — it silently drops the
+*implementations* of `MPI_Type_create_f90_{real,complex,integer}`, plain C entry
+points MPI-5.0 requires, so the compile-only probe reports them available and
+only the wrapper's link step fails.
+
+**That mechanism is dated, and the rule outlives it.** It was measured against
+3.1.4, where `src/mpi/datatype/` has no `create_f90.c` at all. MPICH 4.3.1 and
+5.0.x list `src/mpi/datatype/create_f90.c` in `Makefile.mk` unconditionally, and
+5.0.2 goes further: `93f25ed21` makes the three map to internal types regardless
+of whether the *Fortran compiler* supports the corresponding kind, because the
+returned type has to support the built-in reduction ops either way. So on the
+current rows the link would probably survive the flag. The rule stays anyway —
+the floor row still fails that way, and this project's own Fortran probe needs a
+compiler present regardless (`MPI_ABI_FORTRAN`, and `CLAUDE.md`'s note about
+naming it on the development laptop).
 
 Version choice is about coverage, not admissibility:
 

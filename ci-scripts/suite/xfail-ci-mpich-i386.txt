@@ -1,7 +1,33 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over MPICH 5.0.1 on **i386 only**. This is the delta beside
-# xfail-ci-mpich.txt, which holds what every architecture sees; check-tap.py
-# reads the two as one and rejects a test listed in both.
+# over MPICH on **i386 only**. This is the delta beside xfail-ci-mpich.txt, which
+# holds what every architecture sees; check-tap.py reads the two as one and
+# rejects a test listed in both.
+#
+# **Six lines became three at MPICH 5.0.2rc1, and the three that went are not
+# yet attributed.** Run 34375629126 is the first ILP32 run at this pin -- the
+# four legs of the run before it produced no TAP at all, because MPICH 5.0.2rc1
+# would not compile on ILP32 until the CFLAGS regression in
+# dev/mpich-user-cflags/ was worked around. In that run `coll/gather 4`,
+# `coll/redscatbkinter 8` and `coll/redscatbkinter 10` passed, with no unexpected
+# failure anywhere on the shard: 192 tests, 184 passed, 7 failed, all 7 listed.
+# So they are deleted, because check-tap.py fails a listed test that passed and
+# is right to.
+#
+# **What that does not establish is why**, and the obvious answer is ruled out.
+# All three failed the same yaksa assertion, and yaksa is byte-identical between
+# the two tags -- the gitlink at src/mpi/datatype/typerep/yaksa is 126b467b9887 at
+# both, and typerep_yaksa_pack.c is untouched in the 96 commits between them.
+# Neither test source changed either; the whole test/mpi delta is datatype/,
+# topo/, f77/ and f90/. So something else in MPICH's datatype layer stopped
+# handing the pack path a shape it could not divide, and which commit did it is
+# unmeasured. The old reason said "whose bug it is remains unmeasured"; it is at
+# least now known to have been MPICH's rather than this wrapper's, which is more
+# than was known before.
+#
+# **One run is one observation.** If these three flap rather than being fixed, the
+# gate says so on the run where they fail, and flaky-ci-mpich.txt -- not this
+# file -- is where a flapping test belongs, for the reason xfail-ci-mpich.txt's
+# header gives. Nothing here should be re-listed without a second observation.
 #
 # 32-bit x86, in the linux/386 container ci-scripts/suite/i386-suite.sh drives.
 # This is the only row where an ABI handle is 4 bytes rather than 8 (NOTES.md
@@ -97,9 +123,6 @@
 
 # --- ILP32 only, not yet attributed --------------------------------------------
 
-coll/redscatbkinter 8 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
-coll/redscatbkinter 10 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
-coll/gather 4 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file typerep_yaksa_pack.c at line 326: element_size < 0 || *actual_unpack_bytes % element_size == 0
 rma/win_large_shm 4 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
 rma/win_large_shm 3 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Assertion failed in file ch4_impl.h at line 850: map_entry != NULL
 pt2pt/pt2pt_large 2 : ILP32-only and not the container's /dev/shm -- it still fails with 8 GB of it (run 32434698299), where the ~140 SIGBUS failures beside it stop. x86_64 and aarch64 pass it in the same run. Whose bug it is remains unmeasured. Observed: Abort(134924545) on node 0 (rank 0 in comm 0): Fatal error in internal_Send_c: Invalid buffer pointer, error stack:

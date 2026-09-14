@@ -19,11 +19,15 @@
 #                   explains why this file, not ci-scripts/suite/, is what a
 #                   cache key should hash).
 #
-# <version> defaults to 5.0.1, the current release and the first that is a
-# complete MPI-5.0 -- its own header says `MPI_VERSION 5` / `MPI_SUBVERSION 0`,
-# so it provides the whole of the ABI's surface including the `_c` large-count
-# entry points, and decision 6's stubs have almost nothing left to cover. 4.3.x
-# is the previous primary row (NOTES.md #9's version table) and still wraps.
+# <version> defaults to 5.0.2rc2, a release *candidate* rather than a release,
+# which is the one place this project's pinned-released-tarball rule is bent on
+# purpose -- ci-scripts/README.md names it and says why, and the pin moves to
+# 5.0.2 final when that ships. What the 5.0.x series buys is a complete MPI-5.0:
+# its own header says `MPI_VERSION 5` / `MPI_SUBVERSION 0`, so it provides the
+# whole of the ABI's surface including the `_c` large-count entry points, and
+# decision 6's stubs have almost nothing left to cover. 5.0.1 is the previous
+# pin and 4.3.x the primary row before it (NOTES.md #9's version table); both
+# still wrap.
 #
 # **This deliberately does not pass --enable-mpi-abi.** MPICH 5.0 can implement
 # the standard ABI itself -- its CHANGES puts it behind that flag and a separate
@@ -44,7 +48,7 @@
 set -euo pipefail
 
 prefix=${1:-}
-version=${2:-5.0.1}
+version=${2:-5.0.2rc2}
 if [ -z "$prefix" ]; then
   echo "usage: $(basename "$0") <prefix> [<version>]" >&2
   exit 1

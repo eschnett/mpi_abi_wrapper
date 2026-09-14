@@ -12,7 +12,7 @@
 # enough to produce results: three of its four shards completed and the fourth did
 # not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
 # / 20, rest 316 / 82. That run put 109 lines here, the failures both architectures
-# produced, and four in the two delta files. **There are 105 now**
+# produced, and four in the two delta files. **There are 104 now**
 # (`grep -cvE '^\s*(#|$)' xfail-ci-openmpi.txt`, which is how check-tap.py reads
 # the file), and one delta line: run 32302208489 failed
 # threads/pt2pt/mt_iprobe_isendrecv 2 on both architectures over five attempts, so
@@ -22,6 +22,45 @@
 # branch touched anything: the file held 106. Counted from the artifact this time
 # rather than from the previous sentence, with the command written down beside it
 # so the next reader does not have to trust this one either.
+#
+# **104 became 102 when the suite moved to MPICH 5.0.2rc1, and both deletions are
+# upstream fixing its own tests rather than anything changing here.** These legs
+# run *MPICH's* test suite, so a suite bump moves them even though Open MPI's
+# version did not. Run 34371453201, both architectures, identically:
+#
+#   * `datatype/large_count 1` passed. It had failed at `check(elements == (int)
+#     expected)`, and it was right to: MPICH read the third argument of
+#     MPI_Status_set_elements_x as a count of datatype instances where the
+#     standard makes it a count of basic elements, so the test passed 1 and
+#     expected `expected` back. Upstream 73e55f541 fixed the library and 8cfb013c7
+#     fixed the test to pass the real count. Open MPI had the standard's reading
+#     all along, which is why it failed the old test and passes the new one.
+#   * `topo/cartsuball 4` passed. Upstream ba620649d deleted the check outright --
+#     MPICH and Open MPI disagreed about whether a zero-dimensional MPI_Cart_sub
+#     must yield MPI_COMM_NULL and upstream judged the check not worth arguing
+#     about. The assertion this line quoted no longer exists.
+#
+# Neither leg gained a line: the 5.0.2rc1 suite's two new tests are one name,
+# `datatype/createf90types 1`, run twice, and it passes here.
+#
+# **102 became 105 at the 5.0.2rc2 suite, and the three are one test.** MPICH
+# 6d7c89b05 fixed block matching for duplicate neighbour edges and added
+# test/mpi/coll/neighb_dup_edges.c with it, which coll/testlist.in runs at 4, 2
+# and 1 ranks -- three distinct names, unlike rc1's createf90types whose two
+# testlist lines shared one. It passes over MPICH, which has the fix, and fails
+# over Open MPI 5.0.10, which does not: its *nonblocking* neighbourhood
+# collectives ignore MPI-4.1 Example 8.10's s^1 block matching while its blocking
+# ones honour it. Attributed by measurement rather than by reading -- the same
+# source built with Open MPI's own mpicc and no wrapper fails the identical
+# check, dev/neighbor-dup-edges/ -- so the three lines are group (h) rather than
+# (f). Run 34855861925, both architectures, identically.
+#
+# **And 105 became 104 when threads/comm/idup_comm_gen 4 moved to
+# flaky-ci-openmpi.txt.** It had been an unattributed line here and passed in run
+# 34863951924 after failing in the two before it, which is a listed failure
+# failing the gate by passing -- the one thing an xfail line cannot express. The
+# move also gave it a reason: Open MPI returns MPI_ERR_INTERN from MPI_Comm_dup
+# under MPI_THREAD_MULTIPLE and aborts.
 #
 # **`rma` is missing from this list, and it is no longer a gap: the directory is not
 # run on the Open MPI legs.** It was a gap for a while -- both shards were killed six
@@ -152,6 +191,23 @@ errors/rma/cas_type_check 2 : an erroneous argument the implementation would hav
 errors/session/comm_create_from_group 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
 session/session_re_init 4 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: session_re_init: components.c:904: hwloc_components_fini: Assertion `0 != hwloc_components_users' failed.
 
+# --- (h) the wrapped implementation does this without us -----------------------
+#
+# Three lines, one test at its three rank counts. Here rather than in (f) because
+# it is attributed, and the attribution is a measurement rather than a reading:
+# the same source built with Open MPI's own mpicc, no wrapper anywhere, fails the
+# identical check. dev/neighbor-dup-edges/ has the probe and the standard's rule.
+#
+# **Reported as open-mpi/ompi#14430**, and that is what retires these three lines:
+# 5.0.6, 5.0.10 and main (6.1.0a1) all fail, so there is no Open MPI release to
+# move to and no version bump that makes them go away. When a release carries the
+# fix, check-tap.py reports them as EXPECTED FAILURE THAT PASSED and asks for the
+# deletion.
+
+coll/neighb_dup_edges 4 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+coll/neighb_dup_edges 2 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+coll/neighb_dup_edges 1 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+
 # --- (f) measured, not yet attributed ------------------------------------------
 
 part/parrived 2 : not yet attributed. Observed: expected 1.0 but received 0.0 at buf[1] (partition 0 count 64 off 1), iteration 0
@@ -166,7 +222,6 @@ pt2pt/recvnull 1 : not yet attributed. Observed: *** An error occurred in MPI_Ir
 pt2pt/pt2pt_large 2 : not yet attributed. Observed: i = 0, expect 1, got 0
 threads/comm/idup_deadlock 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/comm/idup_nb 4 : not yet attributed. Observed: --------------------------------------------------------------------------
-threads/comm/idup_comm_gen 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/init/mult_session 4 : not yet attributed. Observed: Could not find key thread_level
 threads/part/mt_parrived_wait 2 : not yet attributed. Observed: Rank 1 tid 2 expected 32.0 but received 0.0 at buf[32] (partition 4 count 8 off 0), iteration 0
 threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: --------------------------------------------------------------------------
@@ -225,7 +280,6 @@ comm/comm_idup_isend 6 : not yet attributed. Observed: -------------------------
 datatype/pack_external 1 : not yet attributed. Observed: MPI_Pack_external_size of MPI_LONG: returns 16, expect 8
 datatype/get_elements_pairtype 1 : not yet attributed. Observed: Found 1 errors
 datatype/type_large 1 : not yet attributed. Observed: *** An error occurred in MPI_Type_commit
-datatype/large_count 1 : not yet attributed. Observed: check failed: (elements == (int) expected), line 46
 errhan/adderr 1 : not yet attributed. Observed: Error class 0 is not a valid error code e 4fc0
 errhan/commcall 2 : not yet attributed. Observed: Unexpected error code
 errors/attr/keyvalmis 1 : not yet attributed. Observed: *** An error occurred in MPI_Win_set_attr
@@ -265,6 +319,5 @@ mpi_t/cvarwrite 1 : not yet attributed. Observed: Found 83 errors
 mpi_t/getindex 1 : not yet attributed beyond the event-loop half, which decision 6's stub fix cured; the cvar and pvar index lookups fail independently. Observed: Errors found in MPI_T_cvar_get_index
 session/session_bsend 2 : not yet attributed. Observed: MPI_Buffer_detach: dummy_size = 8388608, expect 0
 topo/cartmap1 4 : not yet attributed. Observed: rank outside of input communicator not UNDEFINED
-topo/cartsuball 4 : not yet attributed. Observed: cart sub to size 0 did not give null
 topo/dims5 1 : not yet attributed. Observed: 72 in 2d: 12 x 6 != 9 x 8
 topo/graphmap1 4 : not yet attributed. Observed: Graph map with no local nodes did not return MPI_UNDEFINED

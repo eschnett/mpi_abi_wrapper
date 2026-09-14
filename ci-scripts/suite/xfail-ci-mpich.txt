@@ -1,5 +1,5 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over **MPICH 5.0.1 built from source, on every architecture** -- x86_64,
+# over **MPICH 5.0.2rc2 built from source, on every architecture** -- x86_64,
 # aarch64 and i386 alike. Anything true of one architecture only belongs in
 # xfail-ci-mpich-<arch>.txt beside this file; check-tap.py reads the two as one
 # and rejects a test listed in both.
@@ -12,6 +12,39 @@
 #
 # **Written from run 32155423441**, the first run of this suite over 5.0.1 with
 # one MPI job per test: 842 tests, 789 passed, 41 failed, 12 skipped by the suite.
+#
+# **Re-measured twice since, and not one line of this file changed either time.**
+# At the 5.0.2rc1 suite, run 34371453201: 843 tests, 790 passed, 41 failed, 12
+# skipped. At the 5.0.2rc2 suite, run 34855861925: 846, 793, 41, 12 -- the three
+# extra tests are coll/neighb_dup_edges at 4, 2 and 1 ranks, added alongside
+# MPICH's own fix for the defect they check (6d7c89b05), and they pass here on
+# x86_64, aarch64 and i386. They do *not* pass over Open MPI, which has that
+# defect still; xfail-ci-openmpi.txt's group (h) has the attribution. The four aarch64
+# shards added up with check-tap.py's own parser; x86_64's rest and rma shards
+# agree test for test where they overlap. The single extra test is
+# `datatype/createf90types 1`, moved into datatype/ from f90/f90types/ upstream
+# and given two testlist lines that runtests names identically, and **it passes
+# over this wrapper on both architectures** -- worth saying because it is the one
+# new arrival that could have needed a line. It exercises
+# MPI_Type_create_f90_{real,complex,integer}, MPI_Type_get_envelope,
+# MPI_Type_get_contents with max_datatypes=1 against an actual ndtypes=0, and now
+# MPI_Reduce_local over an f90-created type; all of those are generated
+# forwarders, and the get_contents shape is the one that clamps to the
+# implementation's own envelope rather than converting an uninitialised handle.
+#
+# Two other tests upstream changed in that suite also still pass here and needed
+# no line: `datatype/large_count 1`, now passing a real count to
+# MPI_Status_set_elements{,_x,_c} instead of 1 (upstream 73e55f541 and 8cfb013c7),
+# and `topo/cartsuball 4`, which lost a zero-dimensional MPI_Cart_sub check
+# outright (ba620649d). Both of those *did* move xfail-ci-openmpi.txt, which is
+# where the asymmetry is recorded.
+#
+# **The i386 legs produced no evidence in that run** -- MPICH 5.0.2rc1 would not
+# build on ILP32 until the CFLAGS regression in dev/mpich-user-cflags/ was worked
+# around, so the four legs died before the suite ran. Run 34375629126, the first
+# with that workaround, had all four finish and left this file unchanged too. What
+# it did change is the ILP32 delta beside it, which went from six lines to three;
+# xfail-ci-mpich-i386.txt's header has that.
 #
 # **Flaps go in flaky-ci-mpich.txt now, not in a paragraph here.** This file briefly
 # carried `errors/comm/subcomm_abort 4` as prose, because a test that fails in one run
@@ -49,7 +82,8 @@
 #     are gone too, and that group was always about one laptop: all three passed
 #     on GitHub's runners, which is what a per-environment list exists to record.
 #   * Four lines are **new**, all of them group (c) and all of them the same
-#     symbol: the 5.0.1 suite added tests that use MPI_Errhandler_set.
+#     symbol: the 5.0.1 suite added tests that use MPI_Errhandler_set. The
+#     5.0.2rc1 suite added none of that kind.
 #
 # The groups keep the old file's letters so the two lists share a vocabulary.
 # Each is a *kind* of difference, and the kind matters more than the count:

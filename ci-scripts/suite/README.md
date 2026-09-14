@@ -55,9 +55,12 @@ Everything in the suite's own top-level testlist except two directories, each
 excluded in one place with its reason printed at the start of every run:
 
 - **`impls`** — MPICH's own PMI, hydra and `MPIX_` tests. Not standard MPI, so
-  not this project's to pass. MPICH 5.0.1's own testlist no longer carries that
-  directory at all, so against the current pin this exclusion is a no-op that
-  costs nothing and still covers 4.3.x.
+  not this project's to pass. `impls/testlist.in` is `@impldir@` and
+  `@pmidir@`, and `test/mpi/configure.ac` leaves both empty unless it detects
+  MPICH and PMI — which, configured against the *wrapper's* prefix, it does not.
+  So the directory contributes no tests and this exclusion is a no-op that costs
+  nothing and still covers 4.3.x. Checked against 5.0.2rc1 and 5.0.1: the
+  directory and both substitutions are unchanged between them.
 - **`spawn`** — off by default, `--with-spawn` to include, and with it the
   `spawn` subdirectories of `errors/` and `threads/`, which the top-level
   exclusion does not reach. `MPI_Comm_spawn` hangs under hydra on macOS with
@@ -96,10 +99,10 @@ so the list can be compared with an unwrapped run by eye.
 than unfinished-looking.** (Both describe the development laptop against the older
 pair of MPIs. The CI lists are further down, are written from real runs, and are
 not these.)
-`xfail-mpich.txt` is fully triaged: **41** failures, each
+`xfail-mpich.txt` is fully triaged: **40** failures, each
 with a cause. The three bugs of ours that this suite found are not in it,
 because all three were fixed -- the last of them, `MPI_DISPLACEMENT_CURRENT`,
-emptied a whole group out of the file. `xfail-openmpi.txt` is **168**, of
+emptied a whole group out of the file. `xfail-openmpi.txt` is **167**, of
 which the entry points Open MPI 4.1.6 simply does not have are attributed
 mechanically -- from the probe header that records what the implementation
 provides -- and about half are honest placeholders saying what was observed
@@ -244,6 +247,40 @@ grep -aoE '^(not )?ok [0-9]+ - \./[^ ]+ [0-9]+ # time=[0-9.]+' /tmp/p2p/summary.
   sed -E 's/.* \.\/([^ ]+) ([0-9]+) # time=([0-9.]+)/\3 \1/' | sort -rn | head -20
 ```
 
+**The `-a` in that `grep` is load-bearing, and leaving it off fails silently.** A
+`summary.tap` from a CI leg carries a handful of NUL bytes — 15 in the Open MPI
+`rest` artifact of run 34371453201, written by the tests' own output — so `file`
+reports `data` rather than text and grep treats the whole file as binary.
+Measured on the development laptop, whose `grep` is ugrep 7.8.4: both
+`grep pattern` and `grep -c pattern` print **nothing** and exit 1, for a pattern
+that is present. Not an error, not a diagnostic, not a zero — no output, which
+reads exactly like "that test was not in this run" when checking a list against a
+downloaded TAP. Other greps report a "binary file matches" line instead; none of
+them give you the matches. A locally produced TAP is plain ASCII and greps
+normally, so this only bites on artifacts — which is the only time anyone greps
+one.
+
+`check-tap.py` read those artifacts correctly, and the reason is narrower than it
+looks. `parse_tap` uses a plain `open(path)` in text mode; NUL is valid UTF-8
+(U+0000), so the bytes decode rather than raising, and the `ok`/`not ok` lines
+parse. But a NUL is not *removed* — feed the parser a hand-made
+`ok 1 - ./a/b 2\0` and it returns the test name `'a/b 2\x00'`, which matches no
+xfail entry and would be reported as an unlisted failure or a listed-but-not-run,
+both of them wrong and neither obviously so.
+
+**What makes it safe today is where the NULs happen to fall, which is not a
+property anything enforces.** Counted across three artifacts of runs 34371453201
+and 34375629126: 15 NULs, 14 and 0, and **none of them on a result line** — they
+are in the surrounding test output, which `parse_tap` skips. So the gates those
+runs produced are sound. A NUL landing inside a result line instead would corrupt
+one test's name silently, and hardening `parse_tap` against it is one
+`line.replace("\x00", "")`. Not done here: it changes the gate every suite leg
+runs, so it wants its own commit and its own run rather than riding along with a
+paragraph.
+
+Meanwhile: prefer `check-tap.py` over grepping a downloaded TAP, and use
+`grep -a` when you do grep one.
+
 ## Two things about the environment
 
 **`FI_PROVIDER`.** MPICH's `ch4:ofi` picks a VPN interface when one is up and
@@ -272,11 +309,11 @@ expected-failure list:
 
 | environment | MPI | gates? | list(s) it gates against |
 |---|---|---|---|
-| `suite` × x86_64 | MPICH 5.0.1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
-| `suite` × aarch64 | MPICH 5.0.1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
-| `suite` × x86_64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
-| `suite` × aarch64 | Open MPI 5.0.10, from source | not yet | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
-| `suite-i386` | MPICH 5.0.1, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
+| `suite` × x86_64 | MPICH 5.0.2rc2, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
+| `suite` × aarch64 | MPICH 5.0.2rc2, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
+| `suite` × x86_64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
+| `suite` × aarch64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
+| `suite-i386` | MPICH 5.0.2rc2, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
 
 **Each of those five runs as four jobs**, one per shard of the suite — **eighteen
 legs**, not twenty: `rma` is excluded on the two Open MPI legs, for the measured and
@@ -285,7 +322,7 @@ shards are `coll`, `rma`, `threads+pt2pt+part`, and the complement of those thre
 they exist so that the slow legs can finish at all rather than for parallelism.
 Measured per-directory cost is what picked them:
 
-| shard | MPICH 5.0.1 | Open MPI (4.1.6, for shape) |
+| shard | MPICH 5.0.1, as measured | Open MPI (4.1.6, for shape) |
 |---|---|---|
 | `coll` | 9.8 min | 4.6 min |
 | `rma` | 3.8 min | **37.1 min** |
@@ -313,11 +350,12 @@ are and describe that machine, pinned to the older pair of MPIs and to the 4.3.1
 suite.
 
 The two implementations are not symmetric and the lists should not be expected to
-look alike. MPICH 5.0.1 is the first release that is a complete MPI-5.0 — its own
-header says `MPI_VERSION 5` / `MPI_SUBVERSION 0` — so it provides the ABI's whole
+look alike. MPICH's 5.0.x series is a complete MPI-5.0 — 5.0.1 was the first
+release that was, and 5.0.2rc2 is the pin — and its own header says
+`MPI_VERSION 5` / `MPI_SUBVERSION 0`, so it provides the ABI's whole
 surface including the `_c` large-count forms. Open MPI 5.0.10 still declares
 `MPI_VERSION 3` / `MPI_SUBVERSION 1` and still has no `_c` entry point at all, so
-that half of the ABI is decision 6's stubs on its legs. MPICH 5.0.1 can implement
+that half of the ABI is decision 6's stubs on its legs. MPICH 5.0.x can implement
 the standard ABI itself, and these legs deliberately do not ask it to: that is
 behind `--enable-mpi-abi` and a separate `mpicc_abi`, and wrapping a library that
 already exports the ABI is a *different* oracle, the one that refuses at load on
@@ -330,8 +368,20 @@ nothing duplicated, and no two shards sharing a test — which also settles that
 `testlist.dtp` follows the directory filter rather than escaping it, the one way
 sharding could have quietly run tests twice or not at all. The 41-line MPICH list
 has reproduced across three runs and all three architectures, i386 included, where
-it held unchanged and ILP32 only *added* eleven lines. The 110-line Open MPI list
-reproduced in full. Two entries filed as architecture differences turned out to be
+it held unchanged and ILP32 only *added* eleven lines — eleven then; the delta is
+six at 5.0.1, and three at 5.0.2rc1 -- the paragraph beginning "So the 'empty
+because their legs cannot finish here'" below is where eleven became six, and
+`xfail-ci-mpich-i386.txt`'s own header is where six became three. The Open MPI list reproduced in full at
+the 110 it was then thought to hold; the file holds 102.
+
+**At the 5.0.2rc2 suite the partition sums to 846 distinct tests and 1250
+invocations** (843 and 1247 at rc1) (run 34371453201, the four aarch64 MPICH shards added up with
+`check-tap.py`'s own parser and its across-duplicates rule). The two extra
+invocations and the one extra test are the same arrival: `datatype/testlist.in`
+gained `createf90types 1` and `createf90types 1 arg=1000`, and runtests names
+both `datatype/createf90types 1`. The unsharded cross-check above was made at the
+older version and has not been repeated; what has been checked at 5.0.2rc1 is
+that the shards still sum to the whole. Two entries filed as architecture differences turned out to be
 intermittent tests and were removed when the second run passed them; a test that
 flaps cannot be listed at all, since listing it fails the run it passes and not
 listing it fails the run it fails.
@@ -342,7 +392,7 @@ seen pass cannot tell a regression from the thing it was added to find, so it
 reports until it can, and then it gates. The lists were empty when that sentence
 was first written — MPICH 5.0.1 answers `init/version` correctly and fills in the
 entry points the older lists' largest group was about, so nothing could be carried
-over — and they are now 41 MPICH lines, 110 shared Open MPI lines, eleven ILP32
+over — and they are now 41 MPICH lines, 102 shared Open MPI lines, three ILP32
 deltas and a handful of flaky entries. Each leg keeps `summary.tap` and its logs as
 an artifact whether it passed or not, because `--gate-only` writes a list from a
 TAP file in hand rather than from a fresh 40-minute run. Deleting
@@ -1020,7 +1070,7 @@ container.
 
 **So the "empty because their legs cannot finish here" of this section's title no longer
 describes the i386 row.** It finishes, it gates, and its delta is six lines rather than
-eleven — and none of the ~140 SIGBUS failures that were about to be called ILP32
+eleven (three at the 5.0.2rc1 pin) — and none of the ~140 SIGBUS failures that were about to be called ILP32
 properties is one.
 
 **What this does not settle, stated so the green leg is not over-read.**

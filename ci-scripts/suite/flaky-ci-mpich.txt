@@ -1,5 +1,5 @@
 # Flaky tests of MPICH's C test suite over this project in GitHub Actions, over
-# **MPICH 5.0.1 built from source, on every architecture**. A test here may fail
+# **MPICH 5.0.2rc2 built from source, on every architecture**. A test here may fail
 # or pass without failing the gate; check-tap.py prints which it did either way.
 #
 # One line per test, `<dir>/<program> <np> : why`, the same grammar the xfail
@@ -95,3 +95,19 @@ errors/comm/subcomm_abort2 6 : flaps on timing exactly like its sibling subcomm_
 # every run, and delete it if a release starts reporting it reliably. The local list
 # carries the same test as a plain xfail, because on that host it never wins.
 errors/comm/intercomm_abort 6 : flaps on hydra's exit status, not on timing like its two siblings above -- TestStatusNoErrors also demands that mpiexec exit nonzero, and after rank 0's MPI_Abort on an intercommunicator hydra sometimes returns 0. Failed the mpich/x86_64/rest shard in run 32867153761 (job 97865122810) and in run 32882434798's first attempt (job 97914916643); the re-run of that same job on the identical commit passed it in 0.0919 s (job 97921543964). Not capped: it fails fast, and a native-mpicc build of the same test fails the same check on the development laptop with no wrapper involved
+
+# Hydra's teardown on the timeout path, seen only on the ILP32 row so far.
+# init/timeout spins for 300 seconds and asks mpiexec to kill it --
+# `resultTest=TestErrFatal timeLimit=10` in the suite's own testlist, doubled to
+# 20 s by the i386 row's MPITEST_TIMEOUT_MULTIPLIER=2, which is the
+# "TIMEOUT = 20s" hydra prints. Killing the job is the pass. Two runs of the same
+# code disagree: run 34855861925 passed it at 20.6 s wall, run 34861559325 failed
+# it at 35.0 s with hydra's own proxy tripping
+# `HYD_pmcd_pmip_control_cmd_cb ... assert (!closed) fail` and the demux engine
+# erroring out after it. The assertion is inside hydra, below anything this
+# project loads, and the slower the machine the wider the window -- which is why
+# the 32-bit container is where it shows. Promote it to xfail if it starts
+# failing every time, or delete it if a larger multiplier settles it; if it turns
+# up on x86_64 or aarch64 too, the reason below should say so rather than this
+# staying an i386 observation with a shared line.
+init/timeout 2 : flaps on hydra's teardown after the timeout it exists to trigger -- passed at 20.6 s in run 34855861925 and failed at 35.0 s in 34861559325, the failure carrying `assert (!closed) fail` from hydra's proxy and a demux engine error. Same MPICH, same commit content for this row; only the ILP32 legs have shown it. Observed: [mpiexec@...] APPLICATION TIMED OUT, TIMEOUT = 20s

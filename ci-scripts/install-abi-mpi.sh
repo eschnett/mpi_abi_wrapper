@@ -24,13 +24,20 @@
 # without knowing which it has. Reimplementing that here would be a second
 # source of truth for someone else's build recipe.
 #
-# **This is the documented exception to "pinned released tarballs".**
-# ci-scripts/README.md and NOTES.md #9 say CI provisions MPI from released
-# tarballs with a stock configure, and that remains the rule for *wrap targets*
-# -- what install-mpich.sh and install-openmpi.sh build. It cannot hold here:
-# MPICH 5.0.1's standard-ABI implementation does not work, which is why mpif
-# pins a commit from `main`, and no released Open MPI implements the ABI at
-# all. A reference has to be one that functions.
+# **This is the first of the two documented exceptions to "pinned released
+# tarballs".** ci-scripts/README.md and NOTES.md #9 say CI provisions MPI from
+# released tarballs with a stock configure; that remains the rule for *wrap
+# targets* -- what install-mpich.sh and install-openmpi.sh build, the second
+# exception being that install-mpich.sh's own pin is a release candidate. It
+# cannot hold here at all: no released Open MPI implements the ABI, so mpif pins
+# a commit for both roles, and a reference has to be one that functions.
+#
+# MPICH's half of that reason is now retired. 5.0.1's libmpi_abi installed as
+# .so.0 because -version-info never reached libtool; 5.0.2 fixes it (upstream
+# 537078668) and install-mpich.sh is pinned to 5.0.2rc2, so a tarball with the
+# intended soname exists. Whether the soname was the only thing missing is
+# untested -- these rows also need mpif's header substitution and its pruning of
+# everything the ABI does not define -- and the pin is mpif's to move regardless.
 
 set -euo pipefail
 

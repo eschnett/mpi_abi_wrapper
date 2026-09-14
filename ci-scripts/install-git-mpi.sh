@@ -22,9 +22,12 @@
 # **Why not a released tarball.** ci-scripts/install-mpich.sh and
 # install-openmpi.sh do exactly that and are the right thing for every other
 # row: a stock release is what an ordinary user wraps. Here the wrap target has
-# to match the reference, and the reference cannot be a release -- MPICH
-# 5.0.1's standard-ABI implementation does not work, and no released Open MPI
-# has one. Pinning the same commit for both is the whole point of this script.
+# to match the reference, and the reference cannot be a release -- no released
+# Open MPI implements the standard ABI at all. MPICH's half of that reason went
+# away with 5.0.2, which fixes the -version-info bug that made 5.0.1 install
+# libmpi_abi as .so.0 (upstream 537078668); install-abi-mpi.sh says what is
+# still untested about using a tarball here. Pinning the same commit for both
+# roles is the whole point of this script.
 #
 # **The pin is read out of mpif's installer, never copied.** mpif already uses
 # this trick on itself, to keep MPICH_VERSION in one file; a hash copied here

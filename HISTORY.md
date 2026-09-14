@@ -1045,6 +1045,72 @@ at. A number this project may still move freely is one no client records, and
 `mpi_abi.pc`, `mpi_abiConfigVersion.cmake` and decision 26's banner are the
 list.
 
+**A second witness arrived later, and it had been broken the whole time.** The
+argument above rests on one measurement: Open MPI's ABI branch recording
+`1:0:0`. MPICH's `maint/version.m4` defines the same `1:0:0` for
+`libmpi_abi_so_version_m4` — and until upstream `537078668`, landing in 5.0.2,
+that definition never reached libtool: `configure.ac` referenced it as
+`libmpi_abi_so_verion_m4` (no `s`) and never `AC_SUBST`ed the resulting flag, so
+MPICH shipped `libmpi_abi.so.0`. Two things follow. The derivation was right and
+is now confirmed by two implementations rather than one. And the reason this
+project had for treating MPICH's released ABI as unusable — recorded in
+`ci-scripts/README.md` and the two mpif installers — was a build bug upstream
+has fixed, which is why the MPICH rows are pinned to `5.0.2rc1`: to find out
+what else that release moves before it ships.
+
+---
+
+### 2.21 "`CFLAGS` is how a flag reaches MPICH's embedded libfabric"
+
+It was, for as long as the ILP32 row had existed. `ci-scripts/suite/i386-suite.sh`
+exported `CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types` because MPICH's
+vendored libfabric does not compile on 32-bit — `ofi_cma.h`'s `cma_copy` passes
+`unsigned long *` where `ofi_consume_iov` takes `size_t *`, distinct types where
+`size_t` is `unsigned int` — and gcc 14 makes that an error. One flag, one row,
+documented, and it worked.
+
+**It stopped working in MPICH 5.0.2rc1, and the pin that found it is the point.**
+All four ILP32 legs of run 34371453201 died in `src/fabric.c`. The flag was still
+on MPICH's configure line; it was no longer on libfabric's. `src/mpl`, `src/pmi`,
+`romio` and `hydra` were handed
+`CFLAGS=-g -O2 -Wno-error=incompatible-pointer-types` while `modules/libfabric`
+got `CFLAGS= -fvisibility=hidden`.
+
+The cause is two lines of m4. Embedded modules are configured inside a
+`PAC_PUSH_ALL_FLAGS` / `PAC_RESET_ALL_FLAGS` / `PAC_POP_ALL_FLAGS` bracket whose
+own comment says why — a module should see *the user's* flags, not MPICH's
+accumulated ones — and `PAC_RESET_ALL_FLAGS` restores them from a `USER_*`
+snapshot. Upstream `b99300bad` changed `PAC_PREFIX_FLAG` from `$1_$2=$$2` to
+`$1_$2=""` to stop build flags leaking into `mpicc`'s `WRAPPER_*` flags, which it
+does correctly. But `configure.ac` calls `PAC_PREFIX_ALL_FLAGS` twice, for
+`WRAPPER` at line 270 and for `USER` at line 331, so emptying the shared macro
+emptied the snapshot too. `PAC_RESET_ALL_FLAGS` still does what it always did;
+what stopped happening is the saving.
+
+**Two things this is worth keeping for.** The first is that a documented
+workaround is a claim about someone else's build system, and it expires without
+notice — this one expired loudly, in a compile error, which is the lucky case; a
+packager passing `-march=` gets no diagnostic at all, just half a library built
+as asked. The second is what the fix had to avoid. The flag moved to `CC`, which
+survives the bracket, and `CC` is what MPICH bakes into `mpicc` — so the
+workaround would have followed the row into the wrapper's own build, where
+`-Wincompatible-pointer-types` is a diagnostic about *our* generated conversion
+code and must stay an error. `i386-suite.sh` therefore strips it back out of the
+installed prefix and asserts with `mpicc -show` that no wrapper passes it to user
+code, because the alternative was reasoning about how `-Wno-error=` and the
+`-Werror` in `CMakeLists.txt` compose.
+
+**Reported, and fixed upstream within hours.** Erik filed pmodels/mpich#7959 from
+the drafted report; hzhou opened pmodels/mpich#7960 the same day, and it is the
+two-macro split the report proposed — `PAC_PREFIX_FLAG` copying again, a new
+`PAC_INIT_FLAG` for the `WRAPPER` case. Tested here by mirroring 5.0.1's eight
+`USER_*` assignments into 5.0.2rc1's *generated* `configure`, which is the whole
+of the PR's effect on that script and needs no autoconf: the flag reaches all
+eight sub-configures and `mpicc CFLAGS:` stays empty, so it is the first of the
+three trees to have neither bug. What that does not settle is the release —
+#7960 targets `main`, and `5.0.x`, the branch 5.0.2 is cut from, still carried
+`$1_$2=""`. `dev/mpich-user-cflags/` has all of it.
+
 ---
 
 ## 3. What each stage settled
@@ -1539,6 +1605,54 @@ authority column and the generator freezes each tally.
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
 | MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
 | Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
+| CI Open MPI suite failures | 105, and 110 elsewhere | **102** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
+| this project's own `ctest` suite | 13, then "fourteen" | **15** on a default build | `ctest -N`; 16 `add_test` lines, one of them behind `MPI_ABI_SANITIZE` and eight behind `MPI_ABI_BUILD_WRAPPER` |
+| CI jobs, and legs | "ten" jobs, "thirty-eight" legs | **12** and **44** | the `jobs:` keys of `ci.yaml`, and its matrices expanded with `exclude:` applied |
+| legs that are the MPICH suite | "twenty" | **18** | `suite`'s 14 + `suite-i386`'s 4; twenty is five environments x four shards *before* `exclude:` drops `rma` on the two Open MPI legs |
+
+**The three expected-failure-list rows are the same failure twice over, and the
+second half is the one `CLAUDE.md` warns about.** (Named rather than pointed at:
+"the last three rows" was what this sentence said until a fourth row was appended
+below them, which is the fragility this whole section is about.) The local-list
+corrections to 40 and 167 were
+recorded *here* and left out of `CODE.md` §10's variant table, which is the
+table a reader consults — so the wrong numbers survived in the place they get
+read while the right ones sat in the history. The CI Open MPI count was wrong in
+three documents at once (the list's own header at 105, `CODE.md` at 104, and
+`ci-scripts/suite/README.md` at 110) and the three agreed with each other rather
+than with `grep`, which is what an authority column is for.
+
+**The three CI-shape rows came for free with the report-only fix, which is the
+argument for looking at a whole sentence rather than the clause you came to
+change.** Correcting "the two MVAPICH legs are report-only" meant editing
+`CODE.md` §3's `ci.yaml` entry, and the same two lines also claimed ten jobs and
+thirty-eight legs. Both had been true; the file has since grown `linux-i386` and
+`suite-i386` and the mpif pair. The "twenty" is a different error and the more
+interesting one: it is the *nominal* five-environments-by-four-shards, and the
+`exclude:` block that drops `rma` on the two Open MPI legs — a block whose own
+comment warns it is easy to leave out of step — was left out of the arithmetic.
+
+**The `ctest` row is the one that had a rule protecting it and still went
+stale.** `CODE.md` §12's table says in as many words that older figures are left
+as they were measured rather than rewritten — exactly right, and it is why the
+13/13 and 6/6 rows are untouched. But the paragraph stating that rule also stated
+the *current* size, "fourteen tests since `abi_large_count_test` joined it", and
+that half is not a measurement of a past run; it is a claim about now, and it
+aged. The size is also three different numbers depending on two build options, so
+the fix was to write down the derivation rather than a fourth number.
+`ci.yaml:265-267` had already reached the same conclusion from the other end, for
+the MVAPICH row: an expected count "is deliberately not written down here",
+because the "12/13 to expect" it once carried was 14/15 two commits later.
+`CODE.md` was still carrying that 12/13 as an expectation.
+
+**A near-miss worth recording, because it is the same mistake pointed the other
+way.** The i386 delta was almost added to this table as "eleven → 6". It is not a
+wrong count: the list genuinely held eleven lines through the ILP32 SIGBUS
+investigation and dropped to six when the tmpfs cause was fixed, and
+`ci-scripts/suite/README.md` already recorded that transition. A number that
+changed reads exactly like a number that was wrong, and the way to tell them
+apart is to find out whether some document already explains the change — not to
+diff the sentence against the artifact and assume the sentence lost.
 
 The 1376 line is the instructive one. It was right until S3b's follow-up gave
 the five deleted entry points to `libmpi_abi`, and it stayed in eight places
