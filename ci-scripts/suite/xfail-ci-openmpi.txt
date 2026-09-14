@@ -12,7 +12,7 @@
 # enough to produce results: three of its four shards completed and the fourth did
 # not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
 # / 20, rest 316 / 82. That run put 109 lines here, the failures both architectures
-# produced, and four in the two delta files. **There are 105 now**
+# produced, and four in the two delta files. **There are 104 now**
 # (`grep -cvE '^\s*(#|$)' xfail-ci-openmpi.txt`, which is how check-tap.py reads
 # the file), and one delta line: run 32302208489 failed
 # threads/pt2pt/mt_iprobe_isendrecv 2 on both architectures over five attempts, so
@@ -54,6 +54,13 @@
 # source built with Open MPI's own mpicc and no wrapper fails the identical
 # check, dev/neighbor-dup-edges/ -- so the three lines are group (h) rather than
 # (f). Run 34855861925, both architectures, identically.
+#
+# **And 105 became 104 when threads/comm/idup_comm_gen 4 moved to
+# flaky-ci-openmpi.txt.** It had been an unattributed line here and passed in run
+# 34863951924 after failing in the two before it, which is a listed failure
+# failing the gate by passing -- the one thing an xfail line cannot express. The
+# move also gave it a reason: Open MPI returns MPI_ERR_INTERN from MPI_Comm_dup
+# under MPI_THREAD_MULTIPLE and aborts.
 #
 # **`rma` is missing from this list, and it is no longer a gap: the directory is not
 # run on the Open MPI legs.** It was a gap for a while -- both shards were killed six
@@ -215,7 +222,6 @@ pt2pt/recvnull 1 : not yet attributed. Observed: *** An error occurred in MPI_Ir
 pt2pt/pt2pt_large 2 : not yet attributed. Observed: i = 0, expect 1, got 0
 threads/comm/idup_deadlock 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/comm/idup_nb 4 : not yet attributed. Observed: --------------------------------------------------------------------------
-threads/comm/idup_comm_gen 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/init/mult_session 4 : not yet attributed. Observed: Could not find key thread_level
 threads/part/mt_parrived_wait 2 : not yet attributed. Observed: Rank 1 tid 2 expected 32.0 but received 0.0 at buf[32] (partition 4 count 8 off 0), iteration 0
 threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: --------------------------------------------------------------------------

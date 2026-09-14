@@ -65,6 +65,19 @@ threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in 
 # evidence than that entry carries; a third failure would justify promoting it,
 # and an Open MPI release that settles it makes this a line to delete.
 
+# Open MPI's own internal error, and it moved here from xfail-ci-openmpi.txt
+# rather than arriving new. It was listed there as an unattributed expected
+# failure, which was right for as long as it failed every run: 34855861925 and
+# 34861559325 both failed it. Run 34863951924 passed it on the same shard and
+# architecture, which an xfail line cannot express -- that is what turned the leg
+# red, a listed failure passing. The failure is Open MPI reporting
+# `MPI_ERR_INTERN: internal error` out of MPI_Comm_dup under MPI_THREAD_MULTIPLE
+# and aborting, so it is the implementation's rather than unattributed, and the
+# move upgrades the reason as well as the category. Two failures to one pass;
+# promote it back to xfail if the pass turns out to be the outlier.
+
+threads/comm/idup_comm_gen 4 : Open MPI returns MPI_ERR_INTERN from MPI_Comm_dup under MPI_THREAD_MULTIPLE and aborts, intermittently -- failed in runs 34855861925 and 34861559325, passed in 34863951924, same shard and architecture throughout. Moved here from xfail-ci-openmpi.txt when the pass made a listed failure fail the gate. Observed: *** An error occurred in MPI_Comm_dup | *** MPI_ERR_INTERN: internal error
+
 threads/pt2pt/mt_sendrecv_huge 2 : segfaults intermittently inside Open MPI's progress engine on the -count=4194304 invocation -- opal_progress below ompi_sync_wait_mt in libopen-pal.so.80, failing at address 0xfffffffe with no wrapper frame in the backtrace. Failed in run 34855861925 (aarch64) and passed in 34861559325 on the same shard and architecture. Observed: *** Process received signal *** | Signal: Segmentation fault (11)
 threads/pt2pt/mt_bsendrecv 2 : flaps between passing in 0.115 s and hanging to the time limit, on the same shard and the same architecture -- run 32655819244 passed it, run 32652409584 hung it. Unattributed, like its always-hanging sibling mt_ibsendirecv; capped at 30 s in timelimit-ci-openmpi.txt so the hanging half costs 30 s rather than 180. Observed: The user-provided time limit for job execution has been reached
 
