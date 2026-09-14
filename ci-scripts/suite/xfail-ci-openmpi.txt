@@ -12,7 +12,7 @@
 # enough to produce results: three of its four shards completed and the fourth did
 # not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
 # / 20, rest 316 / 82. That run put 109 lines here, the failures both architectures
-# produced, and four in the two delta files. **There are 102 now**
+# produced, and four in the two delta files. **There are 105 now**
 # (`grep -cvE '^\s*(#|$)' xfail-ci-openmpi.txt`, which is how check-tap.py reads
 # the file), and one delta line: run 32302208489 failed
 # threads/pt2pt/mt_iprobe_isendrecv 2 on both architectures over five attempts, so
@@ -42,6 +42,18 @@
 #
 # Neither leg gained a line: the 5.0.2rc1 suite's two new tests are one name,
 # `datatype/createf90types 1`, run twice, and it passes here.
+#
+# **102 became 105 at the 5.0.2rc2 suite, and the three are one test.** MPICH
+# 6d7c89b05 fixed block matching for duplicate neighbour edges and added
+# test/mpi/coll/neighb_dup_edges.c with it, which coll/testlist.in runs at 4, 2
+# and 1 ranks -- three distinct names, unlike rc1's createf90types whose two
+# testlist lines shared one. It passes over MPICH, which has the fix, and fails
+# over Open MPI 5.0.10, which does not: its *nonblocking* neighbourhood
+# collectives ignore MPI-4.1 Example 8.10's s^1 block matching while its blocking
+# ones honour it. Attributed by measurement rather than by reading -- the same
+# source built with Open MPI's own mpicc and no wrapper fails the identical
+# check, dev/neighbor-dup-edges/ -- so the three lines are group (h) rather than
+# (f). Run 34855861925, both architectures, identically.
 #
 # **`rma` is missing from this list, and it is no longer a gap: the directory is not
 # run on the Open MPI legs.** It was a gap for a while -- both shards were killed six
@@ -171,6 +183,17 @@ errors/group/group_union_nullarg 1 : an erroneous argument the implementation wo
 errors/rma/cas_type_check 2 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: cas_type_check: /home/runner/work/_temp/suite-src/mpich-5.0.1/test/mpi/errors/rma/cas_type_check.c:72: main: Assertion `err_class == MPI_ERR_TYPE' failed.
 errors/session/comm_create_from_group 1 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: *** Process received signal ***
 session/session_re_init 4 : an erroneous argument the implementation would have diagnosed, which conversion turns into a crash instead (NOTES.md #13.3). Observed: session_re_init: components.c:904: hwloc_components_fini: Assertion `0 != hwloc_components_users' failed.
+
+# --- (h) the wrapped implementation does this without us -----------------------
+#
+# Three lines, one test at its three rank counts. Here rather than in (f) because
+# it is attributed, and the attribution is a measurement rather than a reading:
+# the same source built with Open MPI's own mpicc, no wrapper anywhere, fails the
+# identical check. dev/neighbor-dup-edges/ has the probe and the standard's rule.
+
+coll/neighb_dup_edges 4 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+coll/neighb_dup_edges 2 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+coll/neighb_dup_edges 1 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
 
 # --- (f) measured, not yet attributed ------------------------------------------
 
