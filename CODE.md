@@ -613,7 +613,7 @@ before it can report. The counts, by
 |---|---|
 | `xfail-ci-mpich.txt` + `-i386` delta | **41** + **3** (x86_64 and aarch64 deltas are empty) |
 | `xfail-ci-openmpi.txt` + `-x86_64` delta | **105** + **1** |
-| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **4**, **7** |
+| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **4**, **8** |
 | `timelimit-ci-openmpi.txt` | **16** patterns over 41 lines, 18 of them seen to hang |
 | `exclude-ci-openmpi.txt` | **2**, both inert while `rma` is off the Open MPI legs |
 

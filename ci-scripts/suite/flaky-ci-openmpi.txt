@@ -52,6 +52,20 @@ threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in 
 # side, so whatever explains the pair explains both lines. Until then the honest claim
 # is the small one -- either outcome happens -- and the cap is what keeps the bad
 # outcome from costing 150 seconds of the workflow's critical path.
+# A segfault inside Open MPI's progress engine, and only on the larger of the
+# test's two invocations. The suite runs mt_sendrecv_huge twice under one name --
+# `arg=-iter=64 arg=-count=4096` and `arg=-iter=64 arg=-count=4194304` -- and
+# check-tap.py collapses them with a failure winning, so the merged outcome is
+# what flaps. Run 34855861925 passed the 4096 one and crashed the 4194304 one;
+# run 34861559325 passed both. The backtrace is entirely inside the
+# implementation, opal_progress below ompi_sync_wait_mt in libopen-pal.so.80,
+# faulting at 0xfffffffe with no wrapper frame in it -- the same shape as
+# mpi_t/mpit_vars below, which is why this is a flap to live with rather than
+# something to chase here. Two observations, one each way, which is weaker
+# evidence than that entry carries; a third failure would justify promoting it,
+# and an Open MPI release that settles it makes this a line to delete.
+
+threads/pt2pt/mt_sendrecv_huge 2 : segfaults intermittently inside Open MPI's progress engine on the -count=4194304 invocation -- opal_progress below ompi_sync_wait_mt in libopen-pal.so.80, failing at address 0xfffffffe with no wrapper frame in the backtrace. Failed in run 34855861925 (aarch64) and passed in 34861559325 on the same shard and architecture. Observed: *** Process received signal *** | Signal: Segmentation fault (11)
 threads/pt2pt/mt_bsendrecv 2 : flaps between passing in 0.115 s and hanging to the time limit, on the same shard and the same architecture -- run 32655819244 passed it, run 32652409584 hung it. Unattributed, like its always-hanging sibling mt_ibsendirecv; capped at 30 s in timelimit-ci-openmpi.txt so the hanging half costs 30 s rather than 180. Observed: The user-provided time limit for job execution has been reached
 
 # **Flaps on both architectures, and the run table in xfail-ci-openmpi-x86_64.txt is
