@@ -374,8 +374,8 @@ because their legs cannot finish here'" below is where eleven became six, and
 `xfail-ci-mpich-i386.txt`'s own header is where six became three. The Open MPI list reproduced in full at
 the 110 it was then thought to hold; the file holds 102.
 
-**At the 5.0.2rc1 suite the partition sums to 843 distinct tests and 1247
-invocations** (run 34371453201, the four aarch64 MPICH shards added up with
+**At the 5.0.2rc2 suite the partition sums to 846 distinct tests and 1250
+invocations** (843 and 1247 at rc1) (run 34371453201, the four aarch64 MPICH shards added up with
 `check-tap.py`'s own parser and its across-duplicates rule). The two extra
 invocations and the one extra test are the same arrival: `datatype/testlist.in`
 gained `createf90types 1` and `createf90types 1 arg=1000`, and runtests names

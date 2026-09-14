@@ -13,8 +13,13 @@
 # **Written from run 32155423441**, the first run of this suite over 5.0.1 with
 # one MPI job per test: 842 tests, 789 passed, 41 failed, 12 skipped by the suite.
 #
-# **Re-measured at the 5.0.2rc1 suite, run 34371453201: 843 tests, 790 passed, 41
-# failed, 12 skipped -- and not one line of this file changed.** The four aarch64
+# **Re-measured twice since, and not one line of this file changed either time.**
+# At the 5.0.2rc1 suite, run 34371453201: 843 tests, 790 passed, 41 failed, 12
+# skipped. At the 5.0.2rc2 suite, run 34855861925: 846, 793, 41, 12 -- the three
+# extra tests are coll/neighb_dup_edges at 4, 2 and 1 ranks, added alongside
+# MPICH's own fix for the defect they check (6d7c89b05), and they pass here on
+# x86_64, aarch64 and i386. They do *not* pass over Open MPI, which has that
+# defect still; xfail-ci-openmpi.txt's group (h) has the attribution. The four aarch64
 # shards added up with check-tap.py's own parser; x86_64's rest and rma shards
 # agree test for test where they overlap. The single extra test is
 # `datatype/createf90types 1`, moved into datatype/ from f90/f90types/ upstream
