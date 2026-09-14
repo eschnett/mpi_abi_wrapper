@@ -196,6 +196,27 @@ is *skipped* rather than failed, so there is no TAP to interpret — a real
 failure leaves one. A leg that dies before producing a TAP has not made a
 statement about the wrapper; re-run it.
 
+**A third instance, with a different signature: `(403) Forbidden` from
+`ListArtifacts`.** In run 34855861925 both `mpif / <mpi> / native` legs failed at
+"Restore the ABI prefix" — `actions/download-artifact` reporting
+`Failed to ListArtifacts: Received non-retryable error: Failed request: (403)`.
+It looks like a permissions bug and is not one, and the way to tell is to check
+three things before touching `permissions:` in `ci.yaml`:
+
+* **Did a sibling job download an artifact successfully in the same run?** Both
+  `mpif / <mpi> / wrapper` legs did, with the same token, the same action and the
+  same workflow-level `contents: read`. A token that works for one job works for
+  its neighbour.
+* **Do the artifacts exist?**
+  `gh api repos/<owner>/<repo>/actions/runs/<id>/artifacts` listed all four,
+  `expired=false`. A 403 on *listing* is not a missing artifact, and not a 404.
+* **Did the failures cluster in time?** Both landed within ten seconds of each
+  other, while the legs that ran a minute later were fine.
+
+Three yeses mean the API had a bad moment, and the remedy is the one above: re-run
+the leg. Adding `actions: read` would be cargo-culting a fix for a problem the
+sibling jobs disprove.
+
 ## Gating a row that has a known failure: `check-ctest.py`
 
 `ci-scripts/check-ctest.py` is to this project's own `ctest` suite what
