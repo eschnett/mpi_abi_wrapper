@@ -21,7 +21,9 @@ would not reach the release. That was resolved upstream: `v5.0.2rc2` carries the
 fix as `e8de23b0b`, and reading the tag confirms all three parts of it —
 `PAC_PREFIX_FLAG` copies again, `PAC_INIT_FLAG`/`PAC_INIT_ALL_FLAGS` exist, and
 `configure.ac:271` calls `PAC_INIT_ALL_FLAGS(WRAPPER)` while `:332` keeps
-`PAC_PREFIX_ALL_FLAGS(USER)`.
+`PAC_PREFIX_ALL_FLAGS(USER)`. And `run.sh 5.0.2rc2` confirms the effect rather
+than the source: all eight sub-configures are handed the flag, the four
+bracketed ones included.
 
 So `ci-scripts/suite/i386-suite.sh` has moved the libfabric flag back to
 `CFLAGS`, where it belongs, and dropped the strip that the `CC` detour required.

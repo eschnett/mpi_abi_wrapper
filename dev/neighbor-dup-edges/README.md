@@ -38,6 +38,15 @@ Open MPI 5.0.10, four ranks, no wrapper:
 | `MPI_Neighbor_alltoall` | **passes** |
 | `MPI_Ineighbor_alltoall` | **fails**, 16 mismatched blocks |
 
+**It is not specific to 5.0.10, and it is not fixed on `main`.** The same probe,
+same four ranks, against every Open MPI on the development laptop:
+
+| build | version | `MPI_Neighbor_alltoall` | `MPI_Ineighbor_alltoall` |
+|---|---|---|---|
+| `build/mpi/openmpi-native` | 5.0.6 | passes | **fails** |
+| `build/mpi/openmpi` | 5.0.10 — the version CI wraps | passes | **fails** |
+| `build/mpi/ompi-main-prefix` | 6.1.0a1 (`main`) | passes | **fails** |
+
 Every mismatch is the identity matching where the standard asks for `s^1`:
 
 ```
