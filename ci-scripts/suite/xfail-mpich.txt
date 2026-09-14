@@ -3,9 +3,9 @@
 # runtests' own naming so a line can be compared with an unwrapped run by eye.
 #
 # **This is the local row's list, and it is pinned to the older pair.** GitHub
-# Actions has its own lists (xfail-ci-mpich*.txt), because it runs MPICH 5.0.2rc1
-# with the 5.0.2rc1 suite while the 40 lines below were recorded against MPICH
-# 4.3.1 with the 4.3.1 suite. run-suite.sh now defaults to the 5.0.2rc1 suite, so
+# Actions has its own lists (xfail-ci-mpich*.txt), because it runs MPICH 5.0.2rc2
+# with the 5.0.2rc2 suite while the 40 lines below were recorded against MPICH
+# 4.3.1 with the 4.3.1 suite. run-suite.sh now defaults to the 5.0.2rc2 suite, so
 # reproducing this file takes `--suite=4.3.1` against a 4.3.1 installation;
 # anything else is a retriage rather than a comparison.
 #

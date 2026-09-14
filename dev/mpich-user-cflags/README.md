@@ -14,13 +14,22 @@ halves at once** (see "Verifying the fix" below): the flag reaches all eight
 sub-configures *and* `mpicc CFLAGS:` stays empty — so it repairs the regression
 without reintroducing the `WRAPPER` leak that PR7921 existed to stop.
 
-**What is not done is the part that decides whether 5.0.2 ships with the bug.**
-As of 2026-09-10, #7960 targets `main`, is behind it, awaits review, and is
-unmerged; `confdb/aclocal_util.m4` still reads `$1_$2=""` on `main` **and on
-`5.0.x`**, which is byte-identical to `v5.0.2rc1` (0 ahead, 0 behind, its
-`version.m4` says `5.0.2rc1`) and is therefore the branch 5.0.2 final is cut
-from. Merging to `main` alone does not reach it: the fix needs a backport to
-`5.0.x`. Until then `ci-scripts/suite/i386-suite.sh` keeps the flag in `CC`.
+**It shipped, in 5.0.2rc2.** The concern recorded here on 2026-09-10 was that
+#7960 targeted `main` while `5.0.x` — byte-identical to `v5.0.2rc1` and the
+branch 5.0.2 is cut from — still carried `$1_$2=""`, so merging to `main` alone
+would not reach the release. That was resolved upstream: `v5.0.2rc2` carries the
+fix as `e8de23b0b`, and reading the tag confirms all three parts of it —
+`PAC_PREFIX_FLAG` copies again, `PAC_INIT_FLAG`/`PAC_INIT_ALL_FLAGS` exist, and
+`configure.ac:271` calls `PAC_INIT_ALL_FLAGS(WRAPPER)` while `:332` keeps
+`PAC_PREFIX_ALL_FLAGS(USER)`.
+
+So `ci-scripts/suite/i386-suite.sh` has moved the libfabric flag back to
+`CFLAGS`, where it belongs, and dropped the strip that the `CC` detour required.
+What it kept is the `mpicc -show` assertion, repurposed: MPICH has now had build
+flags in the wrong place in both directions inside two releases — leaking into
+`mpicc` through 5.0.1, missing from the embedded modules in 5.0.2rc1 — so
+whether the wrappers carry them is worth checking on every run rather than
+assuming.
 
 ```sh
 dev/mpich-user-cflags/run.sh              # both tags, side by side
@@ -189,7 +198,10 @@ Result on the development laptop, `CFLAGS=-g -O2 -Wno-error=incompatible-pointer
 | 5.0.2rc1 + #7960's effect | the flag | empty |
 
 The middle column is the regression and the right column is what PR7921 was for;
-#7960 is the first of the three trees to get both right. hwloc, json-c and yaksa
+#7960 is the first of the three trees to get both right. **5.0.2rc2 is that tree
+as released** — the third row is what it does, reached by the same commit — so
+`run.sh 5.0.1 5.0.2rc1 5.0.2rc2` now shows the whole arc in one table, and the
+middle tag is the only one that ever dropped the flag. hwloc, json-c and yaksa
 move with libfabric, and the four unbracketed modules never lost the flag.
 
 ## How this project works around it

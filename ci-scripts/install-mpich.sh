@@ -19,7 +19,7 @@
 #                   explains why this file, not ci-scripts/suite/, is what a
 #                   cache key should hash).
 #
-# <version> defaults to 5.0.2rc1, a release *candidate* rather than a release,
+# <version> defaults to 5.0.2rc2, a release *candidate* rather than a release,
 # which is the one place this project's pinned-released-tarball rule is bent on
 # purpose -- ci-scripts/README.md names it and says why, and the pin moves to
 # 5.0.2 final when that ships. What the 5.0.x series buys is a complete MPI-5.0:
@@ -48,7 +48,7 @@
 set -euo pipefail
 
 prefix=${1:-}
-version=${2:-5.0.2rc1}
+version=${2:-5.0.2rc2}
 if [ -z "$prefix" ]; then
   echo "usage: $(basename "$0") <prefix> [<version>]" >&2
   exit 1

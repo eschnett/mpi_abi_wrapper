@@ -34,7 +34,7 @@
 #
 # MPICH's half of that reason is now retired. 5.0.1's libmpi_abi installed as
 # .so.0 because -version-info never reached libtool; 5.0.2 fixes it (upstream
-# 537078668) and install-mpich.sh is pinned to 5.0.2rc1, so a tarball with the
+# 537078668) and install-mpich.sh is pinned to 5.0.2rc2, so a tarball with the
 # intended soname exists. Whether the soname was the only thing missing is
 # untested -- these rows also need mpif's header substitution and its pruning of
 # everything the ABI does not define -- and the pin is mpif's to move regardless.

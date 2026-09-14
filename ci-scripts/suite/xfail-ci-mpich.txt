@@ -1,5 +1,5 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over **MPICH 5.0.2rc1 built from source, on every architecture** -- x86_64,
+# over **MPICH 5.0.2rc2 built from source, on every architecture** -- x86_64,
 # aarch64 and i386 alike. Anything true of one architecture only belongs in
 # xfail-ci-mpich-<arch>.txt beside this file; check-tap.py reads the two as one
 # and rejects a test listed in both.

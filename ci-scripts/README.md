@@ -35,7 +35,7 @@ and the two platforms do not fail the same way.
 implementation works and no *release* of either has one. Half of that used to be
 MPICH's: 5.0.1 shipped its `libmpi_abi` as `.so.0`, because `-version-info`
 never reached libtool. MPICH 5.0.2 fixes that (upstream `537078668`), and the
-MPICH rows here are now pinned to `5.0.2rc1` — so for the first time a tarball
+MPICH rows here were then pinned to `5.0.2rc1` — so for the first time a tarball
 with the intended `libmpi_abi.so.1` exists. What is not established is that the
 soname was the *only* thing missing: these rows also need mpif's header
 substitution and its pruning of everything the ABI does not define, and no
@@ -45,7 +45,7 @@ copied, so the reference and the wrap target cannot come to be different commits
 without anyone noticing — which also means re-pointing them at a tarball is
 mpif's pin to move, not this directory's.
 
-**Two: the MPICH rows are on a release candidate, `5.0.2rc1`, on purpose.** It
+**Two: the MPICH rows are on a release candidate, `5.0.2rc2`, on purpose.** It
 carries three fixes to MPICH's own ABI layer — the soname above,
 `MPI_Type_get_contents`' output datatype conversion (`8cac6e49b`) and
 `MPI_File_c2f`/`_f2c`'s exclusion from `libmpi_abi` (`2c5428fb5`) — and the
@@ -154,8 +154,8 @@ here, next to the code they are about, and stay runnable by hand.
 | `compile` | `cmake` with `icx` and with `nvc` | the pinned MPICH, restored from `linux-source`'s cache. Builds only — no launcher question |
 | `sanitize` | `cmake -DMPI_ABI_SANITIZE=address,undefined` | the distro's, in `debian:13`. Excludes the tests that `dlopen` a wrapper, which ASan cannot load |
 | `macos` | `cmake`/`ctest` directly, then `check-install.sh` | Homebrew, one formula per leg |
-| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.2rc1 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Fourteen legs**: two implementations × x86_64/aarch64 × four shards, less the `rma` shard on the two Open MPI legs, which `exclude` drops because it takes a runner down |
-| `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.2rc1, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
+| `suite` | `suite/run-suite.sh <mpicc> --variant=ci-<mpi>-<arch> --xfail=… <shard>` | pinned tarballs — MPICH 5.0.2rc2 or Open MPI 5.0.10 — restored from `linux-source`'s cache, with ccache behind the miss. **Fourteen legs**: two implementations × x86_64/aarch64 × four shards, less the `rma` shard on the two Open MPI legs, which `exclude` drops because it takes a runner down |
+| `suite-i386` | `suite/i386-suite.sh` through `run-linux-docker.sh` | its own MPICH 5.0.2rc2, built from source *inside* a `linux/386` container and cached by the 64-bit host. Four legs, the same four shards |
 
 **Every job in this workflow gates. There is no `continue-on-error` left in
 `ci.yaml`, and that is the property to preserve.** Report-only was always meant

@@ -71,7 +71,7 @@ set -uo pipefail
 repodir=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 suitedir=$repodir/ci-scripts/suite
 
-suite_version=5.0.2rc1       # the pinned MPICH release the suite comes from
+suite_version=5.0.2rc2       # the pinned MPICH release the suite comes from
 variant=""
 prefix=""
 dirs=""

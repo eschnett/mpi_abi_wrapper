@@ -2411,7 +2411,7 @@ that way.
 
 **A second implementation now says the same number, and independently.** MPICH's
 `maint/version.m4` defines `libmpi_abi_so_version_m4` as `1:0:0`, read out of
-the `v5.0.2rc1` tag this project's MPICH rows are pinned to. That value had been
+the `v5.0.2rc2` tag this project's MPICH rows are pinned to. That value had been
 there and been *inert*: until upstream `537078668`, `configure.ac` misspelled the
 macro and never `AC_SUBST`ed the flag, so libtool fell back to its `0:0:0`
 default and MPICH installed `libmpi_abi.so.0`. Two implementations of ABI 1
@@ -2605,7 +2605,7 @@ revisited.
 cached: stock configure, no pruning, no header substitution. The rule has two
 named exceptions and `ci-scripts/README.md` carries both, because that is where
 the installers are: the mpif rows build from mpif's own pinned git commits, and
-**the MPICH rows are deliberately on a release candidate, `5.0.2rc1`**, to find
+**the MPICH rows are deliberately on a release candidate, `5.0.2rc2`**, to find
 out what MPICH 5.0.2's three ABI-layer fixes do to this project before it ships
 rather than after. That pin moves to `5.0.2` final when it is released.
 

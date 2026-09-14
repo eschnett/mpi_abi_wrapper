@@ -1,5 +1,5 @@
 # Flaky tests of MPICH's C test suite over this project in GitHub Actions, over
-# **MPICH 5.0.2rc1 built from source, on every architecture**. A test here may fail
+# **MPICH 5.0.2rc2 built from source, on every architecture**. A test here may fail
 # or pass without failing the gate; check-tap.py prints which it did either way.
 #
 # One line per test, `<dir>/<program> <np> : why`, the same grammar the xfail

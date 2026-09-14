@@ -309,11 +309,11 @@ expected-failure list:
 
 | environment | MPI | gates? | list(s) it gates against |
 |---|---|---|---|
-| `suite` × x86_64 | MPICH 5.0.2rc1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
-| `suite` × aarch64 | MPICH 5.0.2rc1, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
+| `suite` × x86_64 | MPICH 5.0.2rc2, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
+| `suite` × aarch64 | MPICH 5.0.2rc2, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
 | `suite` × x86_64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
 | `suite` × aarch64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
-| `suite-i386` | MPICH 5.0.2rc1, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
+| `suite-i386` | MPICH 5.0.2rc2, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
 
 **Each of those five runs as four jobs**, one per shard of the suite — **eighteen
 legs**, not twenty: `rma` is excluded on the two Open MPI legs, for the measured and
@@ -351,7 +351,7 @@ suite.
 
 The two implementations are not symmetric and the lists should not be expected to
 look alike. MPICH's 5.0.x series is a complete MPI-5.0 — 5.0.1 was the first
-release that was, and 5.0.2rc1 is the pin — and its own header says
+release that was, and 5.0.2rc2 is the pin — and its own header says
 `MPI_VERSION 5` / `MPI_SUBVERSION 0`, so it provides the ABI's whole
 surface including the `_c` large-count forms. Open MPI 5.0.10 still declares
 `MPI_VERSION 3` / `MPI_SUBVERSION 1` and still has no `_c` entry point at all, so

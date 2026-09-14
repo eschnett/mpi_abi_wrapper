@@ -196,11 +196,11 @@ jobs:
       matrix:
         include:
           - mpi: mpich
-            version: 5.0.2rc1
+            version: 5.0.2rc2
             os: ubuntu-24.04
             arch: x86_64
           - mpi: mpich
-            version: 5.0.2rc1
+            version: 5.0.2rc2
             os: ubuntu-24.04-arm
             arch: aarch64
           - mpi: openmpi
@@ -867,7 +867,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/opt/mpi-mpich
-          key: mpi1-mpich-ubuntu-24.04-${{ runner.arch }}-5.0.2rc1-${{ hashFiles('ci-scripts/install-mpich.sh') }}
+          key: mpi1-mpich-ubuntu-24.04-${{ runner.arch }}-5.0.2rc2-${{ hashFiles('ci-scripts/install-mpich.sh') }}
           restore-keys: mpi1-mpich-ubuntu-24.04-${{ runner.arch }}-
 
       # **`cache-matched-key`, not `cache-hit`.** `cache-hit` is 'true' only for an
@@ -876,9 +876,9 @@ jobs:
       # that is already sitting in the prefix -- which is the whole cost the
       # fallback was added to avoid. `cache-matched-key` is empty only when nothing
       # was restored at all.
-      - name: Build and install MPICH 5.0.2rc1
+      - name: Build and install MPICH 5.0.2rc2
         if: steps.cache-mpi.outputs.cache-matched-key == ''
-        run: ci-scripts/install-mpich.sh "${PREFIX}" 5.0.2rc1
+        run: ci-scripts/install-mpich.sh "${PREFIX}" 5.0.2rc2
 
       # Intel's oneAPI compilers come from Intel's own apt repository, and the
       # environment they need comes from setvars.sh rather than from PATH alone.
@@ -1163,7 +1163,7 @@ jobs:
   # xfail-openmpi.txt) stay where they are and describe that machine.
   #
   # **The MPIs are the current MPICH prerelease and the current Open MPI, built
-  # from source, and the two are not symmetric.** MPICH is pinned to 5.0.2rc1, a
+  # from source, and the two are not symmetric.** MPICH is pinned to 5.0.2rc2, a
   # release *candidate*, which is deliberate and is the one bend in NOTES.md #9's
   # released-tarball rule that ci-scripts/README.md names: 5.0.2 carries three
   # fixes to MPICH's own ABI layer and testing it before it ships is the point.
@@ -1240,7 +1240,7 @@ jobs:
       # than from dividing the alphabet:
       #
       #                        MPICH 5.0.1   Open MPI (4.1.6, the shape)
-      #                        (as measured; the pin is now 5.0.2rc1)
+      #                        (as measured; the pin is now 5.0.2rc2)
       #   coll                    9.8 min       4.6 min
       #   rma                     3.8 min      37.1 min
       #   threads+pt2pt+part     11.8 min      19.3 min
@@ -1320,7 +1320,7 @@ jobs:
       matrix:
         leg:
           - mpi: mpich
-            version: 5.0.2rc1
+            version: 5.0.2rc2
             os: ubuntu-24.04
             arch: x86_64
             launcher: hydra
@@ -1336,7 +1336,7 @@ jobs:
             # finishes rather than a hang.
             timelimit_args: "--time-limit=timelimit-ci-mpich.txt"
           - mpi: mpich
-            version: 5.0.2rc1
+            version: 5.0.2rc2
             os: ubuntu-24.04-arm
             arch: aarch64
             launcher: hydra
@@ -1647,7 +1647,7 @@ jobs:
   # linux/386 is native on an x86_64 kernel, so this costs about what the 64-bit
   # rows cost and needs no qemu.
   suite-i386:
-    name: suite / mpich 5.0.2rc1 / i386 / ${{ matrix.shard.name }}
+    name: suite / mpich 5.0.2rc2 / i386 / ${{ matrix.shard.name }}
     runs-on: ubuntu-24.04
     # **The same multiplier the other MPICH rows set, which this row had been
     # missing.** ci-scripts/suite/README.md measures why it exists: `coll/reduce 10`
@@ -1739,7 +1739,7 @@ jobs:
           echo "SUITE_OUT=${RUNNER_TEMP}/suite-i386" >>"${GITHUB_ENV}"
           mkdir -p "${RUNNER_TEMP}/suite-i386"
 
-      # The prefix is at /out/opt/mpich-5.0.2rc1 *inside* the container whatever the
+      # The prefix is at /out/opt/mpich-5.0.2rc2 *inside* the container whatever the
       # host mounted /out from, which is what makes it cacheable at all: an
       # installed MPI bakes absolute paths into mpicc, its RPATHs and its libtool
       # files, and on the next run those have to mean the same thing. This job is
@@ -1750,7 +1750,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/suite-i386/opt
-          key: mpi-i386-5.0.2rc1-${{ hashFiles('ci-scripts/install-mpich.sh') }}
+          key: mpi-i386-5.0.2rc2-${{ hashFiles('ci-scripts/install-mpich.sh') }}
 
       # **Diagnostics for one unexplained event, not a fix.** In run 32155423441
       # this row died 51 minutes in with "The runner has received a shutdown
@@ -1799,8 +1799,8 @@ jobs:
         id: probe
         if: always()
         run: |
-          if [[ -x ${SUITE_OUT}/opt/mpich-5.0.2rc1/bin/mpicc && \
-                -x ${SUITE_OUT}/opt/mpich-5.0.2rc1/bin/mpiexec ]]; then
+          if [[ -x ${SUITE_OUT}/opt/mpich-5.0.2rc2/bin/mpicc && \
+                -x ${SUITE_OUT}/opt/mpich-5.0.2rc2/bin/mpiexec ]]; then
               echo "complete=true" >>"${GITHUB_OUTPUT}"
           else
               echo "complete=false" >>"${GITHUB_OUTPUT}"
@@ -1857,7 +1857,7 @@ jobs:
   # Half of that reason has just been retired and the other half has not.
   # MPICH's half used to be that 5.0.1's libmpi_abi installed as .so.0, because
   # -version-info never reached libtool; 5.0.2 fixes it (upstream 537078668) and
-  # the MPICH rows above are pinned to 5.0.2rc1, so a tarball with a working
+  # the MPICH rows above are pinned to 5.0.2rc2, so a tarball with a working
   # soname now exists. What is untested is whether that is *enough* for these
   # rows, which also need mpif's header substitution and its pruning of
   # everything the ABI does not define -- and moving them is a change to which

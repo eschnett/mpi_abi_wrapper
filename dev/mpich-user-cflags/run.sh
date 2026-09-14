@@ -2,7 +2,7 @@
 
 # Does a user's CFLAGS reach MPICH's embedded modules? See README.md.
 #
-#   dev/mpich-user-cflags/run.sh [<tag>...]     # default: 5.0.1 5.0.2rc1
+#   dev/mpich-user-cflags/run.sh [<tag>...]     # default: 5.0.1 5.0.2rc1 5.0.2rc2
 #
 # The probe is `configure` alone -- no build -- because the question is what each
 # sub-configure is *handed*, and configure prints that. That makes it a few
@@ -12,7 +12,7 @@
 
 set -uo pipefail
 
-tags=${*:-"5.0.1 5.0.2rc1"}
+tags=${*:-"5.0.1 5.0.2rc1 5.0.2rc2"}
 marker=-Wno-error=incompatible-pointer-types
 work=${MPIABI_WORK:-$(mktemp -d)} || exit 1
 mkdir -p "$work" || exit 1       # mktemp -d makes its own; an override may not
@@ -61,6 +61,6 @@ for tag in $tags; do
 done
 
 echo
-echo "Expect: 5.0.1 has the flag everywhere; 5.0.2rc1 drops it for every"
-echo "'reset' module and keeps it for every 'plain' one."
+echo "Expect: 5.0.1 and 5.0.2rc2 have the flag everywhere; 5.0.2rc1 alone drops"
+echo "it for every 'reset' module while keeping it for every 'plain' one."
 exit $status
