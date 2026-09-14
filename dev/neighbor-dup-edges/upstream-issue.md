@@ -11,28 +11,63 @@ Neighbor_alltoallw datatype error), neither of which is this.
 **Body:**
 
 For a Cartesian neighbourhood whose neighbour list contains the same process more
-than once, the nonblocking neighbourhood collectives deliver block `s` into block
-`s`, where MPI-4.1 Example 8.10 requires block `s` of the sender to arrive in
-block `s^1` of the receiver. The blocking forms of the same calls honour the
-standard, so the two halves of the library disagree with each other.
+than once, `MPI_Ineighbor_alltoall` puts each arriving block in the wrong slot.
+`MPI_Neighbor_alltoall` on the very same communicator puts it in the right one,
+so the blocking and nonblocking paths of the library disagree with each other.
 
 Reproduced on 5.0.6, 5.0.10 and `main` (6.1.0a1).
 
-### Reproducer
+### The topology, and what "slot" means
 
-Build a 3-D Cartesian communicator with two degenerate periodic dimensions, so
-four of the six blocks are exchanged with self and the neighbour list repeats:
+A 3-D Cartesian communicator, all three dimensions periodic, whose first two
+dimensions have extent 1:
 
 ```c
 int dims[3] = { 1, 1, size }, periods[3] = { 1, 1, 1 };
-MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, 0, &cart);
+MPI_Cart_create(MPI_COMM_WORLD, 3, dims, periods, /*reorder=*/0, &cart);
 for (int d = 0; d < 3; d++)
     MPI_Cart_shift(cart, d, 1, &nbrs[2*d], &nbrs[2*d+1]);
+```
+
+A Cartesian neighbourhood has 2 x ndims neighbours, ordered per dimension:
+**slot `2d` is the negative-direction neighbour and slot `2d+1` the
+positive-direction one** — exactly the pair `MPI_Cart_shift` returns for
+dimension `d`. Call that index the *slot*.
+
+Shifting along a periodic dimension of extent 1 lands on yourself, so slots 0-3
+are all self here and only dimension 2 has real neighbours. At 4 ranks, rank 0's
+neighbour list is
+
+```
+slot:  0  1  2  3  4  5
+rank:  0  0  0  0  3  1
+```
+
+**That repetition is the point of the test.** Four slots name the same process, so
+an implementation that matches an arriving block to a slot by *which rank sent
+it* cannot tell those four apart; only the slot index distinguishes them.
+
+### The matching rule
+
+What I send in the negative direction of dimension `d` reaches that neighbour as
+having come from *its* positive direction — so my slot `2d` block arrives in its
+slot `2d+1`, and vice versa. The pairing is therefore always "the other slot of
+the same dimension": 0 with 1, 2 with 3, 4 with 5. Since `2d` and `2d+1` differ
+only in the low bit, that is `slot ^ 1`, which is the shorthand the code uses.
+Nothing about this pairing is special to the topology above; the topology only
+supplies the duplicate edges that make a mismatch observable.
+
+So with `sendbuf[slot] = rank * 6 + slot`, the receive buffer is known in closed
+form:
+
+```c
 for (int s = 0; s < 6; s++) {
     sbuf[s]     = rank * 6 + s;
-    expected[s] = nbrs[s] * 6 + (s ^ 1);   /* MPI-4.1 Example 8.10 */
+    expected[s] = nbrs[s] * 6 + (s ^ 1);   /* their slot s^1 lands in my slot s */
 }
 ```
+
+### Reproducer
 
 Full source attached below. `mpicc neighb_dup.c && mpiexec -n 4 ./a.out`:
 
@@ -50,10 +85,14 @@ no mismatches at all.
 
 ### Expected versus actual
 
-MPI-4.1 Example 8.10 fixes the matching: the block sent in the negative direction
-of dimension `d` is received into block `2*d+1` of the neighbour, and vice versa.
-So block `s` of the sender lands in block `s^1` of the receiver — `s^1` swapping
-0 with 1 and 2 with 3. The nonblocking path uses the identity instead.
+Open MPI's nonblocking path uses the identity instead: the block arrives in the
+same slot it was sent from. In the output above rank 0's slot 0 holds `0`, which
+is rank 0's own slot-0 value, where the standard says it should hold `1`, its
+slot-1 value. MPI-4.1 Example 8.10 states the rule.
+
+The self-edges are what make this visible at all: for slots 0-3 both the correct
+and the incorrect answer come from rank 0, so the sender's identity cannot
+distinguish them and only the payload can.
 
 ### Versions
 

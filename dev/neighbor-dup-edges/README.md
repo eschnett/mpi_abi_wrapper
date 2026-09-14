@@ -17,17 +17,49 @@ build/mpi/openmpi/bin/mpiexec -n 4 /tmp/nd
 compiler that is not installed, the same quirk `CLAUDE.md` records for `mpifort`
 and `dev/abort-exit-status/run.sh` handles with `MPIABI_PROBE_CC`.
 
+`nbrs_show.c` beside it prints the neighbour list the topology actually produces,
+which is how the table below was obtained rather than reasoned out:
+
+```sh
+OMPI_CC=clang build/mpi/openmpi/bin/mpicc -o /tmp/ns dev/neighbor-dup-edges/nbrs_show.c
+build/mpi/openmpi/bin/mpiexec -n 4 /tmp/ns
+```
+
+## The topology, and what a slot is
+
+A Cartesian neighbourhood has `2 * ndims` neighbours in a fixed order: for each
+dimension `d`, **slot `2d` is the negative-direction neighbour and slot `2d+1`
+the positive-direction one** — the pair `MPI_Cart_shift` returns for that
+dimension. "Slot" below means that index, and it indexes the blocks of the
+send and receive buffers too.
+
+The probe builds a 3-D grid, `dims = {1, 1, size}`, all three dimensions
+periodic. Shifting along a periodic dimension of extent 1 lands on *yourself*, so
+slots 0-3 are self and only dimension 2 has real neighbours. Rank 0's list:
+
+| ranks | slot 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|
+| 4 | 0 | 0 | 0 | 0 | 3 | 1 |
+| 2 | 0 | 0 | 0 | 0 | 1 | 1 |
+| 1 | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**The repetition is the whole point.** Four slots name the same process, so an
+implementation that decides where an arriving block goes by *which rank sent it*
+cannot tell those four apart; only the slot index can.
+
 ## What the standard says
 
-MPI-4.1 Example 8.10 fixes the matching for a Cartesian neighbourhood: the block
-sent in the negative direction of dimension `d` is received into block `2*d+1` of
-the neighbour and vice versa — so **block `s` of the sender lands in block `s^1`
-of the receiver**. `s^1` swaps 0 with 1 and 2 with 3.
+What I send in the negative direction of dimension `d` reaches that neighbour as
+having come from *its* positive direction, so my slot `2d` block lands in its
+slot `2d+1`, and vice versa. The pairing is always "the other slot of the same
+dimension" — 0 with 1, 2 with 3, 4 with 5 — which is `slot ^ 1`, since `2d` and
+`2d+1` differ only in the low bit. MPI-4.1 Example 8.10 states the rule. **None
+of this is special to the topology above**; the topology only supplies the
+duplicate edges that make a mismatch observable.
 
-The probe builds a 3-D grid with `dims = {1, 1, size}` and all dimensions
-periodic, so four of the six blocks are exchanged with self and the neighbour
-list repeats. With `sendbuf[s] = rank * NSLOT + s` the expected receive buffer is
-known in closed form, `nbrs[s] * NSLOT + (s ^ 1)`.
+With `sendbuf[slot] = rank * NSLOT + slot` the expected receive buffer is known
+in closed form, `nbrs[slot] * NSLOT + (slot ^ 1)` — for rank 0 at four ranks,
+`[1, 0, 3, 2, 23, 10]`.
 
 ## The measurement
 
@@ -47,7 +79,9 @@ same four ranks, against every Open MPI on the development laptop:
 | `build/mpi/openmpi` | 5.0.10 — the version CI wraps | passes | **fails** |
 | `build/mpi/ompi-main-prefix` | 6.1.0a1 (`main`) | passes | **fails** |
 
-Every mismatch is the identity matching where the standard asks for `s^1`:
+Every mismatch is the identity matching — the block arrives in the slot it was
+sent from — where the standard asks for `slot ^ 1`. Rank 0's slot 0 holds `0`,
+which is rank 0's own slot-0 value, where it should hold `1`, its slot-1 value:
 
 ```
 MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
