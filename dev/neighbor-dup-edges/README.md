@@ -7,6 +7,10 @@ what makes the three `coll/neighb_dup_edges` lines in
 `ci-scripts/suite/xfail-ci-openmpi.txt` an attributed failure rather than a
 placeholder.
 
+**Reported upstream as open-mpi/ompi#14430** (2026-09-14, open). That issue is
+what would retire those three lines: an Open MPI release carrying its fix turns
+them into `EXPECTED FAILURE THAT PASSED` and the gate will say so.
+
 ```sh
 source scripts/host-env.sh
 OMPI_CC=clang build/mpi/openmpi/bin/mpicc -o /tmp/nd dev/neighbor-dup-edges/neighb_dup.c

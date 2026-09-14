@@ -190,6 +190,12 @@ session/session_re_init 4 : an erroneous argument the implementation would have 
 # it is attributed, and the attribution is a measurement rather than a reading:
 # the same source built with Open MPI's own mpicc, no wrapper anywhere, fails the
 # identical check. dev/neighbor-dup-edges/ has the probe and the standard's rule.
+#
+# **Reported as open-mpi/ompi#14430**, and that is what retires these three lines:
+# 5.0.6, 5.0.10 and main (6.1.0a1) all fail, so there is no Open MPI release to
+# move to and no version bump that makes them go away. When a release carries the
+# fix, check-tap.py reports them as EXPECTED FAILURE THAT PASSED and asks for the
+# deletion.
 
 coll/neighb_dup_edges 4 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
 coll/neighb_dup_edges 2 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1

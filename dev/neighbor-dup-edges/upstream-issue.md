@@ -1,4 +1,5 @@
-Draft for open-mpi/ompi. Not filed from this repository — Erik posts it.
+**Filed as open-mpi/ompi#14430** on 2026-09-14. Kept here as the source of
+that text, so a later edit has something to diff against.
 
 A search of open-mpi/ompi found no existing report; the nearest neighbours are
 #11756 (rank reorder in MPI_Dist_graph_create) and #10740 (Fortran
