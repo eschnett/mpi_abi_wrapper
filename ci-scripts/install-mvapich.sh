@@ -32,7 +32,7 @@
 #   2. src/include/mpi_proto.h, which mpi.h includes, holds 387 `_c`
 #      prototypes. So this is the **second implementation in CI carrying the
 #      ABI's large-count surface** -- NOTES.md #9's version table has MPICH
-#      >= 4.0 as the only one, and Open MPI 5.0.10 still has no `_c` entry
+#      >= 4.0 as the only one, and Open MPI 5.0.11 still has no `_c` entry
 #      point at all. Decision 6's stubs are as nearly-empty here as over MPICH.
 #   3. configure.ac has --enable-mpi-abi (default no) and the tree has
 #      src/binding/abi/mpi_abi.h, which places the base at MPICH 4.3-or-later,

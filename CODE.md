@@ -449,7 +449,7 @@ fall out of date, and it is what a host like macOS 26 under Open MPI 5.0.x
 (`HISTORY.md` #2.13) produces.
 
 The first six pass on macOS against a distro Open MPI and on Linux against
-MPICH 5.0.2rc2 and Open MPI 5.0.10 built from source by
+MPICH 5.0.2rc2 and Open MPI 5.0.11 built from source by
 `ci-scripts/install-mpich.sh` / `install-openmpi.sh`. The two new ones are so
 far measured only on macOS against conda MPICH 4.3.1, where all eight pass and
 the launcher leg reports two distinct ranks through `bin/mpiexec` and
@@ -587,7 +587,7 @@ step added tests and no failures: `datatype/createf90types` at rc1, and
 
 The two lists above are the **local** rows and are pinned to the pair of MPIs
 named in them. **CI runs five environments of its own**, each with its own list:
-`suite` over MPICH 5.0.2rc2 and Open MPI 5.0.10 built from the pinned tarballs, on
+`suite` over MPICH 5.0.2rc2 and Open MPI 5.0.11 built from the pinned tarballs, on
 x86_64 and aarch64, and `suite-i386` over a MPICH 5.0.2rc2 built inside a
 `linux/386` container. Each gates against a shared `xfail-ci-<mpi>.txt` plus a
 per-architecture `xfail-ci-<mpi>-<arch>.txt`, which `check-tap.py` reads as one

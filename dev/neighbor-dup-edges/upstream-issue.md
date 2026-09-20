@@ -16,7 +16,7 @@ than once, `MPI_Ineighbor_alltoall` puts each arriving block in the wrong slot.
 `MPI_Neighbor_alltoall` on the very same communicator puts it in the right one,
 so the blocking and nonblocking paths of the library disagree with each other.
 
-Reproduced on 5.0.6, 5.0.10 and `main` (6.1.0a1).
+Reproduced on 5.0.6, 5.0.10 and `main` (6.1.0a1); 5.0.11 carries the same code.
 
 ### The topology, and what "slot" means
 
@@ -102,6 +102,7 @@ distinguish them and only the payload can.
 | 5.0.6 | passes | fails |
 | 5.0.10 | passes | fails |
 | 6.1.0a1 (`main`) | passes | fails |
+| 5.0.11 | not run — `nbc_ineighbor_alltoall.c` is unchanged in the release | |
 
 macOS/arm64 in each case; nothing about the reproducer is platform-specific.
 

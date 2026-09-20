@@ -200,10 +200,13 @@ rather than as a list.
   makes the common case a 1:1 mapping, since the `_c` variants exist there. It
   is an expectation, not a hard floor.
 
-  **And it is not met by any released Open MPI.** Open MPI 5.0.10 defines
-  `MPI_VERSION 3` / `MPI_SUBVERSION 1` and has **no `_c` entry point at all** —
-  `MPI_Send_c`, `MPI_Type_create_struct_c` and the rest of the family are simply
-  absent from its header. So the MPI-4.0 configure check is a warning rather
+  **And it is not met by any released Open MPI.** Open MPI 5.0.11 — the newest
+  of the series, and the pin — defines `MPI_VERSION 3` / `MPI_SUBVERSION 1` and
+  has **no `_c` entry point at all**: `MPI_Send_c`, `MPI_Type_create_struct_c`
+  and the rest of the family are simply absent from its header. Re-checked
+  against 5.0.11's own sources rather than carried forward — its `VERSION` file
+  says `mpi_standard_version=3` / `mpi_standard_subversion=1`, and
+  `ompi/include/mpi.h.in` has zero matches for `_c(`. So the MPI-4.0 configure check is a warning rather
   than a hard error, and the enforced floor is MPI-3.0. It is worth knowing that
   the mechanism is **load-bearing on day one** and not a contingency for exotic
   implementations.
@@ -223,7 +226,7 @@ rather than as a list.
   mpif legs of §10 wrap — declares `MPI_VERSION 5` / `MPI_SUBVERSION 0` and
   declares `MPI_Send_c` and the rest in its ordinary `mpi.h`. So the
   large-count half of the surface is exercised over Open MPI there, where over
-  5.0.10 it is entirely decision 6's stubs.
+  5.0.11 it is entirely decision 6's stubs.
 
   Either way **`MPI_Get_version` answers 5.0**, because that is the standard
   *this library* presents (decision 24); what the wrapped implementation

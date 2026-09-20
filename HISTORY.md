@@ -1605,7 +1605,7 @@ authority column and the generator freezes each tally.
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
 | MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
 | Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
-| CI Open MPI suite failures | 105, and 110 elsewhere | **102** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
+| CI Open MPI suite failures | 105, and 110 elsewhere; then 110 again in the same README | **104** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
 | this project's own `ctest` suite | 13, then "fourteen" | **15** on a default build | `ctest -N`; 16 `add_test` lines, one of them behind `MPI_ABI_SANITIZE` and eight behind `MPI_ABI_BUILD_WRAPPER` |
 | CI jobs, and legs | "ten" jobs, "thirty-eight" legs | **12** and **44** | the `jobs:` keys of `ci.yaml`, and its matrices expanded with `exclude:` applied |
 | legs that are the MPICH suite | "twenty" | **18** | `suite`'s 14 + `suite-i386`'s 4; twenty is five environments x four shards *before* `exclude:` drops `rma` on the two Open MPI legs |
@@ -1621,6 +1621,15 @@ read while the right ones sat in the history. The CI Open MPI count was wrong in
 three documents at once (the list's own header at 105, `CODE.md` at 104, and
 `ci-scripts/suite/README.md` at 110) and the three agreed with each other rather
 than with `grep`, which is what an authority column is for.
+
+**And the 110 came back — because it was never one occurrence.**
+`ci-scripts/suite/README.md` said 110 in two places, its own count line and its
+closing file map, and the correction that took the first left the second, which
+then outlived two changes to the artifact. It is 104 now, and both sites carry
+the `grep` that produces it, because a number written down without the command
+that re-derives it is a number the next reader has to trust rather than check.
+The general form: fix a wrong count with `grep -c`, not with an editor's
+first match.
 
 **The three CI-shape rows came for free with the report-only fix, which is the
 argument for looking at a whole sentence rather than the clause you came to

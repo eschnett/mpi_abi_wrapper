@@ -1,5 +1,5 @@
 # Flaky tests of MPICH's C test suite over this project in GitHub Actions, over
-# **Open MPI 5.0.10 built from source, on both architectures**. A test here may fail
+# **Open MPI 5.0.11 built from source, on both architectures**. A test here may fail
 # or pass without failing the gate; check-tap.py prints which it did either way.
 #
 # Same grammar and same anti-rot rules as the xfail lists: a reason is required, a

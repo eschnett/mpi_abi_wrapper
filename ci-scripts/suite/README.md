@@ -311,8 +311,8 @@ expected-failure list:
 |---|---|---|---|
 | `suite` × x86_64 | MPICH 5.0.2rc2, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-x86_64.txt` |
 | `suite` × aarch64 | MPICH 5.0.2rc2, from source | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-aarch64.txt` |
-| `suite` × x86_64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
-| `suite` × aarch64 | Open MPI 5.0.10, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
+| `suite` × x86_64 | Open MPI 5.0.11, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-x86_64.txt` |
+| `suite` × aarch64 | Open MPI 5.0.11, from source | **yes** | `xfail-ci-openmpi.txt` + `xfail-ci-openmpi-aarch64.txt` |
 | `suite-i386` | MPICH 5.0.2rc2, from source, in a `linux/386` container | **yes** | `xfail-ci-mpich.txt` + `xfail-ci-mpich-i386.txt` |
 
 **Each of those five runs as four jobs**, one per shard of the suite — **eighteen
@@ -353,9 +353,11 @@ The two implementations are not symmetric and the lists should not be expected t
 look alike. MPICH's 5.0.x series is a complete MPI-5.0 — 5.0.1 was the first
 release that was, and 5.0.2rc2 is the pin — and its own header says
 `MPI_VERSION 5` / `MPI_SUBVERSION 0`, so it provides the ABI's whole
-surface including the `_c` large-count forms. Open MPI 5.0.10 still declares
+surface including the `_c` large-count forms. Open MPI 5.0.11 still declares
 `MPI_VERSION 3` / `MPI_SUBVERSION 1` and still has no `_c` entry point at all, so
-that half of the ABI is decision 6's stubs on its legs. MPICH 5.0.x can implement
+that half of the ABI is decision 6's stubs on its legs — re-read out of 5.0.11's
+own `VERSION` (`mpi_standard_version=3` / `mpi_standard_subversion=1`) and
+`ompi/include/mpi.h.in` (zero matches for `_c(`) rather than carried forward. MPICH 5.0.x can implement
 the standard ABI itself, and these legs deliberately do not ask it to: that is
 behind `--enable-mpi-abi` and a separate `mpicc_abi`, and wrapping a library that
 already exports the ABI is a *different* oracle, the one that refuses at load on
@@ -528,8 +530,9 @@ only memory skips in rma are the two 5 GB tests — `epochtest` and
 at `memory_total=4`. The whole rma directory cost 523.9 s of test time. That run's
 wrapper was built against `/usr/lib/aarch64-linux-gnu/openmpi`, which is the **4.1.6
 Ubuntu 24.04 ships**, on the same architecture as one of the legs that now dies,
-while CI's Open MPI legs build **5.0.10 from source** (`ci-scripts/install-openmpi.sh`,
-`version=${2:-5.0.10}`). So the variable between "runs the dtp list green" and "takes
+while CI's Open MPI legs build **5.0.11 from source** (`ci-scripts/install-openmpi.sh`,
+`version=${2:-5.0.11}`; the pin was 5.0.10 when every measurement in this section
+was taken, and none has been re-timed). So the variable between "runs the dtp list green" and "takes
 the runner down" is the implementation, not the memory and not this project.
 
 **And there is a mechanism that fits exactly this directory and nothing else.**
@@ -883,10 +886,11 @@ Everything needed is on disk. **`ci-scripts/suite/run-suite.sh`** is the runner 
 `--dirs`, `--skip-dirs`, `--xfail`, the teed runtests invocation and the environment
 it exports; **`ci-scripts/suite/mpiexec-filter`** is the launcher the suite actually
 gets, and its header explains `--oversubscribe` and the watchdog;
-**`ci-scripts/suite/xfail-ci-openmpi.txt`** holds the 110 expectations and states the
+**`ci-scripts/suite/xfail-ci-openmpi.txt`** holds the 104 expectations
+(`grep -cvE '^\s*(#|$)'`, which is how check-tap.py reads it) and states the
 rma gap in its own header; **`.github/workflows/ci.yaml`**'s `suite` job holds the
 shard matrix and is where a per-leg environment variable would go;
-**`ci-scripts/install-openmpi.sh`** builds the 5.0.10 being wrapped;
+**`ci-scripts/install-openmpi.sh`** builds the 5.0.11 being wrapped;
 **`ci-scripts/run-linux-docker.sh`** and **`ci-scripts/suite/i386-suite.sh`** are the
 local-container route. On the suite's own side, unpack the pinned tarball and read
 `test/mpi/maint/dtp-test-config.txt` for the annotations and `test/mpi/runtests` for

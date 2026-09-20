@@ -16,7 +16,7 @@ unmapped value through. Measured, not hypothetical: MPICH 4.3.1 has
 MPI_COMBINER_VALUE_INDEX as `= 20` in an enum, and an `#ifdef` on it answers no.
 
 **Why not a version test.** `#if MPI_VERSION >= 4` was the obvious spelling and
-is wrong in both directions. Open MPI 5.0.10 reports MPI-3.1 and has sessions
+is wrong in both directions. Open MPI 5.0.11 reports MPI-3.1 and has sessions
 and partitioned communication, so a version test would stub what is there; and
 the ABI is MPI-5.0 while the enforced floor is MPI-3.0 (decision 3), so the gap
 is 200-odd entry points rather than a handful. Asking the implementation's own
