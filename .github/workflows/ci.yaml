@@ -1862,7 +1862,10 @@ jobs:
   # rows, which also need mpif's header substitution and its pruning of
   # everything the ABI does not define -- and moving them is a change to which
   # commit mpif itself is tested at, which is mpif's pin to move, not this
-  # workflow's.
+  # workflow's. It has since moved it: OMPI_COMMIT is now a7b1e6d6 =
+  # `v6.0.0rc1^{}`, so these rows build Open MPI's first ABI-carrying release
+  # candidate rather than a commit off `main`. That arrived through
+  # ci-scripts/mpif-version.sh's pin, exactly as this paragraph says it should.
   mpif-mpi:
     name: mpif-mpi / ${{ matrix.mpi }} / ${{ matrix.role }}
     runs-on: ubuntu-24.04

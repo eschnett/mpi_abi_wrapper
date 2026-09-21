@@ -65,7 +65,9 @@ That is not a prediction: it is what happened to mpif, whose
 `install-mpi-header.sh` cloned the stubs *unpinned* through v1.0.0, and which
 the mpif rows of §10 caught failing on exactly this. mpif v1.0.1 pins them to
 `a8470014` and drops the two hunks upstream took, which is why
-`ci-scripts/mpif-version.sh` names that version and not the one before it.
+`ci-scripts/mpif-version.sh` moved off v1.0.0 and has never gone back. It names
+a commit descended from v1.0.1 now, for the unrelated reason recorded there; the
+stubs pin is still `a8470014` at that commit, checked against both revisions.
 
 **Whether `patch` refuses or reverse-applies is decided by which `patch` it
 is**, which is why two accounts of this both stood and disagreed. Measured
@@ -221,12 +223,21 @@ rather than as a list.
   with no narrowing check and no staged count array, and failing it buys a
   ceiling at `INT_MAX` rather than a missing entry point.
 
-  **True of every release, and no longer true of `main`.** Open MPI's
-  development branch — the commit mpif pins for its ABI rows, and the one the
-  mpif legs of §10 wrap — declares `MPI_VERSION 5` / `MPI_SUBVERSION 0` and
-  declares `MPI_Send_c` and the rest in its ordinary `mpi.h`. So the
-  large-count half of the surface is exercised over Open MPI there, where over
-  5.0.11 it is entirely decision 6's stubs.
+  **True of every release, and no longer true of the v6.0 line.** Open MPI
+  v6.0.0rc1 — the commit mpif now pins for its ABI rows, and the one the mpif
+  legs of §10 wrap — declares `MPI_VERSION 5` / `MPI_SUBVERSION 0` and declares
+  `MPI_Send_c` and the rest in its ordinary `mpi.h`: **158** `_c` prototypes
+  against 5.0.11's **zero**
+  (`grep -cE '^OMPI_DECLSPEC .* MPI_[A-Za-z_]+_c\(' ompi/include/mpi.h.in` on
+  each). So the large-count half of the surface is exercised over Open MPI
+  there, where over 5.0.11 it is entirely decision 6's stubs.
+
+  That used to read "no longer true of `main`", and it was accurate: mpif
+  pinned `003e0ca0`, an ancestor of `main`. The pin has since moved to
+  `a7b1e6d6`, which is `v6.0.0rc1^{}`, so the sentence is now about a release
+  candidate rather than a development branch — a better footing for a claim
+  §10's oracles rest on, and the reason `ci-scripts/mpif-version.sh` moved with
+  it.
 
   Either way **`MPI_Get_version` answers 5.0**, because that is the standard
   *this library* presents (decision 24); what the wrapped implementation
