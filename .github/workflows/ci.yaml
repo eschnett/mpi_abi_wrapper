@@ -148,7 +148,7 @@ jobs:
           # nothing else does: that release provides 466 of the ABI's 688
           # *standard* entry points, so it is where decision 6's
           # MPI_ERR_UNSUPPORTED_OPERATION paths are exercised most broadly. The
-          # suite rows no longer share this pin -- they build Open MPI 5.0.10
+          # suite rows no longer share this pin -- they build Open MPI 5.0.11
           # from source -- so moving this image
           # now costs only what this row measures, where before it would have
           # invalidated a 168-line expected-failure list.
@@ -204,11 +204,11 @@ jobs:
             os: ubuntu-24.04-arm
             arch: aarch64
           - mpi: openmpi
-            version: 5.0.10
+            version: 5.0.11
             os: ubuntu-24.04
             arch: x86_64
           - mpi: openmpi
-            version: 5.0.10
+            version: 5.0.11
             os: ubuntu-24.04-arm
             arch: aarch64
           # MVAPICH is the third implementation NOTES.md #9's matrix asks for,
@@ -433,7 +433,7 @@ jobs:
       #
       # One thing it does not cover: the script exports
       # OMPI_MCA_btl_vader_single_copy_mechanism=none, which is the Open MPI
-      # 4.x spelling and a no-op on 5.0.10. If the 5.0.10 leg ever shows
+      # 4.x spelling and a no-op on 5.0.11. If the 5.0.11 leg ever shows
       # single-copy errors, the variable to add here is OMPI_MCA_smsc=^cma.
       - name: Build and test
         env:
@@ -1170,7 +1170,7 @@ jobs:
   # The 5.0.x series is a complete MPI-5.0 -- its header says MPI_VERSION 5 /
   # MPI_SUBVERSION 0 -- so it provides the ABI's
   # whole surface including the `_c` large-count forms, and decision 6's stubs
-  # have almost nothing left to cover. Open MPI 5.0.10 still declares
+  # have almost nothing left to cover. Open MPI 5.0.11 still declares
   # MPI_VERSION 3 / MPI_SUBVERSION 1 and still has no `_c` entry point at all, so
   # that half of the ABI is stubs answering MPI_ERR_UNSUPPORTED_OPERATION on its
   # rows. Both facts were read out of the releases' own headers, not assumed.
@@ -1212,8 +1212,16 @@ jobs:
   # shutdown signal. That leaves no TAP line for a list to excuse, so it now costs a
   # re-run rather than a silent pass -- which is the trade this workflow is choosing,
   # because report-only made that death invisible and it went unexamined for a day.
-  # If it recurs on a schedule rather than at random, ci-scripts/suite/README.md's
-  # "Debugging the rma dtp shard" is the method that localised the last one.
+  #
+  # **It has happened three times and always to this leg** -- runs 32655819244,
+  # 34379533295 and 35604450370, `openmpi / x86_64 / rest` each time, never aarch64
+  # and never another shard. ci-scripts/README.md has the three checks that tell it
+  # apart from a real failure, of which the sharpest is that the collect-TAP step is
+  # *skipped* rather than failed: `if: always()` steps are skipped only when the job
+  # is cancelled, so there is no TAP, and a leg that produced no TAP has made no
+  # statement about the wrapper. Three of three on one leg is past coincidence; if
+  # it recurs, ci-scripts/suite/README.md's "Debugging the rma dtp shard" is the
+  # method that localised the last resource death.
   #
   # Each row keeps its TAP file and logs as an artifact either way: a green run's TAP
   # is what `run-suite.sh --gate-only` re-reads to write the next list without paying
@@ -1348,7 +1356,7 @@ jobs:
             # 180-second limit.
             timelimit_args: "--time-limit=timelimit-ci-mpich.txt"
           - mpi: openmpi
-            version: 5.0.10
+            version: 5.0.11
             os: ubuntu-24.04
             arch: x86_64
             launcher: prte
@@ -1369,7 +1377,7 @@ jobs:
             # timelimit-ci-openmpi.txt has the per-line reasons and why 30 seconds.
             timelimit_args: "--time-limit=timelimit-ci-openmpi.txt"
           - mpi: openmpi
-            version: 5.0.10
+            version: 5.0.11
             os: ubuntu-24.04-arm
             arch: aarch64
             launcher: prte
@@ -1428,7 +1436,7 @@ jobs:
         exclude:
           - leg:
               mpi: openmpi
-              version: 5.0.10
+              version: 5.0.11
               os: ubuntu-24.04
               arch: x86_64
               launcher: prte
@@ -1440,7 +1448,7 @@ jobs:
               args: "--dirs=rma"
           - leg:
               mpi: openmpi
-              version: 5.0.10
+              version: 5.0.11
               os: ubuntu-24.04-arm
               arch: aarch64
               launcher: prte
@@ -1862,7 +1870,10 @@ jobs:
   # rows, which also need mpif's header substitution and its pruning of
   # everything the ABI does not define -- and moving them is a change to which
   # commit mpif itself is tested at, which is mpif's pin to move, not this
-  # workflow's.
+  # workflow's. It has since moved it: OMPI_COMMIT is now a7b1e6d6 =
+  # `v6.0.0rc1^{}`, so these rows build Open MPI's first ABI-carrying release
+  # candidate rather than a commit off `main`. That arrived through
+  # ci-scripts/mpif-version.sh's pin, exactly as this paragraph says it should.
   mpif-mpi:
     name: mpif-mpi / ${{ matrix.mpi }} / ${{ matrix.role }}
     runs-on: ubuntu-24.04

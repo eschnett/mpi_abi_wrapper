@@ -32,6 +32,13 @@
 # cannot hold here at all: no released Open MPI implements the ABI, so mpif pins
 # a commit for both roles, and a reference has to be one that functions.
 #
+# That commit is no longer one off `main`. mpif moved OMPI_COMMIT to a7b1e6d6 =
+# `v6.0.0rc1^{}`, the first Open MPI release candidate carrying the standard ABI,
+# so the reference is now a tagged RC rather than a development-branch snapshot.
+# "No *released* Open MPI implements the ABI" is still exactly true -- an rc is
+# not a release -- but the gap is now one tag wide. ci-scripts/mpif-version.sh
+# has the checks behind that and why this repository pins mpif by commit.
+#
 # MPICH's half of that reason is now retired. 5.0.1's libmpi_abi installed as
 # .so.0 because -version-info never reached libtool; 5.0.2 fixes it (upstream
 # 537078668) and install-mpich.sh is pinned to 5.0.2rc2, so a tarball with the

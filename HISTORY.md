@@ -1111,6 +1111,42 @@ three trees to have neither bug. What that does not settle is the release —
 #7960 targets `main`, and `5.0.x`, the branch 5.0.2 is cut from, still carried
 `$1_$2=""`. `dev/mpich-user-cflags/` has all of it.
 
+### 2.22 "An upstream changelog predicts which expected failures a bump will flip"
+
+Bumping the Open MPI pin to 5.0.11 came with a written prediction, put in
+`xfail-ci-openmpi.txt`'s header on purpose so the next reader would not be
+surprised. Seven of 5.0.11's changelog entries are partitioned communication —
+MPI_PROC_NULL support, `Fixed MPI_Parrived for null and inactive requests`
+(upstream #14003), a mismatched-types fix — and the file carried exactly seven
+unattributed `part/` lines plus `threads/part/mt_parrived_wait 2`, every one of
+them failing as "expected N but received 0.0 at buf[N]". The inference was
+almost too neat: those eight are where an `EXPECTED FAILURE THAT PASSED` will
+land, if it lands anywhere.
+
+**All eight still fail, unchanged.** What flipped in run 35596438798 was
+`threads/comm/idup_deadlock 4`, which 5.0.11's changelog does not mention at
+all: it had hung to its 30 s cap on both architectures in runs 33907363144,
+34070670476 and 34872081954 — six observations for six, all under 5.0.10 — and
+passed on x86_64 in 0.199 s. The same run moved `threads/pt2pt/threads 2` the
+other way on the same architecture: 4.95–8.19 s of reliable passes across those
+same six observations, then a 600 s hang.
+
+The mechanism is not mysterious in hindsight, which is the trap. 5.0.11 reworks
+MPI_THREAD_MULTIPLE synchronisation — "Fixed critical race in wait_sync on
+weakly-ordered architectures", plus acquire/release barriers on the
+sendreq/recvreq paths and the sync-struct handoff — and both tests that moved are
+MPI_THREAD_MULTIPLE tests. A changelog records what upstream set out to fix and
+what it noticed it had fixed. It does not record what a race-condition fix does
+to somebody else's deadlocking test, because upstream never ran it.
+
+So the prediction was not badly reasoned, it was reasoning where a measurement
+was available. The rule the bump followed anyway is the one that saved it: move
+the pin, change no list line, let a real run write the delta. `check-tap.py`
+gates in both directions precisely so that the answer arrives as a red leg
+naming the test rather than as a quiet miscalibration, and it did. The
+prediction is left in the header, marked wrong, rather than edited away — a
+guess that is corrected teaches more than one that is deleted.
+
 ---
 
 ## 3. What each stage settled
@@ -1605,9 +1641,10 @@ authority column and the generator freezes each tally.
 | **vtable slots** | **1376** | **1366** | `gen/report.txt`; 683 × 2, the five deleted entry points having no slot |
 | MPICH suite failures | 45, then 43 | 41, then **40** | `wc -l` on `ci-scripts/suite/xfail-mpich.txt`; decision 24 retired `init/version` |
 | Open MPI suite failures | 171 | 168, then **167** | ditto for `xfail-openmpi.txt`, and the same line |
-| CI Open MPI suite failures | 105, and 110 elsewhere | **102** | `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
+| CI Open MPI suite failures | 105, and 110 elsewhere; then 110 again in the same README | **103** | `grep -cvE '^\s*(#\|$)' ci-scripts/suite/xfail-ci-openmpi.txt`, which is how `check-tap.py` reads it |
 | this project's own `ctest` suite | 13, then "fourteen" | **15** on a default build | `ctest -N`; 16 `add_test` lines, one of them behind `MPI_ABI_SANITIZE` and eight behind `MPI_ABI_BUILD_WRAPPER` |
 | CI jobs, and legs | "ten" jobs, "thirty-eight" legs | **12** and **44** | the `jobs:` keys of `ci.yaml`, and its matrices expanded with `exclude:` applied |
+| capped testlist lines | 41 | **42**, then 43 with `^threads` | run-suite.sh's own `capped N line(s)` per shard, summed: 0 + 35 + 7 in run 35596438798 |
 | legs that are the MPICH suite | "twenty" | **18** | `suite`'s 14 + `suite-i386`'s 4; twenty is five environments x four shards *before* `exclude:` drops `rma` on the two Open MPI legs |
 
 **The three expected-failure-list rows are the same failure twice over, and the
@@ -1621,6 +1658,15 @@ read while the right ones sat in the history. The CI Open MPI count was wrong in
 three documents at once (the list's own header at 105, `CODE.md` at 104, and
 `ci-scripts/suite/README.md` at 110) and the three agreed with each other rather
 than with `grep`, which is what an authority column is for.
+
+**And the 110 came back — because it was never one occurrence.**
+`ci-scripts/suite/README.md` said 110 in two places, its own count line and its
+closing file map, and the correction that took the first left the second, which
+then outlived two changes to the artifact. It is 104 now, and both sites carry
+the `grep` that produces it, because a number written down without the command
+that re-derives it is a number the next reader has to trust rather than check.
+The general form: fix a wrong count with `grep -c`, not with an editor's
+first match.
 
 **The three CI-shape rows came for free with the report-only fix, which is the
 argument for looking at a whole sentence rather than the clause you came to

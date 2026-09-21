@@ -541,7 +541,7 @@ if(MPI_ABI_BUILD_WRAPPER)
 
   # The implementation is *expected* to provide the MPI-4.0 API, which is what
   # makes the common case a 1:1 mapping -- but it is an expectation and not a
-  # floor (NOTES.md #1). Open MPI 5.0.10 reports MPI-3.1 and has no _c entry
+  # floor (NOTES.md #1). Open MPI 5.0.11 reports MPI-3.1 and has no _c entry
   # points at all, and it is a perfectly good implementation to wrap: every
   # one of them is served by narrowing onto its small twin (NOTES.md #5.10).
   # So failing this check costs a ceiling at INT_MAX rather than a missing
@@ -793,7 +793,7 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # Every guard in the generated sources tests one of this file's
   # MPIWRAPPER_HAVE_<name>, and the only exact answer comes from asking the
   # compiler about the implementation's own header. MPI_VERSION is a proxy that
-  # both over- and under-reports (Open MPI 5.0.10 says MPI-3.1 and has
+  # both over- and under-reports (Open MPI 5.0.11 says MPI-3.1 and has
   # sessions); nm misses what the header provides as a macro; and `#ifdef` on
   # the implementation's own name misses what it provides as an *enumerator*,
   # which is how MPICH provides MPI_COMBINER_* and Open MPI MPI_THREAD_*. The

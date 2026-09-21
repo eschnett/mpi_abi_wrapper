@@ -3347,7 +3347,7 @@ def emit_wrappers_c(pairs, handwritten_bodies):
             body = macro_lines(head, emit_body(ep))
             # Decision 6: an entry point the implementation does not have keeps
             # its slot and reports at run time. The probe is what decides, not
-            # a version test -- Open MPI 5.0.10 reports MPI-3.1 and has
+            # a version test -- Open MPI 5.0.11 reports MPI-3.1 and has
             # sessions, so MPI_VERSION is a proxy that would stub what is
             # there.
             chunk.append(f"#ifdef MPIWRAPPER_HAVE_{ep.name}")

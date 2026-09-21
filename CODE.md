@@ -449,7 +449,7 @@ fall out of date, and it is what a host like macOS 26 under Open MPI 5.0.x
 (`HISTORY.md` #2.13) produces.
 
 The first six pass on macOS against a distro Open MPI and on Linux against
-MPICH 5.0.2rc2 and Open MPI 5.0.10 built from source by
+MPICH 5.0.2rc2 and Open MPI 5.0.11 built from source by
 `ci-scripts/install-mpich.sh` / `install-openmpi.sh`. The two new ones are so
 far measured only on macOS against conda MPICH 4.3.1, where all eight pass and
 the launcher leg reports two distinct ranks through `bin/mpiexec` and
@@ -578,7 +578,7 @@ used to make a red run green.
 Every count in this section is `grep -cvE '^\s*(#|$)'` on the file named, which
 is how `check-tap.py` reads it. The CI lists, at run 34855861925: **41** in
 `xfail-ci-mpich.txt` with **0**, **0** and **3** in its x86_64, aarch64 and i386
-deltas, and **104** in `xfail-ci-openmpi.txt` with **1** and **0** in its two.
+deltas, and **103** in `xfail-ci-openmpi.txt` with **1** and **0** in its two.
 The empty ones are measurements, not placeholders. The whole suite at the
 5.0.2rc2 pin is **846** tests over MPICH — 793 passed, 41 failed, 12 skipped by
 the suite — where 5.0.2rc1's was 843/790/41/12 and 5.0.1's 842/789/41/12. Each
@@ -587,7 +587,7 @@ step added tests and no failures: `datatype/createf90types` at rc1, and
 
 The two lists above are the **local** rows and are pinned to the pair of MPIs
 named in them. **CI runs five environments of its own**, each with its own list:
-`suite` over MPICH 5.0.2rc2 and Open MPI 5.0.10 built from the pinned tarballs, on
+`suite` over MPICH 5.0.2rc2 and Open MPI 5.0.11 built from the pinned tarballs, on
 x86_64 and aarch64, and `suite-i386` over a MPICH 5.0.2rc2 built inside a
 `linux/386` container. Each gates against a shared `xfail-ci-<mpi>.txt` plus a
 per-architecture `xfail-ci-<mpi>-<arch>.txt`, which `check-tap.py` reads as one
@@ -612,9 +612,9 @@ before it can report. The counts, by
 | list | lines |
 |---|---|
 | `xfail-ci-mpich.txt` + `-i386` delta | **41** + **3** (x86_64 and aarch64 deltas are empty) |
-| `xfail-ci-openmpi.txt` + `-x86_64` delta | **104** + **1** |
-| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **4**, **9** |
-| `timelimit-ci-openmpi.txt` | **16** patterns over 41 lines, 18 of them seen to hang |
+| `xfail-ci-openmpi.txt` + `-x86_64` delta | **103** + **1** |
+| `flaky-ci-mpich.txt`, `flaky-ci-openmpi.txt` | **4**, **11** |
+| `timelimit-ci-openmpi.txt` | **17** patterns (`grep -cE '^[0-9]+ '`) over **43** testlist lines. The line count is the one figure here that no `grep` on this repository can produce: it is run-suite.sh's own `capped N line(s)` total, summed over the three shards, which are disjoint by construction. Run 35596438798 printed 0 in `coll`, 35 in `p2p` and 7 in `rest` — **42**, where this row had said 41 — and the `^threads` pattern added since caps one more, the single `threads 2` line that is the whole of `threads/pt2pt/testlist` |
 | `exclude-ci-openmpi.txt` | **2**, both inert while `rma` is off the Open MPI legs |
 
 The authority for both is `grep -cvE '^\s*(#|$)' ci-scripts/suite/xfail-*.txt`,

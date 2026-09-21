@@ -1,6 +1,6 @@
 # `dev/neighbor-dup-edges/`
 
-**Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the wrong block
+**Open MPI 5.0.x's *nonblocking* neighbourhood collectives use the wrong block
 matching when a neighbour list repeats a process; its blocking ones get it
 right.** Measured with Open MPI's own `mpicc` and no wrapper anywhere, which is
 what makes the three `coll/neighb_dup_edges` lines in
@@ -82,6 +82,15 @@ same four ranks, against every Open MPI on the development laptop:
 | `build/mpi/openmpi-native` | 5.0.6 | passes | **fails** |
 | `build/mpi/openmpi` | 5.0.10 — the version CI wraps | passes | **fails** |
 | `build/mpi/ompi-main-prefix` | 6.1.0a1 (`main`) | passes | **fails** |
+
+**5.0.11 was checked at the source rather than run**, because the pin moved to it
+before there was a local build:
+`ompi/mca/coll/libnbc/nbc_ineighbor_alltoall.c` still posts one `NBC_Sched_recv`
+per slot, in slot order, under the schedule's single tag — there is nothing in the
+schedule that could distinguish two slots naming the same rank, which is the
+mechanism this probe demonstrates. Its changelog's one neighbour-collective entry
+is filed under Fortran. So the three `coll/neighb_dup_edges` lines stay; a run is
+what would upgrade this row from read to measured.
 
 Every mismatch is the identity matching — the block arrives in the slot it was
 sent from — where the standard asks for `slot ^ 1`. Rank 0's slot 0 holds `0`,

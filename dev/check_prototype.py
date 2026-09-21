@@ -71,7 +71,7 @@ EXEMPT = {
         "body also changed and this comparison does not see it: S1 wrote "
         "`#if MPI_VERSION >= 4`, and every generated body is now guarded on "
         "MPIWRAPPER_HAVE_<name> from dev/probe_impl.py instead. That is "
-        "decision 6's `#ifdef` made exact -- Open MPI 5.0.10 reports MPI-3.1 "
+        "decision 6's `#ifdef` made exact -- Open MPI 5.0.11 reports MPI-3.1 "
         "and has sessions, so the version test both over- and under-reports.",
     ("wrapper body", "MPI_Waitall"):
         "S3 generates it, and the generated body is S1's code with four "

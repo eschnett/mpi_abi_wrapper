@@ -1,5 +1,5 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over Open MPI 5.0.10 on **x86_64 only**. This is the delta beside
+# over Open MPI 5.0.11 on **x86_64 only**. This is the delta beside
 # xfail-ci-openmpi.txt, which holds what both architectures see; check-tap.py reads
 # the two as one and rejects a test listed in both.
 #

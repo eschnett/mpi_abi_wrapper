@@ -1,5 +1,5 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over **Open MPI 5.0.10 built from source, on both architectures**. Anything true
+# over **Open MPI 5.0.11 built from source, on both architectures**. Anything true
 # of one architecture only belongs in xfail-ci-openmpi-<arch>.txt beside this file;
 # check-tap.py reads the two as one and rejects a test listed in both.
 #
@@ -12,7 +12,7 @@
 # enough to produce results: three of its four shards completed and the fourth did
 # not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
 # / 20, rest 316 / 82. That run put 109 lines here, the failures both architectures
-# produced, and four in the two delta files. **There are 104 now**
+# produced, and four in the two delta files. **There are 103 now**
 # (`grep -cvE '^\s*(#|$)' xfail-ci-openmpi.txt`, which is how check-tap.py reads
 # the file), and one delta line: run 32302208489 failed
 # threads/pt2pt/mt_iprobe_isendrecv 2 on both architectures over five attempts, so
@@ -55,8 +55,38 @@
 # check, dev/neighbor-dup-edges/ -- so the three lines are group (h) rather than
 # (f). Run 34855861925, both architectures, identically.
 #
+# **The pin moved to Open MPI 5.0.11, and the recalibration was one line.** The
+# bump was deliberately a separate commit from any list edit -- check-tap.py gates
+# in both directions, so a line 5.0.11 fixes fails the run by *passing*, and
+# guessing which would be worse than letting a real run say. Run 35596438798 said:
+# `threads/comm/idup_deadlock 4` moved to flaky-ci-openmpi.txt, and nothing else
+# here changed. 104 became 103.
+#
+# **The prediction that came with the bump was wrong, and it is worth leaving
+# wrong on the record.** It named the eight partitioned-communication lines -- the
+# seven unattributed `part/` ones plus `threads/part/mt_parrived_wait 2` -- as
+# where an EXPECTED FAILURE THAT PASSED would land, on the grounds that seven of
+# 5.0.11's changelog entries are partitioned communication, including
+# `Fixed MPI_Parrived for null and inactive requests` (upstream #14003). **All
+# eight still fail, unchanged.** What actually moved was a MPI_THREAD_MULTIPLE
+# deadlock nothing in the changelog names as a fix, in the release that reworks
+# MPI_THREAD_MULTIPLE synchronisation. The lesson is the one this project keeps
+# relearning: a changelog says what upstream *meant* to change, and only a run
+# says what changed.
+#
+# **What it does not fix, checked in the release's own sources rather than
+# inferred from the changelog**: 5.0.11 still declares MPI_VERSION 3 /
+# MPI_SUBVERSION 1 (its VERSION file, `mpi_standard_version=3` /
+# `mpi_standard_subversion=1`) and still has no `_c` entry point (zero matches for
+# `_c(` in ompi/include/mpi.h.in), so group (a) stands; and
+# ompi/mca/coll/libnbc/nbc_ineighbor_alltoall.c still posts one recv per slot in
+# slot order under a single schedule tag, with nothing to tell duplicate
+# neighbours apart, so the three coll/neighb_dup_edges lines stand too. The
+# changelog's one neighbour-collective entry is filed under Fortran.
+#
 # **And 105 became 104 when threads/comm/idup_comm_gen 4 moved to
-# flaky-ci-openmpi.txt.** It had been an unattributed line here and passed in run
+# flaky-ci-openmpi.txt** -- then 104 became 103 when its sibling idup_deadlock
+# followed it there at 5.0.11, for the same reason and to the same place. It had been an unattributed line here and passed in run
 # 34863951924 after failing in the two before it, which is a listed failure
 # failing the gate by passing -- the one thing an xfail line cannot express. The
 # move also gave it a reason: Open MPI returns MPI_ERR_INTERN from MPI_Comm_dup
@@ -87,11 +117,15 @@
 # ci-scripts/suite/README.md has the rest, including the run ids for every
 # measurement above.
 #
-# **Excluding rma does not by itself make these legs gate, and they stay
-# report-only.** One thing is still outstanding and it is not rma: `openmpi /
+# **These legs gate now, and this paragraph used to say they did not.** It read
+# "they stay report-only" long after .github/workflows/ci.yaml's suite job stopped
+# saying so -- "Every row here gates, and none of them is report-only any more" --
+# which matters to anyone judging what a change to this file costs: a listed test
+# that passes takes the workflow red rather than printing a note. What was
+# outstanding when that sentence was written, and is not rma, is that `openmpi /
 # aarch64 / p2p` finished in ten minutes in one run and was killed after fifty in
 # the next. Open MPI has a shard that hangs intermittently as well as the one that
-# died reproducibly, and a green Open MPI leg needs that settled too.
+# died reproducibly; the legs gate regardless, so that now costs a re-run.
 #
 # **A prediction this file used to carry was wrong and is corrected here.** It said
 # the largest group would be decision 6's stubs answering
@@ -200,13 +234,17 @@ session/session_re_init 4 : an erroneous argument the implementation would have 
 #
 # **Reported as open-mpi/ompi#14430**, and that is what retires these three lines:
 # 5.0.6, 5.0.10 and main (6.1.0a1) all fail, so there is no Open MPI release to
-# move to and no version bump that makes them go away. When a release carries the
+# move to and no version bump that makes them go away. **5.0.11 does not, checked
+# in its sources rather than run**: ompi/mca/coll/libnbc/nbc_ineighbor_alltoall.c
+# still posts one recv per slot in slot order under a single schedule tag, with
+# nothing that could tell duplicate neighbours apart, and the one
+# neighbour-collective entry in its changelog is filed under Fortran. When a release carries the
 # fix, check-tap.py reports them as EXPECTED FAILURE THAT PASSED and asks for the
 # deletion.
 
-coll/neighb_dup_edges 4 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
-coll/neighb_dup_edges 2 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
-coll/neighb_dup_edges 1 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.10's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+coll/neighb_dup_edges 4 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.x's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+coll/neighb_dup_edges 2 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.x's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
+coll/neighb_dup_edges 1 : a Cartesian neighbourhood whose neighbour list repeats a process: MPI-4.1 Example 8.10 puts block s of the sender in block s^1 of the receiver, and Open MPI 5.0.x's *nonblocking* neighbourhood collectives use the identity matching instead -- its blocking ones get it right, so the two halves of one implementation disagree. Measured without the wrapper, four ranks, Open MPI's own mpicc: MPI_Neighbor_alltoall passes and MPI_Ineighbor_alltoall fails the same 16 blocks (dev/neighbor-dup-edges/). New in the 5.0.2rc2 suite, which added the test alongside MPICH's own fix for it (6d7c89b05); it passes over MPICH. Observed: MPI_Ineighbor_alltoall: rank 0 block 0 is 0, expected 1
 
 # --- (f) measured, not yet attributed ------------------------------------------
 
@@ -220,7 +258,6 @@ pt2pt/sendself 1 : not yet attributed. Observed: expected (1,2) at 0x…, but fo
 pt2pt/sendself 2 : not yet attributed. Observed: expected (1,2) at 0x…, but found (0,1)
 pt2pt/recvnull 1 : not yet attributed. Observed: *** An error occurred in MPI_Irecv
 pt2pt/pt2pt_large 2 : not yet attributed. Observed: i = 0, expect 1, got 0
-threads/comm/idup_deadlock 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/comm/idup_nb 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/init/mult_session 4 : not yet attributed. Observed: Could not find key thread_level
 threads/part/mt_parrived_wait 2 : not yet attributed. Observed: Rank 1 tid 2 expected 32.0 but received 0.0 at buf[32] (partition 4 count 8 off 0), iteration 0
@@ -263,8 +300,9 @@ threads/pt2pt/mt_ibsendirecv 2 : not yet attributed. Observed: -----------------
 # run -- so for a test that flaps, listing it fails the runs it passes and not listing
 # it fails the runs it fails. There is no placement of these four that is stable, and
 # moving them between this file and the per-architecture ones only moves which run goes
-# red. They are left listed because they fail far more often than they pass; the p2p
-# legs are report-only, so the cost is noise rather than a blocked merge.
+# red. They are left listed because they fail far more often than they pass. That
+# used to cost nothing because the p2p legs were report-only; they gate now, so a
+# run in which one of the four passes goes red and wants a re-run.
 #
 # Fixing it properly means either attributing the underlying MPI_ERR_COUNT bug, or
 # giving check-tap.py a way to say "may fail or pass" -- which is a change to what the
