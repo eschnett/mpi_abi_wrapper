@@ -886,7 +886,7 @@ Everything needed is on disk. **`ci-scripts/suite/run-suite.sh`** is the runner 
 `--dirs`, `--skip-dirs`, `--xfail`, the teed runtests invocation and the environment
 it exports; **`ci-scripts/suite/mpiexec-filter`** is the launcher the suite actually
 gets, and its header explains `--oversubscribe` and the watchdog;
-**`ci-scripts/suite/xfail-ci-openmpi.txt`** holds the 104 expectations
+**`ci-scripts/suite/xfail-ci-openmpi.txt`** holds the 103 expectations
 (`grep -cvE '^\s*(#|$)'`, which is how check-tap.py reads it) and states the
 rma gap in its own header; **`.github/workflows/ci.yaml`**'s `suite` job holds the
 shard matrix and is where a per-leg environment variable would go;

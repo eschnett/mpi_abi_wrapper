@@ -12,7 +12,7 @@
 # enough to produce results: three of its four shards completed and the fourth did
 # not (see "rma" below). Per shard, on aarch64: coll 192 tests / 8 failed, p2p 137
 # / 20, rest 316 / 82. That run put 109 lines here, the failures both architectures
-# produced, and four in the two delta files. **There are 104 now**
+# produced, and four in the two delta files. **There are 103 now**
 # (`grep -cvE '^\s*(#|$)' xfail-ci-openmpi.txt`, which is how check-tap.py reads
 # the file), and one delta line: run 32302208489 failed
 # threads/pt2pt/mt_iprobe_isendrecv 2 on both architectures over five attempts, so
@@ -55,23 +55,24 @@
 # check, dev/neighbor-dup-edges/ -- so the three lines are group (h) rather than
 # (f). Run 34855861925, both architectures, identically.
 #
-# **The pin moved to Open MPI 5.0.11 and these 104 lines have not been
-# recalibrated against it.** They were written over 5.0.10, and the bump is
-# deliberately a separate commit from any list edit: check-tap.py gates in both
-# directions, so a line that 5.0.11 fixes fails the run by *passing*, and
-# guessing which ones here would be worse than letting a real run say. The
-# recalibration is `--gate-only` over the next run's TAP file.
+# **The pin moved to Open MPI 5.0.11, and the recalibration was one line.** The
+# bump was deliberately a separate commit from any list edit -- check-tap.py gates
+# in both directions, so a line 5.0.11 fixes fails the run by *passing*, and
+# guessing which would be worse than letting a real run say. Run 35596438798 said:
+# `threads/comm/idup_deadlock 4` moved to flaky-ci-openmpi.txt, and nothing else
+# here changed. 104 became 103.
 #
-# **What 5.0.11's changelog puts at risk, named so the next reader is not
-# surprised.** Seven of its entries are partitioned communication -- MPI_PROC_NULL
-# support, `Fixed MPI_Parrived for null and inactive requests` (upstream #14003),
-# a mismatched-types fix, cancelling the setup handshake on free -- and this file
-# carries exactly seven unattributed `part/` lines plus `threads/part/
-# mt_parrived_wait 2`, whose observed failures are all "expected N but received
-# 0.0 at buf[N]". Those eight are where an EXPECTED FAILURE THAT PASSED will land
-# if it lands anywhere. The PML/OB1 barrier and wait_sync fixes in the same
-# release touch what the mt_*probe* family and mt_sendrecv_huge do, but those are
-# in flaky-ci-openmpi.txt, which tolerates either outcome.
+# **The prediction that came with the bump was wrong, and it is worth leaving
+# wrong on the record.** It named the eight partitioned-communication lines -- the
+# seven unattributed `part/` ones plus `threads/part/mt_parrived_wait 2` -- as
+# where an EXPECTED FAILURE THAT PASSED would land, on the grounds that seven of
+# 5.0.11's changelog entries are partitioned communication, including
+# `Fixed MPI_Parrived for null and inactive requests` (upstream #14003). **All
+# eight still fail, unchanged.** What actually moved was a MPI_THREAD_MULTIPLE
+# deadlock nothing in the changelog names as a fix, in the release that reworks
+# MPI_THREAD_MULTIPLE synchronisation. The lesson is the one this project keeps
+# relearning: a changelog says what upstream *meant* to change, and only a run
+# says what changed.
 #
 # **What it does not fix, checked in the release's own sources rather than
 # inferred from the changelog**: 5.0.11 still declares MPI_VERSION 3 /
@@ -84,7 +85,8 @@
 # changelog's one neighbour-collective entry is filed under Fortran.
 #
 # **And 105 became 104 when threads/comm/idup_comm_gen 4 moved to
-# flaky-ci-openmpi.txt.** It had been an unattributed line here and passed in run
+# flaky-ci-openmpi.txt** -- then 104 became 103 when its sibling idup_deadlock
+# followed it there at 5.0.11, for the same reason and to the same place. It had been an unattributed line here and passed in run
 # 34863951924 after failing in the two before it, which is a listed failure
 # failing the gate by passing -- the one thing an xfail line cannot express. The
 # move also gave it a reason: Open MPI returns MPI_ERR_INTERN from MPI_Comm_dup
@@ -256,7 +258,6 @@ pt2pt/sendself 1 : not yet attributed. Observed: expected (1,2) at 0x…, but fo
 pt2pt/sendself 2 : not yet attributed. Observed: expected (1,2) at 0x…, but found (0,1)
 pt2pt/recvnull 1 : not yet attributed. Observed: *** An error occurred in MPI_Irecv
 pt2pt/pt2pt_large 2 : not yet attributed. Observed: i = 0, expect 1, got 0
-threads/comm/idup_deadlock 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/comm/idup_nb 4 : not yet attributed. Observed: --------------------------------------------------------------------------
 threads/init/mult_session 4 : not yet attributed. Observed: Could not find key thread_level
 threads/part/mt_parrived_wait 2 : not yet attributed. Observed: Rank 1 tid 2 expected 32.0 but received 0.0 at buf[32] (partition 4 count 8 off 0), iteration 0

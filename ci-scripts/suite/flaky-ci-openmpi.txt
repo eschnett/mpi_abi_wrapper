@@ -76,6 +76,59 @@ threads/pt2pt/mt_iprobe_isendrecv 2 : Open MPI's, reproduced with no wrapper in 
 # move upgrades the reason as well as the category. Two failures to one pass;
 # promote it back to xfail if the pass turns out to be the outlier.
 
+# **Its sibling followed it here at Open MPI 5.0.11, and the pair is the family
+# timelimit-ci-openmpi.txt already describes.** idup_deadlock was a stable
+# expected failure for as long as anyone had looked: it hung to the 30 s cap on
+# **both** architectures in runs 33907363144, 34070670476 and 34872081954, six
+# observations for six, all under 5.0.10. Run 35596438798 built 5.0.11 and it
+# **passed on x86_64 in 0.199 s** while still hanging to 30.31 s on aarch64 -- a
+# listed failure passing, which is the one thing an xfail line cannot say, and
+# which took the leg red. Worth noting that 0.199 s is a clean pass and not a
+# deadlock that happened to clear just under the cap: the test either deadlocks
+# or finishes two orders of magnitude inside it.
+#
+# Attributed to the version rather than to chance, because the flip is not
+# isolated: the same run moved threads/pt2pt/threads the opposite way on the same
+# architecture (below), and 5.0.11's changelog is unusually concentrated on
+# exactly this area -- "Fixed critical race in wait_sync on weakly-ordered
+# architectures (opal/threads)" plus acquire/release barriers added to the
+# sendreq/recvreq paths and to the sync-struct handoff between a request and
+# test/wait. Two tests that deadlock or hang under MPI_THREAD_MULTIPLE changing
+# behaviour in the release that reworks MPI_THREAD_MULTIPLE synchronisation is
+# the expected shape, not a coincidence worth explaining away.
+#
+# timelimit-ci-openmpi.txt's "the whole threads/comm idup family, because which
+# member hangs moves" said this would happen, and named run-to-run and
+# architecture-to-architecture movement as the reason it caps all five members
+# rather than the one that hung. This is that, one level up: the movement reaches
+# whether a member fails at all, so the category has to tolerate both outcomes too.
+
+threads/comm/idup_deadlock 4 : hangs to its 30 s cap under MPI_THREAD_MULTIPLE, but no longer on every run -- failed on both architectures in runs 33907363144, 34070670476 and 34872081954 (all Open MPI 5.0.10), then passed on x86_64 in 0.199 s while still failing on aarch64 in run 35596438798, the first over 5.0.11. Moved here from xfail-ci-openmpi.txt when that pass made a listed failure fail the gate, exactly as idup_comm_gen above did. Sibling of idup_nb and idup_comm_gen, and the family whose hanging member moves by run and architecture. Observed: The user-provided time limit for job execution has been reached
+
+# **A test that had never failed, and the other half of the same 5.0.11 flip.**
+# threads/pt2pt/threads passed every previous observation and passed them
+# quickly: 4.95 s, 5.06 s and 5.10 s on x86_64 and 7.74 s, 7.77 s and 8.19 s on
+# aarch64, across runs 33907363144, 34070670476 and 34872081954 -- six for six,
+# a spread of under two seconds within each architecture, all under 5.0.10. In
+# run 35596438798 it **hung to 600.4 s on x86_64** and passed on aarch64 in
+# 7.60 s, which is squarely inside that prior spread.
+#
+# So this is a new failure rather than a newly noticed one, which is why it is
+# not simply added to the x86_64 delta file: one observation cannot tell a
+# 5.0.11 regression that will happen every run from a thread-timing flap, and
+# the delta file's job is the first. It is here, where both outcomes are legal,
+# until a second run says which. **Promote it to xfail-ci-openmpi-x86_64.txt if
+# it hangs on x86_64 again and keeps passing on aarch64**; delete it if 5.0.11
+# turns out to pass it as reliably as 5.0.10 did.
+#
+# Capped at 120 s in timelimit-ci-openmpi.txt, for the cost rather than the
+# verdict. The hang was 600 s and not the usual 180 because the suite ships this
+# test with a limit of its own -- `threads 2 timeLimit=600`, the whole of
+# test/mpi/threads/pt2pt/testlist at v5.0.2rc2 -- and that 600 s is most of why
+# this shard took 30m25s against the aarch64 leg's 18m46s in the same run.
+
+threads/pt2pt/threads 2 : hung to 600.4 s on x86_64 in run 35596438798, the first over Open MPI 5.0.11, having passed in 4.95-8.19 s on both architectures in every previous run looked at (33907363144, 34070670476, 34872081954, all 5.0.10) -- and passed on aarch64 in 7.60 s in that same 5.0.11 run. Unattributed beyond the version: 5.0.11 reworks MPI_THREAD_MULTIPLE synchronisation (wait_sync race, sendreq/recvreq barriers) and this is a MPI_THREAD_MULTIPLE test. Here rather than in the x86_64 delta because one observation cannot distinguish a regression from a flap. Observed: The user-provided time limit for job execution has been reached
+
 threads/comm/idup_comm_gen 4 : Open MPI returns MPI_ERR_INTERN from MPI_Comm_dup under MPI_THREAD_MULTIPLE and aborts, intermittently -- failed in runs 34855861925 and 34861559325, passed in 34863951924, same shard and architecture throughout. Moved here from xfail-ci-openmpi.txt when the pass made a listed failure fail the gate. Observed: *** An error occurred in MPI_Comm_dup | *** MPI_ERR_INTERN: internal error
 
 threads/pt2pt/mt_sendrecv_huge 2 : segfaults intermittently inside Open MPI's progress engine on the -count=4194304 invocation -- opal_progress below ompi_sync_wait_mt in libopen-pal.so.80, failing at address 0xfffffffe with no wrapper frame in the backtrace. Failed in run 34855861925 (aarch64) and passed in 34861559325 on the same shard and architecture. Observed: *** Process received signal *** | Signal: Segmentation fault (11)

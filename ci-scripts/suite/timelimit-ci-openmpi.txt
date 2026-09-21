@@ -138,9 +138,35 @@
 # keeps this cap off them.
 30 ^mt_bsendrecv[[:space:]]
 
-# threads/comm/idup_deadlock: its one line hangs. Sits beside idup_nb and
-# comm_idup, which fail and pass respectively in about a second.
+# threads/comm/idup_deadlock: its one line hangs -- though no longer on every
+# run. Open MPI 5.0.11 passed it on x86_64 in 0.199 s while aarch64 still hung to
+# this cap (run 35596438798), which moved it to flaky-ci-openmpi.txt. The cap is
+# unchanged and still earns its place: the aarch64 half still costs 30 s rather
+# than 180, and 0.199 s against a 30 s cap is a 150x margin, so capping a test
+# that now sometimes passes cannot turn the passing half red.
 30 ^idup_deadlock[[:space:]]
+
+# **threads/pt2pt/threads: capped at 120 s, and it is the first entry here whose
+# cap is not 30.** The test is not a hang-every-time like most of this file, and
+# not a sub-second flap like mt_bsendrecv: it *passes* in 4.95-8.19 s -- six
+# observations across runs 33907363144, 34070670476 and 34872081954, both
+# architectures, spread under two seconds within each -- and in run 35596438798,
+# the first over 5.0.11, it hung on x86_64 instead.
+#
+# 30 s would be 3.7x the slowest recorded pass, which is far below the margin
+# every other line here rests on and is exactly the case this file's mt_bsendrecv
+# entry warns about: a flaky test is the one place a cap can change a result
+# rather than only its cost. 120 s is **14.7x** that 8.19 s worst pass, which is
+# a margin a loaded runner cannot eat, and it still cuts 480 s off the hang.
+#
+# **Why the hang was 600 s and not the 180 s default:** the suite ships this one
+# with a limit of its own -- `threads 2 timeLimit=600` is the whole of
+# test/mpi/threads/pt2pt/testlist at v5.0.2rc2, read out of the tag -- so it is
+# the one test here the 180 s default never bounded. The rewrite above strips an
+# existing `timeLimit=` before appending, so 120 replaces 600 rather than
+# colliding with it. That 600 s is most of why the x86_64 p2p shard took 30m25s against the
+# aarch64 leg's 18m46s in the same run.
+120 ^threads[[:space:]]
 
 # threads/comm/idup_comm_gen: its one line hangs.
 30 ^idup_comm_gen[[:space:]]
