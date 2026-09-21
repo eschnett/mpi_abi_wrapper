@@ -183,8 +183,8 @@ excuse, so it costs a re-run. That is the trade being made deliberately: while t
 Open MPI legs were report-only, exactly such a death (run 32655819244, exit 143)
 was reported as a green workflow and went unexamined.
 
-**It has now cost a re-run twice, and the second one is worth reading for how to
-tell it apart from a real failure.** `suite / openmpi 5.0.10 / x86_64 / rest` in
+**It has now cost a re-run three times, and the second one is worth reading for
+how to tell it apart from a real failure.** `suite / openmpi 5.0.10 / x86_64 / rest` in
 run 34379533295 died with the same exit 143 and the same "the runner has received
 a shutdown signal", **21 seconds** into the test run — `=== running the suite` at
 16:56:45, dead at 16:57:07, in `comm` at `cmsplit_type`. Three things say
@@ -196,7 +196,31 @@ is *skipped* rather than failed, so there is no TAP to interpret — a real
 failure leaves one. A leg that dies before producing a TAP has not made a
 statement about the wrapper; re-run it.
 
-**A third instance, with a different signature: `(403) Forbidden` from
+**A third instance of the same death, and the pattern in it is the leg.** Run
+35604450370's `suite / openmpi 5.0.11 / x86_64 / rest` failed 1m52s in, against
+13m12s for the same leg on the run immediately before it. The three checks above
+all say infrastructure again, and one of them is stronger than last time: `rma`
+is still excluded on these legs; the collect-TAP and keep-TAP steps are
+**skipped**, which for steps carrying `if: always()` means the job was cancelled
+rather than failed by an exit code, so there is no TAP to interpret; and the
+previous run's TAP for this leg not only gated green then, it gates green now
+against the *edited* lists, checked locally before this was written. GitHub
+served no log for the job at all, which the earlier two did — so "exit 143" is
+not confirmed here, only the shape.
+
+**What is new is that all three have been the same leg.** Runs 32655819244,
+34379533295 and 35604450370 are `openmpi / x86_64 / rest` every time, never
+aarch64 and never another shard; in this last run the aarch64 `rest` leg
+completed in 4m08s with the identical lists. Three of three on one leg is past
+coincidence and worth saying out loud, even though nothing here yet explains it:
+`rest` is the complement shard, so it is the widest one by directory count, and
+x86_64 is the leg that has historically been co-scheduled with the most other
+jobs. If a fourth lands on the same leg, `ci-scripts/suite/README.md`'s
+"Debugging the rma dtp shard" is the method that localised the last resource
+death, and the thing to instrument is what `rest` is doing in its first two
+minutes — `comm` at `cmsplit_type`, where run 34379533295 died 21 seconds in.
+
+**A fourth instance, with a different signature: `(403) Forbidden` from
 `ListArtifacts`.** In run 34855861925 both `mpif / <mpi> / native` legs failed at
 "Restore the ABI prefix" — `actions/download-artifact` reporting
 `Failed to ListArtifacts: Received non-retryable error: Failed request: (403)`.

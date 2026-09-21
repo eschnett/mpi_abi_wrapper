@@ -1212,8 +1212,16 @@ jobs:
   # shutdown signal. That leaves no TAP line for a list to excuse, so it now costs a
   # re-run rather than a silent pass -- which is the trade this workflow is choosing,
   # because report-only made that death invisible and it went unexamined for a day.
-  # If it recurs on a schedule rather than at random, ci-scripts/suite/README.md's
-  # "Debugging the rma dtp shard" is the method that localised the last one.
+  #
+  # **It has happened three times and always to this leg** -- runs 32655819244,
+  # 34379533295 and 35604450370, `openmpi / x86_64 / rest` each time, never aarch64
+  # and never another shard. ci-scripts/README.md has the three checks that tell it
+  # apart from a real failure, of which the sharpest is that the collect-TAP step is
+  # *skipped* rather than failed: `if: always()` steps are skipped only when the job
+  # is cancelled, so there is no TAP, and a leg that produced no TAP has made no
+  # statement about the wrapper. Three of three on one leg is past coincidence; if
+  # it recurs, ci-scripts/suite/README.md's "Debugging the rma dtp shard" is the
+  # method that localised the last resource death.
   #
   # Each row keeps its TAP file and logs as an artifact either way: a green run's TAP
   # is what `run-suite.sh --gate-only` re-reads to write the next list without paying
