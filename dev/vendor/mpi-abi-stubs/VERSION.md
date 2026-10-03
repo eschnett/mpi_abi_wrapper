@@ -42,6 +42,8 @@ Add `--forward` and the two agree -- Apple `patch` then ignores all three,
 exits 1, and leaves `MPI_Count` intact. mpif v1.0.1 pins the stubs to
 `a8470014`, the same commit named above, so neither outcome is reachable
 there; `ci-scripts/mpif-version.sh` is where this project names that version.
+The mpif revision it names now pins the stubs further on, at `da5245ba`, with a
+patch rebased to match.
 
 Here it is a build failure instead, for two reasons worth knowing rather than
 assuming: `dev/generate_headers.py` checks `patch`'s exit code and raises, and
@@ -61,6 +63,12 @@ What is left for whoever moves the pin, from a diff against `a8470014`:
 - **Re-check the renaming rules** (NOTES.md #2, "Naming"): upstream renamed the
   MPI_T handle tags, `struct MPI_T_enum_t` becoming `struct MPI_ABI_T_enum` and
   five more like it.
+- **Past `a8470014`, expect five functions fewer.** mpi-forum/mpi-abi-stubs#96
+  (in `da5245ba`, the commit mpif pins today) removes the five deprecated
+  MPI-1 attribute routines (`MPI_Attr_get` and the rest), their two callback
+  typedefs and three sentinels, under MPI-5.0 20.2.1. That moves the
+  generator's function list, not just the header; mpif's be049c3/b100db3 are
+  how a consumer followed it.
 - Expect noise in the diff that means nothing: `MPI_ERR_LASTCODE`,
   `MPI_ORDER_C` and `MPI_ORDER_FORTRAN` were respelled from hex to decimal at
   the same values. `MPI_Aint`/`Offset`/`Count` gained an MSVC branch, which is

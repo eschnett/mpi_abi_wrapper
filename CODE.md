@@ -449,7 +449,7 @@ fall out of date, and it is what a host like macOS 26 under Open MPI 5.0.x
 (`HISTORY.md` #2.13) produces.
 
 The first six pass on macOS against a distro Open MPI and on Linux against
-MPICH 5.0.2rc2 and Open MPI 5.0.11 built from source by
+MPICH 5.0.2 and Open MPI 5.0.11 built from source by
 `ci-scripts/install-mpich.sh` / `install-openmpi.sh`. The two new ones are so
 far measured only on macOS against conda MPICH 4.3.1, where all eight pass and
 the launcher leg reports two distinct ranks through `bin/mpiexec` and
@@ -561,7 +561,7 @@ crosses the boundary twice.
 ### MPICH's C test suite
 
 `ci-scripts/suite/run-suite.sh` builds and installs this project, configures
-MPICH 5.0.2rc2's `test/mpi` **against the wrapper's prefix** rather than an MPI's,
+MPICH 5.0.2's `test/mpi` **against the wrapper's prefix** rather than an MPI's,
 runs the tests through `ci-scripts/suite/mpiexec-filter`, and gates the TAP
 output against `xfail-<variant>.txt` with `check-tap.py`.
 
@@ -583,12 +583,15 @@ The empty ones are measurements, not placeholders. The whole suite at the
 5.0.2rc2 pin is **846** tests over MPICH — 793 passed, 41 failed, 12 skipped by
 the suite — where 5.0.2rc1's was 843/790/41/12 and 5.0.1's 842/789/41/12. Each
 step added tests and no failures: `datatype/createf90types` at rc1, and
-`coll/neighb_dup_edges` at three rank counts at rc2. All pass over MPICH.
+`coll/neighb_dup_edges` at three rank counts at rc2. All pass over MPICH. The
+pin is now the `5.0.2` release, which changes no file under `test/mpi` (GitHub's
+`v5.0.2rc2...v5.0.2` compare lists five files, none there), so 846 is expected
+to hold; it is not yet a measurement.
 
 The two lists above are the **local** rows and are pinned to the pair of MPIs
 named in them. **CI runs five environments of its own**, each with its own list:
-`suite` over MPICH 5.0.2rc2 and Open MPI 5.0.11 built from the pinned tarballs, on
-x86_64 and aarch64, and `suite-i386` over a MPICH 5.0.2rc2 built inside a
+`suite` over MPICH 5.0.2 and Open MPI 5.0.11 built from the pinned tarballs, on
+x86_64 and aarch64, and `suite-i386` over a MPICH 5.0.2 built inside a
 `linux/386` container. Each gates against a shared `xfail-ci-<mpi>.txt` plus a
 per-architecture `xfail-ci-<mpi>-<arch>.txt`, which `check-tap.py` reads as one
 file while rejecting a test listed in both — the split exists because three runs

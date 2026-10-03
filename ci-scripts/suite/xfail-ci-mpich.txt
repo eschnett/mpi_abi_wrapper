@@ -1,5 +1,5 @@
 # Expected failures of MPICH's C test suite over this project in GitHub Actions,
-# over **MPICH 5.0.2rc2 built from source, on every architecture** -- x86_64,
+# over **MPICH 5.0.2 built from source, on every architecture** -- x86_64,
 # aarch64 and i386 alike. Anything true of one architecture only belongs in
 # xfail-ci-mpich-<arch>.txt beside this file; check-tap.py reads the two as one
 # and rejects a test listed in both.
@@ -12,6 +12,11 @@
 #
 # **Written from run 32155423441**, the first run of this suite over 5.0.1 with
 # one MPI job per test: 842 tests, 789 passed, 41 failed, 12 skipped by the suite.
+#
+# **The 5.0.2 release is rc2's suite.** It changes no file under test/mpi
+# (GitHub's v5.0.2rc2...v5.0.2 compare: CHANGES, maint/version.m4,
+# modules/libfabric, src/include/mpi.h.in and one ch4/ucx source), so the
+# numbers below are expected to carry over; that is for a run to confirm.
 #
 # **Re-measured twice since, and not one line of this file changed either time.**
 # At the 5.0.2rc1 suite, run 34371453201: 843 tests, 790 passed, 41 failed, 12

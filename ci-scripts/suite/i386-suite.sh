@@ -43,7 +43,7 @@ SRC=${SRC:-/src}
 OUT=/out
 [ -d "$OUT" ] || { echo "$0: /out is not mounted; MPIABI_LINUX_OUT is required" >&2; exit 2; }
 
-version=${MPIABI_I386_MPICH_VERSION:-5.0.2rc2}
+version=${MPIABI_I386_MPICH_VERSION:-5.0.2}
 prefix=$OUT/opt/mpich-$version
 
 step() { printf '\n=== %s\n' "$*"; }

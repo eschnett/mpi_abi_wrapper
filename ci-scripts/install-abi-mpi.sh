@@ -32,19 +32,20 @@
 # cannot hold here at all: no released Open MPI implements the ABI, so mpif pins
 # a commit for both roles, and a reference has to be one that functions.
 #
-# That commit is no longer one off `main`. mpif moved OMPI_COMMIT to a7b1e6d6 =
-# `v6.0.0rc1^{}`, the first Open MPI release candidate carrying the standard ABI,
-# so the reference is now a tagged RC rather than a development-branch snapshot.
-# "No *released* Open MPI implements the ABI" is still exactly true -- an rc is
-# not a release -- but the gap is now one tag wide. ci-scripts/mpif-version.sh
-# has the checks behind that and why this repository pins mpif by commit.
+# Both commits are now tags' commits rather than ones off `main`. mpif pins
+# OMPI_COMMIT to 733f33ec = `v6.0.0rc2^{}`, a release candidate of the first
+# Open MPI line carrying the standard ABI, so "no *released* Open MPI implements
+# the ABI" is still exactly true -- an rc is not a release -- but the gap is one
+# tag wide. ci-scripts/mpif-version.sh has the checks behind that and why this
+# repository pins mpif by commit.
 #
-# MPICH's half of that reason is now retired. 5.0.1's libmpi_abi installed as
-# .so.0 because -version-info never reached libtool; 5.0.2 fixes it (upstream
-# 537078668) and install-mpich.sh is pinned to 5.0.2rc2, so a tarball with the
-# intended soname exists. Whether the soname was the only thing missing is
-# untested -- these rows also need mpif's header substitution and its pruning of
-# everything the ABI does not define -- and the pin is mpif's to move regardless.
+# MPICH's half of that reason is now retired twice over. 5.0.1's libmpi_abi
+# installed as .so.0 because -version-info never reached libtool; 5.0.2 fixes it
+# (upstream 537078668), install-mpich.sh is pinned to the 5.0.2 release, and mpif
+# now pins MPICH_COMMIT to 2597fa69 = `v5.0.2^{}`, the same release. Built from
+# git rather than the tarball still, because these rows also need mpif's header
+# substitution and its pruning of everything the ABI does not define, and that
+# recipe is mpif's.
 
 set -euo pipefail
 
