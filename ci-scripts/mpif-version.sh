@@ -44,34 +44,41 @@
 # pin was `OMPI_COMMIT=003e0ca0`, a direct ancestor of open-mpi/ompi's `main`
 # (`main` 155 ahead of it, 0 behind), so the two `abi` rows tracked Open MPI's
 # *development branch* -- the one thing the paragraph above says these rows exist
-# to avoid, and it was true silently. mpif has since moved that pin to
-# `a7b1e6d6`, which is `v6.0.0rc1^{}` exactly, and that is the revision these rows
-# should build. Three things about the new target, each checked rather than
-# assumed:
+# to avoid, and it was true silently. mpif then moved that pin to `a7b1e6d6` =
+# `v6.0.0rc1^{}` (mpif 0ff0fe37), a change of line rather than a bump along one:
+# v6.0.x forked off `main`, so rc1 and 003e0ca0 had *diverged*, 685 ahead and 692
+# behind.
 #
-#   * **v6.0.0rc1 is a tag; the branch is `v6.0.x`.** `git ls-remote` shows both.
-#   * **It is not a fast-forward from the old pin.** v6.0.0rc1 and 003e0ca0 have
-#     *diverged* -- 685 ahead, 692 behind -- because v6.0.x forked off `main`. So
-#     this is a change of line rather than a bump along one, and the
-#     ci-scripts/mpif-xfail/ warning below applies with more force than usual.
-#   * **v6.0.0rc1 does implement the ABI**, which is the bar install-abi-mpi.sh
-#     sets and the only reason a released tarball cannot serve that role:
-#     config/ompi_configure_options.m4 has `AC_ARG_ENABLE([standard-abi])` and its
-#     VERSION says `mpi_standard_version=5` / `mpi_standard_subversion=0`.
+# **It is now mpif cb016f6, which pins both MPIs to tags.** mpif be049c3 (merged
+# as cb016f6, version 1.0.2, untagged) moves:
 #
-# **And why a commit rather than a tag: mpif has not cut one.** The move landed on
-# mpif's `main` (0ff0fe37, three commits ahead of v1.0.1 and zero behind -- a
-# clean fast-forward) and v1.0.1 is still its newest tag. `main` itself is banned
-# above, and copying OMPI_COMMIT into this repository is what install-git-mpi.sh's
-# header forbids, so the remaining fixed ref is mpif's tip commit. Bump this to
-# the tag when mpif tags it; nothing else needs to change, because the value is
-# still read out of mpif's own installer rather than duplicated here.
+#   * **OMPI_COMMIT to 733f33ec = `v6.0.0rc2^{}`**, checked against `git ls-remote
+#     refs/tags/v6.0.0rc2^{}`. Unlike the last move this *is* a fast-forward along
+#     one line: GitHub's compare API reports rc1...rc2 `ahead`, 108 and 0. Still
+#     unpatched. rc2 does not just fix build plumbing -- `MPI_ERROR` is now set on
+#     empty and null statuses, communicator constructors change what they inherit
+#     (attributes, topology, info), and hwloc goes from 2.7.1 to 2.15.0 -- so the
+#     ci-scripts/mpif-xfail/ warning below applies.
+#   * **MPICH_COMMIT from the `main` commit ab53493d to 2597fa69 = `v5.0.2^{}`**,
+#     the release, with mpif's Darwin weak-export patch restored (Linux rows are
+#     unaffected by it). So the MPICH `abi` rows no longer build a development
+#     snapshot either, and they build the same release as the tarball rows of
+#     install-mpich.sh -- from git, with --enable-mpi-abi and mpif's pruning,
+#     rather than stock.
+#   * **MPI_ABI_STUBS_COMMIT from a8470014 to da5245ba**, which follows
+#     mpi-forum/mpi-abi-stubs#96's removal of the five deprecated MPI-1 attribute
+#     routines from the ABI header. mpif redirects those names onto their MPI-2.0
+#     replacements with `#undef`/`#define`, so its build does not depend on
+#     whether the header it is compiled against -- ours, on the wrapper legs --
+#     still declares them.
 #
-# The delta from v1.0.1 is the Open MPI pin and its dropped fbtl patch, an i_fcoll
-# row retired on 24.04, a libevent warning filter and one predefined-types test
-# edit. MPICH_COMMIT is untouched at ab53493d -- checked against both revisions --
-# so the MPICH `abi` rows build exactly what they built.
-MPIF_VERSION=${MPIF_VERSION:-0ff0fe377230256ad89286c93f27487266662d75}
+# **Why a commit rather than a tag: mpif has not cut one.** v1.0.1 is still its
+# newest tag. `main` itself is banned above, and copying OMPI_COMMIT into this
+# repository is what install-git-mpi.sh's header forbids, so the remaining fixed
+# ref is mpif's tip commit. Bump this to the tag when mpif tags it; nothing else
+# needs to change, because the values are still read out of mpif's own
+# installers rather than duplicated here.
+MPIF_VERSION=${MPIF_VERSION:-cb016f6bbc5060db57c41da06bd7a92271ca1dcd}
 MPIF_REPO=${MPIF_REPO:-https://github.com/eschnett/mpif}
 
 # Clone the pinned mpif into $1, or leave an existing checkout of the right

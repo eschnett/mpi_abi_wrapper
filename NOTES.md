@@ -66,8 +66,11 @@ That is not a prediction: it is what happened to mpif, whose
 the mpif rows of §10 caught failing on exactly this. mpif v1.0.1 pins them to
 `a8470014` and drops the two hunks upstream took, which is why
 `ci-scripts/mpif-version.sh` moved off v1.0.0 and has never gone back. It names
-a commit descended from v1.0.1 now, for the unrelated reason recorded there; the
-stubs pin is still `a8470014` at that commit, checked against both revisions.
+a commit descended from v1.0.1 now, for the reason recorded there, and at that
+commit (cb016f6) mpif's stubs pin has moved on to `da5245ba`, past the
+attribute-routine removal that `dev/vendor/mpi-abi-stubs/VERSION.md` lists for
+whoever re-vendors here. The account below is measured against `a8470014` and
+still describes it.
 
 **Whether `patch` refuses or reverse-applies is decided by which `patch` it
 is**, which is why two accounts of this both stood and disagreed. Measured
@@ -224,8 +227,8 @@ rather than as a list.
   ceiling at `INT_MAX` rather than a missing entry point.
 
   **True of every release, and no longer true of the v6.0 line.** Open MPI
-  v6.0.0rc1 — the commit mpif now pins for its ABI rows, and the one the mpif
-  legs of §10 wrap — declares `MPI_VERSION 5` / `MPI_SUBVERSION 0` and declares
+  v6.0.0rc1 — the first v6.0 commit mpif pinned for its ABI rows, and the one
+  the mpif legs of §10 wrapped then — declares `MPI_VERSION 5` / `MPI_SUBVERSION 0` and declares
   `MPI_Send_c` and the rest in its ordinary `mpi.h`: **158** `_c` prototypes
   against 5.0.11's **zero**
   (`grep -cE '^OMPI_DECLSPEC .* MPI_[A-Za-z_]+_c\(' ompi/include/mpi.h.in` on
@@ -237,7 +240,11 @@ rather than as a list.
   `a7b1e6d6`, which is `v6.0.0rc1^{}`, so the sentence is now about a release
   candidate rather than a development branch — a better footing for a claim
   §10's oracles rest on, and the reason `ci-scripts/mpif-version.sh` moved with
-  it.
+  it. It has since moved again, to `733f33ec` = `v6.0.0rc2^{}`, a fast-forward
+  of 108 commits along v6.0.x that leaves `ompi/include/mpi.h.in` untouched
+  (blob `33810327` at both tags, `gh api
+  'repos/open-mpi/ompi/contents/ompi/include/mpi.h.in?ref=<tag>' --jq .sha`),
+  so the 158 stands.
 
   Either way **`MPI_Get_version` answers 5.0**, because that is the standard
   *this library* presents (decision 24); what the wrapped implementation
@@ -2425,7 +2432,8 @@ that way.
 
 **A second implementation now says the same number, and independently.** MPICH's
 `maint/version.m4` defines `libmpi_abi_so_version_m4` as `1:0:0`, read out of
-the `v5.0.2rc2` tag this project's MPICH rows are pinned to. That value had been
+the `v5.0.2rc2` tag this project's MPICH rows were then pinned to, and still
+`1:0:0` at the `v5.0.2` release they are pinned to now. That value had been
 there and been *inert*: until upstream `537078668`, `configure.ac` misspelled the
 macro and never `AC_SUBST`ed the flag, so libtool fell back to its `0:0:0`
 default and MPICH installed `libmpi_abi.so.0`. Two implementations of ABI 1
@@ -2616,12 +2624,15 @@ step rather than a generator output, so decision 12 survives if this is
 revisited.
 
 **Provisioning MPI in CI** is pinned released tarballs, built from source and
-cached: stock configure, no pruning, no header substitution. The rule has two
-named exceptions and `ci-scripts/README.md` carries both, because that is where
-the installers are: the mpif rows build from mpif's own pinned git commits, and
-**the MPICH rows are deliberately on a release candidate, `5.0.2rc2`**, to find
-out what MPICH 5.0.2's three ABI-layer fixes do to this project before it ships
-rather than after. That pin moves to `5.0.2` final when it is released.
+cached: stock configure, no pruning, no header substitution. The rule has one
+named exception and `ci-scripts/README.md` carries it, because that is where
+the installers are: the mpif rows build from mpif's own pinned git commits.
+There used to be a second — **the MPICH rows sat on release candidates,
+`5.0.2rc1` and then `5.0.2rc2`**, to find out what MPICH 5.0.2's three
+ABI-layer fixes did to this project before it shipped rather than after — and
+it retired when `5.0.2` was released and the pin moved to it. That arc found
+`HISTORY.md` §2.21 upstream before release, which is the case for doing it
+again at the next MPICH that changes the ABI layer.
 
 **One row carries a compiler flag, and it is the ILP32 one.** MPICH's vendored
 libfabric does not compile on 32-bit, so `ci-scripts/suite/i386-suite.sh` passes
