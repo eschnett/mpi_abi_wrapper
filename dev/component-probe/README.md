@@ -43,7 +43,7 @@ again):
 |---|---|---|
 | `libmpi` directly | 24 bytes of the guard written, `sizeof(MPI_Status)` | 24 bytes |
 | `libmpi_abi`, wrapper 1.2.0 | `stack smashing detected` on every rank | 32 bytes |
-| `libmpi_abi`, wrapper with `component_bind.c` | 32 bytes | 32 bytes |
+| `libmpi_abi`, wrapper 1.2.1, with `component_bind.c` | 32 bytes | 32 bytes |
 
 So HPC-X's ROMIO writes exactly the status it is given; the overrun is the
 ABI's 32-byte `MPI_Status_set_elements_x`, reached by the captured component
