@@ -32,7 +32,7 @@ libmpi_abi.so          exports MPI_*/PMPI_* and MPIX_*/PMPIX_* (1386 symbols)
     |                  includes the ABI mpi.h and nothing else
     |  vt->MPI_Send(...)                    ABI types only, 1376 slots
     v
-libmpiwrapper.so       exports mpiwrapper_get_vtable and nothing else
+libmpiwrapper.so       exports mpiwrapper_get_vtable, and on Linux dlopen
     |                  includes the implementation's mpi.h + generated mpiabi.h
     |                  owns every conversion, trampoline and map
     |  MPI_Send(...)                        implementation types, direct call
@@ -122,7 +122,9 @@ ci-scripts/        MPI install and build-shape checks
                        TAP gate, and i386-suite.sh (§10)
 cmake/             FindMPI.cmake (the shim), mpiwrapper_marker.h (the installed
                      self-wrap marker, §8), mpi_abiConfig.cmake.in, mpi_abi.pc.in,
-                     mpi_abi.version (ELF), mpi_abi.exported_symbols (Mach-O)
+                     mpi_abi.version (ELF), mpi_abi.exported_symbols (Mach-O),
+                     mpiwrapper.version, mpiwrapper-linux.version (the same
+                     plus dlopen) and mpiwrapper.exported_symbols
 dev/               the Python generator and the dev-time cross-checks
   generate.py        the generator
   generate_headers.py  the S0 header step, imported rather than duplicated
@@ -133,16 +135,17 @@ dev/               the Python generator and the dev-time cross-checks
   check_out_params.py  the out-parameter check over generated bodies
   apis.json          vendored (dev/vendor/), ~2 MB
   s1-reference/      S1's four hand-written stand-ins, frozen; not compiled
-  abort-exit-status/ dispatch-bench/ dlopen-probe/ get-contents-extent/
-  gpu-query/ handle-map-bench/ large-count-envelope/
-  launcher-env-forwarding/ macos-weak-symbols/ request-identity/
-  suite-timings/ symbol-versioning/ type-identity/ watchdog-orphans/
-  weakdef-probe/
-                       the fifteen probe and measurement directories NOTES.md,
+  abort-exit-status/ component-probe/ dispatch-bench/ dlopen-probe/
+  get-contents-extent/ gpu-query/ handle-map-bench/ large-count-envelope/
+  launcher-env-forwarding/ macos-weak-symbols/ mpich-user-cflags/
+  neighbor-dup-edges/ request-identity/ suite-timings/ symbol-versioning/
+  type-identity/ watchdog-orphans/ weakdef-probe/
+                       the eighteen probe and measurement directories NOTES.md,
                        HISTORY.md and the suite's lists cite -- authority
                        `ls -d dev/*/` less s1-reference, third-implementations
                        and vendor. This list said "nine" and named nine while
-                       there were fourteen
+                       there were fourteen, and later "fifteen" while there
+                       were seventeen
   third-implementations/  what the MVAPICH and Intel MPI rows assume, checked
                        in a container rather than asserted (§11)
 doc/               mpi.h.patch, mpi50-report.pdf
@@ -307,7 +310,8 @@ the rest hold the machinery those bodies and the generated ones share.
 
 | file | what it owns |
 |---|---|
-| `getvtable.c` | the one exported symbol: the handshake, the outward-resolution check, and building the reverse maps |
+| `getvtable.c` | the getter: the handshake, the outward-resolution check, and building the reverse maps |
+| `component_bind.c` | Linux only: the exported `dlopen` that binds what the implementation loads later to the implementation, on the original caller's search path (`NOTES.md` #2, "Components the implementation loads later") |
 | `handles.c` | the eleven classes' conversions, including the perfect-hash reverse map |
 | `constants.c` (generated) | every mapped integer family, as a switch over the implementation's own macros |
 | `status.c` | the 32-byte blob, both directions, plus the keep-`MPI_ERROR` variant |
@@ -526,7 +530,7 @@ imported target and so resolve through the unversioned symlink;
 
 ## 10. Tests
 
-`ctest` runs fifteen tests. Seven need no MPI at all and are the cheapest gate
+`ctest` runs fifteen tests, sixteen on Linux. Seven need no MPI at all and are the cheapest gate
 in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 `-DMPI_ABI_BUILD_WRAPPER=OFF`.
 
@@ -538,8 +542,9 @@ in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 | `out-params-defined` | no | no early return in a generated body leaves an out handle or out scalar undefined — **415 of the 705 generated arms own one**, and the rule closed 71 such returns across 26 entry points, 22 of them in narrowing arms an earlier revision of the check could not see (`NOTES.md` #7 decision 6) |
 | `layout-hash` | no | `MPIWRAPPER_LAYOUT_HASH` still matches the slot list it summarizes |
 | `c-bindings-cross-check` | no | all 693 signatures match MPI-5.0 Appendix A.3, or are one of 9 named exemptions — the ninth being the five `MPIX_` entry points A.3 does not document and never will |
-| `exported-symbols` | no | `libmpi_abi`'s exports are exactly the header's 1386, both directions — the leg that needs no MPI, and the reason this test is registered outside the wrapper block. Given a wrapper it adds two more: `libmpiwrapper` exports exactly one symbol, and the application's only MPI dependency is `libmpi_abi`. Its summary names the legs it ran, so a no-MPI pass cannot be read as all three |
+| `exported-symbols` | no | `libmpi_abi`'s exports are exactly the header's 1386, both directions — the leg that needs no MPI, and the reason this test is registered outside the wrapper block. Given a wrapper it adds two more: `libmpiwrapper` exports exactly the getter — and on Linux `dlopen` beside it — and the application's only MPI dependency is `libmpi_abi`. Its summary names the legs it ran, so a no-MPI pass cannot be read as all three |
 | `isolation-check` | yes | an unisolated wrapper is refused at load, or crashes; a *successful* run of one is the failure |
+| `component_bind_test` | one rank; Linux only | an object loaded after `MPI_Init` reaches the right side: a stand-in component linked to no MPI, loaded by the application, reaches `libmpi_abi`; loaded through the wrapper's `dlopen` — by path lazily, by `$ORIGIN` with `RTLD_NOW`, by bare name found on the *caller's* `DT_RUNPATH` — reaches the implementation, by call and by address |
 | `mpiwrapper_selftest` | one rank | white box: all 103 predefined handles both ways, every constant map, the status blob, staging, the staged-request table **and the policy over it**, the dynamic-handle collision probe, and the capacity behaviour of the maps that have no error channel |
 | `abi_prototype_test` | **two ranks required** for the staged-request round | S1's 29 entry points as an ordinary application over the ABI header. At one rank the nonblocking `MPI_Ialltoallw` is complete on return, so #13.2's (b) frees its block and the table is never exercised |
 | `abi_arrays_test` | two ranks preferred | S3a's classes, and the **lifetime** no generator assertion can see: a persistent `MPI_Alltoallw` started three times, 1200 create/free cycles against a 1024-entry table |
@@ -550,7 +555,7 @@ in CI — `.github/workflows/ci.yaml`'s `checks` job is exactly them, configured
 
 `mpiwrapper_selftest` compiles the conversion runtime into itself rather than
 loading the shared library, so it can walk the maps in both directions. That
-does not weaken the one-exported-symbol property, which `exported-symbols`
+does not weaken the export-set property, which `exported-symbols`
 checks on the library itself.
 
 `-DMPI_ABI_TEST_USE_LAUNCHER=OFF` runs the behavioural tests as singletons for
@@ -668,12 +673,14 @@ they were measured rather than rewritten** -- which is why this paragraph carrie
 the current size instead of editing the rows.
 
 **That size is a build option away from being three different numbers, so it is
-derived rather than stated once.** `grep -c 'add_test' CMakeLists.txt` finds 16,
-and `ctest -N` on a default build lists **15**: seven are registered
-unconditionally, eight more under `if(MPI_ABI_BUILD_WRAPPER)` (default `ON`), and
+derived rather than stated once.** `grep -c 'add_test' CMakeLists.txt` finds 17,
+and `ctest -N` on a default build lists **15**, or **16** on Linux: seven are
+registered unconditionally, eight more under `if(MPI_ABI_BUILD_WRAPPER)`
+(default `ON`) and `component_bind_test` beside them on Linux only, and
 `sanitizer-instrumented` only under `if(MPI_ABI_SANITIZE)`. So a default build is
-15, the `sanitize` job's is 16, and `-DMPI_ABI_BUILD_WRAPPER=OFF` is 7. A row
-recorded on a default build now reads 15/15.
+15 on macOS and 16 on Linux, the `sanitize` job's one more, and
+`-DMPI_ABI_BUILD_WRAPPER=OFF` is 7. A row recorded on a default build now reads
+15/15 or 16/16.
 
 **"two ranks" in this table is now checked rather than asserted.** It used to be
 neither: the tests accept one rank as well as two, so a launcher that answered
@@ -704,6 +711,7 @@ their old evidence.
 | Linux glibc x86_64, Open MPI 5.0.6 | same | **works**, 13/13, two ranks — built from the pinned tarball by `install-openmpi.sh`, GitHub Actions. The only Open MPI 5.x row on Linux |
 | Linux glibc x86_64 and aarch64, MVAPICH 4.1 | same | **works, 12/13**, two ranks — built from the pinned tarball by `install-mvapich.sh`, in a container (`dev/third-implementations/run.sh mvapich`). `abi_arrays_test` is the one failure and it is upstream: `MPI_Dist_graph_create` does not return over MVAPICH's ch4:ofi device, reproduced with two ranks and no wrapper loaded, unaffected by `FI_PROVIDER`. `check-install.sh` passes. Needs `libibverbs-dev`/`librdmacm-dev` to build at all. Confirmed on **GitHub Actions, both arches**, run 32611538158: identical 12/13 with `abi_arrays_test` timing out at the 45 s cap. **The two `linux-source` legs gate**, against `ci-scripts/xfail-ctest-mvapich.txt`'s single line, checked in both directions -- so this row goes red both if another test regresses and if MVAPICH fixes the hang, which is strictly more than the `continue-on-error` it replaced reported. No expected pass count is stated here on purpose: `ci.yaml` records that the "12/13 to expect" this sentence used to end with was already 14/15 two commits later, because the suite grew rather than the failures. The list names the test; the count is whatever `ctest -N` says minus it |
 | Linux glibc x86_64, Intel MPI 2021.15 | same | **works**, 13/13 and all `check-install.sh` legs, two ranks — `apt install intel-oneapi-mpi-devel=2021.15.0-493`, in a container under qemu (`dev/third-implementations/run.sh intelmpi`). Declares `MPI 3.1` and yet links `MPI_Type_size_c`, so the declared level understates the surface. **Pinned below 2021.17**, where Intel began shipping its own `libmpi_abi.so` — wrapping such a release is redundant, and its library also captures ours through `LD_LIBRARY_PATH` (`NOTES.md` #13.2). Not 2021.16 either: `NOTES.md` #13.4. `linux-oneapi` gates, and is green at the pin on GitHub Actions — run 32655424315, all steps including the install step's guard, which fails the job if the release turns out to ship an ABI library after all |
+| Linux glibc x86_64, HPC-X 2.20 (Open MPI 4.1.7a1) | same, and the component `dlopen` hook | **works, 14/16**, two ranks, no CI row — Symmetry's AMD nodes, built with gcc 11 behind HPC-X's `mpicc` (`OMPI_CC=gcc`; the module's default is nvc). Both failures are HPC-X's and fail identically on `main`: `abi_state_test` because this Open MPI accepts `MPI_Comm_rank(MPI_COMM_NULL)`, and `abi_prototype_test` in 3 of 10 runs (`main`: 4 of 10) with a UCX `pml_ucx` error, "Rank number (102) is larger than communicator size (2)", and a segfault. The row that found `NOTES.md` #2's "Components the implementation loads later": wrapper 1.2.0 aborts every rank of a ROMIO (`romio321`) write, and with the hook it completes (`dev/component-probe/`) |
 | Linux glibc, MPICH 3.1.4 (MPI-3.0) | same | **works**, 6/6, two ranks — the configure floor, verified. `run-linux-docker.sh floor`, built from source on Ubuntu 20.04 / gcc 9, the newest gfortran its configure accepts |
 | Linux glibc, unisolated `dlopen` | none | **refused at load**, with the capture diagnostic |
 | Linux glibc, `dlmopen(LM_ID_NEWLM)` | — | **does not work with a real MPI** (`NOTES.md` #2) |

@@ -1,0 +1,23 @@
+# GNU ld/gold/lld version script for libmpiwrapper on Linux: cmake/mpiwrapper.version
+# plus one name, dlopen.
+#
+# src/mpiwrapper/component_bind.c defines dlopen so that the implementation's
+# own dlopen calls -- the ones that load Open MPI's MCA components, ROMIO among
+# them -- reach it, and it can point what they load at the implementation
+# instead of at libmpi_abi (NOTES.md #2, "Components the implementation loads
+# later"). For that the definition has to be in the dynamic table. It is seen
+# only inside the group the wrapper is dlopen'ed into: the wrapper is loaded
+# RTLD_LOCAL, so the application never binds to it.
+#
+# Linux only, because the hook is: other platforms build without
+# component_bind.c and keep the one-symbol script, which an lld that refuses a
+# script naming an undefined symbol would otherwise reject.
+#
+# Anonymous, as cmake/mpiwrapper.version is and for the same reasons.
+{
+  global:
+    dlopen;
+    mpiwrapper_get_vtable;
+  local:
+    *;
+};

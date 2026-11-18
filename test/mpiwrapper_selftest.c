@@ -3,7 +3,8 @@
  * The white-box half of S1's testing: it compiles the conversion runtime's own
  * sources into the test binary and calls them directly, so it can walk the maps
  * in both directions rather than inferring them from MPI results. libmpiwrapper
- * itself still exports exactly one symbol; nothing here changes that.
+ * itself still exports exactly its getter (and on Linux dlopen); nothing here
+ * changes that.
  *
  * What it checks (NOTES.md #10, "Behavioural tests"):
  *

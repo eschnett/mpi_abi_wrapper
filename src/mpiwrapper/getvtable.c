@@ -8,7 +8,7 @@
 #  define _GNU_SOURCE
 #endif
 
-/* libmpiwrapper -- the one exported symbol.
+/* libmpiwrapper -- the getter, the one symbol libmpi_abi calls.
  *
  * Hand-written and permanent. A getter rather than an exported struct, for two
  * reasons: reading a version field out of a struct means trusting the layout
@@ -18,6 +18,7 @@
  */
 
 #include "internal.h"
+#include "component_bind.h"
 
 #include <dlfcn.h>
 #include <stdatomic.h>
@@ -134,6 +135,13 @@ mpiwrapper_get_vtable(uint32_t abi_version, uint32_t abi_subversion,
   if (!resolution_is_outward(abi_probe, diagnostic)) return NULL;
   if (!every_slot_filled(sizeof(struct mpiwrapper_vtable), diagnostic))
     return NULL;
+
+  /* The wrapper's own calls are known to reach the implementation; now the
+   * objects the implementation dlopen's later can be pointed at it too
+   * (NOTES.md #2, "Components the implementation loads later").
+   */
+  mpiwrapper_component_bind_init(abi_probe,
+                                 (const void *)(uintptr_t)&MPI_Send);
 
   /* Build the reverse maps once, before handing out a table whose slots use
    * them -- which is the reason this is a getter rather than an exported
