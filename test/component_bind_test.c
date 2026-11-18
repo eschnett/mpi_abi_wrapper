@@ -20,6 +20,10 @@
  *   argv[4]  a fourth copy's file name, loaded bare, found by this program's
  *            DT_RUNPATH -- which only works if the wrapper searched on this
  *            program's behalf rather than its own
+ *   argv[5]  a fifth copy, loaded by the second with its *own* dlopen: a
+ *            component's plugin, which must reach the implementation too
+ *   argv[6]  a sixth copy, loaded by the first with its own dlopen: an
+ *            application plugin's plugin, which must still reach libmpi_abi
  */
 
 #define _GNU_SOURCE
@@ -49,6 +53,7 @@ static const char banner[] = "mpi_abi_wrapper ";
 typedef int (*version_fn)(char *, int *);
 typedef void *(*address_fn)(void);
 typedef void *(*dlopen_fn)(const char *, int);
+typedef void *(*load_fn)(const char *);
 
 /* Which library a function address lies in. */
 static const char *library_of(const void *address)
@@ -57,13 +62,11 @@ static const char *library_of(const void *address)
   return dladdr(address, &info) && info.dli_fname ? info.dli_fname : "?";
 }
 
-/* Load one component with `open` and report which side its two references
- * reached: 1 for libmpi_abi, 0 for the implementation, -1 if it did not load.
+/* Which side a loaded component's two references reached: 1 for libmpi_abi,
+ * 0 for the implementation, -1 if it did not load.
  */
-static int reached_abi(dlopen_fn open, const char *what, const char *file,
-                       int mode)
+static int side_of(void *handle, const char *what, const char *file)
 {
-  void *handle = open(file, mode);
   CHECK(handle, "%s: %s did not load: %s", what, file, dlerror());
   if (!handle) return -1;
 
@@ -91,10 +94,32 @@ static int reached_abi(dlopen_fn open, const char *what, const char *file,
   return call_abi;
 }
 
+/* Load one component with `open` and report which side it reached. */
+static int reached_abi(dlopen_fn open, const char *what, const char *file,
+                       int mode, void **handle)
+{
+  *handle = open(file, mode);
+  return side_of(*handle, what, file);
+}
+
+/* Have a loaded component load another with its own dlopen, and report which
+ * side that one reached.
+ */
+static int nested_reached_abi(void *parent, const char *what, const char *file)
+{
+  load_fn load = parent ? (load_fn)(uintptr_t)dlsym(parent, "component_load")
+                        : NULL;
+  CHECK(load, "%s: component_load missing", what);
+  if (!load) return -1;
+  return side_of(load(file), what, file);
+}
+
 int main(int argc, char **argv)
 {
-  if (argc != 5) {
-    fprintf(stderr, "usage: %s component1 component2 name3 name4\n", argv[0]);
+  if (argc != 7) {
+    fprintf(stderr,
+            "usage: %s component1 component2 name3 name4 component5 component6\n",
+            argv[0]);
     return 2;
   }
   MPI_Init(&argc, &argv);
@@ -107,8 +132,13 @@ int main(int argc, char **argv)
         "the application's MPI_Get_library_version lacks the banner");
 
   /* The application's plugin binds to libmpi_abi, and must go on doing so. */
-  CHECK(reached_abi(dlopen, "application dlopen", argv[1], RTLD_LAZY) == 1,
+  void *app_plugin = NULL;
+  CHECK(reached_abi(dlopen, "application dlopen", argv[1], RTLD_LAZY,
+                    &app_plugin) == 1,
         "the application's plugin did not reach libmpi_abi");
+  CHECK(nested_reached_abi(app_plugin, "application plugin's own dlopen",
+                           argv[6]) == 1,
+        "the application plugin's plugin did not reach libmpi_abi");
 
   /* The wrapper's dlopen, which is the one the implementation calls. */
   const char *wrapper = getenv("MPI_ABI_WRAPPER_LIB");
@@ -121,13 +151,18 @@ int main(int argc, char **argv)
   if (hook && hook != dlopen) {
     char origin[4096];
     snprintf(origin, sizeof origin, "$ORIGIN/%s", argv[3]);
-    CHECK(reached_abi(hook, "wrapper dlopen, path, lazy", argv[2], RTLD_LAZY) == 0,
+    void *component = NULL, *other = NULL;
+    CHECK(reached_abi(hook, "wrapper dlopen, path, lazy", argv[2], RTLD_LAZY,
+                      &component) == 0,
           "a component loaded by path was not rebound");
-    CHECK(reached_abi(hook, "wrapper dlopen, $ORIGIN, now", origin, RTLD_NOW) == 0,
+    CHECK(reached_abi(hook, "wrapper dlopen, $ORIGIN, now", origin, RTLD_NOW,
+                      &other) == 0,
           "a component loaded by $ORIGIN was not rebound");
     CHECK(reached_abi(hook, "wrapper dlopen, bare name, lazy", argv[4],
-                      RTLD_LAZY) == 0,
+                      RTLD_LAZY, &other) == 0,
           "a component loaded by bare name was not rebound");
+    CHECK(nested_reached_abi(component, "component's own dlopen", argv[5]) == 0,
+          "a plugin a component loaded with its own dlopen was not rebound");
   }
 
   MPI_Finalize();

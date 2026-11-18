@@ -36,9 +36,10 @@
  *  - On Linux, it then rebinds every object that call newly loaded: each
  *    relocation that names a function libmpi_abi defines is pointed at the
  *    implementation's definition instead (or at the object's own, if it
- *    defines the name itself). An application's plugin, loaded through the
- *    application's own dlopen, is untouched and keeps binding to libmpi_abi,
- *    which is where its calls belong.
+ *    defines the name itself), and each that names dlopen at this one, so
+ *    that what the object loads itself is rebound too. An application's
+ *    plugin, loaded through the application's own dlopen, is untouched and
+ *    keeps binding to libmpi_abi, which is where its calls belong.
  *
  * What it does not cover, said in NOTES.md #13.2: a constructor of the new
  * object runs inside the real dlopen, before the rebinding, so an MPI call
@@ -220,6 +221,33 @@ static void rebind_relocation(struct object *o, ElfW(Addr) r_offset,
 
   const ElfW(Sym) *s = &o->symtab[sym];
   const char *name   = o->strtab + s->st_name;
+
+  /* The object's own dlopen goes through this one too. Otherwise what it loads
+   * in turn -- a component's own plugins -- would be loaded by libc's dlopen,
+   * never rebound, and captured exactly as the component was. Pointed here,
+   * each such load is rebound in turn, its own dlopen slots included, so the
+   * rule reaches plugins of plugins with no recursion in this file; and the
+   * return address the hook sees is the object's, so $ORIGIN and bare names
+   * resolve on its behalf, as they would have against libc's. The slot holds
+   * an address, not a name, so which version of dlopen the object asked for
+   * does not matter. An object that defines dlopen itself is left alone.
+   */
+  if (strcmp(name, "dlopen") == 0) {
+    if (s->st_shndx != SHN_UNDEF) return;
+    uintptr_t *at       = (uintptr_t *)((uintptr_t)o->map->l_addr + r_offset);
+    const uintptr_t hook = (uintptr_t)&dlopen;
+    const uintptr_t real = (uintptr_t)real_dlopen_fn();
+    if (type == RB_JUMP_SLOT || type == RB_GLOB_DAT) {
+      store(o, at, hook + (uintptr_t)addend);
+    } else if (RB_RELA) {
+      if (*at == real + (uintptr_t)addend) store(o, at, hook + (uintptr_t)addend);
+    } else {
+      const uintptr_t offset = *at - real;
+      if (offset < 4096) store(o, at, hook + offset);
+    }
+    return;
+  }
+
   /* libmpi_abi defines MPI_*, PMPI_*, MPIX_* and PMPIX_*, and nothing else;
    * the prefix test keeps dlsym away from the many thousands of other
    * relocations a transport library carries.

@@ -1243,15 +1243,17 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # The implementation's later-loaded components reach the implementation, and
   # the application's plugins reach libmpi_abi (NOTES.md #2, "Components the
   # implementation loads later"; Linux only, as the hook is). The component is
-  # built four times, as four files, because each load has to be a new object:
+  # built six times, as six files, because each load has to be a new object:
   # a second dlopen of a loaded one adds nothing to rebind. The program's
   # DT_RUNPATH is its own directory, which is where the fourth copy is found by
-  # bare name -- if the wrapper searched on the program's behalf.
+  # bare name -- if the wrapper searched on the program's behalf. The fifth and
+  # sixth are loaded by components, with their own dlopen.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    foreach(i 1 2 3 4)
+    foreach(i 1 2 3 4 5 6)
       add_library(component_bind_c${i} MODULE test/component_bind_component.c)
       set_target_properties(component_bind_c${i} PROPERTIES
         C_VISIBILITY_PRESET hidden PREFIX "lib")
+      target_link_libraries(component_bind_c${i} PRIVATE ${CMAKE_DL_LIBS})
     endforeach()
     add_executable(component_bind_test test/component_bind_test.c)
     target_include_directories(component_bind_test
@@ -1260,12 +1262,14 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     target_link_libraries(component_bind_test PRIVATE mpi_abi ${CMAKE_DL_LIBS})
     set_target_properties(component_bind_test PROPERTIES BUILD_RPATH "\$ORIGIN")
     add_dependencies(component_bind_test component_bind_c1 component_bind_c2
-      component_bind_c3 component_bind_c4)
+      component_bind_c3 component_bind_c4 component_bind_c5 component_bind_c6)
     add_test(NAME component_bind_test
       COMMAND ${MPIABI_RUN1} $<TARGET_FILE:component_bind_test>
               $<TARGET_FILE:component_bind_c1> $<TARGET_FILE:component_bind_c2>
               $<TARGET_FILE_NAME:component_bind_c3>
-              $<TARGET_FILE_NAME:component_bind_c4> ${MPIABI_RUN_POST})
+              $<TARGET_FILE_NAME:component_bind_c4>
+              $<TARGET_FILE:component_bind_c5> $<TARGET_FILE:component_bind_c6>
+              ${MPIABI_RUN_POST})
     set_tests_properties(component_bind_test PROPERTIES
       ENVIRONMENT "${MPIABI_TEST_ENV}")
   endif()

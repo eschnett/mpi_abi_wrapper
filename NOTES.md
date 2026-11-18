@@ -538,6 +538,13 @@ does cover; this is the one it does not.
   `mprotect`, rounded as the dynamic linker rounds it. An application's
   plugin, loaded by the application's own `dlopen`, is not touched and goes on
   binding to `libmpi_abi`, which is where its calls belong.
+- **The new object's own `dlopen` is pointed at the hook too**, by the same
+  rewrite of its `JUMP_SLOT` and `GLOB_DAT` slots. A component's `dlopen`
+  otherwise resolves through the global scope to libc's — the wrapper is in
+  neither the global scope nor the component's own dependency tree — so a
+  plugin the component loads itself would be captured just as the component
+  was; measured, it was. Pointed at the hook, each such load is rebound in
+  turn, its `dlopen` slots included, so the rule reaches plugins of plugins.
 - **The real `dlopen` must not see the wrapper as its caller.** glibc takes the
   caller from its return address, and the caller decides where a bare name is
   searched (its `DT_RPATH`/`DT_RUNPATH`) and what `$ORIGIN` in a name means.
@@ -558,10 +565,13 @@ is what `HISTORY.md` §1.6's dispatch measurement kept out of them.
 What it leaves is in §13.2: a component's constructor runs inside the real
 `dlopen`, before the rebinding; another thread's concurrent `dlopen` is rebound
 as if the implementation had made it; only x86_64, aarch64, i386 and arm are
-handled; and other platforms have no hook. `test/component_bind_test.c` is the
+handled; a `dlopen` found by `dlsym` rather than through a relocation is
+libc's; and other platforms have no hook. `test/component_bind_test.c` is the
 oracle: a stand-in component, linked to no MPI, loaded by the application and
 by the wrapper's `dlopen` by path, by `$ORIGIN` and by bare name, must reach
-`libmpi_abi` in the first case and the implementation in the other three.
+`libmpi_abi` in the first case and the implementation in the other three; and a
+plugin each side's component loads with its own `dlopen` must land on that
+component's side.
 
 ### Naming, and the renaming rules for `mpiabi.h`
 
@@ -3476,6 +3486,9 @@ not compiled at all (§5.10).
     would reach the implementation with ABI-typed arguments;
   - only x86_64, aarch64, i386 and arm have the relocation types written out;
     elsewhere on Linux the hook forwards and rebinds nothing;
+  - a component that looks `dlopen` up by name — `dlsym(RTLD_DEFAULT,
+    "dlopen")` — gets libc's, and what it loads that way is not rebound; only
+    `dlopen` reached through a relocation is pointed at the hook;
   - macOS has no hook. Its two-level namespace binds a component that links
     `libmpi` to `libmpi` at link time, but one built with
     `-undefined dynamic_lookup` looks names up flat, and would find

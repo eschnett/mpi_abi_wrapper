@@ -7,9 +7,11 @@
  * because the component belongs to neither side -- MPI_Get_library_version is
  * one of the few entry points whose signature is the same in the ABI and in
  * every implementation, which is why it was chosen: a call that crosses to the
- * wrong side still returns, and says which side it reached. Built three times,
- * as three files, so that each load is a new object.
+ * wrong side still returns, and says which side it reached. Built six times,
+ * as six files, so that each load is a new object.
  */
+
+#include <dlfcn.h>
 
 #define COMPONENT_EXPORT __attribute__((visibility("default")))
 
@@ -25,4 +27,12 @@ COMPONENT_EXPORT int component_library_version(char *version, int *resultlen)
 COMPONENT_EXPORT void *component_library_version_address(void)
 {
   return (void *)&MPI_Get_library_version;
+}
+
+/* A component that loads plugins of its own, with its own dlopen: what it
+ * loads must land on the same side as the component itself.
+ */
+COMPONENT_EXPORT void *component_load(const char *file)
+{
+  return dlopen(file, RTLD_LAZY | RTLD_LOCAL);
 }
