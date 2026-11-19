@@ -106,7 +106,8 @@ handed ABI-typed arguments. 32-bit matched 64-bit exactly.
 **These are statements about the mock's loader behaviour, not about which
 configurations are usable** — the mock has no MPI in it and therefore `dlopen`s
 no components, which is exactly what makes its `dlmopen` row not generalize
-(§1.5). The macOS `-flat_namespace` row is the one that proves the two-level
+(§1.5), and what made its T2 row wrong about ROMIO: a real component is loaded
+later and is not covered by `RTLD_DEEPBIND` (§2.23). The macOS `-flat_namespace` row is the one that proves the two-level
 namespace is load-bearing rather than incidental.
 
 ### 1.5 `dlmopen(LM_ID_NEWLM)` as the isolation default, and as the sanitizer fallback
@@ -1146,6 +1147,37 @@ gates in both directions precisely so that the answer arrives as a red leg
 naming the test rather than as a quiet miscalibration, and it did. The
 prediction is left in the header, marked wrong, rather than edited away — a
 guess that is corrected teaches more than one that is deleted.
+
+### 2.23 "`RTLD_DEEPBIND` keeps the implementation's own `MPI_*` calls inside it"
+
+`dev/dlopen-probe/` measured that `RTLD_DEEPBIND` reaches *transitively*, and
+its T2 — "the implementation's internal `MPI_Send` call, modelling ROMIO" — came
+out OK, so §1.4 and `NOTES.md` §2 named Open MPI's ROMIO and io components as
+the reason `RTLD_GLOBAL` is harmful and treated them as safe under the default.
+They are not. T2's call came from `libimpl`, which the wrapper's own `dlopen`
+loads; ROMIO lives in a component the implementation `dlopen`s later, with its
+own plain `dlopen`, and "transitive" never reached that far. Its references
+search the global scope first, and the only `MPI_*` there is `libmpi_abi`'s.
+
+Found from outside, on 2026-11-18, by a checkpoint stress test in TreeIOHDF5
+over HPC-X 2.20 (Open MPI 4.1.7): every rank of a `romio321` write through
+wrapper 1.2.0 aborted with "stack smashing detected" in
+`w_MPI_File_write_at_all`, while the same write without the wrapper ran — and,
+with data sieving, lost data the way MPICH's ROMIO had, which is a different
+story. `dev/component-probe/` has the steps that pinned it: a guard buffer as
+the status (HPC-X writes exactly its 24 bytes), the component's imports (72
+public names, and no `libmpi` among its `NEEDED`), and the binding log
+(`MPI_Status_set_elements_x` bound to `libmpi_abi.so`). The consequence was the
+one `NOTES.md` §2 had written down for `RTLD_GLOBAL`, word for word: a captured
+call handing the ABI's 32-byte status writer a 24-byte `ompi_status_public_t`.
+
+The mock could not have shown it, and not for want of a test: it has no
+component loader, and its `libimpl` declares its dependencies. The rule this
+leaves is the reason `NOTES.md` §2's new subsection exists — **an isolation
+argument covers the objects loaded when it was made**, and an implementation
+keeps loading objects for as long as it runs. Neither load-time check can see
+one; `test/component_bind_test.c` loads one after `MPI_Init`, the way an
+implementation does.
 
 ---
 

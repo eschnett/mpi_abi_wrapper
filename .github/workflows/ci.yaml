@@ -1023,8 +1023,9 @@ jobs:
       #   You are trying to dlopen ... with RTLD_DEEPBIND flag which is
       #   incompatible with sanitizer runtime (google/sanitizers#611)
       #
-      # So the five tests that load a wrapper cannot run here, on any MPI, and
-      # no flag of ours changes that. #11's S9 lists three ways forward and this
+      # So the tests that load a wrapper cannot run here, on any MPI, and no
+      # flag of ours changes that: the five abi_* tests, and component_bind_test
+      # (NOTES.md #2, "Components the implementation loads later"). #11's S9 lists three ways forward and this
       # is the third: "accept that the sanitizer jobs cover libmpi_abi and the
       # conversion layer rather than the loaded configuration." What is left is
       # not thin -- mpiwrapper_selftest compiles the whole conversion runtime
@@ -1040,7 +1041,7 @@ jobs:
       - name: Test what a sanitizer can reach
         run: |
           ctest --test-dir build --output-on-failure --no-tests=error \
-              --timeout 600 -E '^abi_|^isolation-check$'
+              --timeout 600 -E '^abi_|^isolation-check$|^component_bind_test$'
 
   # ----------------------------------------------------------------- macOS
   # Required by NOTES.md #1's portability constraint and not redundant with

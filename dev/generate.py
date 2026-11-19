@@ -3062,9 +3062,11 @@ VTABLE_EPILOGUE = '''\
  * src/mpi_abi/bootstrap.c.
  */
 /* The wrapper is compiled -fvisibility=hidden, so this attribute is what makes
- * the single exported symbol single rather than merely intended: everything
- * else in libmpiwrapper is unexported by the language, not by a linker script
- * that has to be kept in step. test/check_exports.cmake confirms it with nm.
+ * the getter exported rather than merely intended: everything else in
+ * libmpiwrapper is unexported by the language, not by a linker script that has
+ * to be kept in step -- except, on Linux, the dlopen of
+ * src/mpiwrapper/component_bind.c, the one other export (NOTES.md #2).
+ * test/check_exports.cmake confirms the set with nm.
  */
 #if defined(__GNUC__)
 #  define MPIWRAPPER_EXPORT __attribute__((visibility("default")))

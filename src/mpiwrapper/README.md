@@ -21,7 +21,8 @@ of the ABI:
 | `callbacks.c` | the six trampoline *pools* of §6.1's first row: two user-op variants and four error-handler classes, none of which has an extra-state argument to carry a user pointer |
 | `extrastate.c` | §6.1's second row, the families that do: attribute keys, generalized requests and datareps, each a heap-allocated `{user_fn, user_extra}` pair -- and the recognition of `MPI_COMM_DUP_FN` and friends, which are sentinels rather than functions |
 | `toolevents.c` | §6.1's third row: `MPI_T`'s event callbacks, keyed on the implementation's registration handle because `MPI_T_event_set_dropped_handler` has no user pointer to carry anything through |
-| `getvtable.c` | the single exported symbol: handshake, outward-resolution check, map construction |
+| `getvtable.c` | the getter: handshake, outward-resolution check, map construction |
+| `component_bind.c` | Linux only: the exported `dlopen` through which the implementation's own `dlopen` calls go, rebinding what they load from `libmpi_abi` to the implementation (§2, "Components the implementation loads later") |
 
 The bodies — the `HAND_WRITTEN` ledger, one file per family, each declared in
 `handwritten.h`:

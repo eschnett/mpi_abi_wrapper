@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(mpi_abi_wrapper
-  VERSION 1.2.0
+  VERSION 1.2.1
   DESCRIPTION "An MPI-5.0 standard-ABI shim over any MPI-3.0+ implementation"
   HOMEPAGE_URL "https://github.com/eschnett/mpi_abi_wrapper"
   LANGUAGES C)
@@ -905,6 +905,18 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     gen/mpiwrapper/wrappers.c
     src/mpiwrapper/getvtable.c
   )
+  # The dlopen that points the implementation's later-loaded components at the
+  # implementation rather than at libmpi_abi (NOTES.md #2, "Components the
+  # implementation loads later"). Linux only, and so is the version script that
+  # exports it beside the getter; every other platform keeps the one-symbol
+  # script.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(mpiwrapper PRIVATE src/mpiwrapper/component_bind.c)
+    set(MPIABI_WRAPPER_VERSION_SCRIPT
+      ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper-linux.version)
+  else()
+    set(MPIABI_WRAPPER_VERSION_SCRIPT ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version)
+  endif()
   # The banner src/mpiwrapper/hw_strings.c puts in front of the wrapped
   # library's MPI_Get_library_version string. PROJECT_VERSION rather than
   # MPIABI_SOVERSION: this one names *the wrapper's* release, which is what a
@@ -932,8 +944,9 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   if(MPI_ABI_WRAP_ABI_IMPL)
     target_compile_definitions(mpiwrapper PRIVATE MPIWRAPPER_WRAP_ABI_IMPL)
   endif()
-  # Exactly one exported symbol, enforced by -fvisibility=hidden plus the
-  # explicit attribute in mpiwrapper_vtable.h, and checked by the nm test below.
+  # Exactly the getter exported -- and on Linux component_bind.c's dlopen --
+  # enforced by -fvisibility=hidden plus the explicit attributes, and checked by
+  # the nm test below.
   set_target_properties(mpiwrapper PROPERTIES C_VISIBILITY_PRESET hidden)
   # The other half of NOTES.md #9's rule, which this target was missing while
   # libmpi_abi had it: visibility cannot touch the symbols the linker inserts
@@ -943,9 +956,9 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
   # Mach-O needs no counterpart -- see the comment in the script.
   if(NOT APPLE)
     target_link_options(mpiwrapper PRIVATE
-      "-Wl,--version-script=${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version")
+      "-Wl,--version-script=${MPIABI_WRAPPER_VERSION_SCRIPT}")
     set_target_properties(mpiwrapper PROPERTIES
-      LINK_DEPENDS ${CMAKE_SOURCE_DIR}/cmake/mpiwrapper.version)
+      LINK_DEPENDS ${MPIABI_WRAPPER_VERSION_SCRIPT})
   else()
     # There *is* a Mach-O counterpart now, and decision 25's Fortran probe is
     # why: a bind(C) subroutine is exported whatever -fvisibility=hidden says,
@@ -1226,6 +1239,40 @@ int main(void) { return 0; }" MPIABI_IMPL_AT_LEAST_MPI_4)
     COMMAND ${MPIABI_RUN2} $<TARGET_FILE:abi_state_test> ${MPIABI_RUN_POST})
   set_tests_properties(abi_state_test PROPERTIES
     ENVIRONMENT "${MPIABI_STATE_TEST_ENV}")
+
+  # The implementation's later-loaded components reach the implementation, and
+  # the application's plugins reach libmpi_abi (NOTES.md #2, "Components the
+  # implementation loads later"; Linux only, as the hook is). The component is
+  # built six times, as six files, because each load has to be a new object:
+  # a second dlopen of a loaded one adds nothing to rebind. The program's
+  # DT_RUNPATH is its own directory, which is where the fourth copy is found by
+  # bare name -- if the wrapper searched on the program's behalf. The fifth and
+  # sixth are loaded by components, with their own dlopen.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    foreach(i 1 2 3 4 5 6)
+      add_library(component_bind_c${i} MODULE test/component_bind_component.c)
+      set_target_properties(component_bind_c${i} PROPERTIES
+        C_VISIBILITY_PRESET hidden PREFIX "lib")
+      target_link_libraries(component_bind_c${i} PRIVATE ${CMAKE_DL_LIBS})
+    endforeach()
+    add_executable(component_bind_test test/component_bind_test.c)
+    target_include_directories(component_bind_test
+      PRIVATE ${MPIABI_GEN_INCLUDE_DIR})
+    target_compile_options(component_bind_test PRIVATE ${MPIABI_WARNINGS})
+    target_link_libraries(component_bind_test PRIVATE mpi_abi ${CMAKE_DL_LIBS})
+    set_target_properties(component_bind_test PROPERTIES BUILD_RPATH "\$ORIGIN")
+    add_dependencies(component_bind_test component_bind_c1 component_bind_c2
+      component_bind_c3 component_bind_c4 component_bind_c5 component_bind_c6)
+    add_test(NAME component_bind_test
+      COMMAND ${MPIABI_RUN1} $<TARGET_FILE:component_bind_test>
+              $<TARGET_FILE:component_bind_c1> $<TARGET_FILE:component_bind_c2>
+              $<TARGET_FILE_NAME:component_bind_c3>
+              $<TARGET_FILE_NAME:component_bind_c4>
+              $<TARGET_FILE:component_bind_c5> $<TARGET_FILE:component_bind_c6>
+              ${MPIABI_RUN_POST})
+    set_tests_properties(component_bind_test PROPERTIES
+      ENVIRONMENT "${MPIABI_TEST_ENV}")
+  endif()
 
   # 20.2.1 wants libmpi_abi to be the application's only direct MPI dependency,
   # and oracles 1 and 2 want each library's export set to be exactly what the

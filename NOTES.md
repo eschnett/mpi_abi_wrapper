@@ -276,7 +276,9 @@ no `dlsym` of MPI functions, no preprocessor prelude renaming ~700 names out of
 the way, and no need to export predefined handle values as symbols.
 `HISTORY.md` §1.1 has the architecture this replaced and what it cost.
 
-**The vtable.** `libmpiwrapper` exports exactly one symbol:
+**The vtable.** `libmpiwrapper` exports exactly one symbol for `libmpi_abi` to
+call — and on Linux one more, `dlopen`, for the implementation to call (decision
+4's amendment, and "Components the implementation loads later" below):
 
 ```c
 const struct mpiwrapper_vtable *
@@ -474,7 +476,10 @@ wrapper.
 and stronger than "it usually works": **either the wrapper loads and its calls
 provably reach the implementation, or it refuses to start and says why.** There
 is no configuration known to us in which it loads and silently does the wrong
-thing.
+thing — with one exception that has been closed rather than refused, the next
+subsection: the checks see what the wrapper's own `dlopen` loaded, and an
+implementation component loaded *later* got past them until the wrapper bound
+it.
 
 One consequence for the design: **a flat-namespace implementation build cannot
 be wrapped on macOS, by us or by anything that exports its names.** A flat
@@ -489,6 +494,98 @@ replaces an earlier belief that weak coalescing made any ABI-implementing MPI
 unwrappable here — `HISTORY.md` §2.19 and `dev/weakdef-probe/` have the
 measurements, and oracle 5 in §10 has the two-level standard-ABI build that
 wraps.
+
+### Components the implementation loads later
+
+**`RTLD_DEEPBIND` covers one `dlopen` call, not the objects the implementation
+loads afterwards.** Its "transitive" reach, which `dev/dlopen-probe/` measured,
+is the dependency tree loaded *by that call*. Open MPI loads its MCA components
+later, when it opens the framework they belong to, with its own plain
+`dlopen`, and such an object's undefined references search the global scope
+first, as any object's do. The only `MPI_*` in the global scope is
+`libmpi_abi`'s: `libmpi` is in the wrapper's local group, not global. So a
+component that calls the public MPI interface is captured, and it is the
+memory-unsafe capture the `RTLD_GLOBAL` bullets above describe — an
+implementation-typed status, 24 bytes for Open MPI, written as a 32-byte ABI
+one.
+
+Measured on HPC-X 2.20 (Open MPI 4.1.7) under `romio321`, 2026-11-18,
+`dev/component-probe/`: `mca_io_romio321.so` imports 72 public `MPI_*`/`PMPI_*`
+names and, unlike `mca_io_ompio.so`, which imports none, it does not even list
+`libmpi.so` as a dependency — it relies on `libmpi` being global, as it is when
+an application links it. The dynamic linker's binding log shows its
+`MPI_Status_set_elements_x` and `MPI_Type_size_x` bound to `libmpi_abi.so`
+behind the wrapper and to `libmpi.so` without it, and every rank of an
+`MPI_File_write_at_all` died of a smashed stack in `w_MPI_File_write_at_all`,
+whose own `MPI_Status` was the one overrun. `dev/dlopen-probe/`'s T2, which
+modelled ROMIO as a call from inside `libimpl`, is the case `RTLD_DEEPBIND`
+does cover; this is the one it does not.
+
+**The answer is a `dlopen` of the wrapper's own, Linux only**
+(`src/mpiwrapper/component_bind.c`, decision 4's amendment):
+
+- `libmpiwrapper` defines `dlopen` and exports it. It is the first object of
+  its own `RTLD_DEEPBIND` group, so every `dlopen` call made inside the group —
+  the implementation's, its PMIx's, its transports' — reaches this definition,
+  and nothing outside reaches it: the wrapper is loaded `RTLD_LOCAL`, so an
+  application never binds to it.
+- After the real `dlopen`, every object the call newly loaded (the tail of the
+  namespace's link-map chain) is rebound: each `JUMP_SLOT`, `GLOB_DAT` or
+  absolute relocation naming a function `libmpi_abi` defines is pointed at the
+  object's own definition if it has one, else at the implementation's, found
+  by `dlsym` on `libmpi`'s handle — so its dependencies too. Lazy PLT slots are
+  bound then, and a slot in `PT_GNU_RELRO` is written under a brief
+  `mprotect`, rounded as the dynamic linker rounds it. **Every such slot is
+  written, whatever the loader put there**: a `GLOB_DAT` slot need not hold
+  `libmpi_abi`'s address. A program that is not position-independent and
+  takes an MPI function's address makes its own PLT stub that function's
+  canonical address, and the loader binds every library's GOT reference to the
+  stub, which jumps on to `libmpi_abi`. The Alliance toolchain links programs
+  that way, and on Trillium and Nibi a rule that rewrote only slots holding
+  `libmpi_abi`'s address rebound none of the test's components. Only a REL
+  absolute slot (i386, arm) is compared, to recover its addend, against what
+  the loader binds the name to: a lookup through the main program's handle. An application's
+  plugin, loaded by the application's own `dlopen`, is not touched and goes on
+  binding to `libmpi_abi`, which is where its calls belong.
+- **The new object's own `dlopen` is pointed at the hook too**, by the same
+  rewrite of its `JUMP_SLOT` and `GLOB_DAT` slots. A component's `dlopen`
+  otherwise resolves through the global scope to libc's — the wrapper is in
+  neither the global scope nor the component's own dependency tree — so a
+  plugin the component loads itself would be captured just as the component
+  was; measured, it was. Pointed at the hook, each such load is rebound in
+  turn, its `dlopen` slots included, so the rule reaches plugins of plugins.
+  The address written is `hook_dlopen`'s, taken PC-relative — `dlopen` is an
+  alias of it — and never `&dlopen`, which is read from the wrapper's own GOT:
+  UCX's `libucm` rewrites every object's `dlopen` slot, the wrapper's
+  included, and through `&dlopen` the rebinding then wrote UCX's
+  `ucm_dlopen` into the component (`dev/component-probe/`).
+- **The real `dlopen` must not see the wrapper as its caller.** glibc takes the
+  caller from its return address, and the caller decides where a bare name is
+  searched (its `DT_RPATH`/`DT_RUNPATH`) and what `$ORIGIN` in a name means.
+  So the wrapper does both on the original caller's behalf: `$ORIGIN` is
+  expanded against the caller's directory, and a bare name not already loaded
+  is looked for along the caller's own search list (`dlinfo(RTLD_DI_SERINFO)`)
+  before the real `dlopen` gets it. What reaches the real `dlopen` is then an
+  absolute path, or a name every caller resolves alike.
+
+Rebinding is preferred to the alternatives because each of those fails on the
+measured case. Adding `RTLD_DEEPBIND` to the component's load does nothing for a
+component that does not list `libmpi` (its local scope then has no `MPI_*`);
+promoting `libmpi` to the global scope puts it *after* `libmpi_abi`, which was
+there first; `LD_AUDIT` needs the environment at process start; and checking
+the caller in every `libmpi_abi` entry point puts a test on every call, which
+is what `HISTORY.md` §1.6's dispatch measurement kept out of them.
+
+What it leaves is in §13.2: a component's constructor runs inside the real
+`dlopen`, before the rebinding; another thread's concurrent `dlopen` is rebound
+as if the implementation had made it; only x86_64, aarch64, i386 and arm are
+handled; a `dlopen` found by `dlsym` rather than through a relocation is
+libc's; and other platforms have no hook. `test/component_bind_test.c` is the
+oracle: a stand-in component, linked to no MPI, loaded by the application and
+by the wrapper's `dlopen` by path, by `$ORIGIN` and by bare name, must reach
+`libmpi_abi` in the first case and the implementation in the other three; and a
+plugin each side's component loads with its own `dlopen` must land on that
+component's side.
 
 ### Naming, and the renaming rules for `mpiabi.h`
 
@@ -1862,6 +1959,16 @@ the decision rather than working around it.
    vtable's `sizeof`. **All four are checked for exact equality**; there is no
    prefix serving and no forward compatibility, and the size is what catches a
    layout mismatch the text-derived hash cannot. §2.
+   **Amended 2026-11-18: on Linux it exports `dlopen` too**, the hook that
+   binds the implementation's later-loaded components to the implementation
+   (§2, "Components the implementation loads later"). The new argument is a
+   measurement — HPC-X's ROMIO captured by `libmpi_abi` and smashing the
+   wrapper's stack — and the amendment keeps what the decision protects: the
+   getter is still the only way into the wrapper from `libmpi_abi`, and
+   `dlopen` is visible only inside the `RTLD_LOCAL` group the wrapper is
+   loaded into, which is exactly the set of callers it is for.
+   `cmake/mpiwrapper-linux.version` exports the pair; every other platform
+   keeps the one-symbol script, and `exported-symbols` checks each.
 5. **`mpi_abi` finds the wrapper from an environment variable**, falling back to
    the absolute build-time path — never a bare filename. §2. **Both libraries
    are built together into one prefix per MPI installation**, and the split is
@@ -2680,7 +2787,7 @@ Version choice is about coverage, not admissibility:
    list extracted from the header, **in both directions**; and nothing else
    exported. A total completeness check as the cheapest job in CI.
 2. **The implementation's header, by compilation**, plus `nm` asserting
-   `libmpiwrapper` exports exactly one symbol.
+   `libmpiwrapper` exports exactly the getter, and on Linux `dlopen` beside it.
 3. **The generator's assertions on its own output** — every handle and sentinel
    translated exactly once, no ABI-typed parameter in an implementation call
    argument list, frozen tallies, unknown kind a hard stop — plus the empty-diff
@@ -3080,10 +3187,10 @@ One is deliberately *not* closed by an edit, because an edit cannot close it:
 
 ### 13.2 Limitations that are real
 
-Each is a behaviour a user can hit, and all seven should be in the release
-notes. Six are deliberate — the design chose them, and §6.2 says why for the
-first two. The seventh, the `libmpi_abi.so` name collision at the end of this
-section, is not a choice anyone made: it is a consequence of picking the obvious
+Each is a behaviour a user can hit, and every one should be in the release
+notes. All but one are deliberate — the design chose them, and §6.2 says why
+for the first two. The exception, the `libmpi_abi.so` name collision at the end
+of this section, is not a choice anyone made: it is a consequence of picking the obvious
 library name, and it was found by adding a CI row rather than by thinking about
 it. The staged-leak one used to be a conformance bug rather than a
 choice: a legal call answered with `MPI_ERR_INTERN`. That is fixed, and what is
@@ -3379,6 +3486,39 @@ not compiled at all (§5.10).
   measurement covers yet is a weak-exporting `libmpi_abi` in the real
   configuration rather than the mock; the four mpif rows of §10 are Linux, so
   CI would not catch a regression here.
+
+- **An implementation component is bound to the implementation only on Linux,
+  only on four architectures, and only after its constructors have run.** §2's
+  "Components the implementation loads later" rebinds what the implementation
+  `dlopen`s; what that leaves out, each a boundary of the mechanism:
+  - a component's constructor runs inside the real `dlopen`, before the
+    rebinding, so an `MPI_*` call from a constructor still reaches
+    `libmpi_abi`;
+  - an object another thread `dlopen`s while the implementation's own call is in
+    progress is appended to the same link-map chain and rebound as if the
+    implementation had loaded it — an application plugin loaded at that moment
+    would reach the implementation with ABI-typed arguments;
+  - only x86_64, aarch64, i386 and arm have the relocation types written out;
+    elsewhere on Linux the hook forwards and rebinds nothing;
+  - a component that looks `dlopen` up by name — `dlsym(RTLD_DEFAULT,
+    "dlopen")` — gets libc's, and what it loads that way is not rebound; only
+    `dlopen` reached through a relocation is pointed at the hook;
+  - **another library that rewrites `dlopen` slots takes the implementation's
+    loads past the hook.** UCX's `libucm` in relocation mode points every
+    object's `dlopen` slot at its `ucm_dlopen` once UCX initializes, and
+    `ucm_dlopen` calls libc's: measured with MPICH 4.2.1 over UCX on Debian 13
+    aarch64, under UCX's defaults there (`dev/component-probe/`). A
+    component the implementation loads after that is not rebound — the
+    ROMIO capture again, for an Open MPI that loads ROMIO after `MPI_Init`.
+    `UCX_MEM_MMAP_HOOK_MODE=bistro`, HPC-X's default on x86_64, patches code
+    rather than slots and leaves the hook in place; composing with a
+    relocation-mode `libucm` — calling `ucm_dlopen` from the hook and
+    re-pointing the group's slots after each call — is not done;
+  - macOS has no hook. Its two-level namespace binds a component that links
+    `libmpi` to `libmpi` at link time, but one built with
+    `-undefined dynamic_lookup` looks names up flat, and would find
+    `libmpi_abi`; no such component has been seen, and none has been tested.
+    FreeBSD is not supported at all (§13.4).
 
 - **A wrapped MPI that ships its own `libmpi_abi.so` can capture ours through
   `LD_LIBRARY_PATH`.** `libmpi_abi.so` is what this project builds, and it is

@@ -1,7 +1,9 @@
 # Oracles 1 and 2, and MPI-5.0 20.2.1, in one nm pass.
 #
-#  - libmpiwrapper exports exactly one symbol, mpiwrapper_get_vtable. Anything
-#    else it exported would be a symbol the loader could bind someone to.
+#  - libmpiwrapper exports exactly mpiwrapper_get_vtable, and on Linux dlopen
+#    beside it (NOTES.md #2, "Components the implementation loads later").
+#    Anything else it exported would be a symbol the loader could bind someone
+#    to.
 #  - libmpi_abi's exports are exactly the ABI's entry points, MPI_ and PMPI_
 #    for each -- checked in *both* directions against dev/entrypoints.txt, so
 #    that an entry point the generator dropped fails here as loudly as a symbol
@@ -67,12 +69,20 @@ set(errors 0)
 # dynamic table is now precisely what this project wrote and nothing else,
 # which is what the two checks below can therefore say without qualification.
 
-# --- libmpiwrapper: exactly one symbol -------------------------------------
+# --- libmpiwrapper: the getter, and on Linux dlopen ------------------------
+# dlopen is the hook that binds the implementation's later-loaded components
+# (src/mpiwrapper/component_bind.c, NOTES.md #2); it exists on Linux only, and
+# is visible only inside the group the wrapper is loaded into.
 if(WRAPPER_LIB)
   exported_symbols(wrapper_syms ${WRAPPER_LIB})
-  if(NOT "${wrapper_syms}" STREQUAL "mpiwrapper_get_vtable")
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    set(wrapper_expected "dlopen;mpiwrapper_get_vtable")
+  else()
+    set(wrapper_expected "mpiwrapper_get_vtable")
+  endif()
+  if(NOT "${wrapper_syms}" STREQUAL "${wrapper_expected}")
     message(SEND_ERROR
-      "libmpiwrapper must export exactly mpiwrapper_get_vtable, but exports: "
+      "libmpiwrapper must export exactly ${wrapper_expected}, but exports: "
       "${wrapper_syms}")
     math(EXPR errors "${errors} + 1")
   endif()
