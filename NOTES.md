@@ -545,6 +545,11 @@ does cover; this is the one it does not.
   plugin the component loads itself would be captured just as the component
   was; measured, it was. Pointed at the hook, each such load is rebound in
   turn, its `dlopen` slots included, so the rule reaches plugins of plugins.
+  The address written is `hook_dlopen`'s, taken PC-relative — `dlopen` is an
+  alias of it — and never `&dlopen`, which is read from the wrapper's own GOT:
+  UCX's `libucm` rewrites every object's `dlopen` slot, the wrapper's
+  included, and through `&dlopen` the rebinding then wrote UCX's
+  `ucm_dlopen` into the component (`dev/component-probe/`).
 - **The real `dlopen` must not see the wrapper as its caller.** glibc takes the
   caller from its return address, and the caller decides where a bare name is
   searched (its `DT_RPATH`/`DT_RUNPATH`) and what `$ORIGIN` in a name means.
@@ -3489,6 +3494,17 @@ not compiled at all (§5.10).
   - a component that looks `dlopen` up by name — `dlsym(RTLD_DEFAULT,
     "dlopen")` — gets libc's, and what it loads that way is not rebound; only
     `dlopen` reached through a relocation is pointed at the hook;
+  - **another library that rewrites `dlopen` slots takes the implementation's
+    loads past the hook.** UCX's `libucm` in relocation mode points every
+    object's `dlopen` slot at its `ucm_dlopen` once UCX initializes, and
+    `ucm_dlopen` calls libc's: measured with MPICH 4.2.1 over UCX on Debian 13
+    aarch64, under UCX's defaults there (`dev/component-probe/`). A
+    component the implementation loads after that is not rebound — the
+    ROMIO capture again, for an Open MPI that loads ROMIO after `MPI_Init`.
+    `UCX_MEM_MMAP_HOOK_MODE=bistro`, HPC-X's default on x86_64, patches code
+    rather than slots and leaves the hook in place; composing with a
+    relocation-mode `libucm` — calling `ucm_dlopen` from the hook and
+    re-pointing the group's slots after each call — is not done;
   - macOS has no hook. Its two-level namespace binds a component that links
     `libmpi` to `libmpi` at link time, but one built with
     `-undefined dynamic_lookup` looks names up flat, and would find

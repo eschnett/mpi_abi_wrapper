@@ -66,10 +66,18 @@
 
 #include "component_bind.h"
 
-/* Declared by <dlfcn.h>; defined here, and exported by
- * cmake/mpiwrapper-linux.version.
+/* The hook, under a name of this file's own, and dlopen an alias of it
+ * (defined at the end, exported by cmake/mpiwrapper-linux.version). The alias
+ * keeps one body, so the return address the hook reads is still its caller's.
+ * The second name exists for the address the rebinding writes into other
+ * objects: &hook_dlopen is computed here, PC-relative, while &dlopen would be
+ * read from this library's own GOT -- and UCX's memory hooks (libucm, loaded
+ * with MPICH's ch4:ucx) rewrite every object's dlopen slot, this library's
+ * included, to their ucm_dlopen. Measured on Debian 13's MPICH: with &dlopen,
+ * the rebinding wrote ucm_dlopen into a component, and the component's own
+ * plugins went UCX -> libc and were never rebound.
  */
-__attribute__((visibility("default"))) void *dlopen(const char *file, int mode);
+static void *hook_dlopen(const char *file, int mode);
 
 typedef void *(*dlopen_fn)(const char *, int);
 
@@ -235,7 +243,7 @@ static void rebind_relocation(struct object *o, ElfW(Addr) r_offset,
   if (strcmp(name, "dlopen") == 0) {
     if (s->st_shndx != SHN_UNDEF) return;
     uintptr_t *at       = (uintptr_t *)((uintptr_t)o->map->l_addr + r_offset);
-    const uintptr_t hook = (uintptr_t)&dlopen;
+    const uintptr_t hook = (uintptr_t)&hook_dlopen;
     const uintptr_t real = (uintptr_t)real_dlopen_fn();
     if (type == RB_JUMP_SLOT || type == RB_GLOB_DAT) {
       store(o, at, hook + (uintptr_t)addend);
@@ -449,7 +457,7 @@ static void *open_as_caller(dlopen_fn real, const char *file, int mode,
   return open_bare(real, file, mode, caller);
 }
 
-void *dlopen(const char *file, int mode)
+static void *hook_dlopen(const char *file, int mode)
 {
   dlopen_fn real = real_dlopen_fn();
   if (!real) return NULL;
@@ -470,5 +478,9 @@ void *dlopen(const char *file, int mode)
   return open_as_caller(real, file, mode, caller);
 #  endif
 }
+
+/* Declared by <dlfcn.h>. */
+__attribute__((visibility("default"), alias("hook_dlopen"))) void *
+dlopen(const char *file, int mode);
 
 #endif /* __linux__ */

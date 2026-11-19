@@ -57,6 +57,32 @@ on the fixed wrapper (job 605616) it reports the application's copy at
 `libmpi_abi` and the three loaded through the wrapper — by path, by `$ORIGIN`
 and by bare name — at HPC-X's `libmpi.so.40`.
 
+## Other libraries that patch `dlopen`: UCX's `libucm`
+
+`src/mpiwrapper/component_bind.c` binds a component by rewriting its
+relocation slots, and so does UCX's memory-hook module, `libucm`, when it runs
+in relocation mode: it points every loaded object's `dlopen` slot at its own
+`ucm_dlopen`, which applies UCX's hooks to what is loaded and calls libc's
+`dlopen`. `dlopen_slots.c` prints where each slot points after `MPI_Init`
+(2026-11-18):
+
+| where | `UCX_MEM_MMAP_HOOK_MODE` | the implementation's libraries' `dlopen` slots |
+|---|---|---|
+| Debian 13 aarch64, MPICH 4.2.1 (ch4:ucx), Docker | UCX's default there, evidently relocation mode | `libucm.so.0 ucm_dlopen` — `libucs`, `libhwloc`, `libibverbs`, and also the application and `libmpi_abi` |
+| the same, `UCX_MEM_MMAP_HOOK_MODE=none` | `none` | `libmpiwrapper.so dlopen` |
+| Symmetry, HPC-X 2.20 (x86_64), job 605653 | `bistro`, HPC-X's default (`ucx_info -c`) | `libmpiwrapper.so dlopen` — `libopen-pal`, `libpmix`, `libucs`, `libucm`, `libhcoll` and the rest |
+
+Two consequences. **The address the rebinding writes must not be read from a
+GOT slot:** with `&dlopen` the rebinding wrote `ucm_dlopen` into a component,
+and the component's own plugins were never rebound (`component_bind_test`
+failed on Debian 13 and passed with `UCX_MEM_MMAP_HOOK_MODE=none`); the hook
+is now an alias, and its address is taken PC-relative. **And in relocation
+mode a component the implementation loads after UCX has initialized does not
+pass through the hook at all**, since `ucm_dlopen` calls libc's `dlopen`
+directly — `NOTES.md` §13.2 has it as a limitation. Bistro mode, which patches
+code rather than slots, leaves the hook in place, which is why HPC-X on x86_64
+is fixed.
+
 ## What this establishes
 
 **1. `RTLD_DEEPBIND` does not reach components.** `dev/dlopen-probe/`'s T2
