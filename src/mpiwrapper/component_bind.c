@@ -96,6 +96,7 @@ static dlopen_fn real_dlopen_fn(void)
  */
 static void *abi_handle;  /* libmpi_abi */
 static void *impl_handle; /* the implementation's libmpi, and its dependencies */
+static void *main_handle; /* the main program: dlsym on it searches the global scope */
 static struct link_map *self_map;
 
 void mpiwrapper_component_bind_init(const void *abi_probe,
@@ -121,9 +122,11 @@ void mpiwrapper_component_bind_init(const void *abi_probe,
   if (!real) return;
   void *abi  = real(abi_info.dli_fname, RTLD_LAZY | RTLD_NOLOAD);
   void *impl = real(impl_info.dli_fname, RTLD_LAZY | RTLD_NOLOAD);
-  if (!abi || !impl) return;
+  void *prog = real(NULL, RTLD_LAZY);
+  if (!abi || !impl || !prog) return;
   abi_handle  = abi;
   impl_handle = impl;
+  main_handle = prog;
   self_map    = map;
 }
 
@@ -202,6 +205,18 @@ static int find_relro(struct dl_phdr_info *info, size_t size, void *data)
   return 1;
 }
 
+/* What the dynamic linker binds an undefined reference to `name` to: the
+ * first definition in the global scope. Usually libmpi_abi's own (or libc's,
+ * for dlopen); but a program that is not position-independent and takes the
+ * function's address makes its own PLT stub the function's canonical address,
+ * and every library's GOT reference is bound to that stub, which jumps on to
+ * libmpi_abi. Only a REL absolute slot needs this, to recover its addend.
+ */
+static uintptr_t bound_to(const char *name)
+{
+  return (uintptr_t)dlsym(main_handle, name);
+}
+
 /* A slot in RELRO is read-only by now; open the whole range once, on the
  * first write into it, and close it again when the object is done.
  */
@@ -217,6 +232,19 @@ static int store(struct object *o, uintptr_t *slot, uintptr_t value)
   }
   *slot = value;
   return 1;
+}
+
+/* Store target + the addend of a REL absolute slot, recovered as what the
+ * slot holds beyond what the loader bound the name to; a slot that does not
+ * look like that is left alone.
+ */
+static void store_rel_abs(struct object *o, uintptr_t *slot, const char *name,
+                          uintptr_t target)
+{
+  const uintptr_t base = bound_to(name);
+  if (!base) return;
+  const uintptr_t offset = *slot - base;
+  if (offset < 4096) store(o, slot, target + offset);
 }
 
 static void rebind_relocation(struct object *o, ElfW(Addr) r_offset,
@@ -244,15 +272,8 @@ static void rebind_relocation(struct object *o, ElfW(Addr) r_offset,
     if (s->st_shndx != SHN_UNDEF) return;
     uintptr_t *at       = (uintptr_t *)((uintptr_t)o->map->l_addr + r_offset);
     const uintptr_t hook = (uintptr_t)&hook_dlopen;
-    const uintptr_t real = (uintptr_t)real_dlopen_fn();
-    if (type == RB_JUMP_SLOT || type == RB_GLOB_DAT) {
-      store(o, at, hook + (uintptr_t)addend);
-    } else if (RB_RELA) {
-      if (*at == real + (uintptr_t)addend) store(o, at, hook + (uintptr_t)addend);
-    } else {
-      const uintptr_t offset = *at - real;
-      if (offset < 4096) store(o, at, hook + offset);
-    }
+    if (type == RB_ABS && !RB_RELA) store_rel_abs(o, at, name, hook);
+    else store(o, at, hook + (uintptr_t)addend);
     return;
   }
 
@@ -280,22 +301,19 @@ static void rebind_relocation(struct object *o, ElfW(Addr) r_offset,
     target = (uintptr_t)impl;
   }
 
+  /* Every slot is written, whatever the loader put there: an implementation
+   * component's reference to an MPI function belongs to the implementation.
+   * Lazily bound PLT slots still hold the resolver's path, which would bind to
+   * libmpi_abi on the first call. A GOT slot need not hold libmpi_abi's own
+   * address either -- in a program that is not position-independent and takes
+   * the function's address, it holds the program's PLT stub (bound_to above).
+   * Measured on Trillium, whose toolchain links programs that way: comparing
+   * against libmpi_abi's address rebound none of them. Only a REL absolute
+   * slot is compared, because its addend has to be recovered.
+   */
   uintptr_t *slot = (uintptr_t *)((uintptr_t)o->map->l_addr + r_offset);
-  if (type == RB_JUMP_SLOT) {
-    /* Lazily bound slots still hold the PLT's resolver path, which would bind
-     * to libmpi_abi on the first call; bind them now.
-     */
-    store(o, slot, target + (uintptr_t)addend);
-  } else if (RB_RELA) {
-    if (*slot == (uintptr_t)abi + (uintptr_t)addend)
-      store(o, slot, target + (uintptr_t)addend);
-  } else {
-    /* REL: the addend was the slot's content before relocation, so what is
-     * there now is abi plus it.
-     */
-    const uintptr_t offset = *slot - (uintptr_t)abi;
-    if (offset < 4096) store(o, slot, target + offset);
-  }
+  if (type == RB_ABS && !RB_RELA) store_rel_abs(o, slot, name, target);
+  else store(o, slot, target + (uintptr_t)addend);
 }
 
 static void rebind_object(const struct link_map *m)

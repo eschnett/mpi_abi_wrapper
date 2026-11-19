@@ -535,7 +535,16 @@ does cover; this is the one it does not.
   object's own definition if it has one, else at the implementation's, found
   by `dlsym` on `libmpi`'s handle — so its dependencies too. Lazy PLT slots are
   bound then, and a slot in `PT_GNU_RELRO` is written under a brief
-  `mprotect`, rounded as the dynamic linker rounds it. An application's
+  `mprotect`, rounded as the dynamic linker rounds it. **Every such slot is
+  written, whatever the loader put there**: a `GLOB_DAT` slot need not hold
+  `libmpi_abi`'s address. A program that is not position-independent and
+  takes an MPI function's address makes its own PLT stub that function's
+  canonical address, and the loader binds every library's GOT reference to the
+  stub, which jumps on to `libmpi_abi`. The Alliance toolchain links programs
+  that way, and on Trillium and Nibi a rule that rewrote only slots holding
+  `libmpi_abi`'s address rebound none of the test's components. Only a REL
+  absolute slot (i386, arm) is compared, to recover its addend, against what
+  the loader binds the name to: a lookup through the main program's handle. An application's
   plugin, loaded by the application's own `dlopen`, is not touched and goes on
   binding to `libmpi_abi`, which is where its calls belong.
 - **The new object's own `dlopen` is pointed at the hook too**, by the same
